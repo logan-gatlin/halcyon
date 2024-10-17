@@ -62,10 +62,7 @@ fn test_expression(expr: &str) {
 }
 
 fn main() -> Result<()> {
-  /*
   let module = frontend::Module::from_file("./demo.lang")?;
   module.execute();
-  */
-  test_expression("(a: b) -> c {}");
   Ok(())
 }

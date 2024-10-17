@@ -1,3 +1,5 @@
+use crate::{Expression, Parameter};
+
 use super::err::*;
 
 macro_rules! primitives {
@@ -46,15 +48,12 @@ impl Primitive {
     match (a, b) {
       // Whole? coerces to any whole or integer
       (whole_ambiguous, w @ (w8 | w16 | w32 | w64 | i8 | i16 | i32 | i64))
-      | (w @ (w8 | w16 | w32 | w64 | i8 | i16 | i32 | i64), whole_ambiguous) => {
-        w
-      },
+      | (w @ (w8 | w16 | w32 | w64 | i8 | i16 | i32 | i64), whole_ambiguous) => Ok(w),
       // Integer? coerces to any integer
       (integer_ambiguous, i @ (i8 | i16 | i32 | i64))
-      | (i @ (i8 | i16 | i32 | i64), integer_ambiguous) => i,
-      _ => whole_ambiguous,
-    };
-    todo!()
+      | (i @ (i8 | i16 | i32 | i64), integer_ambiguous) => Ok(i),
+      _ => error(),
+    }
   }
 }
 
@@ -86,6 +85,52 @@ macro_rules! all_selfsame {
   };
 }
 
-all_selfsame!(
-  w8, w16, w32, w64, whole, i8, i16, i32, i64, integer, r32, r64, real, string
-);
+all_selfsame!(w8, w16, w32, w64, whole, i8, i16, i32, i64, integer, r32, r64, real, string);
+
+#[derive(Debug, Clone)]
+pub enum Type {
+  Ambiguous,
+  Empty,
+  Primitive(Primitive),
+  Struct(String),
+}
+
+#[derive(Debug, Clone)]
+pub enum Symbol {
+  Mutable {
+    name: String,
+    value: Option<Expression>,
+    type_: Type,
+  },
+  Immutable {
+    name: String,
+    value: Expression,
+    type_: Type,
+  },
+  Struct {
+    name: String,
+  },
+  BlockStart,
+}
+
+#[derive(Debug, Clone)]
+pub struct SymbolTable {
+  stack: Vec<Symbol>,
+}
+
+impl SymbolTable {
+  pub fn define(&mut self, sym: Symbol) {
+    self.stack.push(sym);
+  }
+  pub fn start_block(&mut self) {
+    self.stack.push(Symbol::BlockStart);
+  }
+
+  pub fn end_block(&mut self) {
+    while !self.stack.is_empty() {
+      if let Some(Symbol::BlockStart) = self.stack.pop() {
+        break;
+      }
+    }
+  }
+}

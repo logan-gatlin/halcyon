@@ -1,9 +1,6 @@
-i := 0x0;
+i := 0;
 
-if i > 10 {
-  print "a";
-} else if i > 5 {
-  print "b";
-} else {
-  print "c";
+while i < 10 {
+  i = i + 1;
+  print;
 }
