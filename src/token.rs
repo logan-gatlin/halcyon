@@ -49,7 +49,7 @@ pub enum TokenKind {
 
   Identifier(String),
   StringLiteral(String),
-  CharLiteral(char),
+  GlyphLiteral(char),
   IntegerLiteral(i64),
   FloatLiteral(f64),
 
@@ -78,6 +78,7 @@ pub enum TokenKind {
   SmallComment(String),
   BigComment(String),
 
+  Error(Diagnostic),
   Idk,
   EOF,
 }
@@ -103,6 +104,87 @@ impl PartialEq for TokenKind {
 impl Eq for TokenKind {
 }
 
+impl std::fmt::Display for TokenKind {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    use TokenKind::*;
+    write!(
+      f,
+      "'{}'",
+      match self {
+        LeftParen => "(",
+        RightParen => ")",
+        LeftBrace => "{",
+        RightBrace => "}",
+        LeftSquare => "[",
+        RightSquare => "]",
+        Comma => ",",
+        Colon => ":",
+        Semicolon => ";",
+        Dot => ".",
+        DotDot => "..",
+        Plus => "+",
+        Minus => "-",
+        Slash => "/",
+        Star => "*",
+        Percent => "%",
+        Arrow => "->",
+        FatArrow => "=>",
+        PlusEqual => "+=",
+        MinusEqual => "-=",
+        SlashEqual => "/=",
+        StarEqual => "*=",
+        PercentEqual => "%=",
+        Bang => "!",
+        BangEqual => "!=",
+        Question => "?",
+        QuestionEqual => "?=",
+        Equal => "=",
+        DoubleEqual => "==",
+        Greater => ">",
+        GreaterEqual => ">=",
+        Less => "<",
+        LessEqual => "<=",
+        Pipe => "|",
+        Ampersand => "&",
+        Carrot => "^",
+        Hash => "#",
+        DotDotEqual => "..=",
+        Identifier(i) => i,
+        StringLiteral(s) => s.as_str(),
+        GlyphLiteral(_) => "<glyph>",
+        IntegerLiteral(_) => "<integer>",
+        FloatLiteral(_) => "<real>",
+        If => "if",
+        Else => "else",
+        And => "and",
+        Or => "or",
+        Xor => "xor",
+        Not => "not",
+        Nand => "nand",
+        Nor => "nor",
+        Xnor => "xnor",
+        Print => "print",
+        Break => "break",
+        Return => "return",
+        Continue => "continue",
+        For => "for",
+        While => "while",
+        True => "true",
+        False => "false",
+        Struct => "struct",
+        Enum => "enum",
+        Union => "union",
+        Whitespace(_) => "<whitespace>",
+        SmallComment(_) => "<comment>",
+        BigComment(_) => "<comment>",
+        Error(_) => "<error>",
+        Idk => unreachable!(),
+        EOF => "<end of file>",
+      }
+    )
+  }
+}
+
 #[derive(Clone, Debug)]
 pub struct Token(pub TokenKind, pub Span);
 
@@ -118,7 +200,6 @@ pub struct Tokenizer<I: Iterator<Item = char>> {
   iter: CharIter<I>,
   column: usize,
   row: usize,
-  finished: bool,
 }
 
 impl<I: Iterator<Item = char>> Tokenizer<I> {
@@ -127,14 +208,6 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
       iter: CharIter::new(iter),
       column: 1,
       row: 1,
-      finished: false,
-    }
-  }
-
-  pub fn span(&self) -> Span {
-    Span {
-      column: self.column,
-      row: self.row,
     }
   }
 
@@ -187,6 +260,16 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
       column: self.column,
     };
     let current = match self.next_char() {
+      Some(std::char::REPLACEMENT_CHARACTER) => {
+        return t(
+          Error(Diagnostic {
+            reason: "Non-UTF8 encoded glyph".into(),
+            span: Some(position),
+            backtrace: vec![],
+          }),
+          position,
+        );
+      },
       Some(c) => c,
       None => return t(EOF, position),
     };
@@ -327,7 +410,7 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
           .reason("Single quote (') contains more than one character")
           .span(&position);
       }
-      let kind = CharLiteral(
+      let kind = GlyphLiteral(
         baked
           .chars()
           .next()
@@ -351,8 +434,12 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
       // Only one dot per number
       let mut encountered_dot = false;
       while let Some(c) = self.peek(0) {
-        if c == '.' && !encountered_dot {
-          if let Some('.') = self.peek(1) {
+        if c == '.' {
+          if encountered_dot {
+            break;
+          }
+          let Some(next) = self.peek(1) else { break };
+          if !next.is_ascii_digit() {
             break;
           }
           encountered_dot = true;
@@ -407,19 +494,12 @@ impl<I: Iterator<Item = char>> Iterator for Tokenizer<I> {
   type Item = Token;
 
   fn next(&mut self) -> Option<Self::Item> {
-    loop {
-      match self._next() {
-        Ok(Token(TokenKind::EOF, span)) => {
-          if self.finished {
-            return None;
-          } else {
-            self.finished = true;
-            return Some(Token(TokenKind::EOF, span));
-          }
-        },
-        Ok(r) => return Some(r),
-        _ => {},
-      };
+    match self._next() {
+      Ok(s) => Some(s),
+      Err(e) => Some(Token(
+        TokenKind::Error(e.clone()),
+        e.span.expect("error without span in tokenizer"),
+      )),
     }
   }
 }
@@ -429,29 +509,35 @@ fn parse_number(num: &str) -> Result<TokenKind> {
   let num = num.replace('_', "");
   // Floating point (only decimal)
   if num.contains('.') {
-    num.parse::<f64>().map(|f| FloatLiteral(f)).coerce()
+    num
+      .parse::<f64>()
+      .map(|f| FloatLiteral(f))
+      .reason("Could not parse real number")
   }
   // Hex integer
   else if let Some(hex) = num.strip_prefix("0x") {
     i64::from_str_radix(hex, 16)
       .map(|i| IntegerLiteral(i))
-      .coerce()
+      .reason("Could not parse hex integer number")
   }
   // Octal integer
   else if let Some(oct) = num.strip_prefix("0o") {
     i64::from_str_radix(oct, 8)
       .map(|i| IntegerLiteral(i))
-      .coerce()
+      .reason("Could not parse octal integer number")
   }
   // Binary integer
   else if let Some(bin) = num.strip_prefix("0b") {
     i64::from_str_radix(bin, 2)
       .map(|i| IntegerLiteral(i))
-      .coerce()
+      .reason("Could not parse binary integer number")
   }
   // Decimal integer
   else {
-    num.parse::<i64>().map(|i| IntegerLiteral(i)).coerce()
+    num
+      .parse::<i64>()
+      .map(|i| IntegerLiteral(i))
+      .reason("Could not parse integer number")
   }
 }
 

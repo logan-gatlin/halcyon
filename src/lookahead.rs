@@ -34,10 +34,6 @@ where
     s
   }
 
-  pub fn inner(&self) -> &I {
-    &self.iterator
-  }
-
   fn normalize(&mut self) {
     for item in &mut self.buffer {
       if self.exhausted {

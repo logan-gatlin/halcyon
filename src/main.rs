@@ -1,14 +1,16 @@
 mod err;
+mod frontend;
 mod lookahead;
 mod parse;
 mod token;
 mod treewalk;
+mod types;
 use std::ops::Add;
 
+use err::*;
 use lookahead::*;
 use parse::*;
 use token::*;
-use treewalk::Interpreter;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Span {
@@ -16,13 +18,20 @@ pub struct Span {
   pub column: usize,
 }
 
+impl std::fmt::Display for Span {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "({}:{})", self.row, self.column)
+  }
+}
+
 impl Add<Span> for Span {
   type Output = Span;
 
   fn add(self, rhs: Span) -> Self::Output {
+    let max = (self.row, self.column).max((rhs.row, rhs.column));
     Span {
-      row: usize::min(self.row, rhs.row),
-      column: usize::max(self.column, rhs.column),
+      row: max.0,
+      column: max.1,
     }
   }
 }
@@ -45,13 +54,18 @@ fn test_tokenization() {
   }
 }
 
-fn main() {
-  let src = include_str!("../demo.lang");
-  println!("{src}");
-  let tokens: Vec<_> = Tokenizer::new(src.chars())
-    .filter(|t| t.0.is_meaningful())
-    .collect();
-  let parsed = Parser::new(tokens.into_iter()).file().unwrap();
-  let mut interp = Interpreter::new(parsed.into_iter());
-  interp.run().unwrap();
+fn test_expression(expr: &str) {
+  let source = expr.to_string();
+  let tokens = Tokenizer::new(source.chars()).filter(|t| t.0.is_meaningful());
+  let mut parser = Parser::new(tokens);
+  println!("{:?}", parser.expression(0).unwrap());
+}
+
+fn main() -> Result<()> {
+  /*
+  let module = frontend::Module::from_file("./demo.lang")?;
+  module.execute();
+  */
+  test_expression("(a: b) -> c {}");
+  Ok(())
 }

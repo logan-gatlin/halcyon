@@ -8,9 +8,9 @@ pub fn error<T>() -> Result<T> {
 
 #[derive(Clone)]
 pub struct Diagnostic {
-  reason: String,
-  span: Option<Span>,
-  backtrace: Vec<String>,
+  pub reason: String,
+  pub span: Option<Span>,
+  pub backtrace: Vec<String>,
 }
 
 impl Diagnostic {
@@ -30,8 +30,8 @@ impl std::fmt::Display for Diagnostic {
     } else {
       write!(f, "(E) {}\n", self.reason)?;
     }
-    for b in self.backtrace.iter().rev() {
-      write!(f, "--> {}\n", b)?;
+    for (_i, b) in self.backtrace.iter().enumerate() {
+      write!(f, "> {}\n", b)?;
     }
     Ok(())
   }
@@ -75,11 +75,11 @@ impl From<std::num::ParseFloatError> for Diagnostic {
 pub trait IntoDiagnostic<T, S: Into<String>> {
   fn reason(self, s: S) -> Result<T>;
   fn trace(self, s: S) -> Result<T>;
+  fn trace_span(self, span: Span, s: S) -> Result<T>;
 }
 
 pub trait WithSpan<T> {
   fn span(self, span: &Span) -> Result<T>;
-  fn no_span(self) -> Result<T>;
 }
 
 impl<T> WithSpan<T> for Result<T> {
@@ -89,17 +89,6 @@ impl<T> WithSpan<T> for Result<T> {
       e
     })
   }
-
-  fn no_span(self) -> Result<T> {
-    self.map_err(|mut e| {
-      e.span = None;
-      e
-    })
-  }
-}
-
-pub trait CoerceDiagnostic<T> {
-  fn coerce(self) -> Result<T>;
 }
 
 impl<T, S: Into<String>> IntoDiagnostic<T, S> for Option<T> {
@@ -124,6 +113,10 @@ impl<T, S: Into<String>> IntoDiagnostic<T, S> for Option<T> {
       }),
     }
   }
+
+  fn trace_span(self, span: Span, s: S) -> Result<T> {
+    self.trace(format!("{} {}", span, s.into()))
+  }
 }
 
 impl<T, E: Into<Diagnostic>, S: Into<String>> IntoDiagnostic<T, S>
@@ -131,7 +124,9 @@ impl<T, E: Into<Diagnostic>, S: Into<String>> IntoDiagnostic<T, S>
 {
   fn reason(self, s: S) -> Result<T> {
     self.map_err(|e| e.into()).map_err(|mut e| {
-      e.reason = s.into();
+      if e.reason == "" {
+        e.reason = s.into();
+      }
       e
     })
   }
@@ -142,10 +137,8 @@ impl<T, E: Into<Diagnostic>, S: Into<String>> IntoDiagnostic<T, S>
       e
     })
   }
-}
 
-impl<T, E: Into<Diagnostic>> CoerceDiagnostic<T> for std::result::Result<T, E> {
-  fn coerce(self) -> Result<T> {
-    self.map_err(|e| e.into())
+  fn trace_span(self, span: Span, s: S) -> Result<T> {
+    self.trace(format!("{} {}", span, s.into())).span(&span)
   }
 }

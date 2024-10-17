@@ -14,6 +14,19 @@ enum Value {
   Undefined,
 }
 
+impl std::fmt::Display for Value {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    use Value::*;
+    match self {
+      Integer(i) => write!(f, "{i}"),
+      Real(r) => write!(f, "{r}"),
+      String(s) => write!(f, "{s}"),
+      Boolean(b) => write!(f, "{b}"),
+      Undefined => write!(f, "undefined"),
+    }
+  }
+}
+
 #[derive(Debug, Clone)]
 struct Scope {
   outer: Option<Box<Scope>>,
@@ -189,6 +202,13 @@ impl<I: Iterator<Item = Statement>> Interpreter<I> {
       },
       e::Unary { token, child } => self.evaluate_unary(token, *child),
       e::Parenthesis(e) => self.evaluate(*e),
+      e::Call { callee, args } => todo!(),
+      e::Field { namespace, field } => todo!(),
+      e::Function {
+        params,
+        returns,
+        body,
+      } => todo!(),
     }
     .span(&expr.span)
   }
@@ -215,7 +235,7 @@ impl<I: Iterator<Item = Statement>> Interpreter<I> {
       },
       s::Print(e) => {
         let e = self.evaluate(e)?;
-        println!("{e:?}");
+        println!("{e}");
       },
       s::Expression(e) => {
         self.evaluate(e)?;
@@ -231,6 +251,8 @@ impl<I: Iterator<Item = Statement>> Interpreter<I> {
         if let Value::Boolean(b) = value {
           if b {
             self.block(block)?;
+          } else if let Some(else_) = else_ {
+            self.execute(*else_)?;
           }
         } else {
           return error()
@@ -251,6 +273,10 @@ impl<I: Iterator<Item = Statement>> Interpreter<I> {
             },
           }
         }
+      },
+      s::Error(e) => {
+        eprintln!("{e}");
+        panic!();
       },
     }
     Ok(())
