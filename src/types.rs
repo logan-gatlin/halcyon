@@ -1,4 +1,4 @@
-use crate::{Expression, Parameter};
+use crate::Expression;
 
 use super::err::*;
 
