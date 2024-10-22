@@ -3,7 +3,7 @@ use crate::Span;
 pub type Result<T> = std::result::Result<T, Diagnostic>;
 
 pub fn error<T>() -> Result<T> {
-  Err(Diagnostic::new(""))
+  Err(Diagnostic::new("", None))
 }
 
 #[derive(Clone)]
@@ -14,10 +14,10 @@ pub struct Diagnostic {
 }
 
 impl Diagnostic {
-  pub fn new(reason: impl Into<String>) -> Self {
+  pub fn new(reason: impl Into<String>, span: Option<Span>) -> Self {
     Self {
       reason: reason.into(),
-      span: None,
+      span,
       backtrace: vec![],
     }
   }
@@ -58,17 +58,19 @@ impl From<std::num::ParseIntError> for Diagnostic {
     use std::num::IntErrorKind::*;
     match value.kind() {
       PosOverflow | NegOverflow => {
-        Diagnostic::new("Integer value is too large to represent")
+        Diagnostic::new("Integer value is too large to represent", None)
       },
-      InvalidDigit => Diagnostic::new("Integer value containts invalid digits"),
-      _ => Diagnostic::new("Integer value could not be parsed"),
+      InvalidDigit => {
+        Diagnostic::new("Integer value containts invalid digits", None)
+      },
+      _ => Diagnostic::new("Integer value could not be parsed", None),
     }
   }
 }
 
 impl From<std::num::ParseFloatError> for Diagnostic {
   fn from(_value: std::num::ParseFloatError) -> Self {
-    Diagnostic::new("Float value could not be parsed")
+    Diagnostic::new("Float value could not be parsed", None)
   }
 }
 

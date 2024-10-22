@@ -577,7 +577,9 @@ fn bake_string(s: &str) -> Result<String> {
           };
           a().reason("Found invalid Unicode (\\uXXXX) escape sequence")?
         },
-        _ => return Err(Diagnostic::new("Found invalid escape sequence")),
+        _ => {
+          return Err(Diagnostic::new("Found invalid escape sequence", None));
+        },
       }),
       // Unremarkable character
       Some(c) => baked.push(c),

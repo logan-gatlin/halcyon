@@ -1,16 +1,15 @@
+use crate::semantic::Type;
+
 use super::*;
 
 #[derive(Debug, Clone)]
 pub enum StatementKind {
-  Mutable {
+  Declaration {
     name: String,
-    type_: Option<String>,
-    value: Option<Expression>,
-  },
-  Immutable {
-    name: String,
-    type_: Option<String>,
+    type_str: Option<String>,
+    type_actual: Type,
     value: Expression,
+    mutable: bool,
   },
   Assignment {
     name: String,
@@ -49,44 +48,47 @@ impl<I: Iterator<Item = Token>> Parser<I> {
       (Token(t::Identifier(name), span2), Ok(Token(t::Colon, span3))) => {
         self.skip(2);
         span = span + span2 + span3;
-        // type
-        let type_ = match self.eat(t::Identifier("".into())) {
+        let type_str = match self.eat(t::Identifier("".into())) {
           Ok(Token(t::Identifier(s), span2)) => {
             span = span + span2;
             Some(s)
           },
           _ => None,
         };
-        // value
-        match self.eat(t::Equal).or_else(|_| self.eat(t::Colon)) {
-          Ok(Token(t::Colon, span2)) => {
-            span = span + span2;
-            let value = self
-              .expression(0)
-              .trace_span(span, "while parsing mutable declaration")?;
-            span = span + value.span;
-            Statement {
-              kind: s::Immutable { name, type_, value },
-              span,
-            }
+        let mutable = if self.eat(t::Equal).is_ok() {
+          true
+        } else if self.eat(t::Colon).is_ok() {
+          false
+        } else {
+          return error()
+            .reason(format!("Declaration of '{}' must be initialized", name))
+            .span(&span);
+        };
+        let value = self
+          .expression(0)
+          .trace_span(span, "while parsing declaration")?;
+        span = span + value.span;
+        let no_semicolon = if let ExpressionKind::Function { .. } = value.kind {
+          true
+        } else if let ExpressionKind::Struct(_) = value.kind {
+          true
+        } else {
+          false
+        };
+        let s = Statement {
+          kind: s::Declaration {
+            name,
+            type_str,
+            type_actual: Type::Ambiguous,
+            value,
+            mutable,
           },
-          Ok(Token(t::Equal, span2)) => {
-            span = span + span2;
-            let value = self
-              .expression(0)
-              .trace_span(span, "while parsing mutable declaration")?;
-            span = span + value.span;
-            Statement {
-              kind: s::Mutable {
-                name,
-                type_,
-                value: Some(value),
-              },
-              span,
-            }
-          },
-          _ => return error().reason("Expected expression").span(&span),
+          span,
+        };
+        if no_semicolon {
+          return Ok(s);
         }
+        s
       },
       // Assignment
       (Token(t::Identifier(name), span2), Ok(Token(t::Equal, span3))) => {

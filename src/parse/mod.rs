@@ -8,50 +8,81 @@ use crate::{Span, Token, TokenKind};
 
 pub type Precedence = usize;
 
+macro_rules! op {
+  ($name:ident; $($op:ident, $prec:expr, $assoc:expr);*;) => {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum $name {
+      $($op,)*
+    }
+
+    impl $name {
+      pub fn precedence(&self) -> Precedence {
+        match self {
+          $(Self::$op => $prec),*
+        }
+      }
+
+      pub fn assoc(&self) -> bool {
+        match self {
+          $(Self::$op => $assoc),*
+        }
+      }
+    }
+
+    impl std::fmt::Display for $name {
+      fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+      }
+    }
+
+    impl TryFrom<&TokenKind> for $name {
+      type Error = Diagnostic;
+      fn try_from(value: &TokenKind) -> Result<Self> {
+        match value {
+          $(TokenKind::$op => Ok(Self::$op),)*
+          _ => error().reason(format!("Invalid operator {value}"))
+        }
+      }
+    }
+  }
+}
+
+const RIGHT_ASSOC: bool = true;
+const LEFT_ASSOC: bool = false;
+
+// Name, precedence, associativity;
+op! {
+  BinaryOp;
+  Star, 10, LEFT_ASSOC;
+  Slash, 10, LEFT_ASSOC;
+  Percent, 10, LEFT_ASSOC;
+  Plus, 9, LEFT_ASSOC;
+  Minus, 9, LEFT_ASSOC;
+  And, 8, LEFT_ASSOC;
+  Nand, 8, LEFT_ASSOC;
+  Xor, 7, LEFT_ASSOC;
+  Xnor, 7, LEFT_ASSOC;
+  Or, 6, LEFT_ASSOC;
+  Nor, 6, LEFT_ASSOC;
+  DoubleEqual, 5, LEFT_ASSOC;
+  BangEqual, 5, LEFT_ASSOC;
+  Less, 5, LEFT_ASSOC;
+  LessEqual, 5, LEFT_ASSOC;
+  Greater, 5, LEFT_ASSOC;
+  GreaterEqual, 5, LEFT_ASSOC;
+}
+
+op! {
+  UnaryOp;
+  Bang, 12, RIGHT_ASSOC;
+  Question, 12, RIGHT_ASSOC;
+  Minus, 11, LEFT_ASSOC;
+  Plus, 11, LEFT_ASSOC;
+  Not, 11, LEFT_ASSOC;
+}
+
 const FIELD_PREC: Precedence = 13;
 const CALL_PREC: Precedence = 12;
-
-fn binary_prec(tok: &TokenKind) -> Result<(Precedence, bool)> {
-  use TokenKind::*;
-  Ok(match tok {
-    Star | Slash | Percent => (10, false),
-    Plus | Minus => (9, false),
-    And | Nand => (8, false),
-    Xor | Xnor => (7, false),
-    Or | Nor => (6, false),
-    DoubleEqual | BangEqual | Less | LessEqual | Greater | GreaterEqual => {
-      (5, false)
-    },
-    //Colon => Some((5, false)),
-    _ => {
-      return error().reason(format!("{} is not a valid binary operator", tok));
-    },
-  })
-}
-
-fn unary_prefix_prec(tok: &TokenKind) -> Result<Precedence> {
-  use TokenKind::*;
-  Ok(match tok {
-    Minus | Not => 11,
-    Break => 3,
-    _ => {
-      return error()
-        .reason(format!("{tok} is not a valid prefix unary operator"));
-    },
-  })
-}
-
-fn unary_postfix_prec(tok: &TokenKind) -> Result<Precedence> {
-  use TokenKind::*;
-  Ok(match tok {
-    Question => 12,
-    Bang => 12,
-    _ => {
-      return error()
-        .reason(format!("{tok} is not a valid postfix unary operator"));
-    },
-  })
-}
 
 const PARSER_LOOKAHEAD: usize = 3;
 
@@ -146,8 +177,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
     let mut span = self.eat(t::LeftBrace).reason("Expected block")?.1;
     let mut statements = vec![];
     loop {
-      let next = self.peek(0)?;
-      span = span + next.1;
+      span = span + self.peek(0)?.1;
       match self.eat(t::RightBrace) {
         Ok(t) => {
           span = span + t.1;

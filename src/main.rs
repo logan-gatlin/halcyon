@@ -2,9 +2,9 @@ mod err;
 mod frontend;
 mod lookahead;
 mod parse;
+mod semantic;
 mod token;
 mod treewalk;
-mod types;
 use std::ops::Add;
 
 use err::*;
@@ -63,6 +63,8 @@ fn test_expression(expr: &str) {
 
 fn main() -> Result<()> {
   let module = frontend::Module::from_file("./demo.lang")?;
-  module.execute();
+  for s in &module.program {
+    println!("{s:?}");
+  }
   Ok(())
 }

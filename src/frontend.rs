@@ -1,15 +1,12 @@
 use std::path::Path;
 
-use crate::{
-  err::*, treewalk::Interpreter, Parser, Statement, StatementKind, Token,
-  Tokenizer,
-};
+use crate::{err::*, semantic::typecheck, Parser, Statement, Tokenizer};
 
 #[derive(Debug, Clone)]
 pub struct Module {
   file_name: String,
   source: String,
-  ast: Vec<Statement>,
+  pub program: Vec<Statement>,
   errors: Vec<Diagnostic>,
 }
 
@@ -28,19 +25,13 @@ impl Module {
 
   pub fn from_string(file_name: String, source: String) -> Self {
     let tokens = Tokenizer::new(source.chars()).filter(|t| t.0.is_meaningful());
-    let mut ast = vec![];
+    let statements = Parser::new(tokens);
+    let program = typecheck(statements.collect());
     let mut errors = vec![];
-    for statement in Parser::new(tokens) {
-      use StatementKind as s;
-      match statement.kind {
-        s::Error(e) => errors.push(e),
-        _ => ast.push(statement),
-      }
-    }
     Self {
       file_name,
       source: source.into(),
-      ast,
+      program,
       errors,
     }
   }
@@ -51,17 +42,5 @@ impl Module {
 
   pub fn ok(&self) -> bool {
     self.errors.len() == 0
-  }
-
-  pub fn execute(&self) {
-    if !self.ok() {
-      for e in self.errors() {
-        eprintln!("{e}");
-      }
-      return;
-    }
-    Interpreter::new(self.ast.clone().into_iter())
-      .run()
-      .unwrap();
   }
 }

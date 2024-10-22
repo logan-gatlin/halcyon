@@ -1,9 +1,8 @@
-use crate::err::*;
+/*
+use crate::{err::*, BinaryOp, UnaryOp};
 use std::collections::HashMap;
 
-use crate::{
-  Expression, ExpressionKind, Statement, StatementKind, Token, TokenKind,
-};
+use crate::{Expression, ExpressionKind, Statement, StatementKind};
 
 #[derive(Debug, Clone)]
 enum Value {
@@ -106,31 +105,31 @@ impl<I: Iterator<Item = Statement>> Interpreter<I> {
 
   fn evaluate_unary(
     &mut self,
-    token: TokenKind,
+    token: UnaryOp,
     child: Expression,
   ) -> Result<Value> {
-    use TokenKind as t;
+    use UnaryOp as u;
     use Value as v;
     let val = self.evaluate(child)?;
     Ok(match val {
       v::Integer(i) => v::Integer(match token {
-        t::Plus => i,
-        t::Minus => -i,
+        u::Plus => i,
+        u::Minus => -i,
         _ => {
           return error()
             .reason(format!("Unary {token:?} is undefined for integers"));
         },
       }),
       v::Real(r) => v::Real(match token {
-        t::Plus => r,
-        t::Minus => -r,
+        u::Plus => r,
+        u::Minus => -r,
         _ => {
           return error()
             .reason(format!("Unary {token:?} is undefined for reals"));
         },
       }),
       v::Boolean(b) => v::Boolean(match token {
-        t::Not => !b,
+        u::Not => !b,
         _ => {
           return error()
             .reason(format!("Unary {token:?} is undefined for booleans"));
@@ -145,36 +144,36 @@ impl<I: Iterator<Item = Statement>> Interpreter<I> {
 
   fn evaluate_binary(
     &mut self,
-    token: TokenKind,
+    token: BinaryOp,
     left: Expression,
     right: Expression,
   ) -> Result<Value> {
-    use TokenKind as t;
+    use BinaryOp as b;
     use Value::*;
     let left = self.evaluate(left)?;
     let right = self.evaluate(right)?;
     Ok(match (left.clone(), right.clone()) {
       (Integer(l), Integer(r)) => match token {
-        t::Plus => Integer(l + r),
-        t::Minus => Integer(l - r),
-        t::Star => Integer(l * r),
-        t::Slash => Integer(l / r),
-        t::Percent => Integer(l % r),
-        t::DoubleEqual => Boolean(l == r),
-        t::Less => Boolean(l < r),
-        t::Greater => Boolean(l > r),
-        t::LessEqual => Boolean(l <= r),
-        t::GreaterEqual => Boolean(l >= r),
+        b::Plus => Integer(l + r),
+        b::Minus => Integer(l - r),
+        b::Star => Integer(l * r),
+        b::Slash => Integer(l / r),
+        b::Percent => Integer(l % r),
+        b::DoubleEqual => Boolean(l == r),
+        b::Less => Boolean(l < r),
+        b::Greater => Boolean(l > r),
+        b::LessEqual => Boolean(l <= r),
+        b::GreaterEqual => Boolean(l >= r),
         t => {
           return error()
             .reason(format!("Binary {t:?} is undefined for integers"));
         },
       },
       (Real(l), Real(r)) => Real(match token {
-        t::Plus => l + r,
-        t::Minus => l - r,
-        t::Star => l * r,
-        t::Slash => l / r,
+        b::Plus => l + r,
+        b::Minus => l - r,
+        b::Star => l * r,
+        b::Slash => l / r,
         t => {
           return error()
             .reason(format!("Binary {t:?} is undefined for reals"));
@@ -190,17 +189,16 @@ impl<I: Iterator<Item = Statement>> Interpreter<I> {
   }
 
   fn evaluate(&mut self, expr: Expression) -> Result<Value> {
+    use crate::Immediate as im;
     use ExpressionKind as e;
     match expr.kind {
-      e::Integer(i) => Ok(Value::Integer(i)),
-      e::Real(r) => Ok(Value::Real(r)),
-      e::String(s) => Ok(Value::String(s)),
-      e::Boolean(b) => Ok(Value::Boolean(b)),
+      e::Immediate(im::Integer(i)) => Ok(Value::Integer(i)),
+      e::Immediate(im::Real(r)) => Ok(Value::Real(r)),
+      e::Immediate(im::String(s)) => Ok(Value::String(s)),
+      e::Immediate(im::Boolean(b)) => Ok(Value::Boolean(b)),
       e::Identifier(i) => self.scope.access(i),
-      e::Binary { token, left, right } => {
-        self.evaluate_binary(token, *left, *right)
-      },
-      e::Unary { token, child } => self.evaluate_unary(token, *child),
+      e::Binary { op, left, right } => self.evaluate_binary(op, *left, *right),
+      e::Unary { op, child } => self.evaluate_unary(op, *child),
       e::Parenthesis(e) => self.evaluate(*e),
       e::Call { callee, args } => todo!(),
       e::Field { namespace, field } => todo!(),
@@ -209,6 +207,7 @@ impl<I: Iterator<Item = Statement>> Interpreter<I> {
         returns,
         body,
       } => todo!(),
+      e::Struct(_) => todo!(),
     }
     .span(&expr.span)
   }
@@ -216,14 +215,13 @@ impl<I: Iterator<Item = Statement>> Interpreter<I> {
   pub fn execute(&mut self, statement: Statement) -> Result<()> {
     use StatementKind as s;
     match statement.kind {
-      s::Mutable { name, value, .. } => {
-        self.scope.declare(name.clone())?;
-        if let Some(value) = value {
-          let value = self.evaluate(value)?;
-          self.scope.assign(name, value)?;
-        }
-      },
-      s::Immutable { name, value, .. } => {
+      s::Declaration {
+        name,
+        type_str,
+        type_actual,
+        value,
+        mutable,
+      } => {
         self.scope.declare(name.clone())?;
         let value = self.evaluate(value)?;
         self.scope.assign(name, value)?;
@@ -304,3 +302,4 @@ impl<I: Iterator<Item = Statement>> Interpreter<I> {
     Ok(())
   }
 }
+*/
