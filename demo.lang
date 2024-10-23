@@ -1,3 +1,2 @@
-Point :: struct {x: integer};
-a : integer : 10;
-p :: Point{x: a};
+a : i32 = 10;
+b := 20 + a;

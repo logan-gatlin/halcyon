@@ -1,5 +1,5 @@
 use crate::{
-  BinaryOp, Expression, ExpressionKind, Immediate, Parameter, Statement,
+  semantic::SymbolTable, BinaryOp, Expression, ExpressionKind, Immediate, Parameter, Statement,
   StatementKind, UnaryOp,
 };
 
@@ -45,14 +45,6 @@ impl PartialEq for Type {
 }
 
 impl Type {
-  pub fn from_string(value: &str) -> Self {
-    if let Some(p) = Primitive::from_string(value) {
-      Type::Prim(p)
-    } else {
-      Type::Ambiguous
-    }
-  }
-
   pub fn binary_op(lhs: &Type, op: BinaryOp, rhs: &Type) -> Result<Type> {
     use Type as t;
     let e = error().reason(format!(
@@ -62,7 +54,7 @@ impl Type {
       (t::Prim(a), t::Prim(b)) => {
         let p = Primitive::binary_op(*a, op, *b)?;
         Ok(t::Prim(p))
-      },
+      }
       _ => e,
     }
   }
@@ -87,70 +79,14 @@ impl Type {
       (Ambiguous, t) => Some(t.clone()),
       (Prim(p1), Prim(p2)) => {
         let (p1, p2) = Primitive::coerce_ambiguous(*p1, *p2);
-        if p1 != p2 { None } else { Some(Type::Prim(p1)) }
-      },
+        if p1 != p2 {
+          None
+        } else {
+          Some(Type::Prim(p1))
+        }
+      }
       _ => None,
     }
-  }
-}
-
-#[derive(Debug, Clone)]
-enum Symbol {
-  Var(String, Type, bool),
-  Type(String, Type),
-  BlockStart,
-}
-
-#[derive(Debug, Clone)]
-struct SymbolTable {
-  syms: Vec<Symbol>,
-}
-
-impl SymbolTable {
-  fn define_var(&mut self, name: String, type_: Type, mutable: bool) {
-    self.syms.push(Symbol::Var(name, type_, mutable));
-  }
-
-  fn define_type(&mut self, name: String, type_: Type) {
-    self.syms.push(Symbol::Type(name, type_));
-  }
-
-  fn start_block(&mut self) {
-    self.syms.push(Symbol::BlockStart);
-  }
-
-  fn end_block(&mut self) {
-    while !self.syms.is_empty() {
-      if let Some(Symbol::BlockStart) = self.syms.pop() {
-        return;
-      }
-    }
-    unreachable!("Tried to exit global scope in symbol table")
-  }
-
-  fn get_var(&self, name: &str) -> Result<(Type, bool)> {
-    for s in self.syms.iter().rev() {
-      if let Symbol::Var(name2, type_, mutable) = s {
-        if name == name2 {
-          return Ok((type_.clone(), *mutable));
-        }
-      }
-    }
-    error().reason(format!("Identifier {name} is not defined"))
-  }
-
-  fn get_type(&self, name: &str) -> Result<Type> {
-    for s in self.syms.iter().rev() {
-      if let Symbol::Type(name2, t) = s {
-        if name == name2 {
-          return Ok(t.clone());
-        }
-      }
-    }
-    if let Some(p) = Primitive::from_string(name) {
-      return Ok(Type::Prim(p));
-    }
-    error().reason(format!("Type {name} is not defined"))
   }
 }
 
@@ -171,10 +107,7 @@ pub fn typecheck(program: Vec<Statement>) -> Vec<Statement> {
   ret
 }
 
-fn statement(
-  mut stmt: Box<Statement>,
-  table: &mut SymbolTable,
-) -> Result<Box<Statement>> {
+fn statement(mut stmt: Box<Statement>, table: &mut SymbolTable) -> Result<Box<Statement>> {
   use Primitive as p;
   use StatementKind as s;
   match stmt.kind {
@@ -190,11 +123,10 @@ fn statement(
         None => Type::Ambiguous,
       };
       let value = expression(value.into(), table)?;
-      let type_actual =
-        Type::coerce(&type_expect, &value.type_).reason(format!(
-          "Expected type '{:?}', found type '{:?}'",
-          type_expect, value.type_
-        ))?;
+      let type_actual = Type::coerce(&type_expect, &value.type_).reason(format!(
+        "Expected type '{:?}', found type '{:?}'",
+        type_expect, value.type_
+      ))?;
       // Check that structs are const
       if let Type::Struct(_) = type_actual {
         if mutable {
@@ -222,7 +154,7 @@ fn statement(
         value: *value,
         mutable,
       };
-    },
+    }
     s::Assignment { name, value } => {
       let (type_, mutable) = table.get_var(&name).span(&stmt.span)?;
       // Check that it is mutable
@@ -240,7 +172,7 @@ fn statement(
         ));
       }
       stmt.kind = s::Assignment { name, value };
-    },
+    }
     s::If {
       predicate,
       block,
@@ -271,7 +203,7 @@ fn statement(
         else_,
       };
       table.end_block();
-    },
+    }
     s::While { predicate, block } => {
       table.start_block();
       let predicate = *expression(predicate.into(), table)?;
@@ -292,10 +224,10 @@ fn statement(
         block: new_block,
       };
       table.end_block();
-    },
+    }
     s::Print(e) => {
       stmt.kind = s::Print(*expression(e.into(), table)?);
-    },
+    }
     s::Expression(mut e) => {
       use ExpressionKind as e;
       let is_func = if let e::Function { params, .. } = &mut e.kind {
@@ -313,7 +245,7 @@ fn statement(
       if is_func {
         table.end_block();
       }
-    },
+    }
     s::Block(block) => {
       table.start_block();
       let mut new_block = vec![];
@@ -322,16 +254,13 @@ fn statement(
       }
       stmt.kind = s::Block(new_block);
       table.end_block();
-    },
+    }
     s::Error(e) => return Err(e),
   }
   Ok(stmt)
 }
 
-fn expression(
-  mut expr: Box<Expression>,
-  table: &SymbolTable,
-) -> Result<Box<Expression>> {
+fn expression(mut expr: Box<Expression>, table: &SymbolTable) -> Result<Box<Expression>> {
   use ExpressionKind as e;
   use Immediate as i;
   use Primitive as p;
@@ -349,19 +278,19 @@ fn expression(
       let type_ = Type::binary_op(&left.type_, op, &right.type_)?;
       expr.kind = e::Binary { left, right, op };
       type_
-    },
+    }
     e::Unary { op, child } => {
       let child = expression(child, table)?;
       let type_ = Type::unary_op(op, &child.type_)?;
       expr.kind = e::Unary { child, op };
       type_
-    },
+    }
     e::Parenthesis(inner) => {
       let inner = expression(inner, table)?;
       let type_ = inner.type_.clone();
       expr.kind = e::Parenthesis(inner);
       type_
-    },
+    }
     e::Function {
       mut params,
       returns_str,
@@ -385,15 +314,57 @@ fn expression(
         params: params.into_iter().map(|p| p.type_actual).collect(),
         returns: returns_actual.into(),
       }
-    },
+    }
+    e::Call { callee, mut args } => {
+      let callee = expression(callee, table)?;
+      // Check that this is actually a function
+      let Type::Function {
+        ref params,
+        ref returns,
+      } = callee.type_
+      else {
+        return error()
+          .reason(format!("Cannot call type {:?}", callee.type_))
+          .span(&callee.span);
+      };
+      // Check for correct number of args
+      if params.len() != args.len() {
+        return error()
+          .reason(format!(
+            "Wrong number of arguments, function expects {}, found {}",
+            params.len(),
+            args.len()
+          ))
+          .span(&callee.span);
+      }
+      // Check for correct arg types
+      for (expect, actual) in params.iter().zip(args.iter_mut()) {
+        *actual = *expression(actual.clone().into(), table)?;
+        let coerced_type = Type::coerce(expect, &actual.type_);
+        println!("{:?}, {:?}, {coerced_type:?}", expect, actual.type_);
+        if let Some(t) = coerced_type {
+          actual.type_ = t;
+        } else {
+          return error()
+            .reason(format!(
+              "Expected type {expect:?}, found {:?}",
+              actual.type_
+            ))
+            .span(&actual.span);
+        }
+      }
+      let returns = *returns.clone();
+      expr.kind = e::Call { callee, args };
+      returns
+    }
     e::Struct(mut params) => {
       for p in &mut params {
         p.type_actual = table.get_type(&p.type_str).span(&expr.span)?;
       }
       expr.kind = e::Struct(params.clone());
       Type::Struct(params)
-    },
-    e::StructLiteral { name, mut args } => {
+    }
+    e::StructLiteral { name, args } => {
       let type_ = table.get_type(&name).span(&expr.span)?;
       let Type::Struct(params) = type_ else {
         return error().reason(format!(
@@ -403,7 +374,7 @@ fn expression(
       };
       if args.len() != params.len() {
         return error().reason(format!(
-          "Incorrect number of parameters for struct '{}', expected {} and \
+          "Incorrect number of parameters for struct '{}'; expected {}, \
            found {}",
           name,
           params.len(),
@@ -430,9 +401,12 @@ fn expression(
             .span(&argexpr.span);
         }
         let argspan = argexpr.span;
-        let arg = *expression(argexpr.clone().into(), table)
+        let mut arg = *expression(argexpr.clone().into(), table)
           .trace_span(expr.span, "while parsing struct literal")?;
-        if &arg.type_ != ptype {
+        let coerced_type = Type::coerce(ptype, &arg.type_);
+        if let Some(t) = coerced_type {
+          arg.type_ = t;
+        } else {
           return error()
             .reason(format!(
               "In struct literal, expected type '{ptype:?}', found '{:?}",
@@ -447,43 +421,7 @@ fn expression(
         args: new_args,
       };
       Type::Struct(params)
-    },
-    e::Call { callee, args } => {
-      let callee = expression(callee, table)?;
-      // Check that this is actually a function
-      let Type::Function {
-        ref params,
-        ref returns,
-      } = callee.type_
-      else {
-        return error()
-          .reason(format!("Cannot call type {:?}", callee.type_))
-          .span(&callee.span);
-      };
-      // Check for correct number of args
-      if params.len() != args.len() {
-        return error()
-          .reason(format!(
-            "Wrong number of arguments, function expects {}",
-            params.len()
-          ))
-          .span(&callee.span);
-      }
-      // Check for correct arg types
-      for (expect, actual) in params.iter().zip(args.iter()) {
-        if *expect != actual.type_ {
-          return error()
-            .reason(format!(
-              "Expected type {expect:?}, found {:?}",
-              actual.type_
-            ))
-            .span(&actual.span);
-        }
-      }
-      let returns = *returns.clone();
-      expr.kind = e::Call { callee, args };
-      returns
-    },
+    }
     e::Field { namespace, field } => {
       let namespace = expression(namespace, table)?;
       // Check that namespace is struct
@@ -515,7 +453,7 @@ fn expression(
         .span(&field.span)?;
       expr.kind = e::Field { namespace, field };
       type_
-    },
+    }
   };
   expr.type_ = type_;
   Ok(expr)

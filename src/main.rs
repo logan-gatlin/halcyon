@@ -1,5 +1,6 @@
 mod err;
 mod frontend;
+mod ir;
 mod lookahead;
 mod parse;
 mod semantic;
