@@ -1,4 +1,4 @@
-use crate::semantic::Type;
+use crate::semantic::{Type, VarKind};
 
 use super::*;
 
@@ -10,10 +10,12 @@ pub enum StatementKind {
     type_actual: Type,
     value: Expression,
     mutable: bool,
+    varkind: VarKind,
   },
   Assignment {
     name: String,
     value: Expression,
+    varkind: VarKind,
   },
   If {
     predicate: Expression,
@@ -68,13 +70,14 @@ impl<I: Iterator<Item = Token>> Parser<I> {
           .expression(0)
           .trace_span(span, "while parsing declaration")?;
         span = span + value.span;
-        let no_semicolon = if let ExpressionKind::Function { .. } = value.kind {
-          true
-        } else if let ExpressionKind::Struct(_) = value.kind {
-          true
-        } else {
-          false
-        };
+        let no_semicolon =
+          if let ExpressionKind::FunctionDef { .. } = value.kind {
+            true
+          } else if let ExpressionKind::StructDef(_) = value.kind {
+            true
+          } else {
+            false
+          };
         let s = Statement {
           kind: s::Declaration {
             name,
@@ -82,6 +85,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
             type_actual: Type::Ambiguous,
             value,
             mutable,
+            varkind: VarKind::Undefined,
           },
           span,
         };
@@ -99,7 +103,11 @@ impl<I: Iterator<Item = Token>> Parser<I> {
           .trace_span(span, "while parsing assignment")?;
         Statement {
           span,
-          kind: s::Assignment { name, value },
+          kind: s::Assignment {
+            name,
+            value,
+            varkind: VarKind::Undefined,
+          },
         }
       },
       // If

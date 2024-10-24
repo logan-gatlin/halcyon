@@ -1,6 +1,10 @@
 use std::path::Path;
 
-use crate::{err::*, semantic::typecheck, Parser, Statement, Tokenizer};
+use crate::{
+  err::*,
+  semantic::{self},
+  Parser, Statement, Tokenizer,
+};
 
 #[derive(Debug, Clone)]
 pub struct Module {
@@ -26,7 +30,7 @@ impl Module {
   pub fn from_string(file_name: String, source: String) -> Self {
     let tokens = Tokenizer::new(source.chars()).filter(|t| t.0.is_meaningful());
     let statements = Parser::new(tokens);
-    let program = typecheck(statements.collect());
+    let program = semantic::Analyzer::typecheck(statements.collect());
     let mut errors = vec![];
     Self {
       file_name,

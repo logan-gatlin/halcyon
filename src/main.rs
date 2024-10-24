@@ -62,10 +62,36 @@ fn test_expression(expr: &str) {
   println!("{:?}", parser.expression(0).unwrap());
 }
 
+fn prints(st: &Statement) {
+  use StatementKind as s;
+  println!("{st:?}");
+  match &st.kind {
+    s::Declaration {
+      value:
+        Expression {
+          kind: ExpressionKind::FunctionDef { body: block, .. },
+          ..
+        },
+      ..
+    }
+    | s::If { block, .. }
+    | s::While { block, .. }
+    | s::Block(block) => {
+      for s in block {
+        prints(s);
+      }
+    },
+    _ => {},
+  };
+}
+
 fn main() -> Result<()> {
-  let module = frontend::Module::from_file("./demo.lang")?;
+  test_expression("asdf.asdf()");
+  /*
+  let module = frontend::Module::from_file("./demo.hal")?;
   for s in &module.program {
-    println!("{s:?}");
+    prints(s);
   }
+  */
   Ok(())
 }
