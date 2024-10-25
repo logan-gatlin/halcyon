@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use crate::{
   BinaryOp, Expression, ExpressionKind, Immediate, Parameter, Statement,
   StatementKind, UnaryOp,
@@ -52,7 +54,12 @@ impl Analyzer {
         } else {
           Type::Ambiguous
         };
-        let mut value = self.expression(value.into())?;
+        let type_hint = if let Type::Ambiguous = type_lhs {
+          None
+        } else {
+          Some(type_lhs.clone())
+        };
+        let mut value = self.expression(value.into(), type_hint)?;
         let type_actual = Type::coerce(&type_lhs, &value.type_)
           .reason(format!(
             "Expected type '{:?}', found type '{:?}'",
@@ -82,7 +89,8 @@ impl Analyzer {
             .reason(format!("Cannot assign to immutable '{}'", name))
             .span(&stmt.span);
         }
-        let mut value = *self.expression(value.into())?;
+        let mut value =
+          *self.expression(value.into(), Some(symbol.type_.clone()))?;
         let type_actual =
           Type::coerce(&symbol.type_, &value.type_).span(&stmt.span)?;
         value.type_ = type_actual;
@@ -98,7 +106,8 @@ impl Analyzer {
         else_,
       } => {
         self.table.start_block();
-        let predicate = *self.expression(predicate.into())?;
+        let predicate =
+          *self.expression(predicate.into(), Some(Type::Prim(p::boolean)))?;
         Type::coerce(&Type::Prim(p::boolean), &predicate.type_)
           .span(&predicate.span)?;
         let block = self.block(block);
@@ -116,7 +125,8 @@ impl Analyzer {
       },
       s::While { predicate, block } => {
         self.table.start_block();
-        let predicate = *self.expression(predicate.into())?;
+        let predicate =
+          *self.expression(predicate.into(), Some(Type::Prim(p::boolean)))?;
         Type::coerce(&Type::Prim(p::boolean), &predicate.type_)
           .span(&predicate.span)?;
         let block = self.block(block);
@@ -124,10 +134,13 @@ impl Analyzer {
         self.table.end_block();
       },
       s::Print(e) => {
-        stmt.kind = s::Print(*self.expression(e.into())?);
+        stmt.kind = s::Print(*self.expression(e.into(), None)?);
       },
       s::Expression(e) => {
-        stmt.kind = s::Expression(*self.expression(e.into())?);
+        let mut expr = *self.expression(e.into(), None)?;
+        expr.type_ =
+          Type::coerce(&Type::Ambiguous, &expr.type_).span(&expr.span)?;
+        stmt.kind = s::Expression(expr);
       },
       s::Block(block) => {
         self.table.start_block();
@@ -136,6 +149,20 @@ impl Analyzer {
         self.table.end_block();
       },
       s::Error(e) => return Err(e),
+      s::Return(mut expression) => {
+        let return_type = self.table.get_return_type().span(&stmt.span)?;
+        let type_ = match expression {
+          Some(e) => {
+            let e = self.expression(e.into(), Some(return_type.clone()))?;
+            let type_ = e.type_.clone();
+            expression = Some(*e);
+            type_
+          },
+          None => Type::Nothing,
+        };
+        Type::coerce(&return_type, &type_).span(&stmt.span)?;
+        stmt.kind = s::Return(expression);
+      },
     }
     Ok(stmt)
   }
@@ -143,7 +170,9 @@ impl Analyzer {
   fn expression(
     &mut self,
     mut expr: Box<Expression>,
+    type_hint: Option<Type>,
   ) -> Result<Box<Expression>> {
+    // TODO implement type hinting
     use ExpressionKind as e;
     use Immediate as i;
     use Primitive as p;
@@ -160,20 +189,20 @@ impl Analyzer {
         self.table.find_symbol(i)?.type_
       },
       e::Binary { op, left, right } => {
-        let left = self.expression(left)?;
-        let right = self.expression(right)?;
+        let left = self.expression(left, type_hint.clone())?;
+        let right = self.expression(right, type_hint.clone())?;
         let type_ = Type::binary_op(&left.type_, op, &right.type_)?;
         expr.kind = e::Binary { left, right, op };
         type_
       },
       e::Unary { op, child } => {
-        let child = self.expression(child)?;
+        let child = self.expression(child, type_hint.clone())?;
         let type_ = Type::unary_op(op, &child.type_)?;
         expr.kind = e::Unary { child, op };
         type_
       },
       e::Parenthesis(inner) => {
-        let inner = self.expression(inner)?;
+        let inner = self.expression(inner, type_hint.clone())?;
         let type_ = inner.type_.clone();
         expr.kind = e::Parenthesis(inner);
         type_
@@ -183,19 +212,19 @@ impl Analyzer {
         returns_str,
         mut returns_actual,
         body,
-        id,
+        id: _,
       } => {
-        self.table.start_func();
+        returns_actual = match &returns_str {
+          Some(s) => self.table.get_type(s).span(&expr.span)?,
+          None => Type::Nothing,
+        };
+        let id = self.table.start_func(returns_actual.clone());
         for p in &mut params {
           p.type_actual = self.table.get_type(&p.type_str).span(&expr.span)?;
           self
             .table
             .define_param(p.name.clone(), p.type_actual.clone())?;
         }
-        returns_actual = match &returns_str {
-          Some(s) => self.table.get_type(s).span(&expr.span)?,
-          None => Type::Nothing,
-        };
         let body = self.block(body);
         self.table.end_func();
         expr.kind = e::FunctionDef {
@@ -205,17 +234,20 @@ impl Analyzer {
           body,
           id,
         };
-        Type::Function {
+        Type::FunctionDef {
           params: params.into_iter().map(|p| p.type_actual).collect(),
           returns: returns_actual.into(),
+          id,
         }
       },
       e::FunctionCall { callee, mut args } => {
-        let callee = self.expression(callee)?;
+        let callee = self.expression(callee, None)?;
         // Check that this is actually a function
-        let Type::Function {
+        // TODO allow function references to be called
+        let Type::FunctionDef {
           ref params,
           ref returns,
+          ..
         } = callee.type_
         else {
           return error()
@@ -234,7 +266,8 @@ impl Analyzer {
         }
         // Check for correct arg types
         for (expect, actual) in params.iter().zip(args.iter_mut()) {
-          *actual = *self.expression(actual.clone().into())?;
+          *actual =
+            *self.expression(actual.clone().into(), Some(expect.clone()))?;
           let coerced_type = Type::coerce(expect, &actual.type_);
           if let Ok(t) = coerced_type {
             actual.type_ = t;
@@ -296,7 +329,7 @@ impl Analyzer {
           }
           let argspan = argexpr.span;
           let mut arg = *self
-            .expression(argexpr.clone().into())
+            .expression(argexpr.clone().into(), Some(ptype.clone()))
             .trace_span(expr.span, "while parsing struct literal")?;
           let coerced_type = Type::coerce(ptype, &arg.type_);
           if let Ok(t) = coerced_type {
@@ -318,7 +351,7 @@ impl Analyzer {
         Type::Struct(params)
       },
       e::Field { namespace, field } => {
-        let namespace = self.expression(namespace)?;
+        let namespace = self.expression(namespace, None)?;
         // Check that namespace is struct
         // TODO: fields in other types
         let Type::Struct(ref params) = namespace.type_ else {
@@ -350,6 +383,14 @@ impl Analyzer {
         type_
       },
     };
+    /*
+    if let Some(expect) = &type_hint {
+      if let Type::Ambiguous = expect {
+      } else {
+        expr.type_ = Type::coerce(expect, &expr.type_)?;
+      }
+    }
+    */
     expr.type_ = type_;
     Ok(expr)
   }

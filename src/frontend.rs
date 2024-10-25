@@ -1,17 +1,17 @@
 use std::path::Path;
 
 use crate::{
+  Parser, Tokenizer,
   err::*,
+  ir::{Compiler, IR},
   semantic::{self},
-  Parser, Statement, Tokenizer,
 };
 
 #[derive(Debug, Clone)]
 pub struct Module {
   file_name: String,
   source: String,
-  pub program: Vec<Statement>,
-  errors: Vec<Diagnostic>,
+  pub program: Vec<IR>,
 }
 
 impl Module {
@@ -31,20 +31,12 @@ impl Module {
     let tokens = Tokenizer::new(source.chars()).filter(|t| t.0.is_meaningful());
     let statements = Parser::new(tokens);
     let program = semantic::Analyzer::typecheck(statements.collect());
-    let mut errors = vec![];
+    let mut compiler = Compiler::new();
+    compiler.compile(program);
     Self {
       file_name,
       source: source.into(),
-      program,
-      errors,
+      program: compiler.ir,
     }
-  }
-
-  pub fn errors(&self) -> &[Diagnostic] {
-    &self.errors
-  }
-
-  pub fn ok(&self) -> bool {
-    self.errors.len() == 0
   }
 }

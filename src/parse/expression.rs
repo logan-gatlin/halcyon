@@ -23,6 +23,17 @@ pub enum Immediate {
   Boolean(bool),
 }
 
+impl std::fmt::Display for Immediate {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Immediate::Integer(i) => write!(f, "{i}"),
+      Immediate::Real(r) => write!(f, "{r}"),
+      Immediate::String(s) => write!(f, "{s}"),
+      Immediate::Boolean(b) => write!(f, "{b}"),
+    }
+  }
+}
+
 #[derive(Clone)]
 pub enum ExpressionKind {
   Immediate(Immediate),
@@ -99,7 +110,7 @@ impl std::fmt::Debug for ExpressionKind {
         write!(f, "({token:?} {child:?})")
       },
       e::Identifier(i, _) => write!(f, "{i}"),
-      e::FunctionCall { callee, args } => {
+      e::FunctionCall { callee, args, .. } => {
         write!(f, "({callee:?} call {args:?})")
       },
       e::Field { namespace, field } => {

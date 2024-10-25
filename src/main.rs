@@ -86,12 +86,10 @@ fn prints(st: &Statement) {
 }
 
 fn main() -> Result<()> {
-  test_expression("asdf.asdf()");
-  /*
+  //test_expression("a.b.c()");
   let module = frontend::Module::from_file("./demo.hal")?;
   for s in &module.program {
-    prints(s);
+    println!("{s}");
   }
-  */
   Ok(())
 }

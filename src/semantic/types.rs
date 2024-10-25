@@ -1,10 +1,10 @@
 use crate::{
-  semantic::{Symbol, SymbolTable},
   BinaryOp, Expression, ExpressionKind, Immediate, Parameter, Statement,
   StatementKind, UnaryOp,
+  semantic::{Symbol, SymbolTable},
 };
 
-use super::primitives::*;
+use super::{primitives::*, uid};
 use crate::err::*;
 
 #[derive(Debug, Clone)]
@@ -14,10 +14,35 @@ pub enum Type {
   Prim(Primitive),
   Struct(Vec<Parameter>),
   StructDef(Vec<Parameter>),
-  Function {
+  FunctionRef {
     params: Vec<Type>,
     returns: Box<Type>,
   },
+  FunctionDef {
+    params: Vec<Type>,
+    returns: Box<Type>,
+    id: uid,
+  },
+}
+
+impl std::fmt::Display for Type {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Type::Ambiguous => write!(f, "ambiguous"),
+      Type::Nothing => write!(f, "nothing"),
+      Type::Prim(primitive) => write!(f, "{primitive}"),
+      Type::Struct(vec) => write!(f, "struct {vec:?}"),
+      Type::StructDef(vec) => write!(f, "struct definition"),
+      Type::FunctionRef { params, returns } => {
+        write!(f, "({params:?}) -> {returns}")
+      },
+      Type::FunctionDef {
+        params,
+        returns,
+        id,
+      } => write!(f, "({params:?}) -> {returns}"),
+    }
+  }
 }
 
 impl PartialEq for Type {
@@ -31,15 +56,16 @@ impl PartialEq for Type {
         .map(|p| p.type_actual.clone())
         .eq(p2.iter().map(|p| p.type_actual.clone())),
       (
-        Function {
+        FunctionRef {
           params: p1,
           returns: r1,
         },
-        Function {
+        FunctionRef {
           params: p2,
           returns: r2,
         },
       ) => p1.iter().eq(p2.iter()) && r1 == r2,
+      (FunctionDef { id: id1, .. }, FunctionDef { id: id2, .. }) => id1 == id2,
       (Nothing, Nothing) => true,
       _ => false,
     }
@@ -88,6 +114,7 @@ impl Type {
         let (p1, p2) = Primitive::coerce_ambiguous(*p1, *p2);
         if p1 != p2 { e() } else { Ok(Type::Prim(p1)) }
       },
+      (t1, t2) if t1 == t2 => Ok(t1.clone()),
       _ => e(),
     }
   }

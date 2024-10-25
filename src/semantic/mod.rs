@@ -14,7 +14,6 @@ pub type uid = u32;
 pub enum VarKind {
   Global(uid),
   Local(uid),
-  Param(uid),
   Function(uid),
   Undefined,
 }
@@ -22,10 +21,7 @@ pub enum VarKind {
 impl VarKind {
   pub fn unwrap(self) -> uid {
     match self {
-      VarKind::Global(i)
-      | VarKind::Local(i)
-      | VarKind::Param(i)
-      | VarKind::Function(i) => i,
+      VarKind::Global(i) | VarKind::Local(i) | VarKind::Function(i) => i,
       VarKind::Undefined => unreachable!("Failed unwrapping uid"),
     }
   }
@@ -43,7 +39,7 @@ pub struct Symbol {
 pub enum Definition {
   Symbol(Symbol),
   BlockStart,
-  FuncStart,
+  FuncStart(Type),
 }
 
 fn next(array: &mut [uid]) -> uid {
@@ -59,7 +55,7 @@ pub struct SymbolTable {
   nesting: usize,
   local_varno: Vec<uid>,
   global_varno: Vec<uid>,
-  funcno: Vec<uid>,
+  funcno: uid,
 }
 
 impl SymbolTable {
@@ -69,7 +65,7 @@ impl SymbolTable {
       nesting: 0,
       global_varno: vec![0],
       local_varno: vec![0],
-      funcno: vec![0],
+      funcno: 1,
     }
   }
 
@@ -80,7 +76,7 @@ impl SymbolTable {
     mutable: bool,
   ) -> Result<VarKind> {
     let kind = match type_ {
-      Type::Prim(_) | Type::Struct(_) => {
+      Type::Prim(_) | Type::Struct(_) | Type::FunctionRef { .. } => {
         if self.nesting == 0 {
           VarKind::Global(next(&mut self.global_varno))
         } else {
@@ -93,9 +89,9 @@ impl SymbolTable {
         }
         VarKind::Undefined
       },
-      Type::Function { .. } => {
+      Type::FunctionDef { id, .. } => {
         if !mutable {
-          VarKind::Function(next(&mut self.funcno))
+          VarKind::Function(id)
         } else {
           return error().reason("Function declaration must be immutable");
         }
@@ -112,7 +108,7 @@ impl SymbolTable {
   }
 
   fn define_param(&mut self, name: String, type_: Type) -> Result<VarKind> {
-    let kind = VarKind::Param(next(&mut self.local_varno));
+    let kind = VarKind::Local(next(&mut self.local_varno));
     self.syms.push(Definition::Symbol(Symbol {
       name,
       type_,
@@ -122,17 +118,29 @@ impl SymbolTable {
     Ok(kind)
   }
 
-  fn start_func(&mut self) {
+  fn start_func(&mut self, returns: Type) -> uid {
     self.nesting += 1;
     self.local_varno.push(0);
-    self.syms.push(Definition::FuncStart);
+    self.syms.push(Definition::FuncStart(returns));
+    let old = self.funcno;
+    self.funcno += 1;
+    old
+  }
+
+  fn get_return_type(&mut self) -> Result<Type> {
+    for def in &self.syms {
+      if let Definition::FuncStart(t) = def {
+        return Ok(t.clone());
+      }
+    }
+    error().reason("Return outside of function")
   }
 
   fn end_func(&mut self) {
     self.nesting -= 1;
     self.local_varno.pop();
     while !self.syms.is_empty() {
-      if let Some(Definition::FuncStart) = self.syms.pop() {
+      if let Some(Definition::FuncStart(_)) = self.syms.pop() {
         return;
       }
     }
@@ -154,18 +162,17 @@ impl SymbolTable {
 
   fn find_symbol(&self, find_name: &str) -> Result<Symbol> {
     let mut nesting = self.nesting;
-    println!("Looking for {find_name}, scope = {nesting}");
     for s in self.syms.iter().rev() {
       match s {
         Definition::Symbol(sym)
           // Only search function local and global scope
           if nesting == self.nesting || nesting == 0 => {
-          println!("{}, {:?}, {nesting}", sym.name, sym.type_);
+          // Convert function definition to function reference
           if find_name == sym.name {
             return Ok(sym.clone());
           }
         },
-        Definition::FuncStart => {
+        Definition::FuncStart(_) => {
           nesting -= 1;
         },
         _ => {},

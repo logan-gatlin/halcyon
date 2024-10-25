@@ -29,6 +29,7 @@ pub enum StatementKind {
   Print(Expression),
   Expression(Expression),
   Block(Vec<Statement>),
+  Return(Option<Expression>),
   Error(Diagnostic),
 }
 
@@ -160,6 +161,19 @@ impl<I: Iterator<Item = Token>> Parser<I> {
           kind: s::Block(block),
           span,
         });
+      },
+      // Return
+      (Token(t::Return, span2), _) => {
+        span = span + span2;
+        self.skip(1);
+        let expr = self.expression(0).ok();
+        if let Some(expr) = &expr {
+          span = span + expr.span;
+        }
+        Statement {
+          span,
+          kind: s::Return(expr),
+        }
       },
       // Expression
       (Token(_, span2), _) => {
