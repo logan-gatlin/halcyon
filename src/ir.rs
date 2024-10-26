@@ -1,27 +1,28 @@
 use crate::{
   BinaryOp, Expression, ExpressionKind, Immediate, Statement, StatementKind,
   UnaryOp,
-  semantic::{Type, VarKind, uid},
+  semantic::{Primitive, Type, UID},
 };
-
+/*
 #[derive(Debug, Clone)]
 pub enum IR {
   BinOp { op: BinaryOp, type_: Type },
   UnOp { op: UnaryOp, type_: Type },
-  Imm(Immediate),
-  NewLocal { uid: uid, type_: Type },
-  AssignLocal { uid: uid },
-  GetLocal { uid: uid },
-  NewGlobal { uid: uid, type_: Type },
-  AssignGlobal { uid: uid },
-  GetGlobal { uid: uid },
-  StartFunc { uid: uid },
+  Push { prim: Primitive, value: Immediate },
+  NewLocal { uid: UID, type_: Type },
+  AssignLocal { uid: UID },
+  GetLocal { uid: UID },
+  NewGlobal { uid: UID, type_: Type },
+  AssignGlobal { uid: UID },
+  GetGlobal { uid: UID },
+  StartFunc { uid: UID },
   EndFunc,
   ReturnType { type_: Type },
-  NewParam { uid: uid, type_: Type },
+  NewParam { uid: UID, type_: Type },
   Return,
-  Call { uid: uid },
+  Call { uid: UID },
   Drop,
+  Print,
 }
 
 impl std::fmt::Display for IR {
@@ -30,7 +31,7 @@ impl std::fmt::Display for IR {
     match self {
       BinOp { op, type_ } => write!(f, "{op} ({type_})"),
       UnOp { op, type_ } => write!(f, "{op}, {type_}"),
-      Imm(immediate) => write!(f, "push {immediate}"),
+      Push { prim, value } => write!(f, "push {value} ({prim})"),
       NewLocal { uid, type_ } => write!(f, "local ${uid} = {type_}"),
       AssignLocal { uid } => write!(f, "pop local ${uid}"),
       GetLocal { uid } => write!(f, "push local ${uid}"),
@@ -44,7 +45,83 @@ impl std::fmt::Display for IR {
       Call { uid } => write!(f, "call ${uid}"),
       Drop => write!(f, "pop"),
       ReturnType { type_ } => write!(f, "result {type_}"),
+      Print => write!(f, "print [DEBUG]"),
     }
+  }
+}
+
+impl IR {
+  pub fn to_wat(&self) -> String {
+    use BinaryOp as b;
+    use IR::*;
+    use Primitive as p;
+    use Type as t;
+    match self {
+      // Primitive
+      BinOp {
+        op,
+        type_: t::Prim(p),
+      } => match (op, p) {
+        // Addition
+        (b::Plus, p::i32 | p::w32 | p::integer | p::whole) => "i32.add",
+        (b::Plus, p::i64 | p::w64) => "i64.add",
+        (b::Plus, p::r32) => "f32.add",
+        (b::Plus, p::r64) => "f64.add",
+        // Subtraction
+        (b::Minus, p::i32 | p::w32 | p::integer | p::whole) => "i32.sub",
+        (b::Minus, p::i64 | p::w64) => "i64.sub",
+        (b::Minus, p::r32) => "f32.sub",
+        (b::Minus, p::r64) => "f64.sub",
+        // Multiplication
+        (b::Star, p::i32 | p::w32 | p::integer | p::whole) => "i32.mul",
+        (b::Star, p::i64 | p::w64) => "i64.mul",
+        (b::Star, p::r32) => "f32.mul",
+        (b::Star, p::r64) => "f64.mul",
+        // Division
+        (b::Slash, p::i32 | p::integer) => "i32.div_s",
+        (b::Slash, p::w32 | p::whole) => "i32.div_u",
+        (b::Slash, p::i64) => "i64.div_s",
+        (b::Slash, p::w64) => "i64.div_u",
+        (b::Slash, p::r32) => "f32.div",
+        (b::Slash, p::r64) => "f64.div",
+        _ => todo!(),
+      }
+      .into(),
+      UnOp {
+        op,
+        type_: t::Prim(p),
+      } => todo!(),
+      Push { prim, value } => todo!(),
+      NewLocal {
+        uid,
+        type_: t::Prim(p),
+      } => format!("(local ${uid} {})", p.as_wat()),
+      AssignLocal { uid } => format!("local.set ${uid}"),
+      GetLocal { uid } => format!("local.get ${uid}"),
+      NewGlobal {
+        uid,
+        type_: t::Prim(p),
+      } => format!(
+        "(global ${uid} (mut {}) ({}.const 0))",
+        p.as_wat(),
+        p.as_wat()
+      ),
+      AssignGlobal { uid } => format!("global.set ${uid}"),
+      GetGlobal { uid } => format!("global.get ${uid}"),
+      StartFunc { uid } => format!("(func ${uid}"),
+      EndFunc => ")".into(),
+      ReturnType { type_: t::Prim(p) } => format!("(result {})", p.as_wat()),
+      NewParam {
+        uid,
+        type_: t::Prim(p),
+      } => format!("(param ${uid} {})", p.as_wat()),
+      Return => "return".into(),
+      Call { uid } => format!("call ${uid}"),
+      Drop => "drop".into(),
+      Print => "call $log".into(),
+      _ => todo!(),
+    }
+    .into()
   }
 }
 
@@ -53,15 +130,24 @@ pub struct Compiler {
 }
 
 impl Compiler {
-  pub fn new() -> Self {
-    Self { ir: vec![] }
-  }
+  const IMPORTS: &'static str =
+    r#"(import "console" "log" (func $log (param i32)))"#;
 
-  pub fn compile(&mut self, block: Vec<Statement>) {
+  pub fn compile(block: Vec<Statement>) -> (Vec<u8>, String) {
+    let mut this = Self { ir: vec![] };
     for s in block {
-      self.statement(s);
+      this.statement(s);
     }
-    self.ir = self.hoist_functions();
+    this.ir = this.hoist();
+    let mut output = String::new();
+    for ir in &this.ir {
+      //println!("{ir}");
+      let s = ir.to_wat();
+      output.push_str(&format!("{s}\n"));
+    }
+    output = format!("(module\n{}\n{output}\n(start $0)\n)", Self::IMPORTS);
+    println!("{output}");
+    (wat::parse_str(&output).unwrap(), output)
   }
 
   fn statement(&mut self, statement: Statement) {
@@ -109,7 +195,10 @@ impl Compiler {
         else_,
       } => todo!(),
       While { predicate, block } => todo!(),
-      Print(expression) => todo!(),
+      Print(expression) => {
+        self.expression(expression);
+        self.ir.push(IR::Print);
+      },
       Expression(expression) => {
         if expression.type_ == Type::Nothing {
           self.expression(expression);
@@ -139,7 +228,13 @@ impl Compiler {
     use ExpressionKind::*;
     match expression.kind {
       Immediate(immediate) => {
-        self.ir.push(IR::Imm(immediate));
+        let Type::Prim(p) = expression.type_ else {
+          panic!();
+        };
+        self.ir.push(IR::Push {
+          value: immediate,
+          prim: p,
+        })
       },
       Identifier(_, var_kind) => match var_kind {
         VarKind::Global(uid) => self.ir.push(IR::GetGlobal { uid }),
@@ -152,8 +247,6 @@ impl Compiler {
         mut left,
         mut right,
       } => {
-        left.type_ = Type::coerce(&expression.type_, &left.type_).unwrap();
-        right.type_ = Type::coerce(&expression.type_, &right.type_).unwrap();
         assert!(&left.type_ == &right.type_);
         self.expression(*left.clone());
         self.expression(*right);
@@ -163,7 +256,6 @@ impl Compiler {
         });
       },
       Unary { op, mut child } => {
-        child.type_ = Type::coerce(&expression.type_, &child.type_).unwrap();
         self.expression(*child);
         self.ir.push(IR::UnOp {
           op,
@@ -171,7 +263,6 @@ impl Compiler {
         })
       },
       Parenthesis(mut e) => {
-        e.type_ = Type::coerce(&expression.type_, &e.type_).unwrap();
         self.expression(*e);
       },
       FunctionDef {
@@ -211,7 +302,7 @@ impl Compiler {
     }
   }
 
-  fn hoist_functions(&self) -> Vec<IR> {
+  fn hoist(&self) -> Vec<IR> {
     let mut functions = vec![(vec![], vec![])];
     let mut result = vec![];
     for index in 0..self.ir.len() {
@@ -259,3 +350,4 @@ impl Compiler {
     result
   }
 }
+*/

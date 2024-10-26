@@ -1,5 +1,13 @@
-use crate::err::*;
 use crate::Span;
+use crate::err::*;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Base {
+  Binary = 2,
+  Octal = 8,
+  Decimal = 10,
+  Hex = 16,
+}
 
 #[derive(Debug, Clone)]
 pub enum TokenKind {
@@ -50,8 +58,8 @@ pub enum TokenKind {
   Identifier(String),
   StringLiteral(String),
   GlyphLiteral(char),
-  IntegerLiteral(i64),
-  FloatLiteral(f64),
+  IntegerLiteral(String, Base),
+  FloatLiteral(String),
 
   If,
   Else,
@@ -106,82 +114,7 @@ impl Eq for TokenKind {
 
 impl std::fmt::Display for TokenKind {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    use TokenKind::*;
-    write!(
-      f,
-      "'{}'",
-      match self {
-        LeftParen => "(",
-        RightParen => ")",
-        LeftBrace => "{",
-        RightBrace => "}",
-        LeftSquare => "[",
-        RightSquare => "]",
-        Comma => ",",
-        Colon => ":",
-        Semicolon => ";",
-        Dot => ".",
-        DotDot => "..",
-        Plus => "+",
-        Minus => "-",
-        Slash => "/",
-        Star => "*",
-        Percent => "%",
-        Arrow => "->",
-        FatArrow => "=>",
-        PlusEqual => "+=",
-        MinusEqual => "-=",
-        SlashEqual => "/=",
-        StarEqual => "*=",
-        PercentEqual => "%=",
-        Bang => "!",
-        BangEqual => "!=",
-        Question => "?",
-        QuestionEqual => "?=",
-        Equal => "=",
-        DoubleEqual => "==",
-        Greater => ">",
-        GreaterEqual => ">=",
-        Less => "<",
-        LessEqual => "<=",
-        Pipe => "|",
-        Ampersand => "&",
-        Carrot => "^",
-        Hash => "#",
-        DotDotEqual => "..=",
-        Identifier(i) => i,
-        StringLiteral(s) => s.as_str(),
-        GlyphLiteral(_) => "<glyph>",
-        IntegerLiteral(_) => "<integer>",
-        FloatLiteral(_) => "<real>",
-        If => "if",
-        Else => "else",
-        And => "and",
-        Or => "or",
-        Xor => "xor",
-        Not => "not",
-        Nand => "nand",
-        Nor => "nor",
-        Xnor => "xnor",
-        Print => "print",
-        Break => "break",
-        Return => "return",
-        Continue => "continue",
-        For => "for",
-        While => "while",
-        True => "true",
-        False => "false",
-        Struct => "struct",
-        Enum => "enum",
-        Union => "union",
-        Whitespace(_) => "<whitespace>",
-        SmallComment(_) => "<comment>",
-        BigComment(_) => "<comment>",
-        Error(_) => "<error>",
-        Idk => unreachable!(),
-        EOF => "<end of file>",
-      }
-    )
+    write!(f, "{self:?}")
   }
 }
 
@@ -449,7 +382,24 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
         buffer.push(c);
         let _ = self.next_char();
       }
-      return t(parse_number(&buffer).span(&position)?, position);
+      // Determine base
+      let base = if buffer.starts_with("0b") {
+        Base::Binary
+      } else if buffer.starts_with("0o") || buffer.starts_with("0O") {
+        Base::Octal
+      } else if buffer.starts_with("0x") || buffer.starts_with("0X") {
+        Base::Hex
+      } else {
+        Base::Decimal
+      };
+      // Determine integer or float
+      if base == Base::Decimal
+        && (encountered_dot || buffer.contains("e") || buffer.contains("E"))
+      {
+        return t(FloatLiteral(buffer), position);
+      } else {
+        return t(IntegerLiteral(buffer, base), position);
+      }
     }
     // Match keyword or identifier
     while let Some(c) = self.peek(0) {
@@ -501,43 +451,6 @@ impl<I: Iterator<Item = char>> Iterator for Tokenizer<I> {
         e.span.expect("error without span in tokenizer"),
       )),
     }
-  }
-}
-
-fn parse_number(num: &str) -> Result<TokenKind> {
-  use TokenKind::*;
-  let num = num.replace('_', "");
-  // Floating point (only decimal)
-  if num.contains('.') {
-    num
-      .parse::<f64>()
-      .map(|f| FloatLiteral(f))
-      .reason("Could not parse real number")
-  }
-  // Hex integer
-  else if let Some(hex) = num.strip_prefix("0x") {
-    i64::from_str_radix(hex, 16)
-      .map(|i| IntegerLiteral(i))
-      .reason("Could not parse hex integer number")
-  }
-  // Octal integer
-  else if let Some(oct) = num.strip_prefix("0o") {
-    i64::from_str_radix(oct, 8)
-      .map(|i| IntegerLiteral(i))
-      .reason("Could not parse octal integer number")
-  }
-  // Binary integer
-  else if let Some(bin) = num.strip_prefix("0b") {
-    i64::from_str_radix(bin, 2)
-      .map(|i| IntegerLiteral(i))
-      .reason("Could not parse binary integer number")
-  }
-  // Decimal integer
-  else {
-    num
-      .parse::<i64>()
-      .map(|i| IntegerLiteral(i))
-      .reason("Could not parse integer number")
   }
 }
 

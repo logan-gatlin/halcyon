@@ -11,6 +11,7 @@ use std::ops::Add;
 use err::*;
 use lookahead::*;
 use parse::*;
+use semantic::Analyzer;
 use token::*;
 
 #[derive(Clone, Copy, Debug)]
@@ -85,11 +86,24 @@ fn prints(st: &Statement) {
   };
 }
 
+fn tokenize(input: &'static str) -> impl Iterator<Item = Token> {
+  Tokenizer::new(input.chars()).filter(|t| t.0.is_meaningful())
+}
+
+fn parse(input: &'static str) -> impl Iterator<Item = Statement> {
+  Parser::new(tokenize(input))
+}
+
+fn typecheck(input: &'static str) -> Vec<Statement> {
+  Analyzer::typecheck(parse(input).collect())
+}
+
 fn main() -> Result<()> {
-  //test_expression("a.b.c()");
-  let module = frontend::Module::from_file("./demo.hal")?;
-  for s in &module.program {
-    println!("{s}");
+  for s in parse(include_str!("../demo.hal")) {
+    println!("{s:#?}");
+    println!("------------------");
   }
+  //let module = frontend::Module::from_file("./demo.hal")?;
+  //module.write_to("test");
   Ok(())
 }

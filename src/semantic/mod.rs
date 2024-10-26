@@ -2,201 +2,145 @@ mod analyzer;
 mod primitives;
 mod types;
 
-use crate::{Parameter, err::*};
+use crate::err::*;
 pub use analyzer::*;
 pub use primitives::*;
 pub use types::*;
-#[allow(non_camel_case_types)]
-pub type uid = u32;
 
-// Variable and function numbering
-#[derive(Clone, Copy, Debug)]
-pub enum VarKind {
-  Global(uid),
-  Local(uid),
-  Function(uid),
-  Undefined,
-}
+// Mangled name
+pub type UID = String;
 
-impl VarKind {
-  pub fn unwrap(self) -> uid {
-    match self {
-      VarKind::Global(i) | VarKind::Local(i) | VarKind::Function(i) => i,
-      VarKind::Undefined => unreachable!("Failed unwrapping uid"),
-    }
-  }
-}
-
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone)]
 pub struct Symbol {
-  pub name: String,
-  pub type_: Type,
-  pub mutable: bool,
-  pub kind: VarKind,
+  name: String,
+  type_: Type,
+  uid: UID,
 }
 
 #[derive(Debug, Clone)]
-pub enum Definition {
-  Symbol(Symbol),
+enum Definition {
+  Ident(Symbol),
+  FuncStart,
   BlockStart,
-  FuncStart(Type),
-}
-
-fn next(array: &mut [uid]) -> uid {
-  let current = array.last_mut().unwrap();
-  let ret = *current;
-  *current += 1;
-  ret
 }
 
 #[derive(Debug, Clone)]
 pub struct SymbolTable {
-  syms: Vec<Definition>,
+  defs: Vec<Definition>,
+  mangle_num: usize,
   nesting: usize,
-  local_varno: Vec<uid>,
-  global_varno: Vec<uid>,
-  funcno: uid,
 }
 
 impl SymbolTable {
   pub fn new() -> Self {
     Self {
-      syms: vec![],
+      defs: vec![],
+      mangle_num: 0,
       nesting: 0,
-      global_varno: vec![0],
-      local_varno: vec![0],
-      funcno: 1,
     }
   }
 
-  fn define_symbol(
-    &mut self,
-    name: String,
-    type_: Type,
-    mutable: bool,
-  ) -> Result<VarKind> {
-    let kind = match type_ {
-      Type::Prim(_) | Type::Struct(_) | Type::FunctionRef { .. } => {
-        if self.nesting == 0 {
-          VarKind::Global(next(&mut self.global_varno))
-        } else {
-          VarKind::Local(next(&mut self.local_varno))
-        }
-      },
-      Type::StructDef(_) => {
-        if mutable {
-          return error().reason("Struct definition must be immutable");
-        }
-        VarKind::Undefined
-      },
-      Type::FunctionDef { id, .. } => {
-        if !mutable {
-          VarKind::Function(id)
-        } else {
-          return error().reason("Function declaration must be immutable");
-        }
-      },
-      _ => VarKind::Undefined,
-    };
-    self.syms.push(Definition::Symbol(Symbol {
-      name,
-      type_,
-      mutable,
-      kind,
-    }));
-    Ok(kind)
+  fn generate_uid(&mut self, name: &str) -> UID {
+    let uid = format!("${name}${}", self.mangle_num);
+    self.mangle_num += 1;
+    uid
   }
 
-  fn define_param(&mut self, name: String, type_: Type) -> Result<VarKind> {
-    let kind = VarKind::Local(next(&mut self.local_varno));
-    self.syms.push(Definition::Symbol(Symbol {
-      name,
-      type_,
-      mutable: false,
-      kind,
-    }));
-    Ok(kind)
-  }
-
-  fn start_func(&mut self, returns: Type) -> uid {
+  pub fn start_func(&mut self, params: Vec<Type>, returns: Type) -> UID {
     self.nesting += 1;
-    self.local_varno.push(0);
-    self.syms.push(Definition::FuncStart(returns));
-    let old = self.funcno;
-    self.funcno += 1;
-    old
+    let uid = self.generate_uid("func");
+    let type_ = Type::FunctionDef {
+      params,
+      returns: returns.into(),
+      id: uid.clone(),
+    };
+    self.define("<anonymous function>", type_.clone());
+    self.defs.push(Definition::FuncStart);
+    uid
   }
 
-  fn get_return_type(&mut self) -> Result<Type> {
-    for def in &self.syms {
-      if let Definition::FuncStart(t) = def {
-        return Ok(t.clone());
-      }
-    }
-    error().reason("Return outside of function")
-  }
-
-  fn end_func(&mut self) {
-    self.nesting -= 1;
-    self.local_varno.pop();
-    while !self.syms.is_empty() {
-      if let Some(Definition::FuncStart(_)) = self.syms.pop() {
+  pub fn end_func(&mut self) {
+    while !self.defs.is_empty() {
+      if let Some(Definition::FuncStart) = self.defs.pop() {
         return;
       }
     }
-    unreachable!("Tried to exit global scope in symbol table")
+    unreachable!("Cannot end global scope")
   }
 
-  fn start_block(&mut self) {
-    self.syms.push(Definition::BlockStart);
-  }
-
-  fn end_block(&mut self) {
-    while !self.syms.is_empty() {
-      if let Some(Definition::BlockStart) = self.syms.pop() {
+  pub fn start_block(&mut self) {
+    while !self.defs.is_empty() {
+      if let Some(Definition::BlockStart) = self.defs.pop() {
         return;
       }
     }
-    unreachable!("Tried to exit global scope in symbol table")
+    unreachable!("Cannot end global scope")
   }
 
-  fn find_symbol(&self, find_name: &str) -> Result<Symbol> {
-    let mut nesting = self.nesting;
-    for s in self.syms.iter().rev() {
-      match s {
-        Definition::Symbol(sym)
-          // Only search function local and global scope
-          if nesting == self.nesting || nesting == 0 => {
-          // Convert function definition to function reference
-          if find_name == sym.name {
-            return Ok(sym.clone());
-          }
-        },
-        Definition::FuncStart(_) => {
-          nesting -= 1;
+  pub fn define(&mut self, name: &str, type_: Type) -> UID {
+    let uid = self.generate_uid(name);
+    self.defs.push(Definition::Ident(Symbol {
+      name: name.to_string(),
+      type_,
+      uid: uid.clone(),
+    }));
+    uid
+  }
+
+  pub fn define_func(&mut self, name: &str, uid: UID) {
+    for def in &mut self.defs {
+      match def {
+        Definition::Ident(symbol) if symbol.uid == uid => {
+          symbol.name = name.to_string();
+          return;
         },
         _ => {},
-      };
+      }
+      panic!("Tried to name nonexistant function");
     }
-    error().reason(format!("Symbol '{find_name}' is not defined"))
   }
 
-  fn get_type(&self, name: &str) -> Result<Type> {
-    for s in self.syms.iter().rev() {
-      if let Definition::Symbol(Symbol {
-        name: name2,
-        type_: Type::StructDef(params),
-        ..
-      }) = s
-      {
-        if name == name2 {
-          return Ok(Type::Struct(params.clone()));
-        }
+  pub fn lookup_typedef(&self, name: &str) -> Result<Type> {
+    let mut nesting = self.nesting;
+    for def in &self.defs {
+      match def {
+        Definition::Ident(symbol)
+          if (symbol.name == name)
+            && (nesting == 0 || nesting == self.nesting) =>
+        {
+          if let Type::StructDef(vec) = &symbol.type_ {
+            return Ok(Type::Struct(
+              vec.iter().map(|p| p.type_actual.clone()).collect(),
+            ));
+          }
+        },
+        Definition::FuncStart => nesting -= 1,
+        _ => {},
       }
     }
     if let Some(p) = Primitive::from_string(name) {
       return Ok(Type::Prim(p));
     }
-    error().reason(format!("Type {name} is not defined"))
+    error().reason(format!("Cannot find type definition '{}'", name))
+  }
+
+  pub fn lookup(&self, name: &str) -> Result<Symbol> {
+    let mut nesting = self.nesting;
+    for def in &self.defs {
+      match def {
+        Definition::Ident(symbol)
+          if (symbol.name == name)
+            && (nesting == 0 || nesting == self.nesting) =>
+        {
+          if let Type::StructDef(_) = symbol.type_ {
+            continue;
+          }
+          return Ok(symbol.clone());
+        },
+        Definition::FuncStart => nesting -= 1,
+        _ => {},
+      }
+    }
+    error().reason(format!("Cannot find the definition of '{}'", name))
   }
 }

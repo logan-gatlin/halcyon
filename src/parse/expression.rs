@@ -1,4 +1,4 @@
-use crate::semantic::*;
+use crate::{Base, semantic::*};
 
 use super::*;
 
@@ -17,8 +17,8 @@ impl std::fmt::Debug for Parameter {
 
 #[derive(Debug, Clone)]
 pub enum Immediate {
-  Integer(i64),
-  Real(f64),
+  Integer(String, Base),
+  Real(String),
   String(String),
   Boolean(bool),
 }
@@ -26,7 +26,7 @@ pub enum Immediate {
 impl std::fmt::Display for Immediate {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
-      Immediate::Integer(i) => write!(f, "{i}"),
+      Immediate::Integer(i, b) => write!(f, "{i} ({b:?})"),
       Immediate::Real(r) => write!(f, "{r}"),
       Immediate::String(s) => write!(f, "{s}"),
       Immediate::Boolean(b) => write!(f, "{b}"),
@@ -37,7 +37,7 @@ impl std::fmt::Display for Immediate {
 #[derive(Clone)]
 pub enum ExpressionKind {
   Immediate(Immediate),
-  Identifier(String, VarKind),
+  Identifier(String, UID),
   Binary {
     op: BinaryOp,
     left: Box<Expression>,
@@ -53,11 +53,13 @@ pub enum ExpressionKind {
     returns_str: Option<String>,
     returns_actual: Type,
     body: Vec<Statement>,
-    id: uid,
+    id: UID,
   },
   FunctionCall {
     callee: Box<Expression>,
     args: Vec<Expression>,
+    is_reference: bool,
+    id: UID,
   },
   StructDef(Vec<Parameter>),
   StructLiteral {
@@ -67,6 +69,7 @@ pub enum ExpressionKind {
   Field {
     namespace: Box<Expression>,
     field: Box<Expression>,
+    uid: UID,
   },
 }
 
@@ -78,26 +81,16 @@ pub struct Expression {
 }
 
 impl Expression {
-  pub fn new(kind: ExpressionKind, span: Span) -> Self {
-    Self {
-      kind,
-      span,
-      type_: Type::Ambiguous,
-    }
+  pub fn new(kind: ExpressionKind, span: Span, type_: Type) -> Self {
+    Self { kind, span, type_ }
   }
 }
 
 impl std::fmt::Debug for ExpressionKind {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     use ExpressionKind as e;
-    use Immediate as im;
     match self {
-      e::Immediate(i) => match i {
-        im::Integer(i) => write!(f, "{i}"),
-        im::Real(fp) => write!(f, "{fp}"),
-        im::String(s) => write!(f, r#""{s}""#),
-        im::Boolean(b) => write!(f, "{b}"),
-      },
+      e::Immediate(i) => write!(f, "{i}"),
       e::Binary {
         op: token,
         left,
@@ -113,7 +106,9 @@ impl std::fmt::Debug for ExpressionKind {
       e::FunctionCall { callee, args, .. } => {
         write!(f, "({callee:?} call {args:?})")
       },
-      e::Field { namespace, field } => {
+      e::Field {
+        namespace, field, ..
+      } => {
         write!(f, "({namespace:?} . {field:?})")
       },
       e::FunctionDef {
@@ -131,7 +126,7 @@ impl std::fmt::Debug for ExpressionKind {
 
 impl std::fmt::Debug for Expression {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "{:?}", self.kind)
+    write!(f, "({:?} {})", self.kind, self.type_)
   }
 }
 
@@ -139,6 +134,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
   pub fn expression(&mut self, precedence: Precedence) -> Result<Expression> {
     use ExpressionKind as e;
     use TokenKind as t;
+    let mut type_ = Type::Ambiguous;
     let next = self.peek(0)?;
     // Unary prefix expression
     let mut current = if let Ok(operator) = UnaryOp::try_from(&next.0) {
@@ -160,6 +156,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
           child: child.into(),
         },
         span,
+        Type::Ambiguous,
       )
     }
     // Terminal or paren
@@ -191,6 +188,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
             right: rhs.into(),
           },
           span,
+          Type::Ambiguous,
         );
       }
       // Field
@@ -206,8 +204,10 @@ impl<I: Iterator<Item = Token>> Parser<I> {
           e::Field {
             namespace: current.into(),
             field: field.into(),
+            uid: "".into(),
           },
           span,
+          Type::Ambiguous,
         )
       }
       // Function call
@@ -234,8 +234,11 @@ impl<I: Iterator<Item = Token>> Parser<I> {
           e::FunctionCall {
             callee: current.into(),
             args,
+            is_reference: false,
+            id: "".into(),
           },
           span + span2,
+          Type::Ambiguous,
         );
       }
       // Unary postfix
@@ -256,6 +259,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
             child: current.into(),
           },
           span,
+          Type::Ambiguous,
         );
       } else {
         break;
@@ -268,28 +272,34 @@ impl<I: Iterator<Item = Token>> Parser<I> {
     use ExpressionKind as e;
     use Immediate as im;
     use TokenKind as t;
+    let mut type_ = Type::Ambiguous;
     let next = self.peek(0)?;
     let mut span = next.1;
     let kind = match next.0 {
-      t::IntegerLiteral(i) => {
+      t::IntegerLiteral(i, b) => {
         self.skip(1);
-        e::Immediate(im::Integer(i))
+        type_ = Type::Prim(Primitive::integer_ambiguous);
+        e::Immediate(im::Integer(i, b))
       },
       t::FloatLiteral(f) => {
         self.skip(1);
+        type_ = Type::Prim(Primitive::real_ambiguous);
         e::Immediate(im::Real(f))
       },
       t::StringLiteral(s) => {
         self.skip(1);
+        type_ = Type::Prim(Primitive::string);
         e::Immediate(im::String(s))
       },
       t::True => {
         self.skip(1);
+        type_ = Type::Prim(Primitive::boolean);
         e::Immediate(im::Boolean(true))
       },
       t::False => {
         self.skip(1);
-        e::Immediate(im::Boolean(true))
+        type_ = Type::Prim(Primitive::boolean);
+        e::Immediate(im::Boolean(false))
       },
       // Function definition
       t::LeftParen
@@ -345,7 +355,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
           returns_str,
           returns_actual: Type::Ambiguous,
           body,
-          id: 0,
+          id: "".into(),
         }
       },
       // Struct definition
@@ -405,7 +415,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
       },
       t::Identifier(i) => {
         self.skip(1);
-        e::Identifier(i, VarKind::Undefined)
+        e::Identifier(i, "".into())
       },
       // Parenthetical
       t::LeftParen => {
@@ -425,7 +435,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
           .reason(format!("Expected expression, found {}", next.0));
       },
     };
-    Ok(Expression::new(kind, span))
+    Ok(Expression::new(kind, span, type_))
   }
 
   fn identifier(&mut self) -> Result<(String, Span)> {

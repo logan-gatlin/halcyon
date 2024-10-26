@@ -1,13 +1,8 @@
-use std::any::Any;
-
 use crate::{
-  BinaryOp, Expression, ExpressionKind, Immediate, Parameter, Statement,
-  StatementKind, UnaryOp,
-  semantic::{Symbol, SymbolTable, Type, VarKind},
+  Expression, ExpressionKind, Statement, err::*, semantic::SymbolTable,
 };
 
-use super::primitives::*;
-use crate::err::*;
+use super::Type;
 
 pub struct Analyzer {
   table: SymbolTable,
@@ -15,12 +10,160 @@ pub struct Analyzer {
 
 impl Analyzer {
   pub fn typecheck(statements: Vec<Statement>) -> Vec<Statement> {
+    /*
     let mut this = Self {
       table: SymbolTable::new(),
     };
     this.block(statements)
+    */
+    statements
   }
 
+  // Bottom up type inference
+  fn propogate_up(
+    &mut self,
+    mut expr: Box<Expression>,
+  ) -> Result<Box<Expression>> {
+    use ExpressionKind as e;
+    expr.kind = match expr.kind {
+      e::Immediate(imm) => e::Immediate(imm),
+      e::Identifier(id, mut mangle) => {
+        let symbol = self.table.lookup(&id).span(&expr.span)?;
+        mangle = symbol.uid;
+        expr.type_ = symbol.type_;
+        e::Identifier(id, mangle)
+      },
+      e::Binary {
+        op,
+        mut left,
+        mut right,
+      } => {
+        left = self.propogate_up(left)?;
+        right = self.propogate_up(right)?;
+        expr.type_ =
+          Type::binary_op(&left.type_, op, &right.type_).span(&expr.span)?;
+        e::Binary { op, left, right }
+      },
+      e::Unary { op, mut child } => {
+        child = self.propogate_up(child)?;
+        expr.type_ = Type::unary_op(op, &child.type_).span(&expr.span)?;
+        e::Unary { op, child }
+      },
+      e::Parenthesis(mut inner) => {
+        inner = self.propogate_up(inner)?;
+        expr.type_ = inner.type_.clone();
+        e::Parenthesis(inner)
+      },
+      // Define anonymous function, do not evaluate body yet
+      e::FunctionDef {
+        mut params,
+        returns_str,
+        mut returns_actual,
+        body,
+        mut id,
+      } => {
+        for p in &mut params {
+          p.type_actual =
+            self.table.lookup_typedef(&p.type_str).span(&expr.span)?;
+        }
+        let param_types: Vec<_> =
+          params.iter().map(|p| p.type_actual.clone()).collect();
+        returns_actual = match returns_str {
+          Some(ref s) => self.table.lookup_typedef(s).span(&expr.span)?,
+          None => Type::Nothing,
+        };
+        id = self
+          .table
+          .start_func(param_types.clone(), returns_actual.clone());
+        expr.type_ = Type::FunctionDef {
+          params: param_types,
+          returns: returns_actual.clone().into(),
+          id: id.clone(),
+        };
+        e::FunctionDef {
+          params,
+          returns_str,
+          returns_actual,
+          body,
+          id,
+        }
+      },
+      e::FunctionCall {
+        mut callee,
+        mut args,
+        mut is_reference,
+        mut id,
+      } => {
+        callee = self.propogate_up(callee)?;
+        let (params, returns) = match callee.type_.clone() {
+          Type::FunctionRef {
+            id: uid,
+            params,
+            returns,
+          } => {
+            is_reference = true;
+            id = uid;
+            (params, returns)
+          },
+          Type::FunctionDef {
+            id: uid,
+            params,
+            returns,
+          } => {
+            is_reference = false;
+            id = uid;
+            (params, returns)
+          },
+          _ => {
+            return error()
+              .reason(format!("Cannot call type '{}'", callee.type_))
+              .span(&expr.span);
+          },
+        };
+        expr.type_ = *returns;
+        // Check that args are correct
+        if args.len() != params.len() {
+          return error().reason(format!(
+            "Expected {} arguments, found {}",
+            params.len(),
+            args.len()
+          ));
+        }
+        for (index, a) in args.iter_mut().enumerate() {
+          *a = *self.propogate_up(a.clone().into())?;
+          *a = *self.propogate_down(a.clone().into(), params[index].clone())?;
+        }
+        e::FunctionCall {
+          callee,
+          args,
+          is_reference,
+          id,
+        }
+      },
+      e::StructDef(vec) => todo!(),
+      e::StructLiteral { ref name, mut args } => {
+        self.table.lookup_typedef(name).span(&expr.span)?;
+        todo!()
+      },
+      e::Field {
+        namespace,
+        field,
+        uid,
+      } => todo!(),
+    };
+    Ok(expr)
+  }
+
+  // Top down type assertion
+  fn propogate_down(
+    &mut self,
+    expr: Box<Expression>,
+    expect: Type,
+  ) -> Result<Box<Expression>> {
+    todo!()
+  }
+
+  /*
   fn block(&mut self, block: Vec<Statement>) -> Vec<Statement> {
     let mut new_block = vec![];
     for st in block {
@@ -134,7 +277,9 @@ impl Analyzer {
         self.table.end_block();
       },
       s::Print(e) => {
-        stmt.kind = s::Print(*self.expression(e.into(), None)?);
+        let mut e = *self.expression(e.into(), None)?;
+        e.type_ = Type::coerce(&Type::Prim(p::integer), &e.type_)?;
+        stmt.kind = s::Print(e);
       },
       s::Expression(e) => {
         let mut expr = *self.expression(e.into(), None)?;
@@ -153,7 +298,8 @@ impl Analyzer {
         let return_type = self.table.get_return_type().span(&stmt.span)?;
         let type_ = match expression {
           Some(e) => {
-            let e = self.expression(e.into(), Some(return_type.clone()))?;
+            let mut e = self.expression(e.into(), Some(return_type.clone()))?;
+            e.type_ = Type::coerce(&return_type, &e.type_).span(&e.span)?;
             let type_ = e.type_.clone();
             expression = Some(*e);
             type_
@@ -178,7 +324,7 @@ impl Analyzer {
     use Primitive as p;
     let type_ = match expr.kind {
       e::Immediate(ref i) => Type::Prim(match i {
-        i::Integer(_) => p::integer_ambiguous,
+        i::Integer(_, _) => p::integer_ambiguous,
         i::Real(_) => p::real_ambiguous,
         i::String(_) => p::string,
         i::Boolean(_) => p::boolean,
@@ -394,4 +540,5 @@ impl Analyzer {
     expr.type_ = type_;
     Ok(expr)
   }
+  */
 }

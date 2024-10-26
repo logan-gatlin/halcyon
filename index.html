@@ -4,18 +4,8 @@
 </head>
 
 <script>
-  const importObject = {
-    console: {
-      log(arg) {
-        console.log(arg);
-      }
-    }
-  };
-
-  WebAssembly.instantiateStreaming(fetch("/test.wasm"), importObject)
-  .then(obj => {
-    obj.instance.exports.main();
-  });
+const url = '/test.wasm';
+WebAssembly.instantiateStreaming(fetch(url), { console });
 </script>
 
 <body>

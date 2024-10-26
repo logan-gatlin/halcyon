@@ -40,6 +40,22 @@ primitives! {
   string, glyph
 }
 
+impl Primitive {
+  pub fn as_wat(&self) -> &'static str {
+    use Primitive::*;
+    match self {
+      boolean | glyph | w8 | w16 | w32 | whole | i8 | i16 | i32 | integer => {
+        "i32"
+      },
+      w64 | i64 => "i64",
+      r32 | real => "f32",
+      r64 => "f64",
+      string => todo!(),
+      _ => panic!(),
+    }
+  }
+}
+
 macro_rules! selfsame_basic {
   ( $lhs:ident, $op:ident, $rhs:ident, $binop:ident, $i:ident ) => {
     if ($i == $rhs && $rhs == $lhs) && $op == BinaryOp::$binop {
@@ -91,47 +107,44 @@ macro_rules! comparison {
 }
 
 impl Primitive {
-  pub fn coerce_ambiguous(
-    lhs: Primitive,
-    rhs: Primitive,
-  ) -> (Primitive, Primitive) {
+  pub fn coerce(&mut self, into: Primitive) {
     use Primitive::*;
-    let is_int = |i| {
-      if let i8 | i16 | i32 | i64 | integer | integer_ambiguous = i {
-        true
-      } else {
-        false
-      }
+    *self = match (*self, into) {
+      (
+        integer_ambiguous,
+        i8 | i16 | i32 | i64 | integer | w8 | w16 | w32 | w64 | whole,
+      ) => into,
+      (real_ambiguous, r32 | r64) => into,
+      _ => *self,
     };
-    let is_real = |r| {
-      if let r32 | r64 | real | real_ambiguous = r {
-        true
-      } else {
-        false
-      }
-    };
-    // Ambiguous integer coercion
-    if lhs == integer_ambiguous && is_int(rhs) {
-      return (rhs, rhs);
-    } else if rhs == integer_ambiguous && is_int(lhs) {
-      return (lhs, lhs);
+  }
+
+  pub fn is_ambiguous(&self) -> bool {
+    match self {
+      Primitive::integer_ambiguous | Primitive::real_ambiguous => true,
+      _ => false,
     }
-    // Ambiguous real coercion
-    if lhs == real_ambiguous && is_real(rhs) {
-      return (rhs, rhs);
-    } else if rhs == real_ambiguous && is_real(lhs) {
-      return (lhs, lhs);
+  }
+
+  pub fn promote(&mut self) {
+    *self = match *self {
+      Primitive::integer_ambiguous => Primitive::integer,
+      Primitive::real_ambiguous => Primitive::real,
+      _ => *self,
     }
-    return (lhs, rhs);
   }
 
   pub fn binary_op(
-    lhs: Primitive,
+    mut lhs: Primitive,
     op: BinaryOp,
-    rhs: Primitive,
+    mut rhs: Primitive,
   ) -> Result<Primitive> {
     use Primitive::*;
-    let (lhs, rhs) = Primitive::coerce_ambiguous(lhs, rhs);
+    if lhs.is_ambiguous() && !rhs.is_ambiguous() {
+      lhs.coerce(rhs);
+    } else if rhs.is_ambiguous() && !lhs.is_ambiguous() {
+      rhs.coerce(lhs);
+    }
     selfsame_basic! {
       lhs, op, rhs; w8, w16, w32, w64, i8, i16, i32, i64,
       integer, integer_ambiguous, real, real_ambiguous
@@ -155,7 +168,7 @@ impl Primitive {
       error().reason(format!("Unary {} is not defined for {}", op, child));
     match op {
       Minus => match child {
-        boolean | string | glyph | w8 | w16 | w32 | w64 => e,
+        boolean | string | glyph | whole | w8 | w16 | w32 | w64 => e,
         _ => Ok(child),
       },
       Plus => match child {

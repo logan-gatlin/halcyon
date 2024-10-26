@@ -1,9 +1,8 @@
-use std::path::Path;
+use std::{io::Write, path::Path};
 
 use crate::{
   Parser, Tokenizer,
   err::*,
-  ir::{Compiler, IR},
   semantic::{self},
 };
 
@@ -11,7 +10,6 @@ use crate::{
 pub struct Module {
   file_name: String,
   source: String,
-  pub program: Vec<IR>,
 }
 
 impl Module {
@@ -31,12 +29,20 @@ impl Module {
     let tokens = Tokenizer::new(source.chars()).filter(|t| t.0.is_meaningful());
     let statements = Parser::new(tokens);
     let program = semantic::Analyzer::typecheck(statements.collect());
-    let mut compiler = Compiler::new();
-    compiler.compile(program);
     Self {
       file_name,
       source: source.into(),
-      program: compiler.ir,
     }
   }
+  /*
+  pub fn write_to(&self, path: impl AsRef<Path>) {
+    let watpath = path.as_ref().to_owned().with_extension("wat");
+    let mut file = std::fs::File::create(watpath).unwrap();
+    file.write_all(&self.wat.as_bytes()).unwrap();
+
+    let wasmpath = path.as_ref().to_owned().with_extension("wasm");
+    let mut file = std::fs::File::create(wasmpath).unwrap();
+    file.write_all(&self.wasm).unwrap();
+  }
+  */
 }

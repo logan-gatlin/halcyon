@@ -1,4 +1,4 @@
-use crate::semantic::{Type, VarKind};
+use crate::semantic::{Type, UID};
 
 use super::*;
 
@@ -10,12 +10,12 @@ pub enum StatementKind {
     type_actual: Type,
     value: Expression,
     mutable: bool,
-    varkind: VarKind,
+    uid: UID,
   },
   Assignment {
     name: String,
     value: Expression,
-    varkind: VarKind,
+    uid: UID,
   },
   If {
     predicate: Expression,
@@ -86,7 +86,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
             type_actual: Type::Ambiguous,
             value,
             mutable,
-            varkind: VarKind::Undefined,
+            uid: "".into(),
           },
           span,
         };
@@ -107,7 +107,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
           kind: s::Assignment {
             name,
             value,
-            varkind: VarKind::Undefined,
+            uid: "".into(),
           },
         }
       },
