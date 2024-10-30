@@ -20,6 +20,7 @@ pub enum Immediate {
   Integer(String, Base),
   Real(String),
   String(String),
+  Glyph(char),
   Boolean(bool),
 }
 
@@ -27,6 +28,7 @@ impl std::fmt::Display for Immediate {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       Immediate::Integer(i, b) => write!(f, "{i} ({b:?})"),
+      Immediate::Glyph(c) => write!(f, "{c}"),
       Immediate::Real(r) => write!(f, "{r}"),
       Immediate::String(s) => write!(f, "{s}"),
       Immediate::Boolean(b) => write!(f, "{b}"),
@@ -53,7 +55,7 @@ pub enum ExpressionKind {
     returns_str: Option<String>,
     returns_actual: Type,
     body: Vec<Statement>,
-    id: UID,
+    id: usize,
   },
   FunctionCall {
     callee: Box<Expression>,
@@ -61,7 +63,7 @@ pub enum ExpressionKind {
     is_reference: bool,
     id: UID,
   },
-  StructDef(Vec<Parameter>),
+  StructDef(Vec<Parameter>, usize),
   StructLiteral {
     name: String,
     args: Vec<(String, Expression)>,
@@ -118,7 +120,7 @@ impl std::fmt::Debug for ExpressionKind {
       } => {
         write!(f, "(fn({params:?}) -> {returns_actual:?})")
       },
-      e::StructDef(params) => write!(f, "struct {{ {params:?} }}"),
+      e::StructDef(params, _) => write!(f, "struct {{ {params:?} }}"),
       e::StructLiteral { name, args } => write!(f, "{name} {{ {args:?} }}"),
     }
   }
@@ -134,7 +136,6 @@ impl<I: Iterator<Item = Token>> Parser<I> {
   pub fn expression(&mut self, precedence: Precedence) -> Result<Expression> {
     use ExpressionKind as e;
     use TokenKind as t;
-    let mut type_ = Type::Ambiguous;
     let next = self.peek(0)?;
     // Unary prefix expression
     let mut current = if let Ok(operator) = UnaryOp::try_from(&next.0) {
@@ -272,33 +273,31 @@ impl<I: Iterator<Item = Token>> Parser<I> {
     use ExpressionKind as e;
     use Immediate as im;
     use TokenKind as t;
-    let mut type_ = Type::Ambiguous;
     let next = self.peek(0)?;
     let mut span = next.1;
     let kind = match next.0 {
       t::IntegerLiteral(i, b) => {
         self.skip(1);
-        type_ = Type::Prim(Primitive::integer_ambiguous);
         e::Immediate(im::Integer(i, b))
       },
       t::FloatLiteral(f) => {
         self.skip(1);
-        type_ = Type::Prim(Primitive::real_ambiguous);
         e::Immediate(im::Real(f))
       },
       t::StringLiteral(s) => {
         self.skip(1);
-        type_ = Type::Prim(Primitive::string);
         e::Immediate(im::String(s))
+      },
+      t::GlyphLiteral(c) => {
+        self.skip(1);
+        e::Immediate(im::Glyph(c))
       },
       t::True => {
         self.skip(1);
-        type_ = Type::Prim(Primitive::boolean);
         e::Immediate(im::Boolean(true))
       },
       t::False => {
         self.skip(1);
-        type_ = Type::Prim(Primitive::boolean);
         e::Immediate(im::Boolean(false))
       },
       // Function definition
@@ -355,7 +354,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
           returns_str,
           returns_actual: Type::Ambiguous,
           body,
-          id: "".into(),
+          id: usize::MAX,
         }
       },
       // Struct definition
@@ -386,7 +385,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
           }
         }
         self.eat(t::RightBrace)?;
-        e::StructDef(params)
+        e::StructDef(params, usize::MAX)
       },
       // Struct literal
       t::Identifier(name) if self.look(1, t::LeftBrace).is_ok() => {
@@ -435,7 +434,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
           .reason(format!("Expected expression, found {}", next.0));
       },
     };
-    Ok(Expression::new(kind, span, type_))
+    Ok(Expression::new(kind, span, Type::Ambiguous))
   }
 
   fn identifier(&mut self) -> Result<(String, Span)> {

@@ -1,6 +1,7 @@
 use crate::{BinaryOp, UnaryOp};
 
 use crate::err::*;
+use crate::semantic::{Symbol, Type, UID};
 
 macro_rules! primitives {
   ( $($i:ident),* ) => {
@@ -19,6 +20,16 @@ macro_rules! primitives {
           _ => None,
         }
       }
+
+      pub fn mangle(&self) -> UID {
+        match self {
+          Primitive::integer_ambiguous => "$$integer_amgibuous".into(),
+          Primitive::real_ambiguous => "$$real_amgibuous".into(),
+          $(
+          Primitive::$i => format!("$${}", stringify!{$i}),
+          )*
+        }
+      }
     }
     impl std::fmt::Display for Primitive {
       fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -28,6 +39,17 @@ macro_rules! primitives {
           $(Primitive::$i => write!(f, stringify!{$i}),)*
         }
       }
+    }
+    pub fn primitive_symbols() -> Vec<Symbol> {
+      vec![
+        $(Symbol {
+          name: stringify!{$i}.into(),
+          type_: Type::Alias(Box::new(Type::Prim(Primitive::$i))),
+          uid: format!("$${}", stringify!{$i}),
+          initialized: true,
+          mutable: Some(false),
+        },)*
+      ]
     }
   };
 }
@@ -114,7 +136,7 @@ impl Primitive {
         integer_ambiguous,
         i8 | i16 | i32 | i64 | integer | w8 | w16 | w32 | w64 | whole,
       ) => into,
-      (real_ambiguous, r32 | r64) => into,
+      (real_ambiguous, r32 | r64 | real) => into,
       _ => *self,
     };
   }

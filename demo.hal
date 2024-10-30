@@ -1,2 +1,13 @@
-b := 10.0 / 5.0;
-c := b;
+c :: C{r: 10.0};
+
+A :: struct {
+	b: B,
+}
+
+B :: struct {
+	c: C,
+}
+
+C :: struct {
+	r: real,
+}

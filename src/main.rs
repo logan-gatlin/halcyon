@@ -99,10 +99,13 @@ fn typecheck(input: &'static str) -> Vec<Statement> {
 }
 
 fn main() -> Result<()> {
-  for s in parse(include_str!("../demo.hal")) {
+  /*
+  for s in typecheck(include_str!("../demo.hal")) {
     println!("{s:#?}");
     println!("------------------");
   }
+  */
+  typecheck(include_str!("../demo.hal"));
   //let module = frontend::Module::from_file("./demo.hal")?;
   //module.write_to("test");
   Ok(())

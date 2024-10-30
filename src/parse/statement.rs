@@ -74,7 +74,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
         let no_semicolon =
           if let ExpressionKind::FunctionDef { .. } = value.kind {
             true
-          } else if let ExpressionKind::StructDef(_) = value.kind {
+          } else if let ExpressionKind::StructDef(_, _) = value.kind {
             true
           } else {
             false

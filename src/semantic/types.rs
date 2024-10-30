@@ -1,28 +1,34 @@
-use crate::{
-  BinaryOp, Expression, ExpressionKind, Immediate, Parameter, Statement,
-  StatementKind, UnaryOp,
-};
+use crate::{BinaryOp, UnaryOp};
 
-use super::{UID, primitives::*};
+use super::{Symbol, UID, primitives::*};
 use crate::err::*;
+
+/// Struct ID
+pub type SID = usize;
+
+#[derive(Debug, Clone)]
+pub struct StructureDef(pub Vec<(String, UID)>);
+
+pub type FID = usize;
+
+#[derive(Debug, Clone)]
+pub struct FunctionDef {
+  pub params: Vec<UID>,
+  pub returns: Option<UID>,
+}
+
+pub fn nothing_mangle() -> UID {
+  "$$nothing".into()
+}
 
 #[derive(Debug, Clone)]
 pub enum Type {
   Ambiguous,
   Nothing,
+  Alias(Box<Type>),
   Prim(Primitive),
-  Struct(Vec<Type>),
-  StructDef(Vec<Parameter>),
-  FunctionRef {
-    params: Vec<Type>,
-    returns: Box<Type>,
-    id: UID,
-  },
-  FunctionDef {
-    params: Vec<Type>,
-    returns: Box<Type>,
-    id: UID,
-  },
+  Struct(SID),
+  Function(FID),
 }
 
 impl std::fmt::Display for Type {
@@ -32,15 +38,8 @@ impl std::fmt::Display for Type {
       Type::Nothing => write!(f, "nothing"),
       Type::Prim(primitive) => write!(f, "{primitive}"),
       Type::Struct(vec) => write!(f, "struct {vec:?}"),
-      Type::StructDef(_) => write!(f, "struct definition"),
-      Type::FunctionRef {
-        params, returns, ..
-      } => {
-        write!(f, "({params:?}) -> {returns}")
-      },
-      Type::FunctionDef {
-        params, returns, ..
-      } => write!(f, "({params:?}) -> {returns}"),
+      Type::Alias(t) => write!(f, "type alias ({t})"),
+      Type::Function(fid) => write!(f, "func {fid:?}"),
     }
   }
 }
@@ -51,9 +50,9 @@ impl PartialEq for Type {
     match (self, other) {
       (Ambiguous, Ambiguous) => true,
       (Prim(p1), Prim(p2)) if p1 == p2 => true,
-      (Struct(p1), Struct(p2)) => p1.iter().eq(p2.iter()),
-      (FunctionRef { id: id1, .. }, FunctionRef { id: id2, .. }) => id1 == id2,
-      (FunctionDef { id: id1, .. }, FunctionDef { id: id2, .. }) => id1 == id2,
+      (Struct(p1), Struct(p2)) => p1 == p2,
+      (Function(id1), Function(id2)) => id1 == id2,
+      (Alias(t1), Alias(t2)) => t1 == t2,
       (Nothing, Nothing) => true,
       _ => false,
     }
@@ -85,17 +84,19 @@ impl Type {
     }
   }
 
-  pub fn coerce(&mut self, expect: &Type) {
+  pub fn deduce(self, hint: &Type) -> Result<Self> {
     use Type::*;
-    *self = match (expect, self.clone()) {
-      (Ambiguous, Ambiguous) => Ambiguous,
-      (Ambiguous, t) => t.clone(),
+    match (hint, self) {
+      (Ambiguous, t) => Ok(t),
+      (t, Ambiguous) => Ok(t.clone()),
       (Prim(mut p1), Prim(p2)) => {
         p1.coerce(p2);
-        Prim(p1)
+        Ok(Prim(p1))
       },
-      (t1, t2) if t1 == &t2 => t1.clone(),
-      _ => Ambiguous,
-    };
+      (t1, t2) if t1 == &t2 => Ok(t1.clone()),
+      (t1, t2) => {
+        error().reason(format!("Cannot coerce type '{t2}' into '{t1}'"))
+      },
+    }
   }
 }
