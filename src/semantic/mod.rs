@@ -1,5 +1,6 @@
 mod analyzer;
 mod bottom_up;
+mod naming;
 mod primitives;
 mod top_down;
 mod types;
@@ -11,6 +12,12 @@ pub use analyzer::*;
 pub use primitives::*;
 pub use types::*;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Scope {
+  Block,
+  Function,
+}
+
 // Mangled name
 pub type UID = String;
 
@@ -21,18 +28,6 @@ pub struct Symbol {
   uid: UID,
   initialized: bool,
   mutable: Option<bool>,
-}
-
-impl Symbol {
-  pub fn assert_is_type(&self) -> Result<Type> {
-    if let Type::Alias(ref t) = self.type_ {
-      return Ok(*t.clone());
-    }
-    error().reason(format!(
-      "The name '{}' refers to a value, not a type",
-      self.name
-    ))
-  }
 }
 
 #[derive(Debug, Clone)]
@@ -86,12 +81,28 @@ impl SymbolTable {
   }
 
   pub fn end_block(&mut self) {
+    let mut escaped = vec![];
     while !self.scope.is_empty() {
-      if let Some(Definition::BlockStart) = self.scope.pop() {
+      let top = self.scope.pop();
+      if let Some(Definition::BlockStart) = top {
+        self.scope.append(&mut escaped);
         return;
+      } else if let Some(Definition::Ident(s)) = top {
+        if !s.initialized {
+          escaped.push(Definition::Ident(s));
+        }
       }
     }
     unreachable!("Cannot end global scope")
+  }
+
+  pub fn resolve_type(&self, uid: &UID) -> Result<Type> {
+    let symbol = self.table.get(uid).unwrap();
+    if symbol.initialized == false {
+      return error().reason("Symbol was never initialized");
+    } else {
+      Ok(symbol.type_.clone())
+    }
   }
 
   pub fn start_function(&mut self) {
@@ -100,9 +111,17 @@ impl SymbolTable {
   }
 
   pub fn end_function(&mut self) {
+    self.nesting -= 1;
+    let mut escaped = vec![];
     while !self.scope.is_empty() {
-      if let Some(Definition::FuncStart) = self.scope.pop() {
+      let top = self.scope.pop();
+      if let Some(Definition::FuncStart) = top {
+        self.scope.append(&mut escaped);
         return;
+      } else if let Some(Definition::Ident(s)) = top {
+        if !s.initialized {
+          escaped.push(Definition::Ident(s));
+        }
       }
     }
     unreachable!("Cannot end global scope")
@@ -112,6 +131,16 @@ impl SymbolTable {
     let uid = format!("${}${name}", self.mangle_num);
     self.mangle_num += 1;
     uid
+  }
+
+  pub fn get_field(&self, struct_id: SID, field_name: &str) -> Result<Type> {
+    let struct_def = &self.structs[struct_id].0;
+    for (name, sid) in struct_def {
+      if name == field_name {
+        return self.resolve_type(sid);
+      }
+    }
+    error().reason(format!("Cannot find field '{field_name}'"))
   }
 
   pub fn create_struct(&mut self, params: Vec<Parameter>) -> SID {
@@ -129,23 +158,31 @@ impl SymbolTable {
     &mut self,
     params: Vec<Parameter>,
     returns: Option<String>,
-  ) -> FID {
+  ) -> Result<FID> {
     let fid = self.functions.len();
-    let mut new_params = vec![];
-    for p in params {
-      let s = self.reference_ident(&p.type_str);
-      new_params.push(s.uid);
+    let mut symbols = vec![];
+    for p in &params {
+      let symbol = self.reference_ident(&p.type_str);
+      symbols.push(symbol);
     }
     let returns = if let Some(s) = returns {
-      Some(self.reference_ident(&s).uid)
+      self.reference_ident(&s).uid
     } else {
-      Some(nothing_mangle())
+      nothing_mangle()
     };
+    self.start_function();
+    let mut new_params = vec![];
+    for (p, s) in params.iter().zip(symbols.iter()) {
+      let s = self
+        .define_ident(&p.name, s.type_.clone(), false)
+        .trace("While initializing function parameters")?;
+      new_params.push(s.uid);
+    }
     self.functions.push(FunctionDef {
       params: new_params,
       returns,
     });
-    fid
+    Ok(fid)
   }
 
   pub fn modify_ident(
@@ -156,15 +193,17 @@ impl SymbolTable {
     mutable: Option<bool>,
     init: bool,
   ) -> Result<()> {
-    {
-      let symbol = self.table.get_mut(&uid).unwrap();
-      if let Some(ref type_) = type_ {
-        symbol.type_ = symbol.type_.clone().deduce(type_)?;
-      }
-      if let Some(m) = mutable {
-        symbol.mutable = Some(m);
-      }
+    let symbol = self.table.get_mut(&uid).unwrap();
+    if let Some(ref type_) = type_ {
+      symbol.type_ = symbol.type_.clone().deduce(type_)?;
     }
+    symbol.mutable = match (symbol.mutable, mutable) {
+      (Some(true), Some(false)) | (Some(false), Some(true)) => {
+        return error().reason("Cannot mutate immutable symbol");
+      },
+      _ => mutable,
+    };
+    symbol.initialized |= init;
 
     let mut nesting = self.nesting;
     for def in &mut self.scope {
@@ -179,17 +218,21 @@ impl SymbolTable {
           if let Some(ref type_) = type_ {
             symbol.type_ = symbol.type_.clone().deduce(type_)?;
           }
-          if let Some(m) = mutable {
-            symbol.mutable = Some(m);
-          }
-          symbol.initialized &= init;
+          symbol.mutable = match (symbol.mutable, mutable) {
+            (Some(true), Some(false)) | (Some(false), Some(true)) => {
+              return error().reason("Cannot mutate immutable symbol");
+            },
+            _ => mutable,
+          };
+          symbol.initialized |= init;
           return Ok(());
         },
         Definition::FuncStart => nesting -= 1,
         _ => {},
       }
     }
-    panic!("Symbol {uid} does not exist")
+    Ok(())
+    //unreachable!("Symbol {uid} does not exist")
   }
 
   pub fn define_ident(
@@ -198,7 +241,15 @@ impl SymbolTable {
     type_: Type,
     mutable: bool,
   ) -> Result<Symbol> {
-    if let Ok(s) = self.lookup_this_scope(name) {
+    println!("---{name}---");
+    println!("{:#?}", self.lookup_block_scope(name));
+    if let Type::Alias(_) | Type::Function(_) = &type_ {
+      if mutable {
+        return error()
+          .reason("Struct and function definitions cannot be mutable");
+      }
+    }
+    if let Ok(s) = self.lookup_block_scope(name) {
       // Re-definition error
       // TODO support name shadowing
       if s.initialized {
@@ -232,7 +283,7 @@ impl SymbolTable {
   }
 
   pub fn reference_ident(&mut self, name: &str) -> Symbol {
-    match self.lookup_available_scope(name) {
+    match self.lookup_function_scope(name) {
       Ok(s) => s,
       Err(_) => {
         let uid = self.generate_uid(name);
@@ -250,23 +301,28 @@ impl SymbolTable {
     }
   }
 
-  pub fn lookup_this_scope(&self, name: &str) -> Result<Symbol> {
-    self.lookup_scope(name, false)
+  pub fn lookup_block_scope(&self, name: &str) -> Result<Symbol> {
+    self.lookup_scope(name, Scope::Block)
   }
 
-  pub fn lookup_available_scope(&self, name: &str) -> Result<Symbol> {
-    self.lookup_scope(name, true)
+  pub fn lookup_function_scope(&self, name: &str) -> Result<Symbol> {
+    self.lookup_scope(name, Scope::Function)
   }
 
-  fn lookup_scope(&self, name: &str, with_global: bool) -> Result<Symbol> {
+  fn lookup_scope(&self, name: &str, scope: Scope) -> Result<Symbol> {
     let mut nesting = self.nesting;
-    for def in &self.scope {
+    for def in self.scope.iter().rev() {
       match def {
         Definition::Ident(symbol)
           if (symbol.name == name)
-            && ((nesting == 0 && with_global) || nesting == self.nesting) =>
+            && ((nesting == 0) || nesting == self.nesting) =>
         {
           return Ok(symbol.clone());
+        },
+        Definition::FuncStart | Definition::BlockStart
+          if scope == Scope::Block =>
+        {
+          break;
         },
         Definition::FuncStart => nesting -= 1,
         _ => {},

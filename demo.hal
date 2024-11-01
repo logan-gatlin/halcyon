@@ -1,13 +1,2 @@
-c :: C{r: 10.0};
-
-A :: struct {
-	b: B,
-}
-
-B :: struct {
-	c: C,
-}
-
-C :: struct {
-	r: real,
-}
+a : integer : 10;
+b := a + 10;

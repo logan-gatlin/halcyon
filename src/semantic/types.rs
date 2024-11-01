@@ -1,6 +1,6 @@
 use crate::{BinaryOp, UnaryOp};
 
-use super::{Symbol, UID, primitives::*};
+use super::{UID, primitives::*};
 use crate::err::*;
 
 /// Struct ID
@@ -14,7 +14,7 @@ pub type FID = usize;
 #[derive(Debug, Clone)]
 pub struct FunctionDef {
   pub params: Vec<UID>,
-  pub returns: Option<UID>,
+  pub returns: UID,
 }
 
 pub fn nothing_mangle() -> UID {
@@ -60,6 +60,14 @@ impl PartialEq for Type {
 }
 
 impl Type {
+  pub fn is_alias(&self) -> Result<Type> {
+    if let Type::Alias(t) = self {
+      Ok(*t.clone())
+    } else {
+      error().reason(format!("Expected type, found value with type {}", self))
+    }
+  }
+
   pub fn binary_op(lhs: &Type, op: BinaryOp, rhs: &Type) -> Result<Type> {
     use Type as t;
     let e = error().reason(format!(
@@ -86,17 +94,42 @@ impl Type {
 
   pub fn deduce(self, hint: &Type) -> Result<Self> {
     use Type::*;
-    match (hint, self) {
-      (Ambiguous, t) => Ok(t),
-      (t, Ambiguous) => Ok(t.clone()),
+    match (self, hint) {
+      (Ambiguous, t) => Ok(t.clone()),
+      (t, Ambiguous) => Ok(t),
       (Prim(mut p1), Prim(p2)) => {
-        p1.coerce(p2);
+        p1 = p1.coerce(*p2)?;
         Ok(Prim(p1))
       },
-      (t1, t2) if t1 == &t2 => Ok(t1.clone()),
+      (t1, t2) if &t1 == t2 => Ok(t1.clone()),
       (t1, t2) => {
         error().reason(format!("Cannot coerce type '{t2}' into '{t1}'"))
       },
+    }
+  }
+
+  pub fn coerce(self, expect: &Type) -> Result<Self> {
+    use Type::*;
+    match (self, expect) {
+      (Prim(mut p1), Prim(p2)) => {
+        p1 = p1.coerce(*p2)?;
+        Ok(Prim(p1))
+      },
+      (t1, t2) if &t1 == t2 => Ok(t1.clone()),
+      (t1, t2) => {
+        error().reason(format!("Cannot coerce type '{t2}' into '{t1}'"))
+      },
+    }
+  }
+
+  pub fn promote(self) -> Self {
+    use Type::*;
+    match self {
+      Prim(mut p) => {
+        p.promote();
+        Prim(p)
+      },
+      t => t,
     }
   }
 }

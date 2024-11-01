@@ -129,16 +129,22 @@ macro_rules! comparison {
 }
 
 impl Primitive {
-  pub fn coerce(&mut self, into: Primitive) {
+  pub fn coerce(self, expect: Primitive) -> Result<Self> {
     use Primitive::*;
-    *self = match (*self, into) {
+    match (self, expect) {
       (
         integer_ambiguous,
-        i8 | i16 | i32 | i64 | integer | w8 | w16 | w32 | w64 | whole,
-      ) => into,
-      (real_ambiguous, r32 | r64 | real) => into,
-      _ => *self,
-    };
+        a @ (i8 | i16 | i32 | i64 | integer | w8 | w16 | w32 | w64 | whole),
+      )
+      | (
+        a @ (i8 | i16 | i32 | i64 | integer | w8 | w16 | w32 | w64 | whole),
+        integer_ambiguous,
+      ) => Ok(a),
+      (real_ambiguous, a @ (r32 | r64 | real))
+      | (a @ (r32 | r64 | real), real_ambiguous) => Ok(a),
+      (t1, t2) if t1 == t2 => Ok(t1),
+      _ => error().reason(format!("Cannot coerce '{self}' into '{expect}'")),
+    }
   }
 
   pub fn is_ambiguous(&self) -> bool {
@@ -163,9 +169,9 @@ impl Primitive {
   ) -> Result<Primitive> {
     use Primitive::*;
     if lhs.is_ambiguous() && !rhs.is_ambiguous() {
-      lhs.coerce(rhs);
+      lhs = lhs.coerce(rhs)?;
     } else if rhs.is_ambiguous() && !lhs.is_ambiguous() {
-      rhs.coerce(lhs);
+      rhs = rhs.coerce(lhs)?;
     }
     selfsame_basic! {
       lhs, op, rhs; w8, w16, w32, w64, i8, i16, i32, i64,

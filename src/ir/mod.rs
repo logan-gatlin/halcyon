@@ -1,28 +1,52 @@
+mod generate;
+pub use generate::*;
+
 use crate::{
-  BinaryOp, Expression, ExpressionKind, Immediate, Statement, StatementKind,
-  UnaryOp,
-  semantic::{Primitive, Type, UID},
+  BinaryOp, Immediate, UnaryOp,
+  semantic::{FID, Primitive, Type, UID},
 };
-/*
+
 #[derive(Debug, Clone)]
 pub enum IR {
-  BinOp { op: BinaryOp, type_: Type },
-  UnOp { op: UnaryOp, type_: Type },
-  Push { prim: Primitive, value: Immediate },
-  NewLocal { uid: UID, type_: Type },
-  AssignLocal { uid: UID },
-  GetLocal { uid: UID },
-  NewGlobal { uid: UID, type_: Type },
-  AssignGlobal { uid: UID },
-  GetGlobal { uid: UID },
-  StartFunc { uid: UID },
+  BinOp {
+    op: BinaryOp,
+    type_: Type,
+  },
+  UnOp {
+    op: UnaryOp,
+    type_: Type,
+  },
+  Push {
+    prim: Primitive,
+    value: Immediate,
+  },
+  New {
+    uid: UID,
+    type_: Type,
+  },
+  Set {
+    uid: UID,
+  },
+  Get {
+    uid: UID,
+  },
+  StartFunc {
+    fid: FID,
+    params: Vec<Type>,
+    returns: Type,
+  },
   EndFunc,
-  ReturnType { type_: Type },
-  NewParam { uid: UID, type_: Type },
+  ReturnType {
+    type_: Type,
+  },
   Return,
-  Call { uid: UID },
+  Call {
+    fid: FID,
+  },
   Drop,
-  Print,
+  Print {
+    type_: Type,
+  },
 }
 
 impl std::fmt::Display for IR {
@@ -32,24 +56,43 @@ impl std::fmt::Display for IR {
       BinOp { op, type_ } => write!(f, "{op} ({type_})"),
       UnOp { op, type_ } => write!(f, "{op}, {type_}"),
       Push { prim, value } => write!(f, "push {value} ({prim})"),
-      NewLocal { uid, type_ } => write!(f, "local ${uid} = {type_}"),
-      AssignLocal { uid } => write!(f, "pop local ${uid}"),
-      GetLocal { uid } => write!(f, "push local ${uid}"),
-      NewGlobal { uid, type_ } => write!(f, "global ${uid} = {type_}"),
-      AssignGlobal { uid } => write!(f, "pop global ${uid}"),
-      GetGlobal { uid } => write!(f, "push global ${uid}"),
-      StartFunc { uid } => write!(f, "<function id=${uid}>"),
+      New { uid, type_ } => write!(f, "local ${uid} = {type_}"),
+      Set { uid } => write!(f, "pop local ${uid}"),
+      Get { uid } => write!(f, "push local ${uid}"),
+      StartFunc {
+        uid,
+        params,
+        returns,
+      } => write!(
+        f,
+        "<function id=${uid} params={params:?} returns={returns}>"
+      ),
       EndFunc => write!(f, "</function>"),
-      NewParam { uid, type_ } => write!(f, "param ${uid} = {type_}"),
       Return => write!(f, "return"),
       Call { uid } => write!(f, "call ${uid}"),
       Drop => write!(f, "pop"),
       ReturnType { type_ } => write!(f, "result {type_}"),
-      Print => write!(f, "print [DEBUG]"),
+      Print { type_ } => write!(f, "print {type_} [DEBUG]"),
     }
   }
 }
 
+#[derive(Debug, Clone)]
+pub struct Compiler {
+  ir: Vec<IR>,
+}
+
+impl Compiler {
+  pub fn new() -> Self {
+    Self { ir: vec![] }
+  }
+
+  pub fn push(&mut self, ir: IR) {
+    self.ir.push(ir);
+  }
+}
+
+/*
 impl IR {
   pub fn to_wat(&self) -> String {
     use BinaryOp as b;

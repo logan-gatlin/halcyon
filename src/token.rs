@@ -9,6 +9,7 @@ pub enum Base {
   Hex = 16,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum TokenKind {
   LeftParen,
@@ -382,20 +383,19 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
         buffer.push(c);
         let _ = self.next_char();
       }
+      buffer = buffer.to_lowercase();
       // Determine base
       let base = if buffer.starts_with("0b") {
         Base::Binary
-      } else if buffer.starts_with("0o") || buffer.starts_with("0O") {
+      } else if buffer.starts_with("0o") {
         Base::Octal
-      } else if buffer.starts_with("0x") || buffer.starts_with("0X") {
+      } else if buffer.starts_with("0x") {
         Base::Hex
       } else {
         Base::Decimal
       };
       // Determine integer or float
-      if base == Base::Decimal
-        && (encountered_dot || buffer.contains("e") || buffer.contains("E"))
-      {
+      if base == Base::Decimal && (encountered_dot || buffer.contains("e")) {
         return t(FloatLiteral(buffer), position);
       } else {
         return t(IntegerLiteral(buffer, base), position);

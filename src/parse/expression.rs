@@ -67,6 +67,7 @@ pub enum ExpressionKind {
   StructLiteral {
     name: String,
     args: Vec<(String, Expression)>,
+    id: UID,
   },
   Field {
     namespace: Box<Expression>,
@@ -121,7 +122,7 @@ impl std::fmt::Debug for ExpressionKind {
         write!(f, "(fn({params:?}) -> {returns_actual:?})")
       },
       e::StructDef(params, _) => write!(f, "struct {{ {params:?} }}"),
-      e::StructLiteral { name, args } => write!(f, "{name} {{ {args:?} }}"),
+      e::StructLiteral { name, args, .. } => write!(f, "{name} {{ {args:?} }}"),
     }
   }
 }
@@ -410,7 +411,11 @@ impl<I: Iterator<Item = Token>> Parser<I> {
           }
         }
         self.eat(t::RightBrace)?;
-        e::StructLiteral { name, args }
+        e::StructLiteral {
+          name,
+          args,
+          id: "".into(),
+        }
       },
       t::Identifier(i) => {
         self.skip(1);

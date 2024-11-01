@@ -1,4 +1,4 @@
-use std::{io::Write, path::Path};
+use std::path::Path;
 
 use crate::{
   Parser, Tokenizer,
