@@ -4,7 +4,7 @@ S :: struct {
 	c: real,
 }
 
-s := foo(S{ a: 1, b: 'a', c: 1.0}, 2);
+s := foo(S{a: 1, b: 'a', c: 1.0}, 2);
 
 foo :: (s: S, a: integer) -> S {
 	return s;

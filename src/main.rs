@@ -3,6 +3,7 @@ mod ir;
 mod lookahead;
 mod parse;
 mod semantic;
+mod semantic2;
 mod token;
 mod treewalk;
 use std::ops::Add;
