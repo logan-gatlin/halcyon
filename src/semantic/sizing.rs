@@ -1,0 +1,6 @@
+pub enum DataType {
+  i32,
+  i64,
+  f32,
+  f64,
+}

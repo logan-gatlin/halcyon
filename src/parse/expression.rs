@@ -36,7 +36,7 @@ impl std::fmt::Display for Immediate {
   }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum ExpressionKind {
   Immediate(Immediate),
   Identifier(String, UID),
@@ -55,7 +55,7 @@ pub enum ExpressionKind {
     returns_str: Option<String>,
     returns_actual: Type,
     body: Vec<Statement>,
-    id: usize,
+    id: UID,
   },
   FunctionCall {
     callee: Box<Expression>,
@@ -76,7 +76,7 @@ pub enum ExpressionKind {
   },
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Expression {
   pub kind: ExpressionKind,
   pub span: Span,
@@ -89,7 +89,7 @@ impl Expression {
   }
 }
 
-impl std::fmt::Debug for ExpressionKind {
+impl std::fmt::Display for ExpressionKind {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     use ExpressionKind as e;
     match self {
@@ -99,27 +99,27 @@ impl std::fmt::Debug for ExpressionKind {
         left,
         right,
       } => {
-        write!(f, "({left:?} {token:?} {right:?})")
+        write!(f, "({left} {token} {right})")
       },
-      e::Parenthesis(inner) => write!(f, "{inner:?}"),
+      e::Parenthesis(inner) => write!(f, "{inner}"),
       e::Unary { op: token, child } => {
-        write!(f, "({token:?} {child:?})")
+        write!(f, "({token} {child})")
       },
       e::Identifier(i, _) => write!(f, "{i}"),
       e::FunctionCall { callee, args, .. } => {
-        write!(f, "({callee:?} call {args:?})")
+        write!(f, "({callee} call {args:?})")
       },
       e::Field {
         namespace, field, ..
       } => {
-        write!(f, "({namespace:?} . {field:?})")
+        write!(f, "({namespace} . {field})")
       },
       e::FunctionDef {
         params,
         returns_actual,
         ..
       } => {
-        write!(f, "(fn({params:?}) -> {returns_actual:?})")
+        write!(f, "(fn({params:?}) -> {returns_actual})")
       },
       e::StructDef(params, _) => write!(f, "struct {{ {params:?} }}"),
       e::StructLiteral { name, args, .. } => write!(f, "{name} {{ {args:?} }}"),
@@ -127,9 +127,9 @@ impl std::fmt::Debug for ExpressionKind {
   }
 }
 
-impl std::fmt::Debug for Expression {
+impl std::fmt::Display for Expression {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "({:?} {})", self.kind, self.type_)
+    write!(f, "({} {})", self.kind, self.type_)
   }
 }
 
@@ -355,7 +355,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
           returns_str,
           returns_actual: Type::Ambiguous,
           body,
-          id: usize::MAX,
+          id: "".into(),
         }
       },
       // Struct definition

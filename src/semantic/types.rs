@@ -9,8 +9,6 @@ pub type SID = usize;
 #[derive(Debug, Clone)]
 pub struct StructureDef(pub Vec<(String, UID)>);
 
-pub type FID = usize;
-
 #[derive(Debug, Clone)]
 pub struct FunctionDef {
   pub params: Vec<UID>,
@@ -28,7 +26,7 @@ pub enum Type {
   Alias(Box<Type>),
   Prim(Primitive),
   Struct(SID),
-  Function(FID),
+  Function(UID),
 }
 
 impl std::fmt::Display for Type {

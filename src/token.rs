@@ -385,14 +385,14 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
       }
       buffer = buffer.to_lowercase();
       // Determine base
-      let base = if buffer.starts_with("0b") {
-        Base::Binary
-      } else if buffer.starts_with("0o") {
-        Base::Octal
-      } else if buffer.starts_with("0x") {
-        Base::Hex
+      let (buffer, base) = if let Some(buffer) = buffer.strip_prefix("0b") {
+        (buffer.to_string(), Base::Binary)
+      } else if let Some(buffer) = buffer.strip_prefix("0o") {
+        (buffer.to_string(), Base::Octal)
+      } else if let Some(buffer) = buffer.strip_prefix("0x") {
+        (buffer.to_string(), Base::Hex)
       } else {
-        Base::Decimal
+        (buffer, Base::Decimal)
       };
       // Determine integer or float
       if base == Base::Decimal && (encountered_dot || buffer.contains("e")) {

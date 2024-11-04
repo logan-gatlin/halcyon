@@ -40,6 +40,7 @@ impl Analyzer {
           Some(type_actual.clone()),
           None,
           true,
+          self.table.in_global_scope(),
         )?;
         s::Declaration {
           name,
@@ -62,6 +63,7 @@ impl Analyzer {
           Some(value.type_.clone()),
           Some(true),
           true,
+          false,
         )?;
         s::Assignment { name, value, uid }
       },
@@ -170,18 +172,23 @@ impl Analyzer {
         mut body,
         id,
       } => {
-        let funcdef = self.table.functions[id].clone();
+        let funcdef = self.table.functions.get(&id).unwrap().clone();
         self.table.start_function();
         for (uid, param) in funcdef.params.iter().zip(params.iter_mut()) {
           let type_ = self.table.resolve_type(uid).span(&expr.span)?;
+          param.name = uid.clone();
           param.type_actual = type_;
         }
         for s in &mut body {
           *s = *self.bottom_up_stmt(s.clone().into())?;
         }
         self.table.end_function();
-        returns_actual =
-          self.table.resolve_type(&funcdef.returns).span(&expr.span)?;
+        returns_actual = self
+          .table
+          .resolve_type(&funcdef.returns)
+          .span(&expr.span)?
+          .is_alias()
+          .span(&expr.span)?;
         e::FunctionDef {
           params,
           returns_str,
@@ -194,14 +201,15 @@ impl Analyzer {
         mut callee,
         mut args,
         is_reference,
-        id,
+        mut id,
       } => {
         callee = self.bottom_up_expr(callee)?;
         match callee.type_ {
-          Type::Function(fid) => {
+          Type::Function(ref uid) => {
+            id = uid.clone();
             expr.type_ = self
               .table
-              .resolve_type(&self.table.functions[fid].returns)
+              .resolve_type(&self.table.functions.get(uid).unwrap().returns)
               .span(&callee.span)?
               .is_alias()
               .span(&expr.span)?
@@ -247,10 +255,10 @@ impl Analyzer {
       e::Field {
         mut namespace,
         field,
-        uid,
+        mut uid,
       } => {
         namespace = self.bottom_up_expr(namespace)?;
-        if let Type::Struct(s) = namespace.type_ {
+        let field_name = if let Type::Struct(s) = namespace.type_ {
           if let e::Identifier(name, _) = &field.kind {
             expr.type_ = self
               .table
@@ -259,6 +267,7 @@ impl Analyzer {
               .is_alias()
               .reason("Expected type, found value")
               .span(&expr.span)?;
+            name.clone()
           } else {
             return error().reason("Field must be identifier").span(&expr.span);
           }
@@ -269,8 +278,13 @@ impl Analyzer {
               namespace.type_
             ))
             .span(&expr.span);
+        };
+        // Name mangling
+        if let e::Identifier(_, mangle) = &namespace.kind {
+          uid = mangle.clone() + "$" + &field_name;
+        } else if uid != "" {
+          uid = uid + "$" + &field_name;
         }
-        // TODO handle name mangle
         e::Field {
           namespace,
           field,

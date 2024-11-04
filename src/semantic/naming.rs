@@ -29,7 +29,6 @@ impl Analyzer {
         } else {
           value.type_.clone()
         };
-        println!("{type_:?}");
         let symbol = self.table.define_ident(&name, type_, mutable)?;
         uid = symbol.uid;
         s::Declaration {
@@ -54,6 +53,7 @@ impl Analyzer {
           None,
           Some(value.type_.clone()),
           Some(true),
+          false,
           false,
         )?;
         s::Assignment { name, value, uid }

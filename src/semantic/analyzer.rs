@@ -5,25 +5,31 @@ pub struct Analyzer {
 }
 
 impl Analyzer {
-  pub fn typecheck(mut statements: Vec<Statement>) -> Vec<Statement> {
-    let mut this = Self {
+  pub fn new() -> Self {
+    Self {
       table: SymbolTable::new(),
-    };
+    }
+  }
+
+  pub fn typecheck(
+    &mut self,
+    mut statements: Vec<Statement>,
+  ) -> Vec<Statement> {
     for s in &mut statements {
-      *s = *this.naming_pass_stmt(s.clone().into()).unwrap();
+      *s = *self.naming_pass_stmt(s.clone().into()).unwrap();
     }
     for s in &mut statements {
-      *s = *this.bottom_up_stmt(s.clone().into()).unwrap();
+      *s = *self.bottom_up_stmt(s.clone().into()).unwrap();
     }
     for s in &mut statements {
-      *s = *this.top_down_stmt(s.clone().into()).unwrap();
+      *s = *self.top_down_stmt(s.clone().into()).unwrap();
     }
     println!("-----TABLE------");
-    println!("{:#?}", this.table.table);
+    println!("{:#?}", self.table.table);
     println!("-----FUNCS------");
-    println!("{:#?}", this.table.functions);
+    println!("{:#?}", self.table.functions);
     println!("-----STRUCTS----");
-    println!("{:#?}", this.table.structs);
+    println!("{:#?}", self.table.structs);
     statements
   }
 }

@@ -1,5 +1,4 @@
 mod err;
-mod frontend;
 mod ir;
 mod lookahead;
 mod parse;
@@ -9,6 +8,7 @@ mod treewalk;
 use std::ops::Add;
 
 use err::*;
+use ir::Compiler;
 use lookahead::*;
 use parse::*;
 use semantic::Analyzer;
@@ -95,14 +95,24 @@ fn parse(input: &'static str) -> impl Iterator<Item = Statement> {
 }
 
 fn typecheck(input: &'static str) -> Vec<Statement> {
-  Analyzer::typecheck(parse(input).collect())
+  Analyzer::new().typecheck(parse(input).collect())
+}
+
+fn compile(input: &'static str) {
+  let mut a = Analyzer::new();
+  let s = a.typecheck(parse(input).collect());
+  let mut c = Compiler::new(a.table);
+  c.compile(s);
 }
 
 fn main() -> Result<()> {
+  /*
   for s in typecheck(include_str!("../demo.hal")) {
     println!("------------------");
     println!("{s:#?}");
   }
+  */
+  compile(include_str!("../demo.hal"));
   //let module = frontend::Module::from_file("./demo.hal")?;
   //module.write_to("test");
   Ok(())

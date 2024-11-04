@@ -34,8 +34,8 @@ macro_rules! primitives {
     impl std::fmt::Display for Primitive {
       fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-          Primitive::integer_ambiguous => write!(f, "<ambiguous integer>"),
-          Primitive::real_ambiguous => write!(f, "<ambiguous real>"),
+          Primitive::integer_ambiguous => write!(f, "ambiguous integer"),
+          Primitive::real_ambiguous => write!(f, "ambiguous real"),
           $(Primitive::$i => write!(f, stringify!{$i}),)*
         }
       }
@@ -48,6 +48,7 @@ macro_rules! primitives {
           uid: format!("$${}", stringify!{$i}),
           initialized: true,
           mutable: Some(false),
+          global: true,
         },)*
       ]
     }

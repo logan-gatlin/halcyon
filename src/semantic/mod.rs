@@ -2,6 +2,7 @@ mod analyzer;
 mod bottom_up;
 mod naming;
 mod primitives;
+mod sizing;
 mod top_down;
 mod types;
 
@@ -23,11 +24,12 @@ pub type UID = String;
 
 #[derive(Debug, Clone)]
 pub struct Symbol {
-  name: String,
-  type_: Type,
-  uid: UID,
+  pub name: String,
+  pub type_: Type,
+  pub uid: UID,
   initialized: bool,
-  mutable: Option<bool>,
+  pub mutable: Option<bool>,
+  pub global: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -40,7 +42,7 @@ enum Definition {
 #[derive(Debug, Clone)]
 pub struct SymbolTable {
   pub structs: Vec<StructureDef>,
-  pub functions: Vec<FunctionDef>,
+  pub functions: HashMap<UID, FunctionDef>,
   scope: Vec<Definition>,
   pub table: HashMap<UID, Symbol>,
   mangle_num: usize,
@@ -63,12 +65,18 @@ impl SymbolTable {
       uid: nothing_mangle(),
       initialized: true,
       mutable: Some(false),
+      global: true,
     };
+    let mut functions = HashMap::new();
+    functions.insert("$$main".into(), FunctionDef {
+      params: vec![],
+      returns: "Nothing".into(),
+    });
     scope.push(Definition::Ident(nothing_symbol.clone()));
     table.insert(nothing_symbol.uid.clone(), nothing_symbol);
     Self {
       structs: vec![],
-      functions: vec![],
+      functions,
       scope,
       table,
       mangle_num: 0,
@@ -96,6 +104,17 @@ impl SymbolTable {
     unreachable!("Cannot end global scope")
   }
 
+  pub fn in_global_scope(&self) -> bool {
+    for def in &self.scope {
+      if let Definition::Ident(..) = def {
+        continue;
+      } else {
+        return false;
+      }
+    }
+    true
+  }
+
   pub fn resolve_type(&self, uid: &UID) -> Result<Type> {
     let symbol = self.table.get(uid).unwrap();
     if symbol.initialized == false {
@@ -103,6 +122,16 @@ impl SymbolTable {
     } else {
       Ok(symbol.type_.clone())
     }
+  }
+
+  pub fn get_field_no(&self, sid: SID, argname: &str) -> usize {
+    let struct_def = &self.structs[sid].0;
+    for (id, (name, _)) in struct_def.iter().enumerate() {
+      if name == argname {
+        return id;
+      }
+    }
+    unreachable!()
   }
 
   pub fn start_function(&mut self) {
@@ -158,8 +187,8 @@ impl SymbolTable {
     &mut self,
     params: Vec<Parameter>,
     returns: Option<String>,
-  ) -> Result<FID> {
-    let fid = self.functions.len();
+  ) -> Result<UID> {
+    let uid = self.generate_uid("func");
     let mut symbols = vec![];
     for p in &params {
       let symbol = self.reference_ident(&p.type_str);
@@ -174,15 +203,15 @@ impl SymbolTable {
     let mut new_params = vec![];
     for (p, s) in params.iter().zip(symbols.iter()) {
       let s = self
-        .define_ident(&p.name, s.type_.clone(), false)
+        .define_ident(&p.name, s.type_.is_alias()?, false)
         .trace("While initializing function parameters")?;
       new_params.push(s.uid);
     }
-    self.functions.push(FunctionDef {
+    self.functions.insert(uid.clone(), FunctionDef {
       params: new_params,
       returns,
     });
-    Ok(fid)
+    Ok(uid)
   }
 
   pub fn modify_ident(
@@ -192,6 +221,7 @@ impl SymbolTable {
     type_: Option<Type>,
     mutable: Option<bool>,
     init: bool,
+    global: bool,
   ) -> Result<()> {
     let symbol = self.table.get_mut(&uid).unwrap();
     if let Some(ref type_) = type_ {
@@ -204,6 +234,7 @@ impl SymbolTable {
       _ => mutable,
     };
     symbol.initialized |= init;
+    symbol.global |= global;
 
     let mut nesting = self.nesting;
     for def in &mut self.scope {
@@ -225,6 +256,7 @@ impl SymbolTable {
             _ => mutable,
           };
           symbol.initialized |= init;
+          symbol.global |= global;
           return Ok(());
         },
         Definition::FuncStart => nesting -= 1,
@@ -241,8 +273,6 @@ impl SymbolTable {
     type_: Type,
     mutable: bool,
   ) -> Result<Symbol> {
-    println!("---{name}---");
-    println!("{:#?}", self.lookup_block_scope(name));
     if let Type::Alias(_) | Type::Function(_) = &type_ {
       if mutable {
         return error()
@@ -264,6 +294,7 @@ impl SymbolTable {
           Some(type_),
           Some(mutable),
           true,
+          self.in_global_scope(),
         )?;
         return Ok(s);
       }
@@ -276,6 +307,7 @@ impl SymbolTable {
       uid: uid.clone(),
       initialized: true,
       mutable: Some(mutable),
+      global: self.in_global_scope(),
     };
     self.scope.push(Definition::Ident(sym.clone()));
     self.table.insert(uid, sym.clone());
@@ -293,6 +325,7 @@ impl SymbolTable {
           uid: uid.clone(),
           initialized: false,
           mutable: None,
+          global: false,
         };
         self.scope.push(Definition::Ident(sym.clone()));
         self.table.insert(uid, sym.clone());
@@ -332,21 +365,5 @@ impl SymbolTable {
       "Cannot find the definition of '{}' in the current scope",
       name
     ))
-  }
-}
-
-// I think this works? Box<T> pattern matching weirdness
-// going on. If this is ever even used
-fn unwrap_aliases(mut t: Type) -> Type {
-  loop {
-    if let Type::Alias(ref t1) = t {
-      if let Type::Alias(t2) = &**t1 {
-        t = *t2.clone();
-      } else {
-        return t;
-      }
-    } else {
-      return t;
-    }
   }
 }

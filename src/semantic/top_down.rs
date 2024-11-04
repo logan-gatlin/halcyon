@@ -89,6 +89,7 @@ impl Analyzer {
       s::Return(expr) => {
         if let Some(mut expr) = expr {
           let expr_t = expr.type_.clone();
+          println!("{expr_t}");
           expr = *self.top_down_expr(expr.into(), &expr_t)?;
           s::Return(Some(expr))
         } else {
@@ -106,6 +107,7 @@ impl Analyzer {
     expect: &Type,
   ) -> Result<Box<Expression>> {
     use ExpressionKind as e;
+    println!("{} -> {expect}", expr.type_);
     expr.type_ = expr.type_.coerce(expect).span(&expr.span)?;
     expr.kind = match expr.kind {
       e::Immediate(i) => e::Immediate(i),
@@ -151,8 +153,8 @@ impl Analyzer {
         is_reference,
         id,
       } => {
-        let func_def = if let Type::Function(fid) = callee.type_ {
-          self.table.functions[fid].clone()
+        let func_def = if let Type::Function(ref uid) = callee.type_ {
+          self.table.functions.get(uid).unwrap().clone()
         } else {
           unreachable!()
         };
@@ -208,7 +210,9 @@ impl Analyzer {
             .span(&arg.span)?
             .is_alias()
             .span(&arg.span)?;
+          println!("{param_t}");
           *arg = *self.top_down_expr(arg.clone().into(), &param_t)?;
+          println!("/{param_t}");
         }
         e::StructLiteral { name, args, id }
       },
