@@ -40,18 +40,6 @@ macro_rules! primitives {
         }
       }
     }
-    pub fn primitive_symbols() -> Vec<Symbol> {
-      vec![
-        $(Symbol {
-          name: stringify!{$i}.into(),
-          type_: Type::Alias(Box::new(Type::Prim(Primitive::$i))),
-          uid: format!("$${}", stringify!{$i}),
-          initialized: true,
-          mutable: Some(false),
-          global: true,
-        },)*
-      ]
-    }
   };
 }
 

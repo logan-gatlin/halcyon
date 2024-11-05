@@ -3,13 +3,11 @@ mod ir;
 mod lookahead;
 mod parse;
 mod semantic;
-mod semantic2;
 mod token;
 mod treewalk;
 use std::ops::Add;
 
 use err::*;
-use ir::Compiler;
 use lookahead::*;
 use parse::*;
 use semantic::Analyzer;
@@ -64,29 +62,6 @@ fn test_expression(expr: &str) {
   println!("{:?}", parser.expression(0).unwrap());
 }
 
-fn prints(st: &Statement) {
-  use StatementKind as s;
-  println!("{st:?}");
-  match &st.kind {
-    s::Declaration {
-      value:
-        Expression {
-          kind: ExpressionKind::FunctionDef { body: block, .. },
-          ..
-        },
-      ..
-    }
-    | s::If { block, .. }
-    | s::While { block, .. }
-    | s::Block(block) => {
-      for s in block {
-        prints(s);
-      }
-    },
-    _ => {},
-  };
-}
-
 fn tokenize(input: &'static str) -> impl Iterator<Item = Token> {
   Tokenizer::new(input.chars()).filter(|t| t.0.is_meaningful())
 }
@@ -95,25 +70,23 @@ fn parse(input: &'static str) -> impl Iterator<Item = Statement> {
   Parser::new(tokenize(input))
 }
 
-fn typecheck(input: &'static str) -> Vec<Statement> {
-  Analyzer::new().typecheck(parse(input).collect())
-}
-
-fn compile(input: &'static str) {
-  let mut a = Analyzer::new();
-  let s = a.typecheck(parse(input).collect());
-  let mut c = Compiler::new(a.table);
-  c.compile(s);
+fn typecheck(input: &'static str) {
+  let parsed: Vec<_> = parse(input).collect();
+  let mut s = semantic::Analyzer::new();
+  s.block(parsed);
 }
 
 fn main() -> Result<()> {
+  for p in parse(include_str!("../demo.hal")) {
+    println!("------------------");
+    println!("{p:#?}");
+  }
   /*
   for s in typecheck(include_str!("../demo.hal")) {
     println!("------------------");
     println!("{s:#?}");
   }
   */
-  compile(include_str!("../demo.hal"));
   //let module = frontend::Module::from_file("./demo.hal")?;
   //module.write_to("test");
   Ok(())

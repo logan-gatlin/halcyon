@@ -1,159 +1,111 @@
-mod analyzer;
-mod bottom_up;
-mod naming;
-mod primitives;
-mod sizing;
-mod top_down;
-mod types;
+pub mod analyzer;
+pub mod primitives;
+
+pub use analyzer::*;
+pub use primitives::*;
 
 use std::collections::HashMap;
 
-use crate::{Parameter, err::*};
-pub use analyzer::*;
-pub use primitives::*;
-pub use types::*;
+use crate::{Parameters, Span, err::*, semantic::Primitive};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Scope {
-  Block,
-  Function,
+pub type UID = String;
+
+#[derive(Debug, Clone)]
+pub enum Type {
+  Ambiguous,
+  Prim(Primitive),
+  Nothing,
+  Struct(UID),
+  Function(UID),
 }
 
-// Mangled name
-pub type UID = String;
+impl std::fmt::Display for Type {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Type::Ambiguous => write!(f, "ambiguous"),
+      Type::Prim(primitive) => write!(f, "{primitive}"),
+      Type::Nothing => write!(f, "nothing"),
+      Type::Struct(s) => write!(f, "struct {s}"),
+      Type::Function(func) => write!(f, "func {func}"),
+    }
+  }
+}
+
+#[derive(Debug, Clone)]
+pub enum SymbolKind {
+  Variable {
+    type_: UID,
+    mutable: bool,
+    global: bool,
+    children: Vec<UID>,
+  },
+  Function {
+    params: Parameters,
+    returns: UID,
+  },
+  Struct {
+    params: Parameters,
+    size: usize,
+    align: usize,
+  },
+  TypeDef {
+    actual: Type,
+  },
+}
 
 #[derive(Debug, Clone)]
 pub struct Symbol {
   pub name: String,
-  pub type_: Type,
   pub uid: UID,
-  initialized: bool,
-  pub mutable: Option<bool>,
-  pub global: bool,
+  pub span: Option<Span>,
+  pub kind: SymbolKind,
+}
+
+impl Symbol {
+  pub fn is_variable(&self) -> Result<()> {
+    let name = &self.name;
+    match &self.kind {
+      SymbolKind::Variable { .. } => Ok(()),
+      SymbolKind::Function { .. } => {
+        error().reason(format!("'{name}' refers to a function, not a value"))
+      },
+      _ => error().reason(format!("'{name}' refers to a type, not a value")),
+    }
+  }
+
+  pub fn is_type(&self) -> Result<Type> {
+    let name = &self.name;
+    match &self.kind {
+      SymbolKind::Struct { .. } => Ok(Type::Struct(self.uid.clone())),
+      SymbolKind::TypeDef { actual } => Ok(actual.clone()),
+      _ => error().reason(format!("'{name}' refers to a value, not a type")),
+    }
+  }
 }
 
 #[derive(Debug, Clone)]
-enum Definition {
-  Ident(Symbol),
-  FuncStart,
-  BlockStart,
+pub enum Event {
+  Declared { name: String, uid: UID },
+  Moved { name: String, uid: UID, span: Span },
+  Func { returns: Vec<UID>, uid: UID },
+  Block { returns: UID },
 }
 
-#[derive(Debug, Clone)]
 pub struct SymbolTable {
-  pub structs: Vec<StructureDef>,
-  pub functions: HashMap<UID, FunctionDef>,
-  scope: Vec<Definition>,
-  pub table: HashMap<UID, Symbol>,
-  mangle_num: usize,
+  syms: HashMap<UID, Symbol>,
+  scope: Vec<Event>,
   nesting: usize,
+  mangle_num: usize,
 }
 
 impl SymbolTable {
   pub fn new() -> Self {
-    // Setup builtin symbols
-    let prims = primitive_symbols();
-    let mut scope = vec![];
-    let mut table = HashMap::new();
-    for p in prims {
-      scope.push(Definition::Ident(p.clone()));
-      table.insert(p.uid.clone(), p);
-    }
-    let nothing_symbol = Symbol {
-      name: "Nothing".to_string(),
-      type_: Type::Alias(Box::new(Type::Nothing)),
-      uid: nothing_mangle(),
-      initialized: true,
-      mutable: Some(false),
-      global: true,
-    };
-    let mut functions = HashMap::new();
-    functions.insert("$$main".into(), FunctionDef {
-      params: vec![],
-      returns: "Nothing".into(),
-    });
-    scope.push(Definition::Ident(nothing_symbol.clone()));
-    table.insert(nothing_symbol.uid.clone(), nothing_symbol);
     Self {
-      structs: vec![],
-      functions,
-      scope,
-      table,
-      mangle_num: 0,
+      syms: HashMap::new(),
+      scope: vec![],
       nesting: 0,
+      mangle_num: 0,
     }
-  }
-
-  pub fn start_block(&mut self) {
-    self.scope.push(Definition::BlockStart);
-  }
-
-  pub fn end_block(&mut self) {
-    let mut escaped = vec![];
-    while !self.scope.is_empty() {
-      let top = self.scope.pop();
-      if let Some(Definition::BlockStart) = top {
-        self.scope.append(&mut escaped);
-        return;
-      } else if let Some(Definition::Ident(s)) = top {
-        if !s.initialized {
-          escaped.push(Definition::Ident(s));
-        }
-      }
-    }
-    unreachable!("Cannot end global scope")
-  }
-
-  pub fn in_global_scope(&self) -> bool {
-    for def in &self.scope {
-      if let Definition::Ident(..) = def {
-        continue;
-      } else {
-        return false;
-      }
-    }
-    true
-  }
-
-  pub fn resolve_type(&self, uid: &UID) -> Result<Type> {
-    let symbol = self.table.get(uid).unwrap();
-    if symbol.initialized == false {
-      return error().reason("Symbol was never initialized");
-    } else {
-      Ok(symbol.type_.clone())
-    }
-  }
-
-  pub fn get_field_no(&self, sid: SID, argname: &str) -> usize {
-    let struct_def = &self.structs[sid].0;
-    for (id, (name, _)) in struct_def.iter().enumerate() {
-      if name == argname {
-        return id;
-      }
-    }
-    unreachable!()
-  }
-
-  pub fn start_function(&mut self) {
-    self.nesting += 1;
-    self.scope.push(Definition::FuncStart);
-  }
-
-  pub fn end_function(&mut self) {
-    self.nesting -= 1;
-    let mut escaped = vec![];
-    while !self.scope.is_empty() {
-      let top = self.scope.pop();
-      if let Some(Definition::FuncStart) = top {
-        self.scope.append(&mut escaped);
-        return;
-      } else if let Some(Definition::Ident(s)) = top {
-        if !s.initialized {
-          escaped.push(Definition::Ident(s));
-        }
-      }
-    }
-    unreachable!("Cannot end global scope")
   }
 
   fn generate_uid(&mut self, name: &str) -> UID {
@@ -162,208 +114,244 @@ impl SymbolTable {
     uid
   }
 
-  pub fn get_field(&self, struct_id: SID, field_name: &str) -> Result<Type> {
-    let struct_def = &self.structs[struct_id].0;
-    for (name, sid) in struct_def {
-      if name == field_name {
-        return self.resolve_type(sid);
+  pub fn get(&self, uid: &UID) -> &Symbol {
+    self.syms.get(uid).unwrap()
+  }
+
+  pub fn get_mut(&mut self, uid: &UID) -> &mut Symbol {
+    self.syms.get_mut(uid).unwrap()
+  }
+
+  // Find the definition of a symbol in local and global scope
+  pub fn find(&self, name: &str) -> Result<&Symbol> {
+    let mut nesting = self.nesting;
+    for e in self.scope.iter().rev() {
+      match e {
+        Event::Declared { uid, .. }
+          if nesting == self.nesting || nesting == 0 =>
+        {
+          return Ok(self.get(uid));
+        },
+        Event::Moved { name, span, .. }
+          if nesting == self.nesting || nesting == 0 =>
+        {
+          return error()
+            .reason(format!("Symbol '{name}' moved out of scope here"))
+            .span(&span);
+        },
+        Event::Func { .. } => {
+          nesting -= 1;
+        },
+        _ => {},
       }
     }
-    error().reason(format!("Cannot find field '{field_name}'"))
+    error().reason(format!("Cannot find symbol '{name}'"))
   }
 
-  pub fn create_struct(&mut self, params: Vec<Parameter>) -> SID {
-    let sid = self.structs.len();
-    let mut new_params = vec![];
-    for p in params {
-      let s = self.reference_ident(&p.type_str);
-      new_params.push((p.name, s.uid));
+  // Get all nested members of a struct variable
+  fn get_all_children(&self, uid: &UID) -> Vec<UID> {
+    use SymbolKind as s;
+    match &self.get(uid).kind {
+      s::Variable { children, .. } => {
+        let mut new_children = children.clone();
+        for uid in children {
+          new_children.append(&mut self.get_all_children(uid))
+        }
+        new_children
+      },
+      _ => {
+        vec![]
+      },
     }
-    self.structs.push(StructureDef(new_params));
-    sid
   }
 
-  pub fn create_function(
-    &mut self,
-    params: Vec<Parameter>,
-    returns: Option<String>,
-  ) -> Result<UID> {
-    let uid = self.generate_uid("func");
-    let mut symbols = vec![];
-    for p in &params {
-      let symbol = self.reference_ident(&p.type_str);
-      symbols.push(symbol);
-    }
-    let returns = if let Some(s) = returns {
-      self.reference_ident(&s).uid
+  // Move a symbol out of scope
+  pub fn move_symbol(&mut self, move_uid: &UID, span: Span) -> Result<()> {
+    if let SymbolKind::Variable { global, .. } = self.get(move_uid).kind {
+      if global {
+        return error().reason("Cannot move global symbol").span(&span);
+      }
     } else {
-      nothing_mangle()
-    };
-    self.start_function();
-    let mut new_params = vec![];
-    for (p, s) in params.iter().zip(symbols.iter()) {
-      let s = self
-        .define_ident(&p.name, s.type_.is_alias()?, false)
-        .trace("While initializing function parameters")?;
-      new_params.push(s.uid);
+      panic!("Moved non-variable {move_uid}");
     }
-    self.functions.insert(uid.clone(), FunctionDef {
-      params: new_params,
-      returns,
+    let children = self.get_all_children(move_uid);
+    for e in self.scope.iter().rev() {
+      match e {
+        Event::Declared { uid, .. } => {
+          if move_uid == uid {
+            break;
+          }
+        },
+        Event::Moved { uid, span, .. } => {
+          if children.contains(uid) {
+            return error()
+              .reason("Symbol was partially moved here")
+              .span(&span);
+          } else if move_uid == uid {
+            return error()
+              .reason("Symbol was previously moved here")
+              .span(&span);
+          }
+        },
+        _ => {},
+      }
+    }
+    self.scope.push(Event::Moved {
+      name: self.get(move_uid).name.clone(),
+      uid: move_uid.clone(),
+      span,
+    });
+    Ok(())
+  }
+
+  fn in_global_scope(&self) -> bool {
+    for e in self.scope.iter().rev() {
+      if let Event::Func { .. } = e {
+        return false;
+      }
+    }
+    true
+  }
+
+  pub fn define_var(
+    &mut self,
+    name: &str,
+    mutable: bool,
+    type_: &UID,
+    span: Span,
+  ) -> UID {
+    let uid = self.generate_uid(name);
+    self.syms.insert(uid.clone(), Symbol {
+      name: name.to_string(),
+      span: Some(span),
+      uid: uid.clone(),
+      kind: SymbolKind::Variable {
+        type_: type_.clone(),
+        mutable,
+        global: self.in_global_scope(),
+        children: vec![],
+      },
+    });
+    self.scope.push(Event::Declared {
+      name: name.to_string(),
+      uid: uid.clone(),
+    });
+    uid
+  }
+
+  pub fn declare_struct(
+    &mut self,
+    struct_name: &str,
+    span: Span,
+  ) -> Result<UID> {
+    // Check for multiple definition
+    for e in self.scope.iter().rev() {
+      match e {
+        Event::Declared { name, uid } => {
+          if name == struct_name {
+            let e = error().reason(format!(
+              "Structure '{struct_name}' is defined multiple times"
+            ));
+            if let Some(s) = &self.get(uid).span {
+              return e.span(s);
+            } else {
+              return e;
+            }
+          }
+        },
+        Event::Moved { .. } => {},
+        _ => break,
+      }
+    }
+    let uid = self.generate_uid(struct_name);
+    self.syms.insert(uid.clone(), Symbol {
+      name: struct_name.to_string(),
+      uid: uid.clone(),
+      span: Some(span),
+      kind: SymbolKind::Struct {
+        params: Parameters::default(),
+        size: 0,
+        align: 0,
+      },
+    });
+    self.scope.push(Event::Declared {
+      name: struct_name.to_string(),
+      uid: uid.clone(),
     });
     Ok(uid)
   }
 
-  pub fn modify_ident(
-    &mut self,
-    uid: UID,
-    name: Option<String>,
-    type_: Option<Type>,
-    mutable: Option<bool>,
-    init: bool,
-    global: bool,
-  ) -> Result<()> {
-    let symbol = self.table.get_mut(&uid).unwrap();
-    if let Some(ref type_) = type_ {
-      symbol.type_ = symbol.type_.clone().deduce(type_)?;
+  fn type_params(&mut self, mut params: Parameters) -> Result<Parameters> {
+    for i in 0..params.arity {
+      params.types[i] = self
+        .find(&params.type_names[i])
+        .trace(format!(
+          "while resolving type of field '{}'",
+          params.type_names[i]
+        ))?
+        .uid
+        .clone();
     }
-    symbol.mutable = match (symbol.mutable, mutable) {
-      (Some(true), Some(false)) | (Some(false), Some(true)) => {
-        return error().reason("Cannot mutate immutable symbol");
-      },
-      _ => mutable,
-    };
-    symbol.initialized |= init;
-    symbol.global |= global;
+    Ok(params)
+  }
 
-    let mut nesting = self.nesting;
-    for def in &mut self.scope {
-      match def {
-        Definition::Ident(symbol)
-          if (symbol.uid == uid)
-            && (nesting == 0 || nesting == self.nesting) =>
-        {
-          if let Some(ref name) = name {
-            symbol.name = name.clone();
+  pub fn define_function(
+    &mut self,
+    func_name: &str,
+    params: Parameters,
+    returns_str: Option<&str>,
+    span: Span,
+  ) -> Result<UID> {
+    // Check for multiple definition
+    for e in self.scope.iter().rev() {
+      match e {
+        Event::Declared { name, uid } => {
+          if name == func_name {
+            let e = error().reason(format!(
+              "Function '{func_name}' is defined multiple times"
+            ));
+            if let Some(s) = &self.get(uid).span {
+              return e.span(s);
+            } else {
+              return e;
+            }
           }
-          if let Some(ref type_) = type_ {
-            symbol.type_ = symbol.type_.clone().deduce(type_)?;
-          }
-          symbol.mutable = match (symbol.mutable, mutable) {
-            (Some(true), Some(false)) | (Some(false), Some(true)) => {
-              return error().reason("Cannot mutate immutable symbol");
-            },
-            _ => mutable,
-          };
-          symbol.initialized |= init;
-          symbol.global |= global;
-          return Ok(());
         },
-        Definition::FuncStart => nesting -= 1,
-        _ => {},
+        Event::Moved { .. } => {},
+        _ => break,
       }
+    }
+    let uid = self.generate_uid(func_name);
+    // Check types
+    let params = self.type_params(params)?;
+    let returns = {
+      let sym = self.find(returns_str)?;
+      sym.is_type()?;
+      sym.uid.clone()
+    };
+    self.syms.insert(uid.clone(), Symbol {
+      name: func_name.to_string(),
+      uid: uid.clone(),
+      span: Some(span),
+      kind: SymbolKind::Function { params, returns },
+    });
+    self.scope.push(Event::Declared {
+      name: func_name.to_string(),
+      uid: uid.clone(),
+    });
+    Ok(uid)
+  }
+
+  pub fn define_struct(&mut self, uid: &UID, params: Parameters) -> Result<()> {
+    let params = self.type_params(params)?;
+    if let SymbolKind::Struct {
+      params: old_params, ..
+    } = &mut self.get_mut(uid).kind
+    {
+      *old_params = params;
+    } else {
+      unreachable!("Defined non-existent struct")
     }
     Ok(())
-    //unreachable!("Symbol {uid} does not exist")
-  }
-
-  pub fn define_ident(
-    &mut self,
-    name: &str,
-    type_: Type,
-    mutable: bool,
-  ) -> Result<Symbol> {
-    if let Type::Alias(_) | Type::Function(_) = &type_ {
-      if mutable {
-        return error()
-          .reason("Struct and function definitions cannot be mutable");
-      }
-    }
-    if let Ok(s) = self.lookup_block_scope(name) {
-      // Re-definition error
-      // TODO support name shadowing
-      if s.initialized {
-        return error()
-          .reason(format!("Multiple definitions of '{name}' in this scope"));
-      }
-      // Referenced before init, modify existing entry
-      else {
-        self.modify_ident(
-          s.uid.clone(),
-          None,
-          Some(type_),
-          Some(mutable),
-          true,
-          self.in_global_scope(),
-        )?;
-        return Ok(s);
-      }
-    }
-    // First initialization in this scope
-    let uid = self.generate_uid(name);
-    let sym = Symbol {
-      name: name.into(),
-      type_,
-      uid: uid.clone(),
-      initialized: true,
-      mutable: Some(mutable),
-      global: self.in_global_scope(),
-    };
-    self.scope.push(Definition::Ident(sym.clone()));
-    self.table.insert(uid, sym.clone());
-    Ok(sym)
-  }
-
-  pub fn reference_ident(&mut self, name: &str) -> Symbol {
-    match self.lookup_function_scope(name) {
-      Ok(s) => s,
-      Err(_) => {
-        let uid = self.generate_uid(name);
-        let sym = Symbol {
-          name: name.into(),
-          type_: Type::Ambiguous,
-          uid: uid.clone(),
-          initialized: false,
-          mutable: None,
-          global: false,
-        };
-        self.scope.push(Definition::Ident(sym.clone()));
-        self.table.insert(uid, sym.clone());
-        sym
-      },
-    }
-  }
-
-  pub fn lookup_block_scope(&self, name: &str) -> Result<Symbol> {
-    self.lookup_scope(name, Scope::Block)
-  }
-
-  pub fn lookup_function_scope(&self, name: &str) -> Result<Symbol> {
-    self.lookup_scope(name, Scope::Function)
-  }
-
-  fn lookup_scope(&self, name: &str, scope: Scope) -> Result<Symbol> {
-    let mut nesting = self.nesting;
-    for def in self.scope.iter().rev() {
-      match def {
-        Definition::Ident(symbol)
-          if (symbol.name == name)
-            && ((nesting == 0) || nesting == self.nesting) =>
-        {
-          return Ok(symbol.clone());
-        },
-        Definition::FuncStart | Definition::BlockStart
-          if scope == Scope::Block =>
-        {
-          break;
-        },
-        Definition::FuncStart => nesting -= 1,
-        _ => {},
-      }
-    }
-    error().reason(format!(
-      "Cannot find the definition of '{}' in the current scope",
-      name
-    ))
   }
 }

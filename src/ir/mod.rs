@@ -1,3 +1,4 @@
+/*
 mod generate;
 mod wasm;
 
@@ -194,3 +195,4 @@ impl Compiler {
     self.ir = result;
   }
 }
+*/

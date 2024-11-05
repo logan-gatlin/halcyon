@@ -1,3 +1,4 @@
+/*
 use crate::{
   Base, BinaryOp, Immediate,
   err::*,
@@ -209,3 +210,4 @@ impl Compiler {
     })
   }
 }
+*/

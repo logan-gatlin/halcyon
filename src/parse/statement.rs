@@ -1,4 +1,4 @@
-use crate::semantic::{Type, UID};
+use crate::semantic::UID;
 
 use super::*;
 
@@ -7,7 +7,7 @@ pub enum StatementKind {
   Declaration {
     name: String,
     type_str: Option<String>,
-    type_actual: Type,
+    type_uid: UID,
     value: Expression,
     mutable: bool,
     uid: UID,
@@ -17,18 +17,13 @@ pub enum StatementKind {
     value: Expression,
     uid: UID,
   },
-  If {
-    predicate: Expression,
-    block: Vec<Statement>,
-    else_: Option<Box<Statement>>,
-  },
   While {
     predicate: Expression,
     block: Vec<Statement>,
   },
   Print(Expression),
   Expression(Expression),
-  Block(Vec<Statement>),
+  Remainder(Expression),
   Return(Option<Expression>),
   Error(Diagnostic),
 }
@@ -83,7 +78,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
           kind: s::Declaration {
             name,
             type_str,
-            type_actual: Type::Ambiguous,
+            type_uid: "".into(),
             value,
             mutable,
             uid: "".into(),
@@ -110,10 +105,6 @@ impl<I: Iterator<Item = Token>> Parser<I> {
             uid: "".into(),
           },
         }
-      },
-      // If
-      (Token(t::If, _), _) => {
-        return self.if_else();
       },
       // While
       (Token(t::While, span2), _) => {
@@ -149,19 +140,6 @@ impl<I: Iterator<Item = Token>> Parser<I> {
           kind: s::Print(expr),
         }
       },
-      // Block
-      (Token(t::LeftBrace, span2), _) => {
-        // Skip check for semicolon
-        span = span + span2;
-        let (block, span2) = self
-          .block()
-          .trace_span(span, "while parsing block statement")?;
-        span = span + span2;
-        return Ok(Statement {
-          kind: s::Block(block),
-          span,
-        });
-      },
       // Return
       (Token(t::Return, span2), _) => {
         span = span + span2;
@@ -182,9 +160,26 @@ impl<I: Iterator<Item = Token>> Parser<I> {
           .expression(0)
           .trace_span(span, "while parsing expression statement")?;
         span = span + expr.span;
-        Statement {
-          span,
-          kind: s::Expression(expr),
+        if self.look(0, t::RightBrace).is_ok() {
+          return Ok(Statement {
+            span,
+            kind: s::Remainder(expr),
+          });
+        } else {
+          use ExpressionKind as e;
+          // Optional semicolon for some expressions
+          match expr.kind {
+            e::Block(..) | e::If { .. } => {
+              return Ok(Statement {
+                span,
+                kind: s::Expression(expr),
+              });
+            },
+            _ => Statement {
+              span,
+              kind: s::Expression(expr),
+            },
+          }
         }
       },
     };
@@ -193,39 +188,6 @@ impl<I: Iterator<Item = Token>> Parser<I> {
       Ok(statement)
     } else {
       error().reason("Expected ;").span(&span)
-    }
-  }
-
-  fn if_else(&mut self) -> Result<Statement> {
-    use TokenKind as t;
-    if let Ok(Token(_, span)) = self.eat(t::If) {
-      let predicate = self
-        .expression(0)
-        .trace_span(span, "in predicate of 'if' statement")?;
-      let span = span + predicate.span;
-      let block = self
-        .block()
-        .trace_span(span, "in block of 'if' statement")?;
-      let (block, span) = (block.0, span + block.1);
-      let else_ = if self.eat(t::Else).is_ok() {
-        Some(Box::new(self.if_else()?))
-      } else {
-        None
-      };
-      Ok(Statement {
-        kind: StatementKind::If {
-          predicate,
-          block,
-          else_,
-        },
-        span,
-      })
-    } else {
-      let (block, span) = self.block()?;
-      Ok(Statement {
-        kind: StatementKind::Block(block),
-        span,
-      })
     }
   }
 }

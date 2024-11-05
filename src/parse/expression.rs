@@ -2,16 +2,22 @@ use crate::{Base, semantic::*};
 
 use super::*;
 
-#[derive(Clone)]
-pub struct Parameter {
-  pub name: String,
-  pub type_str: String,
-  pub type_actual: Type,
+#[derive(Clone, Debug)]
+pub struct Parameters {
+  pub arity: usize,
+  pub names: Vec<String>,
+  pub type_names: Vec<String>,
+  pub types: Vec<String>,
 }
 
-impl std::fmt::Debug for Parameter {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "{}: {:?}", self.name, self.type_actual)
+impl Default for Parameters {
+  fn default() -> Self {
+    Self {
+      arity: 0,
+      names: vec![],
+      type_names: vec![],
+      types: vec![],
+    }
   }
 }
 
@@ -39,7 +45,10 @@ impl std::fmt::Display for Immediate {
 #[derive(Clone, Debug)]
 pub enum ExpressionKind {
   Immediate(Immediate),
-  Identifier(String, UID),
+  Identifier {
+    name: String,
+    uid: UID,
+  },
   Binary {
     op: BinaryOp,
     left: Box<Expression>,
@@ -51,28 +60,33 @@ pub enum ExpressionKind {
   },
   Parenthesis(Box<Expression>),
   FunctionDef {
-    params: Vec<Parameter>,
+    params: Parameters,
     returns_str: Option<String>,
     returns_actual: Type,
     body: Vec<Statement>,
-    id: UID,
+    uid: UID,
   },
   FunctionCall {
     callee: Box<Expression>,
     args: Vec<Expression>,
-    is_reference: bool,
-    id: UID,
+    uid: UID,
   },
-  StructDef(Vec<Parameter>, usize),
+  StructDef(Parameters, UID),
   StructLiteral {
     name: String,
     args: Vec<(String, Expression)>,
-    id: UID,
+    uid: UID,
   },
   Field {
     namespace: Box<Expression>,
     field: Box<Expression>,
     uid: UID,
+  },
+  Block(Vec<Statement>),
+  If {
+    predicate: Box<Expression>,
+    block: Vec<Statement>,
+    else_: Option<Box<Expression>>,
   },
 }
 
@@ -105,7 +119,7 @@ impl std::fmt::Display for ExpressionKind {
       e::Unary { op: token, child } => {
         write!(f, "({token} {child})")
       },
-      e::Identifier(i, _) => write!(f, "{i}"),
+      e::Identifier { name, .. } => write!(f, "{name}"),
       e::FunctionCall { callee, args, .. } => {
         write!(f, "({callee} call {args:?})")
       },
@@ -123,6 +137,28 @@ impl std::fmt::Display for ExpressionKind {
       },
       e::StructDef(params, _) => write!(f, "struct {{ {params:?} }}"),
       e::StructLiteral { name, args, .. } => write!(f, "{name} {{ {args:?} }}"),
+      e::Block(block) => {
+        write!(f, "{{\n")?;
+        for s in block {
+          write!(f, "{:#?}", s)?;
+        }
+        write!(f, "}}")
+      },
+      e::If {
+        predicate,
+        block,
+        else_,
+      } => {
+        write!(f, "{{\n")?;
+        for s in block {
+          write!(f, "{:#?}", s)?;
+        }
+        write!(f, "}}")?;
+        if let Some(else_) = else_ {
+          write!(f, "{else_}")?;
+        }
+        Ok(())
+      },
     }
   }
 }
@@ -161,7 +197,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
         Type::Ambiguous,
       )
     }
-    // Terminal or paren
+    // Primary
     else {
       self.primary().reason("Expected expression")?
     };
@@ -236,8 +272,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
           e::FunctionCall {
             callee: current.into(),
             args,
-            is_reference: false,
-            id: "".into(),
+            uid: "".into(),
           },
           span + span2,
           Type::Ambiguous,
@@ -268,6 +303,73 @@ impl<I: Iterator<Item = Token>> Parser<I> {
       }
     }
     Ok(current)
+  }
+
+  pub fn parameters(&mut self, mut span: Span) -> Result<Parameters> {
+    use TokenKind as t;
+    let mut arity = 0;
+    let mut names = vec![];
+    let mut type_names = vec![];
+    let mut types = vec![];
+    let mut strongly_typed = false;
+    loop {
+      // Param name
+      let (name, span2) = match self.identifier() {
+        Ok((ident, span)) => (ident, span),
+        Err(_) => break,
+      };
+      println!("{name}");
+      span = span + span2;
+      names.push(name.clone());
+      // Param type (optional)
+      if self.eat(t::Colon).is_ok() {
+        let (type_name, span2) = self.identifier().trace_span(
+          span + span2,
+          format!("While parsing type of '{}'", name),
+        )?;
+        strongly_typed = true;
+        span = span + span2;
+        type_names.push(type_name);
+      } else {
+        type_names.push("".into());
+      }
+      types.push("".into());
+      arity += 1;
+      // Comma
+      if !self.eat(t::Comma).is_ok() {
+        if self.look(0, t::Identifier("".into())).is_ok() {
+          return error().reason("Expected comma (,) here").span(&span);
+        }
+        break;
+      }
+    }
+    // Back-propogate type names
+    if strongly_typed {
+      let mut last_name = "".to_string();
+      for name in type_names.iter_mut().rev() {
+        if name.is_empty() {
+          if last_name.is_empty() {
+            return error()
+              .reason("Cannot mix typed and untyped parameters")
+              .span(&span);
+          } else {
+            *name = last_name.clone();
+          }
+        } else {
+          last_name = name.clone();
+        }
+      }
+    } else {
+      return error()
+        .reason("Untyped parameters are not allowed (temporarily)")
+        .span(&span);
+    }
+    Ok(Parameters {
+      arity,
+      names,
+      type_names,
+      types,
+    })
   }
 
   fn primary(&mut self) -> Result<Expression> {
@@ -301,36 +403,21 @@ impl<I: Iterator<Item = Token>> Parser<I> {
         self.skip(1);
         e::Immediate(im::Boolean(false))
       },
+      t::If => return self.if_else(),
+      t::LeftBrace => {
+        let (block, span1) = self.block()?;
+        span = span + span1;
+        e::Block(block)
+      },
       // Function definition
       t::LeftParen
         if (self.look(1, t::Identifier("".into())).is_ok()
-          && self.look(2, t::Colon).is_ok())
+          && (self.look(2, t::Colon).is_ok()
+            || self.look(2, t::Comma).is_ok()))
           || self.look(1, t::RightParen).is_ok() =>
       {
         self.skip(1);
-        let mut params = vec![];
-        loop {
-          let (name, span2) = match self.identifier() {
-            Ok((name, span)) => (name, span),
-            Err(_) => break,
-          };
-          span = span + span2;
-          self
-            .eat(t::Colon)
-            .trace_span(span, "while parsing function parameter type")?;
-          let (type_, span2) = self
-            .identifier()
-            .trace_span(span, "while parsing function parameter type")?;
-          span = span + span2;
-          params.push(Parameter {
-            name,
-            type_str: type_,
-            type_actual: Type::Ambiguous,
-          });
-          if !self.eat(t::Comma).is_ok() {
-            break;
-          }
-        }
+        let params = self.parameters(span)?;
         let Token(_, span2) = self
           .eat(t::RightParen)
           .span(&span)
@@ -355,38 +442,16 @@ impl<I: Iterator<Item = Token>> Parser<I> {
           returns_str,
           returns_actual: Type::Ambiguous,
           body,
-          id: "".into(),
+          uid: "".into(),
         }
       },
       // Struct definition
       t::Struct => {
         self.skip(1);
         self.eat(t::LeftBrace)?;
-        let mut params = vec![];
-        loop {
-          let (name, span2) = match self.identifier() {
-            Ok((name, span)) => (name, span),
-            Err(_) => break,
-          };
-          span = span + span2;
-          self
-            .eat(t::Colon)
-            .trace_span(span, "while parsing struct parameter type")?;
-          let (type_, span2) = self
-            .identifier()
-            .trace_span(span, "while parsing struct parameter type")?;
-          span = span + span2;
-          params.push(Parameter {
-            name,
-            type_str: type_,
-            type_actual: Type::Ambiguous,
-          });
-          if !self.eat(t::Comma).is_ok() {
-            break;
-          }
-        }
+        let params = self.parameters(span)?;
         self.eat(t::RightBrace)?;
-        e::StructDef(params, usize::MAX)
+        e::StructDef(params, "".into())
       },
       // Struct literal
       t::Identifier(name) if self.look(1, t::LeftBrace).is_ok() => {
@@ -414,12 +479,15 @@ impl<I: Iterator<Item = Token>> Parser<I> {
         e::StructLiteral {
           name,
           args,
-          id: "".into(),
+          uid: "".into(),
         }
       },
       t::Identifier(i) => {
         self.skip(1);
-        e::Identifier(i, "".into())
+        e::Identifier {
+          name: i,
+          uid: "".into(),
+        }
       },
       // Parenthetical
       t::LeftParen => {
@@ -440,6 +508,41 @@ impl<I: Iterator<Item = Token>> Parser<I> {
       },
     };
     Ok(Expression::new(kind, span, Type::Ambiguous))
+  }
+
+  fn if_else(&mut self) -> Result<Expression> {
+    use TokenKind as t;
+    if let Ok(Token(_, span)) = self.eat(t::If) {
+      let predicate = self
+        .expression(0)
+        .trace_span(span, "in predicate of 'if' statement")?;
+      let span = span + predicate.span;
+      let block = self
+        .block()
+        .trace_span(span, "in block of 'if' statement")?;
+      let (block, span) = (block.0, span + block.1);
+      let else_ = if self.eat(t::Else).is_ok() {
+        Some(Box::new(self.if_else()?))
+      } else {
+        None
+      };
+      Ok(Expression {
+        kind: ExpressionKind::If {
+          predicate: predicate.into(),
+          block,
+          else_,
+        },
+        span,
+        type_: Type::Ambiguous,
+      })
+    } else {
+      let (block, span) = self.block()?;
+      Ok(Expression {
+        kind: ExpressionKind::Block(block),
+        span,
+        type_: Type::Ambiguous,
+      })
+    }
   }
 
   fn identifier(&mut self) -> Result<(String, Span)> {
