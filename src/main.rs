@@ -10,7 +10,6 @@ use std::ops::Add;
 use err::*;
 use lookahead::*;
 use parse::*;
-use semantic::Analyzer;
 use token::*;
 
 #[derive(Clone, Copy, Debug)]
@@ -70,17 +69,7 @@ fn parse(input: &'static str) -> impl Iterator<Item = Statement> {
   Parser::new(tokenize(input))
 }
 
-fn typecheck(input: &'static str) {
-  let parsed: Vec<_> = parse(input).collect();
-  let mut s = semantic::Analyzer::new();
-  s.block(parsed);
-}
-
 fn main() -> Result<()> {
-  for p in parse(include_str!("../demo.hal")) {
-    println!("------------------");
-    println!("{p:#?}");
-  }
   /*
   for s in typecheck(include_str!("../demo.hal")) {
     println!("------------------");

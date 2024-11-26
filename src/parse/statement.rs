@@ -7,15 +7,12 @@ pub enum StatementKind {
   Declaration {
     name: String,
     type_str: Option<String>,
-    type_uid: UID,
     value: Expression,
     mutable: bool,
-    uid: UID,
   },
   Assignment {
     name: String,
     value: Expression,
-    uid: UID,
   },
   While {
     predicate: Expression,
@@ -78,10 +75,8 @@ impl<I: Iterator<Item = Token>> Parser<I> {
           kind: s::Declaration {
             name,
             type_str,
-            type_uid: "".into(),
             value,
             mutable,
-            uid: "".into(),
           },
           span,
         };
@@ -99,11 +94,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
           .trace_span(span, "while parsing assignment")?;
         Statement {
           span,
-          kind: s::Assignment {
-            name,
-            value,
-            uid: "".into(),
-          },
+          kind: s::Assignment { name, value },
         }
       },
       // While

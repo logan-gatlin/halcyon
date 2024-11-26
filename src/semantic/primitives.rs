@@ -1,7 +1,12 @@
 use crate::{BinaryOp, UnaryOp};
 
 use crate::err::*;
-use crate::semantic::{Symbol, Type, UID};
+use crate::semantic::{UID, builtin};
+
+macro_rules! count {
+    () => (0usize);
+    ( $x:tt $($xs:tt)* ) => (1usize + count!($($xs)*));
+}
 
 macro_rules! primitives {
   ( $($i:ident),* ) => {
@@ -14,6 +19,8 @@ macro_rules! primitives {
     }
 
     impl Primitive {
+      pub const ALL: [Primitive; count!($($i)*,) - 1] = [$(Primitive::$i),*];
+
       pub fn from_string(string: &str) -> Option<Self> {
         match string {
           $(stringify!{$i} => Some(Self::$i),)*
@@ -23,10 +30,10 @@ macro_rules! primitives {
 
       pub fn mangle(&self) -> UID {
         match self {
-          Primitive::integer_ambiguous => "$$integer_amgibuous".into(),
-          Primitive::real_ambiguous => "$$real_amgibuous".into(),
+          Primitive::integer_ambiguous => builtin::mangle("integer_ambiguous"),
+          Primitive::real_ambiguous => builtin::mangle("real_ambiguous"),
           $(
-          Primitive::$i => format!("$${}", stringify!{$i}),
+          Primitive::$i => builtin::mangle(stringify!{$i}),
           )*
         }
       }

@@ -7,7 +7,6 @@ pub struct Parameters {
   pub arity: usize,
   pub names: Vec<String>,
   pub type_names: Vec<String>,
-  pub types: Vec<String>,
 }
 
 impl Default for Parameters {
@@ -16,7 +15,6 @@ impl Default for Parameters {
       arity: 0,
       names: vec![],
       type_names: vec![],
-      types: vec![],
     }
   }
 }
@@ -94,12 +92,16 @@ pub enum ExpressionKind {
 pub struct Expression {
   pub kind: ExpressionKind,
   pub span: Span,
-  pub type_: Type,
+  pub type_: UID,
 }
 
 impl Expression {
-  pub fn new(kind: ExpressionKind, span: Span, type_: Type) -> Self {
-    Self { kind, span, type_ }
+  pub fn new(kind: ExpressionKind, span: Span) -> Self {
+    Self {
+      kind,
+      span,
+      type_: "".into(),
+    }
   }
 }
 
@@ -194,7 +196,6 @@ impl<I: Iterator<Item = Token>> Parser<I> {
           child: child.into(),
         },
         span,
-        Type::Ambiguous,
       )
     }
     // Primary
@@ -226,7 +227,6 @@ impl<I: Iterator<Item = Token>> Parser<I> {
             right: rhs.into(),
           },
           span,
-          Type::Ambiguous,
         );
       }
       // Field
@@ -245,7 +245,6 @@ impl<I: Iterator<Item = Token>> Parser<I> {
             uid: "".into(),
           },
           span,
-          Type::Ambiguous,
         )
       }
       // Function call
@@ -275,7 +274,6 @@ impl<I: Iterator<Item = Token>> Parser<I> {
             uid: "".into(),
           },
           span + span2,
-          Type::Ambiguous,
         );
       }
       // Unary postfix
@@ -296,7 +294,6 @@ impl<I: Iterator<Item = Token>> Parser<I> {
             child: current.into(),
           },
           span,
-          Type::Ambiguous,
         );
       } else {
         break;
@@ -310,7 +307,6 @@ impl<I: Iterator<Item = Token>> Parser<I> {
     let mut arity = 0;
     let mut names = vec![];
     let mut type_names = vec![];
-    let mut types = vec![];
     let mut strongly_typed = false;
     loop {
       // Param name
@@ -333,7 +329,6 @@ impl<I: Iterator<Item = Token>> Parser<I> {
       } else {
         type_names.push("".into());
       }
-      types.push("".into());
       arity += 1;
       // Comma
       if !self.eat(t::Comma).is_ok() {
@@ -368,7 +363,6 @@ impl<I: Iterator<Item = Token>> Parser<I> {
       arity,
       names,
       type_names,
-      types,
     })
   }
 
@@ -507,7 +501,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
           .reason(format!("Expected expression, found {}", next.0));
       },
     };
-    Ok(Expression::new(kind, span, Type::Ambiguous))
+    Ok(Expression::new(kind, span))
   }
 
   fn if_else(&mut self) -> Result<Expression> {
@@ -526,22 +520,17 @@ impl<I: Iterator<Item = Token>> Parser<I> {
       } else {
         None
       };
-      Ok(Expression {
-        kind: ExpressionKind::If {
+      Ok(Expression::new(
+        ExpressionKind::If {
           predicate: predicate.into(),
           block,
           else_,
         },
         span,
-        type_: Type::Ambiguous,
-      })
+      ))
     } else {
       let (block, span) = self.block()?;
-      Ok(Expression {
-        kind: ExpressionKind::Block(block),
-        span,
-        type_: Type::Ambiguous,
-      })
+      Ok(Expression::new(ExpressionKind::Block(block), span))
     }
   }
 
