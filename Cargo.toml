@@ -5,3 +5,4 @@ edition = "2021"
 
 [dependencies]
 wat = "1.219"
+punycode = "0.4"

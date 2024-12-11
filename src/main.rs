@@ -78,5 +78,7 @@ fn main() -> Result<()> {
   */
   //let module = frontend::Module::from_file("./demo.hal")?;
   //module.write_to("test");
+  let p = punycode::encode("-_").unwrap();
+  println!("{p}");
   Ok(())
 }

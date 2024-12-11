@@ -1,5 +1,3 @@
-use crate::semantic::UID;
-
 use super::*;
 
 #[derive(Debug, Clone)]
@@ -47,7 +45,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
           Ok(Token(t::Identifier(s), span2)) => {
             span = span + span2;
             Some(s)
-          },
+          }
           _ => None,
         };
         let mutable = if self.eat(t::Equal).is_ok() {
@@ -63,14 +61,13 @@ impl<I: Iterator<Item = Token>> Parser<I> {
           .expression(0)
           .trace_span(span, "while parsing declaration")?;
         span = span + value.span;
-        let no_semicolon =
-          if let ExpressionKind::FunctionDef { .. } = value.kind {
-            true
-          } else if let ExpressionKind::StructDef(_, _) = value.kind {
-            true
-          } else {
-            false
-          };
+        let no_semicolon = if let ExpressionKind::FunctionDef { .. } = value.kind {
+          true
+        } else if let ExpressionKind::StructDef(_) = value.kind {
+          true
+        } else {
+          false
+        };
         let s = Statement {
           kind: s::Declaration {
             name,
@@ -84,7 +81,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
           return Ok(s);
         }
         s
-      },
+      }
       // Assignment
       (Token(t::Identifier(name), span2), Ok(Token(t::Equal, span3))) => {
         self.skip(2);
@@ -96,7 +93,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
           span,
           kind: s::Assignment { name, value },
         }
-      },
+      }
       // While
       (Token(t::While, span2), _) => {
         self.skip(1);
@@ -117,7 +114,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
             block: block.0,
           },
         });
-      },
+      }
       // (DEBUG) print
       (Token(t::Print, span2), _) => {
         self.skip(1);
@@ -130,7 +127,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
           span,
           kind: s::Print(expr),
         }
-      },
+      }
       // Return
       (Token(t::Return, span2), _) => {
         span = span + span2;
@@ -143,7 +140,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
           span,
           kind: s::Return(expr),
         }
-      },
+      }
       // Expression
       (Token(_, span2), _) => {
         span = span + span2;
@@ -165,14 +162,14 @@ impl<I: Iterator<Item = Token>> Parser<I> {
                 span,
                 kind: s::Expression(expr),
               });
-            },
+            }
             _ => Statement {
               span,
               kind: s::Expression(expr),
             },
           }
         }
-      },
+      }
     };
     // Check for semicolon
     if self.eat(t::Semicolon).is_ok() {

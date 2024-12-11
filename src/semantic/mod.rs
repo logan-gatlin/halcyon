@@ -1,12 +1,25 @@
 pub mod analyzer;
-mod builtin;
+pub mod builtin;
+pub mod ir;
+pub mod names;
 pub mod primitives;
 
 pub use primitives::*;
 
-use crate::{BinaryOp, UnaryOp, semantic::Primitive};
+use crate::semantic::Primitive;
 
-pub type UID = String;
+/// Type ID
+pub type TID = usize;
+/// Name mangle
+pub type SID = String;
+
+#[derive(Debug, Clone, Copy)]
+pub enum Lifetime {
+  /// Exists for lifetime of program
+  Static,
+  /// Exists for lifetime of contained scope
+  Dynamic,
+}
 
 #[derive(Debug, Clone)]
 pub enum Type {
@@ -14,8 +27,18 @@ pub enum Type {
   Prim(Primitive),
   Nothing,
   Never,
-  Struct(UID),
-  Function(UID),
+  Struct {
+    size: usize,
+    name: String,
+    member_names: Vec<String>,
+    member_types: Vec<TID>,
+  },
+  Alias(TID),
+  Function {
+    name: String,
+    arg_names: Vec<String>,
+    arg_types: Vec<TID>,
+  },
 }
 
 impl std::fmt::Display for Type {
@@ -24,52 +47,10 @@ impl std::fmt::Display for Type {
       Type::Ambiguous => write!(f, "ambiguous"),
       Type::Prim(primitive) => write!(f, "{primitive}"),
       Type::Nothing => write!(f, "nothing"),
-      Type::Struct(s) => write!(f, "struct {s}"),
-      Type::Function(func) => write!(f, "func {func}"),
       Type::Never => write!(f, "never"),
+      Type::Struct { name, .. } => write!(f, "struct {name}"),
+      Type::Alias(tid) => write!(f, "alias ({tid})"),
+      Type::Function { name, .. } => write!(f, "func ({name})"),
     }
   }
-}
-
-#[derive(Clone, Debug)]
-pub struct IrBlock {
-  nodes: Vec<IrNode>,
-}
-
-#[derive(Clone, Debug)]
-pub enum IrNode {
-  Declaration {
-    uid: UID,
-    mutable: bool,
-    size: usize,
-    value: IrExpr,
-  },
-  Function {
-    uid: UID,
-    parameters: Vec<Type>,
-    block: IrBlock,
-  },
-  Conditional {
-    branches: Vec<(IrExpr, IrBlock)>,
-    default: IrBlock,
-  },
-  Expr(IrExpr),
-}
-
-#[derive(Clone, Debug)]
-pub enum IrExpr {
-  Ident(UID),
-  UnOp {
-    op: UnaryOp,
-    child: Box<IrExpr>,
-  },
-  BinOp {
-    op: BinaryOp,
-    left: Box<IrExpr>,
-    right: Box<IrExpr>,
-  },
-  Call {
-    function: UID,
-    args: Vec<IrExpr>,
-  },
 }

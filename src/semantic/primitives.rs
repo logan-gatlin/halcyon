@@ -1,7 +1,7 @@
 use crate::{BinaryOp, UnaryOp};
 
 use crate::err::*;
-use crate::semantic::{UID, builtin};
+use crate::semantic::{builtin, SID};
 
 macro_rules! count {
     () => (0usize);
@@ -28,7 +28,7 @@ macro_rules! primitives {
         }
       }
 
-      pub fn mangle(&self) -> UID {
+      pub fn mangle(&self) -> SID {
         match self {
           Primitive::integer_ambiguous => builtin::mangle("integer_ambiguous"),
           Primitive::real_ambiguous => builtin::mangle("real_ambiguous"),
@@ -62,9 +62,7 @@ impl Primitive {
   pub fn as_wat(&self) -> &'static str {
     use Primitive::*;
     match self {
-      boolean | glyph | w8 | w16 | w32 | whole | i8 | i16 | i32 | integer => {
-        "i32"
-      },
+      boolean | glyph | w8 | w16 | w32 | whole | i8 | i16 | i32 | integer => "i32",
       w64 | i64 => "i64",
       r32 | real => "f32",
       r64 => "f64",
@@ -128,16 +126,11 @@ impl Primitive {
   pub fn coerce(self, expect: Primitive) -> Result<Self> {
     use Primitive::*;
     match (self, expect) {
-      (
-        integer_ambiguous,
-        a @ (i8 | i16 | i32 | i64 | integer | w8 | w16 | w32 | w64 | whole),
-      )
-      | (
-        a @ (i8 | i16 | i32 | i64 | integer | w8 | w16 | w32 | w64 | whole),
-        integer_ambiguous,
-      ) => Ok(a),
-      (real_ambiguous, a @ (r32 | r64 | real))
-      | (a @ (r32 | r64 | real), real_ambiguous) => Ok(a),
+      (integer_ambiguous, a @ (i8 | i16 | i32 | i64 | integer | w8 | w16 | w32 | w64 | whole))
+      | (a @ (i8 | i16 | i32 | i64 | integer | w8 | w16 | w32 | w64 | whole), integer_ambiguous) => {
+        Ok(a)
+      }
+      (real_ambiguous, a @ (r32 | r64 | real)) | (a @ (r32 | r64 | real), real_ambiguous) => Ok(a),
       (t1, t2) if t1 == t2 => Ok(t1),
       _ => error().reason(format!("Cannot coerce '{self}' into '{expect}'")),
     }
@@ -158,11 +151,7 @@ impl Primitive {
     }
   }
 
-  pub fn binary_op(
-    mut lhs: Primitive,
-    op: BinaryOp,
-    mut rhs: Primitive,
-  ) -> Result<Primitive> {
+  pub fn binary_op(mut lhs: Primitive, op: BinaryOp, mut rhs: Primitive) -> Result<Primitive> {
     use Primitive::*;
     if lhs.is_ambiguous() && !rhs.is_ambiguous() {
       lhs = lhs.coerce(rhs)?;
@@ -188,8 +177,7 @@ impl Primitive {
   pub fn unary_op(op: UnaryOp, child: Primitive) -> Result<Primitive> {
     use Primitive::*;
     use UnaryOp::*;
-    let e =
-      error().reason(format!("Unary {} is not defined for {}", op, child));
+    let e = error().reason(format!("Unary {} is not defined for {}", op, child));
     match op {
       Minus => match child {
         boolean | string | glyph | whole | w8 | w16 | w32 | w64 => e,
