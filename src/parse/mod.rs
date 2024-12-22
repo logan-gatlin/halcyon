@@ -74,11 +74,14 @@ op! {
 
 op! {
   UnaryOp;
-  Bang, 12, RIGHT_ASSOC;
-  Question, 12, RIGHT_ASSOC;
+  Plus, 11, RIGHT_ASSOC;
+  Tilda, 11, RIGHT_ASSOC;
   Minus, 11, LEFT_ASSOC;
-  Plus, 11, LEFT_ASSOC;
   Not, 11, LEFT_ASSOC;
+}
+
+pub fn is_mixed_op(t: &TokenKind) -> bool {
+  BinaryOp::try_from(t).is_ok() && UnaryOp::try_from(t).is_ok()
 }
 
 const FIELD_PREC: Precedence = 13;

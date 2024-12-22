@@ -1,3 +1,4 @@
+#![feature(let_chains)]
 mod err;
 mod ir;
 mod lookahead;
@@ -58,7 +59,7 @@ fn test_expression(expr: &str) {
   let source = expr.to_string();
   let tokens = Tokenizer::new(source.chars()).filter(|t| t.0.is_meaningful());
   let mut parser = Parser::new(tokens);
-  println!("{:?}", parser.expression(0).unwrap());
+  println!("{:#?}", parser.expression(0).unwrap());
 }
 
 fn tokenize(input: &'static str) -> impl Iterator<Item = Token> {
@@ -78,7 +79,6 @@ fn main() -> Result<()> {
   */
   //let module = frontend::Module::from_file("./demo.hal")?;
   //module.write_to("test");
-  let p = punycode::encode("-_").unwrap();
-  println!("{p}");
+  test_expression("asdf~+ + 3");
   Ok(())
 }
