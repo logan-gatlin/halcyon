@@ -1,5 +1,6 @@
 use crate::Span;
 use crate::err::*;
+use crate::error;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Base {
@@ -342,8 +343,7 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
         .span(&position)?;
       let baked = bake_string(&buffer)?;
       if baked.len() != 1 {
-        return error()
-          .reason("Single quote (') contains more than one character")
+        return error!("Single quote (') contains more than one character")
           .span(&position);
       }
       let kind = GlyphLiteral(

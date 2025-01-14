@@ -2,15 +2,32 @@ use crate::Span;
 
 pub type Result<T> = std::result::Result<T, Diagnostic>;
 
-pub fn error<T>() -> Result<T> {
-  Err(Diagnostic::new("", None))
-}
-
 #[derive(Clone)]
 pub struct Diagnostic {
   pub reason: String,
   pub span: Option<Span>,
   pub backtrace: Vec<String>,
+}
+
+#[macro_export]
+macro_rules! error {
+  ($($arg:tt)*) => {
+    Err(Diagnostic {
+      reason: format!($($arg)*),
+      span: None,
+      backtrace: Vec::new(),
+    })
+  };
+}
+#[macro_export]
+macro_rules! diagnostic {
+  ($($arg:tt)*) => {
+    Diagnostic {
+      reason: format!($($arg)*),
+      span: None,
+      backtrace: Vec::new(),
+    }
+  };
 }
 
 impl Diagnostic {

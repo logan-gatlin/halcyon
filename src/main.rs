@@ -1,6 +1,5 @@
 #![feature(let_chains)]
 mod err;
-mod ir;
 mod lookahead;
 mod parse;
 mod semantic;
@@ -59,7 +58,7 @@ fn test_expression(expr: &str) {
   let source = expr.to_string();
   let tokens = Tokenizer::new(source.chars()).filter(|t| t.0.is_meaningful());
   let mut parser = Parser::new(tokens);
-  println!("{:#?}", parser.expression(0).unwrap());
+  println!("{:#?}", parser.statement().unwrap());
 }
 
 fn tokenize(input: &'static str) -> impl Iterator<Item = Token> {
@@ -71,14 +70,9 @@ fn parse(input: &'static str) -> impl Iterator<Item = Statement> {
 }
 
 fn main() -> Result<()> {
-  /*
-  for s in typecheck(include_str!("../demo.hal")) {
-    println!("------------------");
-    println!("{s:#?}");
-  }
-  */
-  //let module = frontend::Module::from_file("./demo.hal")?;
-  //module.write_to("test");
-  test_expression("asdf~+ + 3");
+  let program: Vec<_> = parse(include_str!("../demo.hal")).collect();
+  let mut an = semantic::Analyzer::new();
+  let n = an.analyze_scope(program.into_iter()).unwrap();
+  println!("{n:#?}");
   Ok(())
 }

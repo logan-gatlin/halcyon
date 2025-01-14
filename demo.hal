@@ -1,18 +1,3 @@
-/*
-S :: struct {
-	a: integer,
-	b: glyph,
-	c: real,
-}
-
-s := foo(S{a: 1, b: 'a', c: 1.0}, 2);
-
-foo :: (s: S, a: integer) -> S {
-	return s;
-}
-*/
-
-S :: struct { a, b, c: real }
-
-
-
+a :: 2;
+b :: a;
+c :: b;

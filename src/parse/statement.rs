@@ -6,17 +6,8 @@ pub enum StatementKind {
     name: String,
     type_str: Option<String>,
     value: Expression,
-    mutable: bool,
+    is_constant: bool,
   },
-  Assignment {
-    name: String,
-    value: Expression,
-  },
-  While {
-    predicate: Expression,
-    block: Vec<Statement>,
-  },
-  Print(Expression),
   Expression(Expression),
   Remainder(Expression),
   Return(Option<Expression>),
@@ -45,35 +36,35 @@ impl<I: Iterator<Item = Token>> Parser<I> {
           Ok(Token(t::Identifier(s), span2)) => {
             span = span + span2;
             Some(s)
-          }
+          },
           _ => None,
         };
-        let mutable = if self.eat(t::Equal).is_ok() {
-          true
-        } else if self.eat(t::Colon).is_ok() {
+        let is_constant = if self.eat(t::Equal).is_ok() {
           false
+        } else if self.eat(t::Colon).is_ok() {
+          true
         } else {
-          return error()
-            .reason(format!("Declaration of '{}' must be initialized", name))
+          return error!("Declaration of '{name}' must be initialized")
             .span(&span);
         };
         let value = self
-          .expression(0)
+          .expression(0, false)
           .trace_span(span, "while parsing declaration")?;
         span = span + value.span;
-        let no_semicolon = if let ExpressionKind::FunctionDef { .. } = value.kind {
-          true
-        } else if let ExpressionKind::StructDef(_) = value.kind {
-          true
-        } else {
-          false
-        };
+        let no_semicolon =
+          if let ExpressionKind::FunctionDef { .. } = value.kind {
+            true
+          } else if let ExpressionKind::StructDef(_) = value.kind {
+            true
+          } else {
+            false
+          };
         let s = Statement {
           kind: s::Declaration {
             name,
             type_str,
             value,
-            mutable,
+            is_constant,
           },
           span,
         };
@@ -81,58 +72,29 @@ impl<I: Iterator<Item = Token>> Parser<I> {
           return Ok(s);
         }
         s
-      }
+      },
       // Assignment
       (Token(t::Identifier(name), span2), Ok(Token(t::Equal, span3))) => {
         self.skip(2);
         span = span + span2 + span3;
         let value = self
-          .expression(0)
+          .expression(0, false)
           .trace_span(span, "while parsing assignment")?;
         Statement {
           span,
-          kind: s::Assignment { name, value },
-        }
-      }
-      // While
-      (Token(t::While, span2), _) => {
-        self.skip(1);
-        span = span + span2;
-        let predicate = self
-          .expression(0)
-          .reason("Expected predicate after 'while' keyword")
-          .span(&span)?;
-        span = span + predicate.span;
-        let block = self
-          .block()
-          .trace_span(span, "while parsing while statement")?;
-        span = span + block.1;
-        return Ok(Statement {
-          span,
-          kind: s::While {
-            predicate,
-            block: block.0,
+          kind: s::Declaration {
+            name,
+            type_str: None,
+            value,
+            is_constant: false,
           },
-        });
-      }
-      // (DEBUG) print
-      (Token(t::Print, span2), _) => {
-        self.skip(1);
-        span = span + span2;
-        let expr = self
-          .expression(0)
-          .trace_span(span, "while parsing print statement")?;
-        span = span + expr.span;
-        Statement {
-          span,
-          kind: s::Print(expr),
         }
-      }
+      },
       // Return
       (Token(t::Return, span2), _) => {
         span = span + span2;
         self.skip(1);
-        let expr = self.expression(0).ok();
+        let expr = self.expression(0, false).ok();
         if let Some(expr) = &expr {
           span = span + expr.span;
         }
@@ -140,12 +102,12 @@ impl<I: Iterator<Item = Token>> Parser<I> {
           span,
           kind: s::Return(expr),
         }
-      }
+      },
       // Expression
       (Token(_, span2), _) => {
         span = span + span2;
         let expr = self
-          .expression(0)
+          .expression(0, false)
           .trace_span(span, "while parsing expression statement")?;
         span = span + expr.span;
         if self.look(0, t::RightBrace).is_ok() {
@@ -162,20 +124,20 @@ impl<I: Iterator<Item = Token>> Parser<I> {
                 span,
                 kind: s::Expression(expr),
               });
-            }
+            },
             _ => Statement {
               span,
               kind: s::Expression(expr),
             },
           }
         }
-      }
+      },
     };
     // Check for semicolon
     if self.eat(t::Semicolon).is_ok() {
       Ok(statement)
     } else {
-      error().reason("Expected ;").span(&span)
+      error!("Expected ;").span(&span)
     }
   }
 }

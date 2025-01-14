@@ -3,8 +3,8 @@ mod statement;
 pub use expression::*;
 pub use statement::*;
 
-use crate::err::*;
 use crate::{Span, Token, TokenKind};
+use crate::{err::*, error};
 
 pub type Precedence = usize;
 
@@ -40,7 +40,11 @@ macro_rules! op {
       fn try_from(value: &TokenKind) -> Result<Self> {
         match value {
           $(TokenKind::$op => Ok(Self::$op),)*
-          _ => error().reason(format!("Invalid operator {value}"))
+          _ => Err(Diagnostic {
+            reason: format!("Invalid operator {value}"),
+            span: None,
+            backtrace: Vec::new(),
+          }),
         }
       }
     }
@@ -169,9 +173,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
     if next.0 == expect {
       Ok(next)
     } else {
-      error()
-        .reason(format!("Expected {expect}, found {}", next.0))
-        .span(&next.1)
+      error!("Expected {expect}, found {}", next.0).span(&next.1)
     }
   }
 
