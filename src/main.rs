@@ -1,4 +1,5 @@
 #![feature(let_chains)]
+#![feature(iterator_try_collect)]
 mod err;
 mod lookahead;
 mod parse;
@@ -73,6 +74,7 @@ fn main() -> Result<()> {
   let program: Vec<_> = parse(include_str!("../demo.hal")).collect();
   let mut an = semantic::Analyzer::new();
   let n = an.analyze_scope(program.into_iter()).unwrap();
-  println!("{n:#?}");
+  an.print_table();
+  //println!("{n:#?}");
   Ok(())
 }

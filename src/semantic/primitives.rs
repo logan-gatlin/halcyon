@@ -7,7 +7,7 @@ macro_rules! count {
 
 macro_rules! primitives {
   ( $($i:ident),* ) => {
-    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
     #[allow(non_camel_case_types, dead_code)]
     pub enum Primitive {
       integer_literal,

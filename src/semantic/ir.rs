@@ -1,4 +1,7 @@
+use std::collections::HashSet;
+
 use crate::{BinaryOp, Immediate, UnaryOp};
+use crate::{err::*, error};
 
 use super::*;
 
@@ -6,7 +9,7 @@ use super::*;
 pub enum NodeKind {
   Immediate(Immediate),
   Identifier(Mangle),
-  StructLiteal {
+  StructLiteral {
     names: Vec<String>,
     values: Vec<Node>,
   },
@@ -34,6 +37,7 @@ pub enum NodeKind {
   },
   Function {
     mangle: Mangle,
+    arguments: Vec<Mangle>,
     nodes: Box<Node>,
   },
   Declaration {
@@ -54,4 +58,166 @@ pub struct Node {
 }
 
 impl Analyzer {
+  fn resolve_type(
+    &self,
+    type_: Type,
+    mut history: HashSet<Mangle>,
+  ) -> Result<Type> {
+    match type_ {
+      Type::Type(t) => Ok(Type::Type(self.resolve_type(*t, history)?.into())),
+      Type::Unresolved(mangle) => {
+        let t = self.mangle_to_type(&mangle)?;
+        if !history.insert(mangle) {
+          return error!("Cannot determine type, found circular dependency");
+        }
+        self.resolve_type(t.clone(), history)
+      },
+      Type::Struct {
+        mangle,
+        member_names,
+        member_types,
+      } => Ok(Type::Struct {
+        mangle,
+        member_names,
+        member_types: member_types
+          .into_iter()
+          .map(|t| self.resolve_type(t, history.clone()))
+          .try_collect::<Vec<_>>()?
+          .into_iter()
+          .map(|t| t.expect_type_name())
+          .try_collect()?,
+      }),
+      Type::Function {
+        mangle,
+        param_names,
+        param_types,
+        return_type,
+      } => Ok(Type::Function {
+        mangle,
+        param_names,
+        param_types: param_types
+          .into_iter()
+          .map(|t| self.resolve_type(t, history.clone()))
+          .try_collect::<Vec<_>>()?
+          .into_iter()
+          .map(|t| t.expect_type_name())
+          .try_collect()?,
+        return_type: self
+          .resolve_type(*return_type, history.clone())?
+          .expect_type_name()?
+          .into(),
+      }),
+      t => Ok(t),
+    }
+  }
+
+  pub(crate) fn type_bottom_up(&mut self, mut node: Node) -> Result<Node> {
+    use NodeKind as n;
+    node.type_ = self.resolve_type(node.type_, HashSet::new())?;
+    node.kind = match node.kind {
+      n::StructLiteral { names, values } => n::StructLiteral {
+        names,
+        values: values
+          .into_iter()
+          .map(|n| self.type_bottom_up(n))
+          .collect::<Result<Vec<_>>>()?,
+      },
+      n::BinaryOp { op, left, right } => {
+        let left = self.type_bottom_up(*left)?.into();
+        let right = self.type_bottom_up(*right)?.into();
+        n::BinaryOp { op, left, right }
+      },
+      n::UnaryOp { op, child } => {
+        let child = self.type_bottom_up(*child)?.into();
+        n::UnaryOp { op, child }
+      },
+      n::Field { namespace, index } => {
+        let namespace = self.type_bottom_up(*namespace)?.into();
+        let index = self.type_bottom_up(*index)?.into();
+        n::Field { namespace, index }
+      },
+      n::If {
+        predicate,
+        then,
+        else_,
+      } => {
+        let predicate = self.type_bottom_up(*predicate)?.into();
+        let then = self.type_bottom_up(*then)?.into();
+        let else_ = if let Some(else_) = else_ {
+          Some(self.type_bottom_up(*else_)?.into())
+        } else {
+          None
+        };
+        n::If {
+          predicate,
+          then,
+          else_,
+        }
+      },
+      n::Call { callee, params } => {
+        let callee = self.type_bottom_up(*callee)?;
+        if let Type::Function { return_type, .. } = &callee.type_ {
+          node.type_ = return_type.clone().unwrap_type_name()?;
+        } else {
+          return error!("Cannot call type {}", callee.type_);
+        }
+        let params = params
+          .into_iter()
+          .map(|p| self.type_bottom_up(p))
+          .collect::<Result<Vec<_>>>()?;
+        n::Call {
+          callee: callee.into(),
+          params,
+        }
+      },
+      n::Function {
+        mangle,
+        arguments,
+        nodes,
+      } => {
+        node.type_ = self.resolve_type(
+          self.mangle_to_type(&mangle)?.clone(),
+          HashSet::new(),
+        )?;
+        *self.mangle_to_type_mut(&mangle)? = node.type_.clone();
+        for mangle in &arguments {
+          let type_ = self.mangle_to_type(mangle)?;
+          *self.mangle_to_type_mut(mangle)? =
+            self.resolve_type(type_.clone(), HashSet::new())?;
+        }
+        let nodes = self.type_bottom_up(*nodes)?.into();
+        n::Function {
+          mangle,
+          arguments,
+          nodes,
+        }
+      },
+      n::Declaration {
+        mangle,
+        is_constant,
+        type_assert,
+        value,
+      } => {
+        let value = self.type_bottom_up(*value)?;
+        if type_assert.is_none() {
+          *self.mangle_to_type_mut(&mangle)? = value.type_.clone();
+        }
+        n::Declaration {
+          mangle,
+          is_constant,
+          type_assert,
+          value: value.into(),
+        }
+      },
+      n::Block { nodes } => n::Block {
+        nodes: nodes
+          .into_iter()
+          .map(|n| self.type_bottom_up(n))
+          .collect::<Result<Vec<_>>>()?,
+      },
+      n::Immediate(_) => node.kind,
+      n::Identifier(_) => node.kind,
+    };
+    Ok(node)
+  }
 }
