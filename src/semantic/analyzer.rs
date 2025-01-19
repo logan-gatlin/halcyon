@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 
 use crate::{
-  Expression, ExpressionKind, Immediate, Span, Statement, StatementKind,
-  diagnostic, err::*, error, semantic::primitives::Primitive,
+  BinaryOp, Expression, ExpressionKind, Immediate, Span, Statement,
+  StatementKind, UnaryOp, diagnostic, err::*, error,
+  semantic::primitives::Primitive,
 };
 
-use super::{Mangle, Type, ir::*, mangle_builtin};
+use super::{Mangle, Type, ir::*, mangle_builtin, operators::OpTable};
 use NodeKind as n;
 
 #[derive(Debug, Clone)]
@@ -33,6 +34,7 @@ pub struct Analyzer {
   _name_to_symbol: HashMap<String, Symbol>,
   _mangle_to_type: HashMap<Mangle, Type>,
   event_stack: Vec<Event>,
+  pub op_table: OpTable,
 }
 
 impl Analyzer {
@@ -44,12 +46,14 @@ impl Analyzer {
       _name_to_symbol: HashMap::new(),
       _mangle_to_type: HashMap::new(),
       event_stack: vec![],
+      op_table: OpTable::new(),
     };
     this.prelude();
     this
   }
 
   pub fn prelude(&mut self) {
+    // Define primitive types
     let mut define_type = |name: String, type_: Type| {
       let mangle = mangle_builtin(&name);
       self._name_to_symbol.insert(name, Symbol {
@@ -64,6 +68,48 @@ impl Analyzer {
     };
     for p in Primitive::ALL {
       define_type(p.to_string(), Type::Prim(p));
+    }
+    // Define binary operators
+    use Primitive::*;
+    {
+      let mut bin =
+        |op: BinaryOp, t1: Primitive, t2: Primitive, produces: Primitive| {
+          self
+            .op_table
+            .define_binary(op, t1.promote(), t2.promote(), produces.promote())
+            .unwrap();
+        };
+      use BinaryOp::*;
+      for op in [Plus, Minus, Star, Slash] {
+        bin(op, integer, integer, integer);
+        bin(op, real, real, real);
+      }
+      for op in [And, Nand, Xor, Xnor, Or, Nor] {
+        bin(op, integer, integer, integer);
+        bin(op, boolean, boolean, boolean);
+      }
+      for op in [DoubleEqual, LessEqual, GreaterEqual, Less, Greater] {
+        bin(op, integer, integer, boolean);
+        bin(op, real, real, boolean);
+        bin(op, boolean, boolean, boolean);
+      }
+    }
+    {
+      let mut un = |op: UnaryOp, t: Primitive, produces: Primitive| {
+        self
+          .op_table
+          .define_unary(op, t.promote(), produces.promote())
+          .unwrap();
+      };
+      use UnaryOp::*;
+      un(Minus, integer, integer);
+      un(Minus, real, real);
+      un(Not, integer, integer);
+      un(Not, boolean, boolean);
+      for t in Primitive::ALL {
+        un(Plus, t, t);
+        un(Tilda, t, t);
+      }
     }
   }
 
@@ -205,7 +251,7 @@ impl Analyzer {
     block: impl Iterator<Item = Statement>,
   ) -> Result<Node> {
     // Construct IR
-    let nodes = block
+    let mut nodes = block
       .map(|stmt| {
         if let StatementKind::Declaration {
           name,
@@ -225,9 +271,24 @@ impl Analyzer {
       .into_iter()
       .map(|n| self.type_bottom_up(n))
       .try_collect::<Vec<_>>()?;
+    let mut remainder = None;
+    let mut returns = None;
+    for node in &mut nodes {
+      returns = returns.or(node.returns.clone());
+    }
+    if let Some(node) = nodes.last() {
+      remainder = remainder.or(node.remainder.clone());
+    }
+    let type_ = if let Some(type_) = &remainder {
+      type_.clone()
+    } else {
+      Type::Prim(Primitive::nothing)
+    };
     Ok(Node {
-      type_: Type::Prim(Primitive::nothing),
+      type_,
       kind: n::Block { nodes },
+      remainder,
+      returns,
     })
   }
 
@@ -265,46 +326,66 @@ impl Analyzer {
             type_assert,
             value: value.into(),
           },
+          remainder: None,
+          returns: None,
         }
       },
-      s::Expression(expression) => self.analyze_expression(expression)?,
-      s::Remainder(expression) => self.analyze_expression(expression)?,
-      s::Return(expression) => todo!(),
+      s::Expression(expression) => {
+        let mut expr = self.analyze_expression(expression)?;
+        expr.remainder = None;
+        expr.type_ = Primitive::nothing.promote();
+        expr
+      },
+      s::Remainder(expression) => {
+        let mut expr = self.analyze_expression(expression)?;
+        expr.remainder = Some(expr.type_.clone());
+        expr
+      },
+      s::Return(expression) => {
+        let node = if let Some(expr) = expression {
+          self.analyze_expression(expr)?
+        } else {
+          Node {
+            type_: Type::Prim(Immediate::Unit.type_of()),
+            kind: n::Immediate(Immediate::Unit),
+            remainder: None,
+            returns: None,
+          }
+        };
+        Node {
+          returns: Some(node.type_.clone()),
+          kind: n::Return { node: node.into() },
+          type_: Type::Prim(Primitive::never),
+          remainder: None,
+        }
+      },
       s::Error(diagnostic) => return Err(diagnostic),
     })
   }
 
   fn analyze_expression(&mut self, expr: Expression) -> Result<Node> {
     use ExpressionKind as e;
-    Ok(match expr.kind {
-      e::Immediate(immediate) => Node {
-        type_: Type::Prim(immediate.type_of()),
-        kind: n::Immediate(immediate),
+    let (type_, kind) = match expr.kind {
+      e::Immediate(immediate) => {
+        (Type::Prim(immediate.type_of()), n::Immediate(immediate))
       },
       e::Identifier { name } => {
         let mangle = self.name_to_symbol(&name)?.mangle.clone();
         let type_ = Type::Unresolved(mangle.clone());
-        Node {
-          type_,
-          kind: n::Identifier(mangle),
-        }
+        (type_, n::Identifier(mangle))
       },
       e::Binary { op, left, right } => {
         let left = self.analyze_expression(*left)?.into();
         let right = self.analyze_expression(*right)?.into();
-        Node {
-          type_: Type::Ambiguous,
-          kind: n::BinaryOp { op, left, right },
-        }
+        (Type::Ambiguous, n::BinaryOp { op, left, right })
       },
       e::Unary { op, child } => {
         let child = self.analyze_expression(*child)?.into();
-        Node {
-          type_: Type::Ambiguous,
-          kind: n::UnaryOp { op, child },
-        }
+        (Type::Ambiguous, n::UnaryOp { op, child })
       },
-      e::Parenthesis(expression) => self.analyze_expression(*expression)?,
+      e::Parenthesis(expression) => {
+        return self.analyze_expression(*expression);
+      },
       e::FunctionDef {
         params,
         returns_str,
@@ -350,14 +431,11 @@ impl Analyzer {
         *self.mangle_to_type_mut(&mangle)? = type_.clone();
         let nodes = self.analyze_scope(body.into_iter())?.into();
         self.descope();
-        Node {
-          type_,
-          kind: n::Function {
-            mangle,
-            arguments,
-            nodes,
-          },
-        }
+        (type_, n::Function {
+          mangle,
+          arguments,
+          nodes,
+        })
       },
       e::FunctionCall { callee, args } => {
         let callee = self.analyze_expression(*callee)?.into();
@@ -365,10 +443,7 @@ impl Analyzer {
           .into_iter()
           .map(|a| self.analyze_expression(a))
           .try_collect::<Vec<_>>()?;
-        Node {
-          type_: Type::Ambiguous,
-          kind: n::Call { callee, params },
-        }
+        (Type::Ambiguous, n::Call { callee, params })
       },
       e::StructDef(params) => {
         let member_types = params
@@ -390,37 +465,31 @@ impl Analyzer {
           .into(),
         );
         *self.mangle_to_type_mut(&mangle)? = type_.clone();
-        Node {
-          type_,
-          kind: n::Identifier(mangle),
-        }
+        (type_, n::Identifier(mangle))
       },
       e::StructLiteral { name, args } => {
         let (names, values): (Vec<_>, Vec<_>) = args.into_iter().unzip();
-        Node {
-          type_: Type::Unresolved(self.name_to_symbol(&name)?.mangle.clone()),
-          kind: n::StructLiteral {
+        (
+          Type::Unresolved(self.name_to_symbol(&name)?.mangle.clone()),
+          n::StructLiteral {
             names,
             values: values
               .into_iter()
               .map(|v| self.analyze_expression(v))
               .try_collect::<Vec<_>>()?,
           },
-        }
+        )
       },
       e::Field { namespace, field } => {
         let namespace = self.analyze_expression(*namespace)?.into();
         let index = self.analyze_expression(*field)?.into();
-        Node {
-          type_: Type::Ambiguous,
-          kind: n::Field { namespace, index },
-        }
+        (Type::Ambiguous, n::Field { namespace, index })
       },
       e::Block(block) => {
         self.enscope(Event::BlockStart);
         let block = self.analyze_scope(block.into_iter())?;
         self.descope();
-        block
+        return Ok(block);
       },
       e::If {
         predicate,
@@ -439,15 +508,18 @@ impl Analyzer {
         } else {
           None
         };
-        Node {
-          type_: Type::Ambiguous,
-          kind: n::If {
-            predicate,
-            then,
-            else_,
-          },
-        }
+        (Type::Ambiguous, n::If {
+          predicate,
+          then,
+          else_,
+        })
       },
+    };
+    Ok(Node {
+      type_,
+      kind,
+      remainder: None,
+      returns: None,
     })
   }
 }

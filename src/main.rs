@@ -75,6 +75,6 @@ fn main() -> Result<()> {
   let mut an = semantic::Analyzer::new();
   let n = an.analyze_scope(program.into_iter()).unwrap();
   an.print_table();
-  //println!("{n:#?}");
+  println!("{n:#?}");
   Ok(())
 }

@@ -34,11 +34,6 @@ pub enum TokenKind {
   Tilda,
   Arrow,
   FatArrow,
-  PlusEqual,
-  MinusEqual,
-  SlashEqual,
-  StarEqual,
-  PercentEqual,
 
   Bang,
   BangEqual,
@@ -77,13 +72,9 @@ pub enum TokenKind {
   Break,
   Return,
   Continue,
-  For,
-  While,
   True,
   False,
   Struct,
-  Enum,
-  Union,
 
   Whitespace(String),
   SmallComment(String),
@@ -282,11 +273,11 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
         '#' => Hash,
         '~' => Tilda,
         '.' if not_next('.') => Dot,
-        '+' if not_next('=') => Plus,
-        '-' if not_next('=') && not_next('>') => Minus,
-        '*' if not_next('=') => Star,
-        '/' if not_next('=') => Slash,
-        '%' if not_next('=') => Percent,
+        '+' => Plus,
+        '-' if not_next('>') => Minus,
+        '*' => Star,
+        '/' => Slash,
+        '%' => Percent,
         '!' if not_next('=') => Bang,
         '?' if not_next('=') => Question,
         '=' if not_next('=') && not_next('>') => Equal,
@@ -303,11 +294,6 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
       let not_next_next = move |c| Some(c) != next_next;
       let kind = match (current, next) {
         ('.', '.') if not_next_next('=') => DotDot,
-        ('+', '=') => PlusEqual,
-        ('-', '=') => MinusEqual,
-        ('*', '=') => StarEqual,
-        ('/', '=') => SlashEqual,
-        ('%', '=') => PercentEqual,
         ('=', '=') => DoubleEqual,
         ('?', '=') => QuestionEqual,
         ('!', '=') => BangEqual,
@@ -423,8 +409,6 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
         "nand" => Nand,
         "nor" => Nor,
         "xnor" => Xnor,
-        "for" => For,
-        "while" => While,
         "print" => Print,
         "break" => Break,
         "return" => Return,
@@ -433,8 +417,6 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
         "true" => True,
         "false" => False,
         "struct" => Struct,
-        "enum" => Enum,
-        "union" => Union,
         _ => Identifier(buffer),
       };
       return t(kind, position);
@@ -470,7 +452,7 @@ fn bake_string(s: &str) -> Result<String> {
         Some('\0') => '\0',  // Null
         Some('"') => '\"',   // Double quote
         Some('\'') => '\'',  // Single quote
-        Some('x') => {
+        Some('a') => {
           // Ascii escapes
           let mut a = || {
             let a = u32::from_str_radix(&it.next()?.to_string(), 16).ok()?;

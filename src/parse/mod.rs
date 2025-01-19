@@ -10,7 +10,7 @@ pub type Precedence = usize;
 
 macro_rules! op {
   ($name:ident; $($op:ident, $prec:expr, $assoc:expr);*;) => {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub enum $name {
       $($op,)*
     }

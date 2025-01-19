@@ -1,7 +1,2 @@
-Box :: struct {
-	a : integer,
-}
+γ = 1;
 
-foo :: (a: Box) {
-	a;
-}

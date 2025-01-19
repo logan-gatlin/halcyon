@@ -38,8 +38,8 @@ macro_rules! primitives {
     impl std::fmt::Display for Primitive {
       fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-          Primitive::integer_literal => write!(f, "ambiguous integer"),
-          Primitive::real_literal => write!(f, "ambiguous real"),
+          Primitive::integer_literal => write!(f, "integer literal"),
+          Primitive::real_literal => write!(f, "real literal"),
           $(Primitive::$i => write!(f, stringify!{$i}),)*
         }
       }
@@ -61,8 +61,8 @@ impl Immediate {
     use Primitive as p;
     match self {
       i::Unit => p::nothing,
-      i::Integer(..) => p::integer_literal,
-      i::Real(..) => p::real_literal,
+      i::Integer(..) => p::integer,
+      i::Real(..) => p::real,
       i::String(..) => p::string,
       i::Glyph(..) => p::glyph,
       i::Boolean(..) => p::boolean,

@@ -12,6 +12,12 @@ use crate::semantic::Primitive;
 
 pub type Mangle = String;
 
+impl Primitive {
+  pub fn promote(self) -> Type {
+    Type::Prim(self)
+  }
+}
+
 #[derive(Debug, Clone)]
 pub enum Type {
   /// Indeterminate type
@@ -58,15 +64,22 @@ impl PartialEq for Type {
   fn eq(&self, other: &Self) -> bool {
     use Type as t;
     match (self, other) {
+      (t::Ambiguous, t::Ambiguous) => true,
       (t::Prim(p1), t::Prim(p2)) => p1 == p2,
       (t::Struct { mangle: m1, .. }, t::Struct { mangle: m2, .. }) => m1 == m2,
       (t::Function { mangle: m1, .. }, t::Function { mangle: m2, .. }) => {
         m1 == m2
       },
       (t::Type(t1), t::Type(t2)) => t1 == t2,
+      (t::Unresolved(t1), t::Unresolved(t2)) => {
+        panic!("Tried to compare unresolved types '{t1}' and '{t2}'")
+      },
       _ => false,
     }
   }
+}
+
+impl Eq for Type {
 }
 
 impl std::hash::Hash for Type {
@@ -77,7 +90,7 @@ impl std::hash::Hash for Type {
         mangle.hash(state)
       },
       Type::Type(t) => t.hash(state),
-      Type::Unresolved(t) => panic!("Tried to hash unresolved type ({t})"),
+      Type::Unresolved(t) => panic!("Tried to hash unresolved type '{t}'"),
       Type::Ambiguous => panic!("Tried to hash ambiguous type"),
     }
   }
@@ -89,7 +102,7 @@ impl std::fmt::Display for Type {
       Type::Ambiguous => write!(f, "ambiguous"),
       Type::Prim(primitive) => write!(f, "{primitive}"),
       Type::Struct { .. } => write!(f, "struct"),
-      Type::Type(tid) => write!(f, "alias ({tid})"),
+      Type::Type(tid) => write!(f, "{tid}"),
       Type::Function { .. } => write!(f, "func"),
       Type::Unresolved(m) => write!(f, "? ({m})"),
     }
@@ -119,4 +132,4 @@ pub fn mangle_builtin(name: impl std::fmt::Display) -> Mangle {
   format!("${name}")
 }
 
-pub const AMBIGUOUS_MANGLE: &str = "$$ambiguous";
+pub const AMBIGUOUS_MANGLE: &str = "$ambiguous";

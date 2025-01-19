@@ -9,14 +9,18 @@ strongly typed, types can be assumed from context at compile time. Below is an
 annotated "FizzBuzz" program
 ```
 fizzbuzz :: (number: integer) {
-  for i : 0..=number {
+  loop i : 0 {
     if i % 3 == 0 and i % 5 == 0 {
       println("fizzbuzz");
     } else if i % 3 == 0 {
       println("fizz");
-    } else {
+    } else if i % 5 == 0 {
       println("buzz");
     }
+    if i >= number {
+      break;
+    }
+    i + 1
   }
 }
 

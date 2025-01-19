@@ -9,6 +9,9 @@ use super::*;
 pub enum NodeKind {
   Immediate(Immediate),
   Identifier(Mangle),
+  Return {
+    node: Box<Node>,
+  },
   StructLiteral {
     names: Vec<String>,
     values: Vec<Node>,
@@ -53,6 +56,9 @@ pub enum NodeKind {
 
 #[derive(Debug, Clone)]
 pub struct Node {
+  // Type of this node
+  pub remainder: Option<Type>,
+  pub returns: Option<Type>,
   pub type_: Type,
   pub kind: NodeKind,
 }
@@ -114,6 +120,16 @@ impl Analyzer {
   pub(crate) fn type_bottom_up(&mut self, mut node: Node) -> Result<Node> {
     use NodeKind as n;
     node.type_ = self.resolve_type(node.type_, HashSet::new())?;
+    node.remainder = if let Some(rem) = node.remainder {
+      Some(self.resolve_type(rem, HashSet::new())?)
+    } else {
+      None
+    };
+    node.returns = if let Some(ret) = node.returns {
+      Some(self.resolve_type(ret, HashSet::new())?)
+    } else {
+      None
+    };
     node.kind = match node.kind {
       n::StructLiteral { names, values } => n::StructLiteral {
         names,
@@ -123,11 +139,17 @@ impl Analyzer {
           .collect::<Result<Vec<_>>>()?,
       },
       n::BinaryOp { op, left, right } => {
-        let left = self.type_bottom_up(*left)?.into();
-        let right = self.type_bottom_up(*right)?.into();
-        n::BinaryOp { op, left, right }
+        let left = self.type_bottom_up(*left)?;
+        let right = self.type_bottom_up(*right)?;
+        node.type_ = self.op_table.try_binary(op, &left.type_, &right.type_)?;
+        n::BinaryOp {
+          op,
+          left: left.into(),
+          right: right.into(),
+        }
       },
       n::UnaryOp { op, child } => {
+        node.type_ = self.op_table.try_unary(op, &child.type_)?;
         let child = self.type_bottom_up(*child)?.into();
         n::UnaryOp { op, child }
       },
@@ -142,15 +164,24 @@ impl Analyzer {
         else_,
       } => {
         let predicate = self.type_bottom_up(*predicate)?.into();
-        let then = self.type_bottom_up(*then)?.into();
-        let else_ = if let Some(else_) = else_ {
-          Some(self.type_bottom_up(*else_)?.into())
+        let then = self.type_bottom_up(*then)?;
+        let then_t = then.type_.clone();
+        let (else_t, else_) = if let Some(else_) = else_ {
+          let node = self.type_bottom_up(*else_)?;
+          (node.type_.clone(), Some(node.into()))
         } else {
-          None
+          (Primitive::nothing.promote(), None)
         };
+        if then_t != else_t {
+          return error!(
+            "Branches of this 'if' expression produce different types \
+             ('{then_t}' and '{else_t}')"
+          );
+        }
+        node.type_ = then_t;
         n::If {
           predicate,
-          then,
+          then: then.into(),
           else_,
         }
       },
@@ -217,7 +248,19 @@ impl Analyzer {
       },
       n::Immediate(_) => node.kind,
       n::Identifier(_) => node.kind,
+      n::Return { node } => n::Return {
+        node: self.type_bottom_up(*node)?.into(),
+      },
     };
     Ok(node)
+  }
+
+  pub(crate) fn type_top_down(
+    &mut self,
+    mut node: Node,
+    expects: Type,
+    returns: Type,
+  ) -> Result<Node> {
+    todo!()
   }
 }
