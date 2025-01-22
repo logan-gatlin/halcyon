@@ -1,11 +1,12 @@
 use std::collections::HashMap;
+use std::hash::Hasher;
 
-use crate::{BinaryOp, UnaryOp, diagnostic};
+use crate::{BinaryOp, UnaryOp};
 use crate::{err::*, error};
 
 use super::Type;
 
-#[derive(Clone, Hash, PartialEq, Eq)]
+#[derive(Clone)]
 enum OpDef {
   Binary {
     op: BinaryOp,
@@ -16,6 +17,54 @@ enum OpDef {
     op: UnaryOp,
     on: Type,
   },
+}
+
+// Order independent equality
+impl PartialEq for OpDef {
+  fn eq(&self, other: &Self) -> bool {
+    use OpDef::*;
+    match (self, other) {
+      (
+        Binary {
+          op: o1,
+          left: l1,
+          right: r1,
+        },
+        Binary {
+          op: o2,
+          left: l2,
+          right: r2,
+        },
+      ) => (o1 == o2) && ((l1 == l2 && r1 == r2) || (l1 == r2 && r1 == l2)),
+      (Unary { op: op1, on: on1 }, Unary { op: op2, on: on2 }) => {
+        op1 == op2 && on1 == on2
+      },
+      _ => false,
+    }
+  }
+}
+
+impl Eq for OpDef {
+}
+
+impl std::hash::Hash for OpDef {
+  fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+    match self {
+      OpDef::Binary { op, left, right } => {
+        op.hash(state);
+        // Order independent hash of left and right
+        let mut h1 = std::hash::DefaultHasher::new();
+        let mut h2 = std::hash::DefaultHasher::new();
+        left.hash(&mut h1);
+        right.hash(&mut h2);
+        (h1.finish() ^ h2.finish()).hash(state)
+      },
+      OpDef::Unary { op, on } => {
+        op.hash(state);
+        on.hash(state);
+      },
+    }
+  }
 }
 
 impl OpDef {
@@ -58,10 +107,6 @@ impl OpTable {
       left, &right
     );
     let opdef = OpDef::Binary { op, left, right };
-    if self.op_map.contains_key(&opdef) {
-      return err;
-    }
-    let opdef = opdef.reverse();
     if self.op_map.contains_key(&opdef) {
       return err;
     }

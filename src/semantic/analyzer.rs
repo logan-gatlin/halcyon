@@ -1,9 +1,8 @@
 use std::collections::HashMap;
 
 use crate::{
-  BinaryOp, Expression, ExpressionKind, Immediate, Span, Statement,
-  StatementKind, UnaryOp, diagnostic, err::*, error,
-  semantic::primitives::Primitive,
+  BinaryOp, Expression, ExpressionKind, Span, Statement, StatementKind,
+  UnaryOp, diagnostic, err::*, error, semantic::primitives::Primitive,
 };
 
 use super::{Mangle, Type, ir::*, mangle_builtin, operators::OpTable};
@@ -14,13 +13,11 @@ pub struct Symbol {
   mangle: Mangle,
   scope_depth: usize,
   is_constant: bool,
-  consumed_at: Option<Span>,
 }
 
 #[derive(Debug, Clone)]
 pub enum Event {
-  FunctionStart,
-  BlockStart,
+  ScopeStart,
   Modify {
     name: String,
     old_value: Option<Symbol>,
@@ -60,7 +57,6 @@ impl Analyzer {
         mangle: mangle.clone(),
         scope_depth: 0,
         is_constant: true,
-        consumed_at: None,
       });
       self
         ._mangle_to_type
@@ -93,6 +89,7 @@ impl Analyzer {
         bin(op, real, real, boolean);
         bin(op, boolean, boolean, boolean);
       }
+      bin(Percent, integer, integer, integer);
     }
     {
       let mut un = |op: UnaryOp, t: Primitive, produces: Primitive| {
@@ -118,7 +115,7 @@ impl Analyzer {
       ._mangle_to_type
       .clone()
       .into_iter()
-      .filter(|(a, _)| !a.starts_with("$") && !a.starts_with("4anon"))
+      .filter(|(a, _)| !a.starts_with("$") && !a.starts_with("5anon"))
       .collect::<HashMap<_, _>>();
     println!("{new_table:#?}");
   }
@@ -185,7 +182,6 @@ impl Analyzer {
     self._name_to_symbol.insert(name.clone(), Symbol {
       mangle: mangle.clone(),
       scope_depth: self.scope_depth,
-      consumed_at: None,
       is_constant,
     });
     self._mangle_to_type.insert(mangle.clone(), Type::Ambiguous);
@@ -202,20 +198,15 @@ impl Analyzer {
     mangle
   }
 
-  fn enscope(&mut self, event: Event) {
-    assert!(match event {
-      Event::FunctionStart => true,
-      Event::BlockStart => true,
-      Event::Modify { .. } => false,
-    });
-    self.event_stack.push(event);
+  fn enscope(&mut self) {
+    self.event_stack.push(Event::ScopeStart);
     self.scope_depth += 1;
   }
 
   fn descope(&mut self) {
     while let Some(e) = self.event_stack.pop() {
       match e {
-        Event::FunctionStart | Event::BlockStart => {
+        Event::ScopeStart => {
           self.scope_depth -= 1;
           break;
         },
@@ -246,12 +237,21 @@ impl Analyzer {
     }
   }
 
+  pub fn typecheck_program(
+    &mut self,
+    block: impl Iterator<Item = Statement>,
+  ) -> Result<Node> {
+    let node = self.analyze_scope(block)?;
+    let node = self.type_bottom_up(node)?;
+    self.type_top_down(Primitive::nothing.promote(), node)
+  }
+
   pub fn analyze_scope(
     &mut self,
     block: impl Iterator<Item = Statement>,
   ) -> Result<Node> {
-    // Construct IR
-    let mut nodes = block
+    let nodes = block
+      // Pass 1 - define constant names
       .map(|stmt| {
         if let StatementKind::Declaration {
           name,
@@ -266,29 +266,17 @@ impl Analyzer {
       })
       .collect::<Result<Vec<_>>>()?
       .into_iter()
+      // Pass 2 - construct ir
       .map(|stmt| self.analyze_statement(stmt))
-      .try_collect::<Vec<Node>>()?
-      .into_iter()
-      .map(|n| self.type_bottom_up(n))
-      .try_collect::<Vec<_>>()?;
-    let mut remainder = None;
-    let mut returns = None;
-    for node in &mut nodes {
-      returns = returns.or(node.returns.clone());
+      .try_collect::<Vec<Node>>()?;
+    let mut span = Span { row: 0, column: 0 };
+    for n in nodes.iter() {
+      span = span + n.span;
     }
-    if let Some(node) = nodes.last() {
-      remainder = remainder.or(node.remainder.clone());
-    }
-    let type_ = if let Some(type_) = &remainder {
-      type_.clone()
-    } else {
-      Type::Prim(Primitive::nothing)
-    };
     Ok(Node {
-      type_,
-      kind: n::Block { nodes },
-      remainder,
-      returns,
+      span,
+      type_: Type::Ambiguous,
+      kind: NodeKind::Block { nodes },
     })
   }
 
@@ -303,13 +291,18 @@ impl Analyzer {
       } => {
         let value = self.analyze_expression(value)?;
         let mangle = if !is_constant {
-          self.define_name(name, true)
+          self.define_name(name.clone(), true)
         } else {
           self.name_to_symbol(&name).map(|s| s.mangle.clone())
         }
         .span(&stmt.span)?;
-        let type_assert = if let Some(t) = type_str {
-          let type_actual = Type::Unresolved(t);
+        let type_assert = if let Some(type_name) = type_str {
+          let type_mangle = self
+            .name_to_symbol(&type_name)
+            .span(&stmt.span)?
+            .mangle
+            .clone();
+          let type_actual = Type::SameAs(type_mangle);
           *self.mangle_to_type_mut(&mangle)? = type_actual.clone();
           Some(type_actual)
         } else {
@@ -319,44 +312,24 @@ impl Analyzer {
           *self.mangle_to_type_mut(&mangle)? = value.type_.clone();
         }
         Node {
+          span: stmt.span,
           type_: Type::Prim(Primitive::nothing),
           kind: n::Declaration {
+            name,
             mangle,
             is_constant,
             type_assert,
             value: value.into(),
           },
-          remainder: None,
-          returns: None,
         }
       },
-      s::Expression(expression) => {
-        let mut expr = self.analyze_expression(expression)?;
-        expr.remainder = None;
-        expr.type_ = Primitive::nothing.promote();
-        expr
-      },
+      s::Expression(expression) => self.analyze_expression(expression)?,
       s::Remainder(expression) => {
-        let mut expr = self.analyze_expression(expression)?;
-        expr.remainder = Some(expr.type_.clone());
-        expr
-      },
-      s::Return(expression) => {
-        let node = if let Some(expr) = expression {
-          self.analyze_expression(expr)?
-        } else {
-          Node {
-            type_: Type::Prim(Immediate::Unit.type_of()),
-            kind: n::Immediate(Immediate::Unit),
-            remainder: None,
-            returns: None,
-          }
-        };
+        let node = self.analyze_expression(expression)?;
         Node {
-          returns: Some(node.type_.clone()),
-          kind: n::Return { node: node.into() },
-          type_: Type::Prim(Primitive::never),
-          remainder: None,
+          span: stmt.span,
+          type_: node.type_.clone(),
+          kind: n::Remainder { node: node.into() },
         }
       },
       s::Error(diagnostic) => return Err(diagnostic),
@@ -371,8 +344,8 @@ impl Analyzer {
       },
       e::Identifier { name } => {
         let mangle = self.name_to_symbol(&name)?.mangle.clone();
-        let type_ = Type::Unresolved(mangle.clone());
-        (type_, n::Identifier(mangle))
+        let type_ = Type::SameAs(mangle.clone());
+        (type_, n::Identifier { name, mangle })
       },
       e::Binary { op, left, right } => {
         let left = self.analyze_expression(*left)?.into();
@@ -391,7 +364,7 @@ impl Analyzer {
         returns_str,
         body,
       } => {
-        self.enscope(Event::FunctionStart);
+        self.enscope();
         self.start_function();
         let mut param_types = Vec::with_capacity(params.arity);
         let mut arguments = Vec::with_capacity(params.arity);
@@ -400,7 +373,7 @@ impl Analyzer {
           let mangle = self.define_name(name, false)?;
           let type_name = &params.type_names[i];
           let type_actual =
-            Type::Unresolved(self.name_to_symbol(type_name)?.mangle.clone());
+            Type::IsType(self.name_to_symbol(type_name)?.mangle.clone());
           *self.mangle_to_type_mut(&mangle)? = type_actual.clone();
           param_types.push(type_actual.clone());
           arguments.push(mangle);
@@ -411,12 +384,12 @@ impl Analyzer {
           .map(|name| {
             self
               .name_to_symbol(&name)
-              .map(|s| Type::Unresolved(s.mangle.clone()))
+              .map(|s| Type::SameAs(s.mangle.clone()))
           })
           .try_collect::<Vec<_>>()?;
 
         let return_type = if let Some(returns) = returns_str {
-          Type::Unresolved(self.name_to_symbol(&returns)?.mangle.clone())
+          Type::SameAs(self.name_to_symbol(&returns)?.mangle.clone())
         } else {
           Type::Type(Type::Prim(Primitive::nothing).into())
         }
@@ -443,7 +416,11 @@ impl Analyzer {
           .into_iter()
           .map(|a| self.analyze_expression(a))
           .try_collect::<Vec<_>>()?;
-        (Type::Ambiguous, n::Call { callee, params })
+        (Type::Ambiguous, n::Call {
+          callee,
+          params,
+          mangle: "".into(),
+        })
       },
       e::StructDef(params) => {
         let member_types = params
@@ -452,12 +429,13 @@ impl Analyzer {
           .map(|name| {
             self
               .name_to_symbol(&name)
-              .map(|s| Type::Unresolved(s.mangle.clone()))
+              .map(|s| Type::SameAs(s.mangle.clone()))
           })
           .collect::<Result<Vec<_>>>()?;
         let mangle = self.define_anonymous(Type::Ambiguous);
         let type_ = Type::Type(
           Type::Struct {
+            name: None,
             mangle: mangle.clone(),
             member_names: params.names,
             member_types,
@@ -465,12 +443,15 @@ impl Analyzer {
           .into(),
         );
         *self.mangle_to_type_mut(&mangle)? = type_.clone();
-        (type_, n::Identifier(mangle))
+        (type_, n::Identifier {
+          name: "anonymous struct".into(),
+          mangle,
+        })
       },
       e::StructLiteral { name, args } => {
         let (names, values): (Vec<_>, Vec<_>) = args.into_iter().unzip();
         (
-          Type::Unresolved(self.name_to_symbol(&name)?.mangle.clone()),
+          Type::SameAs(self.name_to_symbol(&name)?.mangle.clone()),
           n::StructLiteral {
             names,
             values: values
@@ -481,12 +462,21 @@ impl Analyzer {
         )
       },
       e::Field { namespace, field } => {
-        let namespace = self.analyze_expression(*namespace)?.into();
-        let index = self.analyze_expression(*field)?.into();
-        (Type::Ambiguous, n::Field { namespace, index })
+        let namespace = self.analyze_expression(*namespace)?;
+        let Expression {
+          kind: e::Identifier { name: index },
+          ..
+        } = *field
+        else {
+          return error!("Index must be an identifier").span(&field.span);
+        };
+        (Type::Ambiguous, n::Field {
+          namespace: namespace.into(),
+          index,
+        })
       },
       e::Block(block) => {
-        self.enscope(Event::BlockStart);
+        self.enscope();
         let block = self.analyze_scope(block.into_iter())?;
         self.descope();
         return Ok(block);
@@ -497,11 +487,11 @@ impl Analyzer {
         else_,
       } => {
         let predicate = self.analyze_expression(*predicate)?.into();
-        self.enscope(Event::BlockStart);
+        self.enscope();
         let then = self.analyze_scope(block.into_iter())?.into();
         self.descope();
         let else_ = if let Some(else_) = else_ {
-          self.enscope(Event::BlockStart);
+          self.enscope();
           let else_ = Some(self.analyze_expression(*else_)?.into());
           self.descope();
           else_
@@ -514,12 +504,34 @@ impl Analyzer {
           else_,
         })
       },
+      e::Loop { names, exprs, body } => {
+        let initials = exprs
+          .into_iter()
+          .map(|e| self.analyze_expression(e))
+          .try_collect::<Vec<_>>()?;
+        self.enscope();
+        let names = names
+          .into_iter()
+          .map(|n| self.define_name(n, false))
+          .try_collect::<Vec<_>>()
+          .span(&expr.span)?;
+        let body = self.analyze_scope(body.into_iter())?;
+        self.descope();
+        (Type::Ambiguous, n::Loop {
+          names,
+          initials,
+          body: body.into(),
+        })
+      },
+      e::Break { expr } => {
+        let expr = self.analyze_expression(*expr)?;
+        (Primitive::never.promote(), n::Break { expr: expr.into() })
+      },
     };
     Ok(Node {
+      span: expr.span,
       type_,
       kind,
-      remainder: None,
-      returns: None,
     })
   }
 }

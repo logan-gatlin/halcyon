@@ -1,5 +1,6 @@
 #![feature(let_chains)]
 #![feature(iterator_try_collect)]
+mod compile;
 mod err;
 mod lookahead;
 mod parse;
@@ -46,7 +47,7 @@ fn test_tokenization() {
   0x10 0b10 10.0 1.0..2.0
   2.0..=3.0 if else and
   or xor not nand nor xnor 
-  print break for while true
+  print break true
   false "\u263b" '\x30'
   "#;
   let mut parser = Tokenizer::new(test_str.chars());
@@ -73,7 +74,7 @@ fn parse(input: &'static str) -> impl Iterator<Item = Statement> {
 fn main() -> Result<()> {
   let program: Vec<_> = parse(include_str!("../demo.hal")).collect();
   let mut an = semantic::Analyzer::new();
-  let n = an.analyze_scope(program.into_iter()).unwrap();
+  let n = an.typecheck_program(program.into_iter()).unwrap();
   an.print_table();
   println!("{n:#?}");
   Ok(())

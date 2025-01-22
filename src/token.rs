@@ -59,6 +59,7 @@ pub enum TokenKind {
   IntegerLiteral(String, Base),
   FloatLiteral(String),
 
+  Loop,
   If,
   Else,
   And,
@@ -68,10 +69,7 @@ pub enum TokenKind {
   Nand,
   Nor,
   Xnor,
-  Print,
   Break,
-  Return,
-  Continue,
   True,
   False,
   Struct,
@@ -401,6 +399,8 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
     // Match keywords
     {
       let kind = match buffer.as_str() {
+        "loop" => Loop,
+        "break" => Break,
         "if" => If,
         "else" => Else,
         "and" => And,
@@ -409,10 +409,6 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
         "nand" => Nand,
         "nor" => Nor,
         "xnor" => Xnor,
-        "print" => Print,
-        "break" => Break,
-        "return" => Return,
-        "continue" => Continue,
         "not" => Not,
         "true" => True,
         "false" => False,

@@ -10,7 +10,6 @@ pub enum StatementKind {
   },
   Expression(Expression),
   Remainder(Expression),
-  Return(Option<Expression>),
   Error(Diagnostic),
 }
 
@@ -48,7 +47,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
             .span(&span);
         };
         let value = self
-          .expression(0, false)
+          .expression(0)
           .trace_span(span, "while parsing declaration")?;
         span = span + value.span;
         let no_semicolon =
@@ -78,7 +77,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
         self.skip(2);
         span = span + span2 + span3;
         let value = self
-          .expression(0, false)
+          .expression(0)
           .trace_span(span, "while parsing assignment")?;
         Statement {
           span,
@@ -90,24 +89,11 @@ impl<I: Iterator<Item = Token>> Parser<I> {
           },
         }
       },
-      // Return
-      (Token(t::Return, span2), _) => {
-        span = span + span2;
-        self.skip(1);
-        let expr = self.expression(0, false).ok();
-        if let Some(expr) = &expr {
-          span = span + expr.span;
-        }
-        Statement {
-          span,
-          kind: s::Return(expr),
-        }
-      },
       // Expression
       (Token(_, span2), _) => {
         span = span + span2;
         let expr = self
-          .expression(0, false)
+          .expression(0)
           .trace_span(span, "while parsing expression statement")?;
         span = span + expr.span;
         if self.look(0, t::RightBrace).is_ok() {

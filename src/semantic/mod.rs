@@ -26,6 +26,7 @@ pub enum Type {
   Prim(Primitive),
   /// User defined type
   Struct {
+    name: Option<String>,
     mangle: Mangle,
     member_names: Vec<String>,
     member_types: Vec<Type>,
@@ -38,8 +39,12 @@ pub enum Type {
     param_types: Vec<Type>,
     return_type: Box<Type>,
   },
+  // Type type
   Type(Box<Type>),
-  Unresolved(Mangle),
+  // Has the same type as X
+  SameAs(Mangle),
+  // Has the type X
+  IsType(Mangle),
 }
 
 impl Type {
@@ -47,7 +52,7 @@ impl Type {
     if let Type::Type(_) = self {
       Ok(self)
     } else {
-      error!("Expected the name of a type here, found '{self:?}'")
+      error!("Expected the name of a type here, found '{self}'")
     }
   }
 
@@ -55,7 +60,7 @@ impl Type {
     if let Type::Type(t) = self {
       Ok(*t)
     } else {
-      error!("Expected the name of a type here, found '{self:?}'")
+      error!("Expected the name of a type here, found '{self}'")
     }
   }
 }
@@ -71,7 +76,7 @@ impl PartialEq for Type {
         m1 == m2
       },
       (t::Type(t1), t::Type(t2)) => t1 == t2,
-      (t::Unresolved(t1), t::Unresolved(t2)) => {
+      (t::SameAs(t1), t::SameAs(t2)) => {
         panic!("Tried to compare unresolved types '{t1}' and '{t2}'")
       },
       _ => false,
@@ -90,7 +95,9 @@ impl std::hash::Hash for Type {
         mangle.hash(state)
       },
       Type::Type(t) => t.hash(state),
-      Type::Unresolved(t) => panic!("Tried to hash unresolved type '{t}'"),
+      Type::SameAs(t) | Type::IsType(t) => {
+        panic!("Tried to hash unresolved type '{t}'")
+      },
       Type::Ambiguous => panic!("Tried to hash ambiguous type"),
     }
   }
@@ -101,10 +108,17 @@ impl std::fmt::Display for Type {
     match self {
       Type::Ambiguous => write!(f, "ambiguous"),
       Type::Prim(primitive) => write!(f, "{primitive}"),
-      Type::Struct { .. } => write!(f, "struct"),
-      Type::Type(tid) => write!(f, "{tid}"),
+      Type::Struct { name, .. } => {
+        if let Some(n) = name {
+          write!(f, "{n}")
+        } else {
+          write!(f, "anonymous struct")
+        }
+      },
+      Type::Type(tid) => write!(f, "{tid} (type)"),
       Type::Function { .. } => write!(f, "func"),
-      Type::Unresolved(m) => write!(f, "? ({m})"),
+      Type::SameAs(m) => write!(f, "? (same as {m})"),
+      Type::IsType(m) => write!(f, "? (is {m})"),
     }
   }
 }
@@ -119,7 +133,8 @@ impl std::fmt::Display for Type {
 pub fn mangle_name(path: Vec<String>, salt: &str) -> Mangle {
   let mut buf: Vec<u8> = vec![];
   for p in path {
-    let bytes = format!("{}{}", p.len(), punycode::encode(&p).unwrap());
+    let puny = punycode::encode(&p).unwrap();
+    let bytes = format!("{}{puny}", puny.len());
     buf.extend_from_slice(bytes.as_bytes());
   }
   buf.extend_from_slice(salt.as_bytes());

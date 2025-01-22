@@ -62,7 +62,6 @@ op! {
   Percent, 10, LEFT_ASSOC;
   Plus, 9, LEFT_ASSOC;
   Minus, 9, LEFT_ASSOC;
-  And, 8, LEFT_ASSOC;
   Nand, 8, LEFT_ASSOC;
   Xor, 7, LEFT_ASSOC;
   Xnor, 7, LEFT_ASSOC;
@@ -74,6 +73,7 @@ op! {
   LessEqual, 5, LEFT_ASSOC;
   Greater, 5, LEFT_ASSOC;
   GreaterEqual, 5, LEFT_ASSOC;
+  And, 4, LEFT_ASSOC;
 }
 
 op! {
