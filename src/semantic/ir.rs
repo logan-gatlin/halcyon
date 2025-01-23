@@ -1,7 +1,9 @@
 use std::collections::HashSet;
 
-use crate::{BinaryOp, Immediate, Span, UnaryOp};
+use operators::{BinaryOpDef, UnaryOpDef};
+
 use crate::{err::*, error};
+use crate::{BinaryOp, Immediate, Span, UnaryOp};
 
 use super::*;
 
@@ -26,11 +28,13 @@ pub enum NodeKind {
   },
   BinaryOp {
     op: BinaryOp,
+    opdef: BinaryOpDef,
     left: Box<Node>,
     right: Box<Node>,
   },
   UnaryOp {
     op: UnaryOp,
+    opdef: UnaryOpDef,
     child: Box<Node>,
   },
   Field {
@@ -75,11 +79,7 @@ pub struct Node {
 }
 
 impl Analyzer {
-  fn resolve_type(
-    &self,
-    type_: Type,
-    mut history: HashSet<Mangle>,
-  ) -> Result<Type> {
+  fn resolve_type(&self, type_: Type, mut history: HashSet<Mangle>) -> Result<Type> {
     match type_ {
       Type::Type(t) => Ok(Type::Type(self.resolve_type(*t, history)?.into())),
       Type::SameAs(mangle) => {
@@ -88,14 +88,14 @@ impl Analyzer {
           return error!("Cannot determine type, found circular dependency");
         }
         self.resolve_type(t.clone(), history)
-      },
+      }
       Type::IsType(mangle) => {
         let t = self.mangle_to_type(&mangle)?;
         if !history.insert(mangle) {
           return error!("Cannot determine type, found circular dependency");
         }
         self.resolve_type(t.clone(), history)?.unwrap_type_name()
-      },
+      }
       Type::Struct {
         name,
         mangle,
@@ -153,8 +153,13 @@ impl Analyzer {
             .collect::<Result<Vec<_>>>()
             .span(span)?,
         }
-      },
-      n::BinaryOp { op, left, right } => {
+      }
+      n::BinaryOp {
+        op,
+        opdef,
+        left,
+        right,
+      } => {
         let left = self.type_bottom_up(*left)?;
         let right = self.type_bottom_up(*right)?;
         node.type_ = self
@@ -163,15 +168,16 @@ impl Analyzer {
           .span(span)?;
         n::BinaryOp {
           op,
+          opdef,
           left: left.into(),
           right: right.into(),
         }
-      },
-      n::UnaryOp { op, child } => {
+      }
+      n::UnaryOp { op, opdef, child } => {
         node.type_ = self.op_table.try_unary(op, &child.type_).span(span)?;
         let child = self.type_bottom_up(*child)?.into();
-        n::UnaryOp { op, child }
-      },
+        n::UnaryOp { op, opdef, child }
+      }
       n::Field { namespace, index } => {
         let namespace = self.type_bottom_up(*namespace)?;
         let Type::Struct {
@@ -181,11 +187,7 @@ impl Analyzer {
           ..
         } = namespace.type_.clone()
         else {
-          return error!(
-            "The type '{}' does not contain fields",
-            namespace.type_
-          )
-          .span(span);
+          return error!("The type '{}' does not contain fields", namespace.type_).span(span);
         };
         node.type_ = member_names
           .iter()
@@ -209,7 +211,7 @@ impl Analyzer {
           namespace: namespace.into(),
           index,
         }
-      },
+      }
       n::If {
         predicate,
         then,
@@ -236,7 +238,7 @@ impl Analyzer {
           then: then.into(),
           else_,
         }
-      },
+      }
       n::Call { callee, params, .. } => {
         let callee = self.type_bottom_up(*callee)?;
         let mangle = if let Type::Function {
@@ -259,7 +261,7 @@ impl Analyzer {
           callee: callee.into(),
           params,
         }
-      },
+      }
       n::Declaration {
         name: clean_name,
         mangle,
@@ -298,7 +300,7 @@ impl Analyzer {
           type_assert,
           value: value.into(),
         }
-      },
+      }
       n::Block { nodes } => {
         let nodes = nodes
           .into_iter()
@@ -314,7 +316,7 @@ impl Analyzer {
           Primitive::nothing.promote()
         };
         n::Block { nodes }
-      },
+      }
       n::Immediate(_) => node.kind,
       n::Identifier { .. } => node.kind,
       n::Remainder { node: inner_node } => {
@@ -323,7 +325,7 @@ impl Analyzer {
         n::Remainder {
           node: inner_node.into(),
         }
-      },
+      }
       n::Function {
         mangle,
         arguments,
@@ -346,7 +348,7 @@ impl Analyzer {
           arguments,
           nodes,
         }
-      },
+      }
       n::Loop {
         names,
         initials,
@@ -356,9 +358,7 @@ impl Analyzer {
           .into_iter()
           .map(|n| self.type_bottom_up(n))
           .try_collect::<Vec<_>>()?;
-        for (mangle, type_) in
-          names.iter().zip(initials.iter_mut().map(|n| &mut n.type_))
-        {
+        for (mangle, type_) in names.iter().zip(initials.iter_mut().map(|n| &mut n.type_)) {
           println!("{mangle:?} {type_:?}");
           *type_ = self
             .resolve_type(type_.clone(), HashSet::new())
@@ -367,10 +367,7 @@ impl Analyzer {
         }
         let body = self.type_bottom_up(*body)?;
         let Some(break_type) = self.check_breaks(&body) else {
-          return error!(
-            "This loop will never terminate, provide at least one 'break'"
-          )
-          .span(span);
+          return error!("This loop will never terminate, provide at least one 'break'").span(span);
         };
         node.type_ = break_type;
         n::Loop {
@@ -378,11 +375,11 @@ impl Analyzer {
           initials,
           body: body.into(),
         }
-      },
+      }
       n::Break { expr } => {
         let expr = self.type_bottom_up(*expr)?;
         n::Break { expr: expr.into() }
-      },
+      }
     };
     if let Type::Ambiguous = node.type_ {
       return error!("Failed to determine type of expression").span(span);
@@ -396,29 +393,28 @@ impl Analyzer {
       n::Break { expr } => Some(expr.type_.clone()),
       n::StructLiteral { values, .. } => {
         values.into_iter().flat_map(|n| self.check_breaks(n)).next()
-      },
-      n::BinaryOp { left, right, .. } => {
-        self.check_breaks(left).or(self.check_breaks(right))
-      },
+      }
+      n::BinaryOp { left, right, .. } => self.check_breaks(left).or(self.check_breaks(right)),
       n::UnaryOp { child, .. } => self.check_breaks(child),
       n::If {
         predicate,
         then,
         else_,
-      } => self.check_breaks(predicate).or(self.check_breaks(then)).or(
-        if let Some(else_) = else_ {
-          self.check_breaks(else_)
-        } else {
-          None
-        },
-      ),
+      } => {
+        self
+          .check_breaks(predicate)
+          .or(self.check_breaks(then))
+          .or(if let Some(else_) = else_ {
+            self.check_breaks(else_)
+          } else {
+            None
+          })
+      }
       n::Call { callee, params, .. } => self
         .check_breaks(callee)
         .or(params.into_iter().flat_map(|n| self.check_breaks(n)).next()),
       n::Declaration { value, .. } => self.check_breaks(value),
-      n::Block { nodes } => {
-        nodes.into_iter().flat_map(|n| self.check_breaks(n)).next()
-      },
+      n::Block { nodes } => nodes.into_iter().flat_map(|n| self.check_breaks(n)).next(),
       n::Remainder { node } => self.check_breaks(node),
       _ => None,
     }
@@ -428,8 +424,7 @@ impl Analyzer {
     use NodeKind as n;
     let span = &node.span;
     if node.type_ != expects {
-      return error!("Expected type '{expects}', found '{}'", node.type_)
-        .span(span);
+      return error!("Expected type '{expects}', found '{}'", node.type_).span(span);
     }
     let kind = match node.kind {
       n::Immediate(im) => n::Immediate(im),
@@ -451,12 +446,10 @@ impl Analyzer {
         for id in 0..names.len() {
           let name = &names[id];
           if !member_names.contains(name) {
-            return error!("'{}' does not have member '{name}'", node.type_)
-              .span(span);
+            return error!("'{}' does not have member '{name}'", node.type_).span(span);
           }
           if !member_name_set.insert(name) {
-            return error!("Struct member '{name}' has already been provided")
-              .span(span);
+            return error!("Struct member '{name}' has already been provided").span(span);
           }
           values[id] = self.type_top_down(
             member_types[id].clone().unwrap_type_name().span(span)?,
@@ -474,38 +467,43 @@ impl Analyzer {
           return error!("Missing struct members: {missing}");
         }
         n::StructLiteral { names, values }
-      },
+      }
       n::Field { namespace, index } => {
-        let namespace =
-          self.type_top_down(namespace.type_.clone(), *namespace)?;
+        let namespace = self.type_top_down(namespace.type_.clone(), *namespace)?;
         n::Field {
           namespace: namespace.into(),
           index,
         }
-      },
-      n::BinaryOp { op, left, right } => {
+      }
+      n::BinaryOp {
+        op,
+        opdef,
+        left,
+        right,
+      } => {
         let left = self.type_top_down(left.type_.clone(), *left)?;
         let right = self.type_top_down(right.type_.clone(), *right)?;
         n::BinaryOp {
           op,
+          opdef,
           left: left.into(),
           right: right.into(),
         }
-      },
-      n::UnaryOp { op, child } => {
+      }
+      n::UnaryOp { op, opdef, child } => {
         let child = self.type_top_down(child.type_.clone(), *child)?;
         n::UnaryOp {
           op,
+          opdef,
           child: child.into(),
         }
-      },
+      }
       n::If {
         predicate,
         then,
         else_,
       } => {
-        let predicate =
-          self.type_top_down(Primitive::boolean.promote(), *predicate)?;
+        let predicate = self.type_top_down(Primitive::boolean.promote(), *predicate)?;
         let then = self.type_top_down(then.type_.clone(), *then)?;
         let else_ = if let Some(else_) = else_ {
           Some(self.type_top_down(else_.type_.clone(), *else_)?.into())
@@ -517,7 +515,7 @@ impl Analyzer {
           then: then.into(),
           else_,
         }
-      },
+      }
       n::Call {
         mangle,
         callee,
@@ -549,7 +547,7 @@ impl Analyzer {
           callee: callee.into(),
           params,
         }
-      },
+      }
       n::Declaration {
         name: clean_name,
         mangle,
@@ -574,14 +572,14 @@ impl Analyzer {
           type_assert,
           value: value.into(),
         }
-      },
+      }
       n::Block { nodes } => {
         let nodes = nodes
           .into_iter()
           .map(|n| self.type_top_down(n.type_.clone(), n))
           .try_collect::<Vec<_>>()?;
         n::Block { nodes }
-      },
+      }
       n::Remainder { node } => n::Remainder {
         node: self.type_top_down(node.type_.clone(), *node)?.into(),
       },
@@ -593,14 +591,13 @@ impl Analyzer {
         let Type::Function { return_type, .. } = node.type_ else {
           panic!("This should never happen")
         };
-        let nodes =
-          self.type_top_down((*return_type).unwrap_type_name()?, *nodes)?;
+        let nodes = self.type_top_down((*return_type).unwrap_type_name()?, *nodes)?;
         n::Function {
           mangle,
           arguments,
           nodes: nodes.into(),
         }
-      },
+      }
       n::Loop {
         names,
         initials,
@@ -611,9 +608,7 @@ impl Analyzer {
           .map(|n| self.type_top_down(n.type_.clone(), n))
           .try_collect::<Vec<_>>()?;
         if initials.len() > 1 {
-          return error!(
-            "Multiple loop parameters are not currently supported"
-          );
+          return error!("Multiple loop parameters are not currently supported");
         }
         let loop_expects = initials
           .first()
@@ -625,11 +620,11 @@ impl Analyzer {
           initials,
           body: body.into(),
         }
-      },
+      }
       n::Break { expr } => {
         let expr = self.type_top_down(expr.type_.clone(), *expr)?;
         n::Break { expr: expr.into() }
-      },
+      }
     };
     Ok(Node {
       span: node.span,
