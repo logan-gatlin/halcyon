@@ -1,50 +1,27 @@
 use std::collections::HashMap;
 use std::hash::Hasher;
 
+use crate::compile::{Asm, AsmType};
 use crate::semantic::primitives::Primitive;
+use crate::{BinaryOp, UnaryOp, diagnostic};
 use crate::{err::*, error};
-use crate::{BinaryOp, UnaryOp};
 
 use super::Type;
 
 #[derive(Clone, Debug)]
-pub struct BinaryOpDef {
-  pub op: BinaryOp,
-  pub left: Type,
-  pub right: Type,
-  pub asm: String,
+struct BinaryOpKey {
+  op: BinaryOp,
+  left: Type,
+  right: Type,
 }
 
-#[derive(Clone, Debug)]
-pub struct UnaryOpDef {
-  pub op: UnaryOp,
-  pub on: Type,
-  pub asm: String,
-}
-
-impl Default for BinaryOpDef {
-  fn default() -> Self {
-    BinaryOpDef {
-      op: BinaryOp::Plus,
-      left: Type::Ambiguous,
-      right: Type::Ambiguous,
-      asm: "".into(),
-    }
-  }
-}
-
-impl Default for UnaryOpDef {
-  fn default() -> Self {
-    UnaryOpDef {
-      op: UnaryOp::Plus,
-      on: Type::Ambiguous,
-      asm: "".into(),
-    }
-  }
+struct UnaryOpKey {
+  op: UnaryOp,
+  on: Type,
 }
 
 // Order independent equality
-impl PartialEq for BinaryOpDef {
+impl PartialEq for BinaryOpKey {
   fn eq(&self, other: &Self) -> bool {
     self.op == other.op
       && ((self.left == other.left && self.right == other.right)
@@ -52,16 +29,33 @@ impl PartialEq for BinaryOpDef {
   }
 }
 
-impl PartialEq for UnaryOpDef {
+impl PartialEq for UnaryOpKey {
   fn eq(&self, other: &Self) -> bool {
     self.op == other.op && self.on == other.on
   }
 }
 
-impl Eq for BinaryOpDef {}
-impl Eq for UnaryOpDef {}
+impl Eq for BinaryOpKey {
+}
+impl Eq for UnaryOpKey {
+}
 
-impl std::hash::Hash for BinaryOpDef {
+#[derive(Clone, Debug)]
+pub struct OpDef {
+  pub produces: Type,
+  pub asm: Vec<Asm>,
+}
+
+impl Default for OpDef {
+  fn default() -> Self {
+    OpDef {
+      produces: Type::Ambiguous,
+      asm: vec![Asm::nop],
+    }
+  }
+}
+
+impl std::hash::Hash for BinaryOpKey {
   fn hash<H: Hasher>(&self, state: &mut H) {
     self.op.hash(state);
     // Order independent hash of left and right
@@ -73,7 +67,7 @@ impl std::hash::Hash for BinaryOpDef {
   }
 }
 
-impl std::hash::Hash for UnaryOpDef {
+impl std::hash::Hash for UnaryOpKey {
   fn hash<H: Hasher>(&self, state: &mut H) {
     self.op.hash(state);
     self.on.hash(state);
@@ -81,8 +75,8 @@ impl std::hash::Hash for UnaryOpDef {
 }
 
 pub struct OpTable {
-  binary_map: HashMap<BinaryOpDef, Type>,
-  unary_map: HashMap<UnaryOpDef, Type>,
+  binary_map: HashMap<BinaryOpKey, OpDef>,
+  unary_map: HashMap<UnaryOpKey, OpDef>,
 }
 
 impl OpTable {
@@ -96,98 +90,120 @@ impl OpTable {
   }
 
   pub fn prelude(&mut self) {
+    use Asm::*;
+    use AsmType::*;
     use Primitive::*;
     {
       use BinaryOp::*;
-      let mut b = |op: BinaryOp, p1: Primitive, p2: Primitive, prod: Primitive, asm: &str| {
-        let asm = format!("{asm}\n");
+      let mut b = |op: BinaryOp,
+                   p1: Primitive,
+                   p2: Primitive,
+                   prod: Primitive,
+                   asm: Vec<Asm>| {
         self
-          .define_binary(op, Type::Prim(p1), Type::Prim(p2), Type::Prim(prod), asm)
+          .define_binary(
+            op,
+            Type::Prim(p1),
+            Type::Prim(p2),
+            Type::Prim(prod),
+            asm,
+          )
           .unwrap();
       };
       // math
-      b(Plus, integer, integer, integer, "i64.add");
-      b(Plus, real, real, real, "f64.add");
-      b(Minus, integer, integer, integer, "i64.sub");
-      b(Minus, real, real, real, "f64.sub");
-      b(Star, integer, integer, integer, "i64.mul");
-      b(Star, real, real, real, "f64.mul");
-      b(Slash, integer, integer, integer, "i64.div");
-      b(Slash, real, real, real, "f64.div");
-      b(Percent, integer, integer, integer, "i64.rem");
+      b(Plus, integer, integer, integer, vec![add(i64)]);
+      b(Plus, real, real, real, vec![add(f64)]);
+      b(Minus, integer, integer, integer, vec![subtract(i64)]);
+      b(Minus, real, real, real, vec![subtract(f64)]);
+      b(Star, integer, integer, integer, vec![multiply(i64)]);
+      b(Star, real, real, real, vec![multiply(f64)]);
+      b(Slash, integer, integer, integer, vec![divide(i64)]);
+      b(Slash, real, real, real, vec![divide(f64)]);
+      b(Percent, integer, integer, integer, vec![remainder(i64)]);
       // logical
-      b(And, boolean, boolean, boolean, "i32.and");
-      b(And, integer, integer, integer, "i64.and");
-      b(Or, boolean, boolean, boolean, "i32.or");
-      b(Or, integer, integer, integer, "i64.or");
-      b(Xor, boolean, boolean, boolean, "i32.xor");
-      b(Xor, integer, integer, integer, "i64.xor");
-      b(
-        Nand,
-        boolean,
-        boolean,
-        boolean,
-        "i32.and\ni32.const 1\ni32.xor",
-      );
-      b(
-        Nand,
-        integer,
-        integer,
-        integer,
-        "i64.and\ni64.const 0xFFFFFFFF\ni64.xor",
-      );
-      b(Xnor, boolean, boolean, boolean, "i32.eq");
-      b(Xnor, integer, integer, integer, "i64.eq");
-      b(
-        Nor,
-        boolean,
-        boolean,
-        boolean,
-        "i32.or\ni32.const 1\ni32.xor",
-      );
-      b(
-        Nor,
-        integer,
-        integer,
-        integer,
-        "i64.or\ni64.const 0xFFFFFFFF\ni64.xor",
-      );
+      b(And, boolean, boolean, boolean, vec![and(i32)]);
+      b(And, integer, integer, integer, vec![and(i64)]);
+      b(Or, boolean, boolean, boolean, vec![or(i32)]);
+      b(Or, integer, integer, integer, vec![or(i64)]);
+      b(Xor, boolean, boolean, boolean, vec![or(i32)]);
+      b(Xor, integer, integer, integer, vec![xor(i64)]);
+      b(Nand, boolean, boolean, boolean, vec![
+        and(i32),
+        constant(i32, "1".into()),
+        xor(i32),
+      ]);
+      b(Nand, integer, integer, integer, vec![
+        and(i64),
+        constant(i64, "-1".into()),
+        xor(i64),
+      ]);
+      b(Xnor, boolean, boolean, boolean, vec![equal(i32)]);
+      b(Xnor, integer, integer, integer, vec![equal(i64)]);
+      b(Nor, boolean, boolean, boolean, vec![
+        or(i32),
+        constant(i32, "1".into()),
+        xor(i32),
+      ]);
+      b(Nor, integer, integer, integer, vec![
+        or(i64),
+        constant(i64, "-1".into()),
+        xor(i64),
+      ]);
       // Relative value
-      b(DoubleEqual, boolean, boolean, boolean, "i32.eq");
-      b(DoubleEqual, integer, integer, integer, "i64.eq");
-      b(DoubleEqual, real, real, real, "f64.eq");
-      b(DoubleEqual, nothing, nothing, nothing, "i32.const 1");
-      b(DoubleEqual, glyph, glyph, glyph, "i32.eq");
-      b(Less, integer, integer, integer, "i64.lt");
-      b(Less, glyph, glyph, glyph, "i32.lt");
-      b(Less, real, real, real, "f64.lt");
-      b(Greater, integer, integer, integer, "i64.gt");
-      b(Greater, glyph, glyph, glyph, "i32.gt");
-      b(Greater, real, real, real, "f64.gt");
-      b(LessEqual, integer, integer, integer, "i64.le");
-      b(LessEqual, glyph, glyph, glyph, "i32.le");
-      b(LessEqual, real, real, real, "f64.le");
-      b(GreaterEqual, integer, integer, integer, "i64.ge");
-      b(GreaterEqual, real, real, real, "f64.ge");
-      b(GreaterEqual, glyph, glyph, glyph, "i32.ge");
-      b(BangEqual, boolean, boolean, boolean, "i32.ne");
-      b(BangEqual, integer, integer, integer, "i64.ne");
-      b(BangEqual, glyph, glyph, glyph, "i32.ne");
-      b(BangEqual, real, real, real, "f64.ne");
-      b(BangEqual, nothing, nothing, nothing, "i32.const 0");
+      b(DoubleEqual, boolean, boolean, boolean, vec![equal(i32)]);
+      b(DoubleEqual, integer, integer, boolean, vec![equal(i64)]);
+      b(DoubleEqual, real, real, boolean, vec![equal(f64)]);
+      b(DoubleEqual, nothing, nothing, boolean, vec![constant(
+        i32,
+        "1".into(),
+      )]);
+      b(DoubleEqual, glyph, glyph, boolean, vec![equal(i32)]);
+      b(Less, integer, integer, boolean, vec![lesser(i64)]);
+      b(Less, glyph, glyph, boolean, vec![lesser(i32)]);
+      b(Less, real, real, boolean, vec![lesser(f64)]);
+      b(Greater, integer, integer, boolean, vec![greater(i64)]);
+      b(Greater, glyph, glyph, boolean, vec![greater(i32)]);
+      b(Greater, real, real, boolean, vec![greater(f64)]);
+      b(LessEqual, integer, integer, boolean, vec![lesserequal(i64)]);
+      b(LessEqual, glyph, glyph, boolean, vec![lesserequal(i32)]);
+      b(LessEqual, real, real, boolean, vec![lesserequal(f64)]);
+      b(GreaterEqual, integer, integer, boolean, vec![greaterequal(
+        i64,
+      )]);
+      b(GreaterEqual, glyph, glyph, boolean, vec![greaterequal(i32)]);
+      b(GreaterEqual, real, real, boolean, vec![greaterequal(f64)]);
+      b(BangEqual, boolean, boolean, boolean, vec![unequal(i32)]);
+      b(BangEqual, integer, integer, boolean, vec![unequal(i64)]);
+      b(BangEqual, glyph, glyph, boolean, vec![unequal(i32)]);
+      b(BangEqual, real, real, boolean, vec![unequal(f64)]);
+      b(BangEqual, nothing, nothing, boolean, vec![constant(
+        i32,
+        "0".into(),
+      )]);
     }
     {
       use UnaryOp::*;
-      let mut u = |op: UnaryOp, p1: Primitive, prod: Primitive, asm: &str| {
-        let asm = format!("{asm}\n");
-        self
-          .define_unary(op, Type::Prim(p1), Type::Prim(prod), asm)
-          .unwrap();
-      };
-      u(Minus, integer, integer, "i64.neg");
-      u(Minus, real, real, "f64.neg");
-      u(Not, integer, integer, "i64.const 0xFFFFFFFF\ni64.xor");
-      u(Not, boolean, boolean, "i32.const 1\ni32.xor");
+      let mut u =
+        |op: UnaryOp, p1: Primitive, prod: Primitive, asm: Vec<Asm>| {
+          self
+            .define_unary(op, Type::Prim(p1), Type::Prim(prod), asm)
+            .unwrap();
+        };
+      u(Minus, integer, integer, vec![
+        constant(i64, "-1".into()),
+        xor(i64),
+        constant(i64, "1".into()),
+        add(i64),
+      ]);
+      u(Minus, real, real, vec![negate(f64)]);
+      u(Not, integer, integer, vec![
+        constant(i64, "-1".into()),
+        xor(i64),
+      ]);
+      u(Not, boolean, boolean, vec![
+        constant(i32, "1".into()),
+        xor(i32),
+      ]);
     }
   }
 
@@ -197,61 +213,61 @@ impl OpTable {
     left: Type,
     right: Type,
     produces: Type,
-    asm: String,
+    asm: Vec<Asm>,
   ) -> Result<()> {
     let err: Result<()> = error!(
       "Operator {op} is already defined for types '{}' and '{}'",
       left, &right
     );
-    let opdef = BinaryOpDef {
-      op,
-      left,
-      right,
-      asm,
-    };
-    if self.binary_map.contains_key(&opdef) {
+    let key = BinaryOpKey { op, left, right };
+    if self.binary_map.contains_key(&key) {
       return err;
     }
-    self.binary_map.insert(opdef, produces);
+    let value = OpDef { produces, asm };
+    self.binary_map.insert(key, value);
     Ok(())
   }
 
-  pub fn define_unary(&mut self, op: UnaryOp, on: Type, produces: Type, asm: String) -> Result<()> {
+  pub fn define_unary(
+    &mut self,
+    op: UnaryOp,
+    on: Type,
+    produces: Type,
+    asm: Vec<Asm>,
+  ) -> Result<()> {
     let err = error!("Operator {op} is already defined for type '{}'", &on);
-    let old = self.unary_map.insert(UnaryOpDef { op, on, asm }, produces);
-    if old.is_some() {
-      err
-    } else {
-      Ok(())
-    }
+    let old = self
+      .unary_map
+      .insert(UnaryOpKey { op, on }, OpDef { produces, asm });
+    if old.is_some() { err } else { Ok(()) }
   }
 
-  pub fn try_binary(&self, op: BinaryOp, left: &Type, right: &Type) -> Result<Type> {
-    let err = error!("Operator {op} is not defined for types '{left}' and '{right}'",);
-    let left = left.clone();
-    let right = right.clone();
-    let opdef = BinaryOpDef {
-      op,
-      left,
-      right,
-      asm: "".into(),
-    };
-    if let Some(t) = self.binary_map.get(&opdef) {
-      Ok(t.clone())
-    } else {
-      err
-    }
+  pub fn try_binary(
+    &self,
+    op: BinaryOp,
+    left: &Type,
+    right: &Type,
+  ) -> Result<OpDef> {
+    self
+      .binary_map
+      .get(
+        &(BinaryOpKey {
+          op,
+          left: left.clone(),
+          right: right.clone(),
+        }),
+      )
+      .ok_or(diagnostic!(
+        "Operator {op} is not defined for types '{left}' and '{right}'",
+      ))
+      .cloned()
   }
 
-  pub fn try_unary(&self, op: UnaryOp, on: &Type) -> Result<Type> {
-    let err = error!("Operator {op} is not defined for type '{on}'");
-    match self.unary_map.get(&UnaryOpDef {
-      op,
-      on: on.clone(),
-      asm: "".into(),
-    }) {
-      Some(t) => Ok(t.clone()),
-      None => err,
-    }
+  pub fn try_unary(&self, op: UnaryOp, on: &Type) -> Result<OpDef> {
+    self
+      .unary_map
+      .get(&UnaryOpKey { op, on: on.clone() })
+      .ok_or(diagnostic!("Operator {op} is not defined for type '{on}'"))
+      .cloned()
   }
 }
