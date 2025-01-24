@@ -15,5 +15,3 @@ fizzbuzz :: (number: integer) {
     i + 1
   }
 }
-
-fizzbuzz(15);

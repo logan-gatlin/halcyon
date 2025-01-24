@@ -1,0 +1,126 @@
+use super::Compiler;
+use crate::semantic::ir::{Node, NodeKind};
+
+// Moves all functions to global scope, leave anonymous identifiers in their
+// place. This is because WAST does not allow for nested function definitions
+
+impl Compiler {
+  pub fn flatten_functions(&self, mut node: Node, global: &mut Vec<Node>) -> Node {
+    use NodeKind::*;
+    node.kind = match node.kind {
+      Immediate(_) => node.kind,
+      Identifier { .. } => node.kind,
+      StructLiteral { names, values } => StructLiteral {
+        names,
+        values: values
+          .into_iter()
+          .map(|v| self.flatten_functions(v, global))
+          .collect(),
+      },
+      BinaryOp {
+        op,
+        opdef,
+        left,
+        right,
+      } => BinaryOp {
+        op,
+        opdef,
+        left: self.flatten_functions(*left, global).into(),
+        right: self.flatten_functions(*right, global).into(),
+      },
+      UnaryOp { op, opdef, child } => UnaryOp {
+        op,
+        opdef,
+        child: self.flatten_functions(*child, global).into(),
+      },
+      Field { namespace, index } => Field {
+        namespace: self.flatten_functions(*namespace, global).into(),
+        index,
+      },
+      If {
+        predicate,
+        then,
+        else_,
+      } => If {
+        predicate: self.flatten_functions(*predicate, global).into(),
+        then: self.flatten_functions(*then, global).into(),
+        else_: if let Some(else_) = else_ {
+          Some(self.flatten_functions(*else_, global).into())
+        } else {
+          None
+        },
+      },
+      Call {
+        mangle,
+        callee,
+        params,
+      } => Call {
+        mangle,
+        callee: self.flatten_functions(*callee, global).into(),
+        params: params
+          .into_iter()
+          .map(|p| self.flatten_functions(p, global))
+          .collect(),
+      },
+      Function {
+        mangle,
+        arguments,
+        nodes,
+      } => {
+        let nodes = self.flatten_functions(*nodes, global);
+        let func = Node {
+          kind: Function {
+            mangle: mangle.clone(),
+            arguments,
+            nodes: nodes.into(),
+          },
+          span: node.span,
+          type_: node.type_.clone(),
+        };
+        global.push(func);
+        Identifier {
+          name: "anonymous function".into(),
+          mangle,
+        }
+      }
+      Declaration {
+        name,
+        mangle,
+        is_constant,
+        type_assert,
+        value,
+      } => Declaration {
+        name,
+        mangle,
+        is_constant,
+        type_assert,
+        value: self.flatten_functions(*value, global).into(),
+      },
+      Block { nodes } => Block {
+        nodes: nodes
+          .into_iter()
+          .map(|n| self.flatten_functions(n, global))
+          .collect(),
+      },
+      Remainder { node } => Remainder {
+        node: self.flatten_functions(*node, global).into(),
+      },
+      Loop {
+        names,
+        initials,
+        body,
+      } => Loop {
+        names,
+        initials: initials
+          .into_iter()
+          .map(|i| self.flatten_functions(i, global))
+          .collect(),
+        body,
+      },
+      Break { expr } => Break {
+        expr: self.flatten_functions(*expr, global).into(),
+      },
+    };
+    node
+  }
+}
