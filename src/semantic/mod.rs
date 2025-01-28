@@ -1,11 +1,18 @@
 pub mod analyzer;
+pub mod bottom_up;
 pub mod ir;
-mod operators;
+pub mod operators;
 pub mod primitives;
+pub mod top_down;
 
-pub use analyzer::Analyzer;
+use std::collections::HashMap;
+
+use analyzer::*;
+use ir::Module;
+use operators::OpTable;
 pub use primitives::*;
 
+use crate::Statement;
 use crate::err::*;
 use crate::error;
 use crate::semantic::Primitive;
@@ -15,6 +22,34 @@ pub type Mangle = String;
 impl Primitive {
   pub fn promote(self) -> Type {
     Type::Prim(self)
+  }
+}
+
+pub struct Analyzer {
+  scope_depth: usize,
+  salt: usize,
+  path: Vec<String>,
+  _name_to_symbol: HashMap<String, Symbol>,
+  _mangle_to_type: HashMap<Mangle, Type>,
+  event_stack: Vec<Event>,
+  pub op_table: OpTable,
+}
+
+impl Analyzer {
+  pub fn typecheck_program(
+    &mut self,
+    block: impl Iterator<Item = Statement>,
+  ) -> Result<Module> {
+    let mut module = self.analyze_module(block)?;
+    module.nodes = module
+      .nodes
+      .into_iter()
+      .map(|n| self.type_bottom_up(n))
+      .try_collect::<Vec<_>>()?
+      .into_iter()
+      .map(|n| self.type_top_down(Primitive::nothing.promote(), n))
+      .try_collect()?;
+    Ok(module)
   }
 }
 
@@ -72,27 +107,32 @@ impl PartialEq for Type {
       (t::Ambiguous, t::Ambiguous) => true,
       (t::Prim(p1), t::Prim(p2)) => p1 == p2,
       (t::Struct { mangle: m1, .. }, t::Struct { mangle: m2, .. }) => m1 == m2,
-      (t::Function { mangle: m1, .. }, t::Function { mangle: m2, .. }) => m1 == m2,
+      (t::Function { mangle: m1, .. }, t::Function { mangle: m2, .. }) => {
+        m1 == m2
+      },
       (t::Type(t1), t::Type(t2)) => t1 == t2,
       (t::SameAs(t1), t::SameAs(t2)) => {
         panic!("Tried to compare unresolved types '{t1}' and '{t2}'")
-      }
+      },
       _ => false,
     }
   }
 }
 
-impl Eq for Type {}
+impl Eq for Type {
+}
 
 impl std::hash::Hash for Type {
   fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
     match self {
       Type::Prim(primitive) => primitive.hash(state),
-      Type::Struct { mangle, .. } | Type::Function { mangle, .. } => mangle.hash(state),
+      Type::Struct { mangle, .. } | Type::Function { mangle, .. } => {
+        mangle.hash(state)
+      },
       Type::Type(t) => t.hash(state),
       Type::SameAs(t) | Type::IsType(t) => {
         panic!("Tried to hash unresolved type '{t}'")
-      }
+      },
       Type::Ambiguous => panic!("Tried to hash ambiguous type"),
     }
   }
@@ -109,7 +149,7 @@ impl std::fmt::Display for Type {
         } else {
           write!(f, "anonymous struct")
         }
-      }
+      },
       Type::Type(tid) => write!(f, "{tid} (type)"),
       Type::Function { .. } => write!(f, "func"),
       Type::SameAs(m) => write!(f, "? (same as {m})"),
@@ -137,9 +177,7 @@ pub fn mangle_name(path: Vec<String>, salt: &str) -> Mangle {
 }
 
 /// Builtin mangle syntax:
-/// $${ident}
+/// "$" {ident}
 pub fn mangle_builtin(name: impl std::fmt::Display) -> Mangle {
-  format!("${name}")
+  format!("{name}")
 }
-
-pub const AMBIGUOUS_MANGLE: &str = "$ambiguous";

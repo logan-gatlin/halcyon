@@ -158,20 +158,24 @@ impl OpTable {
         "1".into(),
       )]);
       b(DoubleEqual, glyph, glyph, boolean, vec![equal(i32)]);
-      b(Less, integer, integer, boolean, vec![lesser(i64)]);
-      b(Less, glyph, glyph, boolean, vec![lesser(i32)]);
-      b(Less, real, real, boolean, vec![lesser(f64)]);
-      b(Greater, integer, integer, boolean, vec![greater(i64)]);
-      b(Greater, glyph, glyph, boolean, vec![greater(i32)]);
-      b(Greater, real, real, boolean, vec![greater(f64)]);
-      b(LessEqual, integer, integer, boolean, vec![lesserequal(i64)]);
-      b(LessEqual, glyph, glyph, boolean, vec![lesserequal(i32)]);
-      b(LessEqual, real, real, boolean, vec![lesserequal(f64)]);
-      b(GreaterEqual, integer, integer, boolean, vec![greaterequal(
+      b(Less, integer, integer, boolean, vec![lesser_s(i64)]);
+      b(Less, glyph, glyph, boolean, vec![lesser_u(i32)]);
+      b(Less, real, real, boolean, vec![lesser_s(f64)]);
+      b(Greater, integer, integer, boolean, vec![greater_s(i64)]);
+      b(Greater, glyph, glyph, boolean, vec![greater_u(i32)]);
+      b(Greater, real, real, boolean, vec![greater_s(f64)]);
+      b(LessEqual, integer, integer, boolean, vec![lesserequal_s(
         i64,
       )]);
-      b(GreaterEqual, glyph, glyph, boolean, vec![greaterequal(i32)]);
-      b(GreaterEqual, real, real, boolean, vec![greaterequal(f64)]);
+      b(LessEqual, glyph, glyph, boolean, vec![lesserequal_u(i32)]);
+      b(LessEqual, real, real, boolean, vec![lesserequal_s(f64)]);
+      b(GreaterEqual, integer, integer, boolean, vec![
+        greaterequal_s(i64),
+      ]);
+      b(GreaterEqual, glyph, glyph, boolean, vec![greaterequal_u(
+        i32,
+      )]);
+      b(GreaterEqual, real, real, boolean, vec![greaterequal_s(f64)]);
       b(BangEqual, boolean, boolean, boolean, vec![unequal(i32)]);
       b(BangEqual, integer, integer, boolean, vec![unequal(i64)]);
       b(BangEqual, glyph, glyph, boolean, vec![unequal(i32)]);

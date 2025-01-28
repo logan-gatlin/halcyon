@@ -9,6 +9,7 @@ mod token;
 mod treewalk;
 use std::ops::Add;
 
+use compile::Compiler;
 use err::*;
 use lookahead::*;
 use parse::*;
@@ -76,6 +77,7 @@ fn main() -> Result<()> {
   let mut an = semantic::Analyzer::new();
   let n = an.typecheck_program(program.into_iter()).unwrap();
   an.print_table();
-  println!("{n:#?}");
+  let mut c = Compiler::new();
+  c.compile(n);
   Ok(())
 }

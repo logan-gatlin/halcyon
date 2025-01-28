@@ -1,4 +1,4 @@
-use crate::semantic::{primitives::Primitive, Type};
+use crate::semantic::{Type, primitives::Primitive};
 
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy)]
@@ -8,6 +8,19 @@ pub enum AsmType {
   f64,
   i32,
   i64,
+}
+
+impl std::fmt::Display for AsmType {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    let s = match self {
+      AsmType::funcref => "funcref",
+      AsmType::f32 => "f32",
+      AsmType::f64 => "f64",
+      AsmType::i32 => "i32",
+      AsmType::i64 => "i64",
+    };
+    write!(f, "{s}")
+  }
 }
 
 impl AsmType {
@@ -36,6 +49,20 @@ pub enum Asm {
     results: Vec<AsmType>,
     body: Vec<Asm>,
   },
+  ifelse {
+    then: Vec<Asm>,
+    else_: Vec<Asm>,
+  },
+  block {
+    name: String,
+    body: Vec<Asm>,
+  },
+  loop_ {
+    name: String,
+    body: Vec<Asm>,
+  },
+  branch(String),
+  call(String),
   constant(AsmType, String),
   add(AsmType),
   subtract(AsmType),
@@ -47,13 +74,18 @@ pub enum Asm {
   xor(AsmType),
   equal(AsmType),
   unequal(AsmType),
-  greater(AsmType),
-  lesser(AsmType),
-  greaterequal(AsmType),
-  lesserequal(AsmType),
+  greater_s(AsmType),
+  greater_u(AsmType),
+  lesser_s(AsmType),
+  lesser_u(AsmType),
+  greaterequal_s(AsmType),
+  greaterequal_u(AsmType),
+  lesserequal_s(AsmType),
+  lesserequal_u(AsmType),
   negate(AsmType),
   nop,
   trap,
+  comment(String),
 }
 
 impl Type {
@@ -66,14 +98,16 @@ impl Type {
         p::string => 2,
         _ => panic!("Counted registers of literal type"),
       },
-      Type::Struct { member_types, .. } => member_types.iter().map(|t| t.count_registers()).sum(),
+      Type::Struct { member_types, .. } => {
+        member_types.iter().map(|t| t.count_registers()).sum()
+      },
       Type::Function { .. } => 1,
       Type::Type(_) => 0,
       _ => panic!("Counted registers of ambiguous type"),
     }
   }
 
-  pub fn asm_types(&self) -> Vec<AsmType> {
+  pub fn register_types(&self) -> Vec<AsmType> {
     use AsmType as a;
     use Primitive as p;
     match self {
@@ -86,9 +120,10 @@ impl Type {
         p::glyph => vec![a::i32],
         p::integer_literal | p::real_literal => panic!("Splatted literal type"),
       },
-      Type::Struct { member_types, .. } => {
-        member_types.iter().flat_map(|t| t.asm_types()).collect()
-      }
+      Type::Struct { member_types, .. } => member_types
+        .iter()
+        .flat_map(|t| t.register_types())
+        .collect(),
       Type::Function { .. } => vec![a::funcref],
       Type::Type(_) => vec![],
       _ => panic!("Splatted ambiguous type"),

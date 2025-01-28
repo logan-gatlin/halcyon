@@ -1,17 +1,4 @@
-println :: (s: string) { "nop"; }
-
-fizzbuzz :: (number: integer) {
-  loop i : 0 {
-    if i % 3 == 0 and i % 5 == 0 {
-      println("fizzbuzz");
-    } else if i % 3 == 0 {
-      println("fizz");
-    } else if i % 5 == 0 {
-      println("buzz");
-    }
-    if i >= number {
-      break;
-    }
-    i + 1
-  }
+main :: (a: integer) {
+  a = 1;
+  b = a + 1;
 }
