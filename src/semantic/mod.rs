@@ -12,10 +12,10 @@ use ir::Module;
 use operators::OpTable;
 pub use primitives::*;
 
-use crate::Statement;
 use crate::err::*;
 use crate::error;
 use crate::semantic::Primitive;
+use crate::Statement;
 
 pub type Mangle = String;
 
@@ -36,10 +36,11 @@ pub struct Analyzer {
 }
 
 impl Analyzer {
-  pub fn typecheck_program(
-    &mut self,
-    block: impl Iterator<Item = Statement>,
-  ) -> Result<Module> {
+  pub fn finish(self) -> HashMap<Mangle, Type> {
+    self._mangle_to_type
+  }
+
+  pub fn typecheck_program(&mut self, block: impl Iterator<Item = Statement>) -> Result<Module> {
     let mut module = self.analyze_module(block)?;
     module.nodes = module
       .nodes
@@ -107,32 +108,27 @@ impl PartialEq for Type {
       (t::Ambiguous, t::Ambiguous) => true,
       (t::Prim(p1), t::Prim(p2)) => p1 == p2,
       (t::Struct { mangle: m1, .. }, t::Struct { mangle: m2, .. }) => m1 == m2,
-      (t::Function { mangle: m1, .. }, t::Function { mangle: m2, .. }) => {
-        m1 == m2
-      },
+      (t::Function { mangle: m1, .. }, t::Function { mangle: m2, .. }) => m1 == m2,
       (t::Type(t1), t::Type(t2)) => t1 == t2,
       (t::SameAs(t1), t::SameAs(t2)) => {
         panic!("Tried to compare unresolved types '{t1}' and '{t2}'")
-      },
+      }
       _ => false,
     }
   }
 }
 
-impl Eq for Type {
-}
+impl Eq for Type {}
 
 impl std::hash::Hash for Type {
   fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
     match self {
       Type::Prim(primitive) => primitive.hash(state),
-      Type::Struct { mangle, .. } | Type::Function { mangle, .. } => {
-        mangle.hash(state)
-      },
+      Type::Struct { mangle, .. } | Type::Function { mangle, .. } => mangle.hash(state),
       Type::Type(t) => t.hash(state),
       Type::SameAs(t) | Type::IsType(t) => {
         panic!("Tried to hash unresolved type '{t}'")
-      },
+      }
       Type::Ambiguous => panic!("Tried to hash ambiguous type"),
     }
   }
@@ -149,7 +145,7 @@ impl std::fmt::Display for Type {
         } else {
           write!(f, "anonymous struct")
         }
-      },
+      }
       Type::Type(tid) => write!(f, "{tid} (type)"),
       Type::Function { .. } => write!(f, "func"),
       Type::SameAs(m) => write!(f, "? (same as {m})"),

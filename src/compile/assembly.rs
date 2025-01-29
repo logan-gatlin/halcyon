@@ -1,4 +1,4 @@
-use crate::semantic::{Type, primitives::Primitive};
+use crate::semantic::{primitives::Primitive, Type};
 
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy)]
@@ -98,9 +98,7 @@ impl Type {
         p::string => 2,
         _ => panic!("Counted registers of literal type"),
       },
-      Type::Struct { member_types, .. } => {
-        member_types.iter().map(|t| t.count_registers()).sum()
-      },
+      Type::Struct { member_types, .. } => member_types.iter().map(|t| t.count_registers()).sum(),
       Type::Function { .. } => 1,
       Type::Type(_) => 0,
       _ => panic!("Counted registers of ambiguous type"),

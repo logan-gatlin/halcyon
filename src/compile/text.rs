@@ -21,10 +21,10 @@ impl Asm {
         .collect()
     };
     let s = match self {
-      Asm::module(vec) => format!("(module\n{})", block(vec)),
+      Asm::module(vec) => format!("(module\n{}\n)", block(vec)),
       Asm::ifelse { then, else_ } => {
-        format!("(if (then\n{})\n(else\n{})\n)", block(then), block(else_))
-      },
+        format!("(if (then\n{})\n(else\n{}))", block(then), block(else_))
+      }
       Asm::block { name, body } => format!("(block {name}\n{})", block(body)),
       Asm::loop_ { name, body } => format!("(loop {name}\n{})", block(body)),
       Asm::reg {
@@ -34,10 +34,10 @@ impl Asm {
       } => format!("({} {ident} {type_})", kind(global)),
       Asm::regset { ident, global } => {
         format!("({}.set {ident})", kind(global))
-      },
+      }
       Asm::regget { ident, global } => {
         format!("{}.get {ident}", kind(global))
-      },
+      }
       Asm::function {
         ident,
         params,
@@ -46,16 +46,16 @@ impl Asm {
       } => {
         let params: String = params
           .into_iter()
-          .map(|(name, ty)| format!("(param {name} {ty})\n"))
+          .map(|(name, ty)| format!("\n{}(param {name} {ty})", Self::INDENT))
           .collect();
         let results: String = results
           .into_iter()
-          .map(|r| format!("(result {r})\n"))
+          .map(|r| format!("\n{}(result {r})", Self::INDENT))
           .collect();
-        format!("(func ${ident} {params} {results} {})", block(body))
-      },
+        format!("(func ${ident}{params}{results}\n{})", block(body))
+      }
       Asm::branch(lp) => format!("br {lp}"),
-      Asm::call(func) => format!("call {func}"),
+      Asm::call(func) => format!("call ${func}"),
       Asm::constant(asm_type, val) => format!("{asm_type}.const {val}"),
       Asm::add(asm_type) => format!("{asm_type}.add"),
       Asm::subtract(asm_type) => format!("{asm_type}.sub"),
@@ -69,14 +69,14 @@ impl Asm {
       Asm::unequal(asm_type) => format!("{asm_type}.ne"),
       Asm::greater_s(asm_type) => {
         format!("{asm_type}.gt{}", isfloat(asm_type))
-      },
+      }
       Asm::lesser_s(asm_type) => format!("{asm_type}.lt{}", isfloat(asm_type)),
       Asm::greaterequal_s(asm_type) => {
         format!("{asm_type}.ge{}", isfloat(asm_type))
-      },
+      }
       Asm::lesserequal_s(asm_type) => {
         format!("{asm_type}.le{}", isfloat(asm_type))
-      },
+      }
       Asm::greater_u(asm_type) => format!("{asm_type}.gt_u"),
       Asm::lesser_u(asm_type) => format!("{asm_type}.lt_u"),
       Asm::greaterequal_u(asm_type) => format!("{asm_type}.ge_u"),

@@ -76,8 +76,7 @@ fn main() -> Result<()> {
   let program: Vec<_> = parse(include_str!("../demo.hal")).collect();
   let mut an = semantic::Analyzer::new();
   let n = an.typecheck_program(program.into_iter()).unwrap();
-  an.print_table();
-  let mut c = Compiler::new();
+  let mut c = Compiler::new(an.finish());
   c.compile(n);
   Ok(())
 }

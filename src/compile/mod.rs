@@ -1,12 +1,18 @@
 pub mod assembly;
+pub mod consteval;
 pub mod lower;
 pub mod normalize;
 pub mod text;
+use std::collections::HashMap;
+
 pub use assembly::*;
 pub use lower::*;
 pub use normalize::*;
 
-use crate::semantic::ir::{Module, Node, NodeKind};
+use crate::semantic::{
+  ir::{Module, Node, NodeKind},
+  Type,
+};
 
 pub struct Compiler {
   /// Unique salt added to the names of WASM loops, blocks,
@@ -17,18 +23,35 @@ pub struct Compiler {
   /// are pushed onto this stack for inner break statements
   /// to refer to
   break_stack: Vec<String>,
+  symtable: HashMap<String, Type>,
 }
 
 impl Compiler {
-  pub fn new() -> Self {
+  pub fn new(symtable: HashMap<String, Type>) -> Self {
     Self {
       unique_salt: 0,
       break_stack: vec![],
+      symtable,
     }
   }
 
   pub fn compile(&mut self, module: Module) {
-    let nodes = module.nodes;
-    println!("{nodes:#?}");
+    let mut flattened = vec![];
+    let mut nodes = module
+      .nodes
+      .into_iter()
+      .map(|n| self.flatten_functions(n, &mut flattened, 0))
+      .collect::<Vec<_>>();
+    nodes.extend(flattened);
+    let mut regs = vec![];
+    let mut instrs = vec![];
+    nodes
+      .into_iter()
+      .for_each(|n| self.lower(n, &mut regs, &mut instrs));
+    regs.extend(instrs);
+    let module = Asm::module(regs);
+    let s = module.to_wat(0);
+    println!("{s}");
+    let binary = wat::parse_str(s).unwrap();
   }
 }

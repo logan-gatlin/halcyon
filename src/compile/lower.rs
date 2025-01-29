@@ -1,9 +1,9 @@
 use crate::{
-  Immediate as i,
   semantic::{
-    Mangle, Type,
     ir::{Node, NodeKind},
+    Mangle, Type,
   },
+  Immediate as i,
 };
 
 use super::{Asm as asm, AsmType as aty, Compiler};
@@ -17,12 +17,7 @@ impl Compiler {
     name
   }
 
-  fn make_register(
-    mangle: Mangle,
-    type_: &Type,
-    regs: &mut Vec<asm>,
-    global: bool,
-  ) {
+  fn make_register(mangle: Mangle, type_: &Type, regs: &mut Vec<asm>, global: bool) {
     regs.push(asm::comment(format!("declare {mangle}")));
     type_
       .register_types()
@@ -37,12 +32,7 @@ impl Compiler {
       });
   }
 
-  fn get_register(
-    mangle: Mangle,
-    type_: &Type,
-    instrs: &mut Vec<asm>,
-    global: bool,
-  ) {
+  fn get_register(mangle: Mangle, type_: &Type, instrs: &mut Vec<asm>, global: bool) {
     instrs.push(asm::comment(format!("get {mangle}")));
     type_
       .register_types()
@@ -57,12 +47,7 @@ impl Compiler {
       });
   }
 
-  fn set_register(
-    mangle: Mangle,
-    type_: &Type,
-    instrs: &mut Vec<asm>,
-    global: bool,
-  ) {
+  fn set_register(mangle: Mangle, type_: &Type, instrs: &mut Vec<asm>, global: bool) {
     instrs.push(asm::comment(format!("set {mangle}")));
     type_
       .register_types()
@@ -76,12 +61,7 @@ impl Compiler {
       });
   }
 
-  pub fn lower(
-    &mut self,
-    node: Node,
-    regs: &mut Vec<asm>,
-    instrs: &mut Vec<asm>,
-  ) {
+  pub fn lower(&mut self, node: Node, regs: &mut Vec<asm>, instrs: &mut Vec<asm>) {
     use NodeKind::*;
     match node.kind {
       Declaration {
@@ -90,49 +70,56 @@ impl Compiler {
         global,
         ..
       } => {
-        Self::make_register(mangle.clone(), &node.type_.clone(), regs, global);
-        self.lower(*value, regs, instrs);
-        Self::set_register(mangle.clone(), &node.type_.clone(), instrs, global);
-      },
+        if let Type::Function { .. } = value.type_.clone() {
+          self.lower(*value.clone(), regs, instrs);
+        } else {
+          Self::make_register(mangle.clone(), &value.type_, regs, global);
+          self.lower(*value.clone(), regs, instrs);
+          Self::set_register(mangle.clone(), &value.type_, instrs, global);
+        }
+      }
       Immediate(immediate) => match immediate {
-        i::Unit => {},
+        i::Unit => {}
         i::Integer(string, base) => {
           let int_value = i64::from_str_radix(&string, base as u32).unwrap();
           let node = asm::constant(aty::i64, int_value.to_string());
           instrs.push(node);
-        },
+        }
         i::Real(r) => {
           let real_value: f64 = r.parse().unwrap();
           let node = asm::constant(aty::f64, real_value.to_string());
           instrs.push(node);
-        },
+        }
         i::String(_) => todo!(),
         i::Glyph(g) => {
           let node = asm::constant(aty::i32, (g as u32).to_string());
           instrs.push(node);
-        },
+        }
         i::Boolean(b) => {
           let node = asm::constant(aty::i32, if b { 1 } else { 0 }.to_string());
           instrs.push(node);
-        },
+        }
       },
       Identifier { mangle, global, .. } => {
-        Self::get_register(mangle, &node.type_, instrs, global);
-      },
+        if let Type::Function { .. } = node.type_ {
+        } else {
+          Self::get_register(mangle, &node.type_, instrs, global);
+        }
+      }
       BinaryOp {
         opdef, left, right, ..
       } => {
         self.lower(*left, regs, instrs);
         self.lower(*right, regs, instrs);
         instrs.extend(opdef.asm);
-      },
+      }
       UnaryOp { opdef, child, .. } => {
         self.lower(*child, regs, instrs);
         instrs.extend(opdef.asm);
-      },
+      }
       Field { namespace, index } => {
         todo!()
-      },
+      }
       If {
         predicate,
         then,
@@ -149,7 +136,7 @@ impl Compiler {
           then: then_block,
           else_: else_block,
         });
-      },
+      }
       Call { mangle, params, .. } => {
         // TODO perform in expected left->right order here
         params
@@ -157,7 +144,7 @@ impl Compiler {
           .rev()
           .for_each(|p| self.lower(p, regs, instrs));
         instrs.push(asm::call(mangle))
-      },
+      }
       Function {
         mangle,
         param_mangles,
@@ -173,7 +160,11 @@ impl Compiler {
         };
         let params = param_mangles
           .into_iter()
-          .zip(param_types.into_iter().map(|t| t.register_types()))
+          .zip(
+            param_types
+              .into_iter()
+              .map(|t| t.unwrap_type_name().unwrap().register_types()),
+          )
           .flat_map(|(mangle, types)| {
             types
               .into_iter()
@@ -190,16 +181,14 @@ impl Compiler {
         instrs.push(asm::function {
           ident: mangle,
           params,
-          results: return_type.register_types(),
+          results: return_type.unwrap_type_name().unwrap().register_types(),
           body,
         })
-      },
-      Block { nodes } => {
-        nodes.into_iter().for_each(|n| self.lower(n, regs, instrs))
-      },
+      }
+      Block { nodes } => nodes.into_iter().for_each(|n| self.lower(n, regs, instrs)),
       Remainder { node } => {
         self.lower(*node, regs, instrs);
-      },
+      }
       Loop {
         names,
         initials,
@@ -208,9 +197,7 @@ impl Compiler {
         names
           .into_iter()
           .zip(initials.iter().map(|i| i.type_.clone()))
-          .for_each(|(name, type_)| {
-            Self::make_register(name, &type_, regs, false)
-          });
+          .for_each(|(name, type_)| Self::make_register(name, &type_, regs, false));
         initials
           .into_iter()
           .rev()
@@ -231,13 +218,16 @@ impl Compiler {
           body: vec![asm_loop],
         };
         instrs.push(asm_block);
-      },
+      }
       Break { expr } => {
         self.lower(*expr, regs, instrs);
         let current_block = self.break_stack.last().unwrap().clone();
         instrs.push(asm::branch(current_block));
-      },
-      StructLiteral { names, values } => todo!(),
+      }
+      StructLiteral { names, values } => {
+        let mut fields: Vec<Option<String>> = vec![None; names.len()];
+        todo!()
+      }
     };
   }
 }
