@@ -1,15 +1,1 @@
-Box :: struct {}
 
-main :: () {
-  a = foo(1);
-  b = 2;
-  c = a or b;
-}
-
-foo :: (a: integer) -> integer {
-  if true {
-    1
-  } else {
-    a
-  }
-}

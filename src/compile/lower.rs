@@ -6,7 +6,7 @@ use crate::{
   Immediate as i,
 };
 
-use super::{Asm as asm, AsmType as aty, Compiler};
+use super::{AsmType as aty, Compiler, Wasm as asm};
 
 // TODO resolve literal values before this stage?
 

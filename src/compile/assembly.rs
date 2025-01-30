@@ -26,10 +26,13 @@ impl std::fmt::Display for AsmType {
 impl AsmType {
   const PTR_T: Self = Self::i32;
 }
+
+#[derive(Debug, Clone)]
+pub struct WasmModule(pub Vec<Wasm>);
+
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone)]
-pub enum Asm {
-  module(Vec<Asm>),
+pub enum Wasm {
   reg {
     type_: AsmType,
     ident: String,
@@ -47,19 +50,19 @@ pub enum Asm {
     ident: String,
     params: Vec<(String, AsmType)>,
     results: Vec<AsmType>,
-    body: Vec<Asm>,
+    body: Vec<Wasm>,
   },
   ifelse {
-    then: Vec<Asm>,
-    else_: Vec<Asm>,
+    then: Vec<Wasm>,
+    else_: Vec<Wasm>,
   },
   block {
     name: String,
-    body: Vec<Asm>,
+    body: Vec<Wasm>,
   },
   loop_ {
     name: String,
-    body: Vec<Asm>,
+    body: Vec<Wasm>,
   },
   branch(String),
   call(String),
@@ -86,6 +89,8 @@ pub enum Asm {
   nop,
   trap,
   comment(String),
+  /// IDK what this does
+  start(String),
 }
 
 impl Type {

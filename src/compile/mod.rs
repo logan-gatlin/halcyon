@@ -1,5 +1,5 @@
 pub mod assembly;
-pub mod consteval;
+mod interpreter;
 pub mod lower;
 pub mod normalize;
 pub mod text;
@@ -49,8 +49,8 @@ impl Compiler {
       .into_iter()
       .for_each(|n| self.lower(n, &mut regs, &mut instrs));
     regs.extend(instrs);
-    let module = Asm::module(regs);
-    let s = module.to_wat(0);
+    let module = WasmModule(regs);
+    let s = module.to_wat();
     println!("{s}");
     let binary = wat::parse_str(s).unwrap();
   }

@@ -1,5 +1,6 @@
 pub mod analyzer;
 pub mod bottom_up;
+pub mod consteval;
 pub mod ir;
 pub mod operators;
 pub mod primitives;
