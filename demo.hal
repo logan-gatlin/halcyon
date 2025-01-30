@@ -1,1 +1,7 @@
+Box :: struct { a: integer, b: real };
 
+b :: Box.{a: 1, b: 1.0};
+
+foo :: () {
+	a = 1 + 2;
+}

@@ -10,8 +10,8 @@ pub use lower::*;
 pub use normalize::*;
 
 use crate::semantic::{
-  ir::{Module, Node, NodeKind},
   Type,
+  ir::{Module, Node, NodeKind},
 };
 
 pub struct Compiler {
@@ -47,7 +47,9 @@ impl Compiler {
     let mut instrs = vec![];
     nodes
       .into_iter()
-      .for_each(|n| self.lower(n, &mut regs, &mut instrs));
+      .map(|n| self.lower(n, &mut regs, &mut instrs))
+      .try_collect::<Vec<_>>()
+      .unwrap();
     regs.extend(instrs);
     let module = WasmModule(regs);
     let s = module.to_wat();

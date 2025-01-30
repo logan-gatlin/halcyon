@@ -1,4 +1,4 @@
-use crate::semantic::{primitives::Primitive, Type};
+use crate::semantic::{Type, primitives::Primitive};
 
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy)]
@@ -37,6 +37,7 @@ pub enum Wasm {
     type_: AsmType,
     ident: String,
     global: bool,
+    initial: Option<Box<Wasm>>,
   },
   regset {
     ident: String,
@@ -103,7 +104,9 @@ impl Type {
         p::string => 2,
         _ => panic!("Counted registers of literal type"),
       },
-      Type::Struct { member_types, .. } => member_types.iter().map(|t| t.count_registers()).sum(),
+      Type::Struct { member_types, .. } => {
+        member_types.iter().map(|t| t.count_registers()).sum()
+      },
       Type::Function { .. } => 1,
       Type::Type(_) => 0,
       _ => panic!("Counted registers of ambiguous type"),

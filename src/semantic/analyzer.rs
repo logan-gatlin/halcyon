@@ -197,6 +197,19 @@ impl Analyzer {
     else {
       panic!()
     };
+    nodes
+      .iter()
+      .map(|n| {
+        if let NodeKind::Declaration {
+          is_constant: true, ..
+        } = n.kind
+        {
+          Ok(())
+        } else {
+          error!("Only constant declarations are allowed in global scope")
+        }
+      })
+      .try_collect::<Vec<_>>()?;
     Ok(Module { nodes })
   }
 
