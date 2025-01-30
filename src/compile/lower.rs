@@ -138,7 +138,8 @@ impl Compiler {
       } => {
         if let Type::Function { .. } = value.type_.clone() {
           self.lower(*value.clone(), regs, instrs)?;
-        } else if is_constant {
+        } else if is_constant && node.type_.count_registers() != 0 {
+          println!("{value:#?}");
           let consteval = value.constant_evaluate()?.lower();
           Self::make_register_init(
             mangle,

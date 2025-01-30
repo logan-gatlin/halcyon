@@ -44,7 +44,7 @@ impl Wasm {
         initial,
       } => {
         if let Some(initial) = initial {
-          format!("({} {ident} {type_} ({}))", kind(global), initial.to_wat(0))
+          format!("")
         } else {
           format!("({} {ident} {type_})", kind(global))
         }
