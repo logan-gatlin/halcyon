@@ -1,7 +1,8 @@
-Box :: struct { a: integer, b: real };
-
-b :: Box.{a: 1, b: 1.0};
+Box :: struct { a: integer, f: Box2, b: real, c: glyph };
+Box2 :: struct {}
 
 foo :: () {
-	a = 1 + 2;
+	b = Box.{ a: 1, f: Box2.{}, b: 2.0, c: 'a' };
+	t = b.b;
 }
+

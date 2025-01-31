@@ -34,7 +34,7 @@ impl Wasm {
     let s = match self {
       Wasm::ifelse { then, else_ } => {
         format!("(if (then\n{})\n(else\n{}))", block(then), block(else_))
-      },
+      }
       Wasm::block { name, body } => format!("(block {name}\n{})", block(body)),
       Wasm::loop_ { name, body } => format!("(loop {name}\n{})", block(body)),
       Wasm::reg {
@@ -44,17 +44,17 @@ impl Wasm {
         initial,
       } => {
         if let Some(initial) = initial {
-          format!("")
+          format!("({} {ident} {type_} ({}))", kind(global), initial.to_wat(0))
         } else {
           format!("({} {ident} {type_})", kind(global))
         }
-      },
+      }
       Wasm::regset { ident, global } => {
         format!("({}.set {ident})", kind(global))
-      },
+      }
       Wasm::regget { ident, global } => {
         format!("{}.get {ident}", kind(global))
-      },
+      }
       Wasm::function {
         ident,
         params,
@@ -70,7 +70,7 @@ impl Wasm {
           .map(|r| format!("\n{}(result {r})", Self::INDENT))
           .collect();
         format!("(func ${ident}{params}{results}\n{})", block(body))
-      },
+      }
       Wasm::branch(lp) => format!("br {lp}"),
       Wasm::call(func) => format!("call ${func}"),
       Wasm::constant(asm_type, val) => format!("{asm_type}.const {val}"),
@@ -86,22 +86,25 @@ impl Wasm {
       Wasm::unequal(asm_type) => format!("{asm_type}.ne"),
       Wasm::greater_s(asm_type) => {
         format!("{asm_type}.gt{}", isfloat(asm_type))
-      },
+      }
       Wasm::lesser_s(asm_type) => format!("{asm_type}.lt{}", isfloat(asm_type)),
       Wasm::greaterequal_s(asm_type) => {
         format!("{asm_type}.ge{}", isfloat(asm_type))
-      },
+      }
       Wasm::lesserequal_s(asm_type) => {
         format!("{asm_type}.le{}", isfloat(asm_type))
-      },
+      }
       Wasm::greater_u(asm_type) => format!("{asm_type}.gt_u"),
       Wasm::lesser_u(asm_type) => format!("{asm_type}.lt_u"),
       Wasm::greaterequal_u(asm_type) => format!("{asm_type}.ge_u"),
       Wasm::lesserequal_u(asm_type) => format!("{asm_type}.le_u"),
       Wasm::negate(asm_type) => format!("{asm_type}.neg"),
+      Wasm::memory { min, max } => format!("(data {min} {max})"),
+      Wasm::data { offset, content } => format!("(data (i32.const {offset}) {content})"),
       Wasm::nop => "nop".into(),
       Wasm::trap => format!("unreachable"),
       Wasm::comment(msg) => format!(";; {}", msg),
+      Wasm::drop => format!("drop"),
       Wasm::start(func) => format!("(start {func})"),
     };
     s

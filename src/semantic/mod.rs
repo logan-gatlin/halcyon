@@ -34,11 +34,25 @@ pub struct Analyzer {
   _mangle_to_type: HashMap<Mangle, Type>,
   event_stack: Vec<Event>,
   pub op_table: OpTable,
+  string_table: HashMap<String, usize>,
+  strings_index: usize,
 }
 
 impl Analyzer {
   pub fn finish(self) -> HashMap<Mangle, Type> {
     self._mangle_to_type
+  }
+
+  pub fn new_string(&mut self, s: String) -> (usize, usize) {
+    let len = s.len();
+    if let Some(offset) = self.string_table.get(&s) {
+      (*offset, len)
+    } else {
+      let offset = self.strings_index;
+      self.strings_index += len;
+      self.string_table.insert(s, offset);
+      (offset, len)
+    }
   }
 
   pub fn typecheck_program(&mut self, block: impl Iterator<Item = Statement>) -> Result<Module> {
