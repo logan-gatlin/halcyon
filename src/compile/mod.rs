@@ -29,7 +29,16 @@ impl Compiler {
     }
   }
 
-  pub fn compile(&mut self, module: Module) -> Result<Vec<u8>> {
+  pub fn assemble(assembly: String) -> Result<Vec<u8>> {
+    match wat::parse_str(assembly) {
+      Ok(wasm) => Ok(wasm),
+      Err(err) => {
+        error!("Error translating assembly to binary form:\n{err}")
+      },
+    }
+  }
+
+  pub fn compile(&mut self, module: Module) -> Result<String> {
     let mut flattened = vec![];
     let mut nodes = module
       .nodes
@@ -66,13 +75,6 @@ impl Compiler {
       .unwrap();
     instrs.push(Wasm::start("$main".into()));
     regs.extend(instrs);
-    let module = WasmModule(regs);
-    let s = module.to_wat();
-    match wat::parse_str(s) {
-      Ok(wasm) => Ok(wasm),
-      Err(err) => {
-        error!("Error translating assembly to binary form:\n{err}")
-      },
-    }
+    Ok(WasmModule(regs).to_wat())
   }
 }

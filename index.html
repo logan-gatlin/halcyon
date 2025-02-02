@@ -3,7 +3,7 @@
 <head>
 </head>
 
-<!--
+<script type="module">
   const url = '/test.wasm';
   const memory = new WebAssembly.Memory({initial: 10, maximum: 100});
   function print_string(offset, length) {
@@ -17,51 +17,6 @@
     }
   };
   WebAssembly.instantiateStreaming(fetch(url), imports);
--->
-<script type="module">
-  import init, {check_errors, try_compile} from "./pkg/lang.js";
-  const memory = new WebAssembly.Memory({initial: 10, maximum: 100});
-  function print_string(offset, length) {
-    const bytes = new Uint8Array(memory.buffer, offset, length);
-    const string = new TextDecoder("utf8").decode(bytes);
-    console.log(string);
-  }
-  const imports = {
-    js: {
-      memory: memory, print_string: print_string
-    }
-  };
-  init().then(() => {
-    let source = `
-      fizzbuzz :: (number: integer) {
-        loop i: 0 {
-          print_string(
-            if i % 3 == 0 and i % 5 == 0 {
-              "fizzbuzz\n"
-            } else if i % 3 == 0{
-              "fizz\n"
-            } else if i % 5 == 0 {
-              "buzz\n"
-            } else {
-              ""
-            }
-          );
-          if i == number {
-            break;
-          }
-          i + 1
-        }
-      }
-
-      main :: () {
-        fizzbuzz(15);
-      }
-    `;
-    var s = check_errors(source);
-    console.log(s);
-    var bin = try_compile(source);
-    WebAssembly.instantiate(bin, imports);
-  });
 </script>
 
 <body>

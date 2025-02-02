@@ -7,7 +7,7 @@ mod parse;
 mod semantic;
 mod token;
 mod treewalk;
-use std::{collections::HashMap, ops::Add};
+use std::ops::Add;
 
 use compile::Compiler;
 use err::*;
@@ -47,13 +47,17 @@ fn test_expression(expr: &str) {
   println!("{:#?}", parser.statement().unwrap());
 }
 
-fn compile(input: String) -> Result<Vec<u8>> {
+fn compile(input: String) -> Result<String> {
   let tokenizer = Tokenizer::new(input.chars()).filter(|t| t.0.is_meaningful());
   let parser = Parser::new(tokenizer);
   let mut an = semantic::Analyzer::new();
   let n = an.typecheck_program(parser.into_iter())?;
   let mut c = Compiler::new();
   c.compile(n.clone())
+}
+
+fn assemble(assembly: String) -> Result<Vec<u8>> {
+  Compiler::assemble(assembly)
 }
 
 #[wasm_bindgen]
@@ -77,5 +81,14 @@ pub fn check_errors(input: String) -> String {
 
 #[wasm_bindgen]
 pub fn try_compile(input: String) -> Vec<u8> {
-  compile(input).unwrap_or_default()
+  let asm = compile(input).unwrap_or_default();
+  assemble(asm).unwrap_or_default()
+}
+
+#[test]
+fn compile_file() {
+  let assembly = compile(include_str!("../demo.hal").to_string()).unwrap();
+  std::fs::write("./test.wat", assembly.clone()).unwrap();
+  let bytes = assemble(assembly).unwrap();
+  std::fs::write("./test.wasm", bytes).unwrap();
 }

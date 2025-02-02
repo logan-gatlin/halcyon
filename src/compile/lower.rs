@@ -38,7 +38,7 @@ impl ConstValue {
 
 impl Compiler {
   fn new_name(&mut self) -> String {
-    let name = format!("$_{}", self.unique_salt);
+    let name = format!("_{}", self.unique_salt);
     self.unique_salt += 1;
     name
   }
@@ -327,7 +327,7 @@ impl Compiler {
           .rev()
           .map(|i| self.lower(i, regs, instrs))
           .try_collect::<Vec<_>>()?;
-        let block_name = self.new_name();
+        let block_name = format!("${}", self.new_name());
         self.break_stack.push(block_name.clone());
         let mut loop_body = vec![];
         self.lower(*body, regs, &mut loop_body)?;
@@ -335,7 +335,7 @@ impl Compiler {
         loop_registers.iter().for_each(|(name, type_)| {
           Self::set_register(name.clone(), type_, &mut loop_body, false)
         });
-        let loop_name = self.new_name();
+        let loop_name = format!("${}", self.new_name());
         Self::set_register(
           result_name.clone(),
           &node.type_,
@@ -356,7 +356,8 @@ impl Compiler {
       },
       Break { expr } => {
         self.lower(*expr, regs, instrs)?;
-        let current_block = self.break_stack.last().unwrap().clone();
+        let current_block =
+          format!("{}", self.break_stack.last().unwrap().clone());
         instrs.push(asm::branch(current_block));
       },
       StructLiteral { names, values } => {

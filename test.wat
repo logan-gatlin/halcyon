@@ -8,12 +8,12 @@
 (func $5anon-3
   (param $7number-2$0 i64)
   (local $2i-4$0 i64)
-  (local $$_1$0 i32)
-  (local $$_1$1 i32)
-  (local $$_2$0 i32)
-  (local $$_2$1 i32)
-  (local $$_3$0 i32)
-  (local $$_3$1 i32)
+  (local $_1$0 i32)
+  (local $_1$1 i32)
+  (local $_2$0 i32)
+  (local $_2$1 i32)
+  (local $_3$0 i32)
+  (local $_3$1 i32)
   i64.const 0
   (block $_0
     (loop $_4
@@ -31,8 +31,8 @@
       (if (then
         i32.const 0
         i32.const 9
-        (local.set $$_1$0)
-        (local.set $$_1$1)
+        (local.set $_1$0)
+        (local.set $_1$1)
       )
       (else
         local.get $2i-4$0
@@ -43,8 +43,8 @@
         (if (then
           i32.const 9
           i32.const 5
-          (local.set $$_2$0)
-          (local.set $$_2$1)
+          (local.set $_2$0)
+          (local.set $_2$1)
         )
         (else
           local.get $2i-4$0
@@ -55,27 +55,27 @@
           (if (then
             i32.const 14
             i32.const 5
-            (local.set $$_3$0)
-            (local.set $$_3$1)
+            (local.set $_3$0)
+            (local.set $_3$1)
           )
           (else
             i32.const 19
             i32.const 0
-            (local.set $$_3$0)
-            (local.set $$_3$1)
+            (local.set $_3$0)
+            (local.set $_3$1)
           ))
-          local.get $$_3$1
-          local.get $$_3$0
-          (local.set $$_2$0)
-          (local.set $$_2$1)
+          local.get $_3$1
+          local.get $_3$0
+          (local.set $_2$0)
+          (local.set $_2$1)
         ))
-        local.get $$_2$1
-        local.get $$_2$0
-        (local.set $$_1$0)
-        (local.set $$_1$1)
+        local.get $_2$1
+        local.get $_2$0
+        (local.set $_1$0)
+        (local.set $_1$1)
       ))
-      local.get $$_1$1
-      local.get $$_1$0
+      local.get $_1$1
+      local.get $_1$0
       call $print_string
       local.get $2i-4$0
       local.get $7number-2$0
