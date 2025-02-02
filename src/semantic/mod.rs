@@ -13,11 +13,12 @@ use ir::Module;
 use operators::OpTable;
 pub use primitives::*;
 
+use crate::Statement;
 use crate::err::*;
 use crate::error;
 use crate::semantic::Primitive;
-use crate::Statement;
 
+pub const MAIN_MANGLE: &str = "main";
 pub type Mangle = String;
 
 impl Primitive {
@@ -34,28 +35,23 @@ pub struct Analyzer {
   _mangle_to_type: HashMap<Mangle, Type>,
   event_stack: Vec<Event>,
   pub op_table: OpTable,
-  string_table: HashMap<String, usize>,
-  strings_index: usize,
+  data_segment: Vec<u8>,
+  data_offset: usize,
+  pub has_main: bool,
 }
 
 impl Analyzer {
-  pub fn finish(self) -> HashMap<Mangle, Type> {
-    self._mangle_to_type
+  pub fn static_allocate(&mut self, bytes: &[u8]) -> usize {
+    let old_offset = self.data_offset;
+    self.data_offset += bytes.len();
+    self.data_segment.extend(bytes);
+    old_offset
   }
 
-  pub fn new_string(&mut self, s: String) -> (usize, usize) {
-    let len = s.len();
-    if let Some(offset) = self.string_table.get(&s) {
-      (*offset, len)
-    } else {
-      let offset = self.strings_index;
-      self.strings_index += len;
-      self.string_table.insert(s, offset);
-      (offset, len)
-    }
-  }
-
-  pub fn typecheck_program(&mut self, block: impl Iterator<Item = Statement>) -> Result<Module> {
+  pub fn typecheck_program(
+    &mut self,
+    block: impl Iterator<Item = Statement>,
+  ) -> Result<Module> {
     let mut module = self.analyze_module(block)?;
     module.nodes = module
       .nodes
@@ -65,6 +61,12 @@ impl Analyzer {
       .into_iter()
       .map(|n| self.type_top_down(Primitive::nothing.promote(), n))
       .try_collect()?;
+    module.data = self.data_segment.clone();
+    if !self.has_main {
+      return error!(
+        "Program must contain a main function: `main :: () {{...}}`"
+      );
+    }
     Ok(module)
   }
 }
@@ -123,27 +125,32 @@ impl PartialEq for Type {
       (t::Ambiguous, t::Ambiguous) => true,
       (t::Prim(p1), t::Prim(p2)) => p1 == p2,
       (t::Struct { mangle: m1, .. }, t::Struct { mangle: m2, .. }) => m1 == m2,
-      (t::Function { mangle: m1, .. }, t::Function { mangle: m2, .. }) => m1 == m2,
+      (t::Function { mangle: m1, .. }, t::Function { mangle: m2, .. }) => {
+        m1 == m2
+      },
       (t::Type(t1), t::Type(t2)) => t1 == t2,
       (t::SameAs(t1), t::SameAs(t2)) => {
         panic!("Tried to compare unresolved types '{t1}' and '{t2}'")
-      }
+      },
       _ => false,
     }
   }
 }
 
-impl Eq for Type {}
+impl Eq for Type {
+}
 
 impl std::hash::Hash for Type {
   fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
     match self {
       Type::Prim(primitive) => primitive.hash(state),
-      Type::Struct { mangle, .. } | Type::Function { mangle, .. } => mangle.hash(state),
+      Type::Struct { mangle, .. } | Type::Function { mangle, .. } => {
+        mangle.hash(state)
+      },
       Type::Type(t) => t.hash(state),
       Type::SameAs(t) | Type::IsType(t) => {
         panic!("Tried to hash unresolved type '{t}'")
-      }
+      },
       Type::Ambiguous => panic!("Tried to hash ambiguous type"),
     }
   }
@@ -160,7 +167,7 @@ impl std::fmt::Display for Type {
         } else {
           write!(f, "anonymous struct")
         }
-      }
+      },
       Type::Type(tid) => write!(f, "{tid} (type)"),
       Type::Function { .. } => write!(f, "func"),
       Type::SameAs(m) => write!(f, "? (same as {m})"),

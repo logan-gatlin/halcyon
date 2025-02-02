@@ -19,10 +19,11 @@ pub struct Statement {
   pub span: Span,
 }
 
-impl<I: Iterator<Item = Token>> Parser<I> {
+impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
   pub fn statement(&mut self) -> Result<Statement> {
     use StatementKind as s;
     use TokenKind as t;
+    while let Ok(_) = self.eat(t::Semicolon) {}
     let next = self.peek(0)?;
     let next2 = self.peek(1);
     let mut span = next.1;

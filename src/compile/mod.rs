@@ -3,16 +3,12 @@ mod interpreter;
 pub mod lower;
 pub mod normalize;
 pub mod text;
-use std::collections::HashMap;
 
 pub use assembly::*;
-pub use lower::*;
-pub use normalize::*;
 
-use crate::semantic::{
-  Type,
-  ir::{Module, Node, NodeKind},
-};
+pub const PAGE_SIZE: usize = 64_000;
+use crate::semantic::ir::Module;
+use crate::{err::*, error};
 
 pub struct Compiler {
   /// Unique salt added to the names of WASM loops, blocks,
@@ -23,19 +19,17 @@ pub struct Compiler {
   /// are pushed onto this stack for inner break statements
   /// to refer to
   break_stack: Vec<String>,
-  symtable: HashMap<String, Type>,
 }
 
 impl Compiler {
-  pub fn new(symtable: HashMap<String, Type>) -> Self {
+  pub fn new() -> Self {
     Self {
       unique_salt: 0,
       break_stack: vec![],
-      symtable,
     }
   }
 
-  pub fn compile(&mut self, module: Module) {
+  pub fn compile(&mut self, module: Module) -> Result<Vec<u8>> {
     let mut flattened = vec![];
     let mut nodes = module
       .nodes
@@ -44,16 +38,41 @@ impl Compiler {
       .collect::<Vec<_>>();
     nodes.extend(flattened);
     let mut regs = vec![];
+    regs.push(Wasm::import {
+      ns1: "js".into(),
+      ns2: "print_string".into(),
+      object: Wasm::function {
+        ident: "$print_string".into(),
+        params: vec![("".into(), AsmType::i32), ("".into(), AsmType::i32)],
+        results: vec![],
+        body: vec![],
+      }
+      .into(),
+    });
+    regs.push(Wasm::import {
+      ns1: "js".into(),
+      ns2: "memory".into(),
+      object: Wasm::memory { min: 10, max: 100 }.into(),
+    });
+    regs.push(Wasm::data {
+      offset: 0,
+      content: module.data,
+    });
     let mut instrs = vec![];
     nodes
       .into_iter()
       .map(|n| self.lower(n, &mut regs, &mut instrs))
       .try_collect::<Vec<_>>()
       .unwrap();
+    instrs.push(Wasm::start("$main".into()));
     regs.extend(instrs);
     let module = WasmModule(regs);
     let s = module.to_wat();
-    println!("{s}");
-    let binary = wat::parse_str(s).unwrap();
+    match wat::parse_str(s) {
+      Ok(wasm) => Ok(wasm),
+      Err(err) => {
+        error!("Error translating assembly to binary form:\n{err}")
+      },
+    }
   }
 }

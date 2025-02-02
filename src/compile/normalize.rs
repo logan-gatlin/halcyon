@@ -1,5 +1,8 @@
 use super::Compiler;
-use crate::semantic::ir::{Node, NodeKind};
+use crate::semantic::{
+  Type,
+  ir::{Node, NodeKind},
+};
 
 // Moves all functions to global scope, leave anonymous
 // identifiers in their place. This is because WAST does not
@@ -73,15 +76,16 @@ impl Compiler {
           .collect(),
       },
       Function {
-        mangle,
         param_mangles: arguments,
         nodes,
       } => {
+        let Type::Function { mangle, .. } = node.type_.clone() else {
+          panic!();
+        };
         let nodes = self.flatten_functions(*nodes, global_scope, depth + 1);
         if depth != 0 {
           let func = Node {
             kind: Function {
-              mangle: mangle.clone(),
               param_mangles: arguments,
               nodes: nodes.into(),
             },
@@ -96,7 +100,6 @@ impl Compiler {
           }
         } else {
           Function {
-            mangle,
             param_mangles: arguments,
             nodes: nodes.into(),
           }

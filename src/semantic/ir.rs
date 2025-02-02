@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use consteval::ConstValue;
 use operators::OpDef;
 
 use crate::{BinaryOp, Immediate, Span, UnaryOp};
@@ -9,6 +10,7 @@ use super::*;
 
 #[derive(Debug, Clone)]
 pub struct Module {
+  pub data: Vec<u8>,
   pub nodes: Vec<Node>,
 }
 
@@ -22,7 +24,7 @@ pub enum NodeKind {
   Break {
     expr: Box<Node>,
   },
-  Immediate(Immediate),
+  Immediate(ConstValue),
   Identifier {
     name: String,
     global: bool,
@@ -58,7 +60,6 @@ pub enum NodeKind {
     params: Vec<Node>,
   },
   Function {
-    mangle: Mangle,
     param_mangles: Vec<Mangle>,
     nodes: Box<Node>,
   },

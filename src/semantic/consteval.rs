@@ -25,7 +25,10 @@ pub enum ConstValue {
   Integer(i64),
   Real(f64),
   Boolean(bool),
-  String(String),
+  String {
+    address: usize,
+    length: usize,
+  },
   Glyph(char),
   Struct {
     member_names: Vec<String>,
@@ -36,18 +39,7 @@ pub enum ConstValue {
 impl Node {
   pub fn constant_evaluate(&self) -> Result<ConstValue> {
     match &self.kind {
-      NodeKind::Immediate(immediate) => Ok(match immediate {
-        crate::Immediate::Unit => ConstValue::Nothing,
-        crate::Immediate::Integer(val, base) => {
-          ConstValue::Integer(parse_int_literal(val, *base as u32)?)
-        },
-        crate::Immediate::Real(val) => {
-          ConstValue::Real(parse_real_literal(val)?)
-        },
-        crate::Immediate::String(val) => ConstValue::String(val.clone()),
-        crate::Immediate::Glyph(val) => ConstValue::Glyph(*val),
-        crate::Immediate::Boolean(val) => ConstValue::Boolean(*val),
-      }),
+      NodeKind::Immediate(immediate) => Ok(immediate.clone()),
       NodeKind::StructLiteral { names, values } => {
         let Type::Struct {
           member_names: ordered_names,

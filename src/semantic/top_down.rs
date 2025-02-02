@@ -188,7 +188,6 @@ impl Analyzer {
         node: self.type_top_down(node.type_.clone(), *node)?.into(),
       },
       n::Function {
-        mangle,
         param_mangles: arguments,
         nodes,
       } => {
@@ -198,7 +197,6 @@ impl Analyzer {
         let nodes =
           self.type_top_down((*return_type).unwrap_type_name()?, *nodes)?;
         n::Function {
-          mangle,
           param_mangles: arguments,
           nodes: nodes.into(),
         }

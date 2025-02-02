@@ -204,10 +204,14 @@ impl Analyzer {
         }
       },
       n::Function {
-        mangle,
         param_mangles: arguments,
         nodes,
       } => {
+        let Type::Function { mangle, .. } = node.type_.clone() else {
+          return error!(
+            "This should never happen! Function does not have function type"
+          );
+        };
         node.type_ = self.resolve_type(
           self.mangle_to_type(&mangle).span(span)?.clone(),
           HashSet::new(),
@@ -221,7 +225,6 @@ impl Analyzer {
         }
         let nodes = self.type_bottom_up(*nodes)?.into();
         n::Function {
-          mangle,
           param_mangles: arguments,
           nodes,
         }
@@ -238,7 +241,6 @@ impl Analyzer {
         for (mangle, type_) in
           names.iter().zip(initials.iter_mut().map(|n| &mut n.type_))
         {
-          println!("{mangle:?} {type_:?}");
           *type_ = self
             .resolve_type(type_.clone(), HashSet::new())
             .span(span)?;

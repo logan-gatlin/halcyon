@@ -1,14 +1,18 @@
-pub struct Window<const N: usize, T, I>
+use std::{hash::DefaultHasher, marker::PhantomData};
+
+pub struct Window<'a, const N: usize, T, I>
 where
   I: Iterator<Item = T>,
+  I: 'a,
 {
   iterator: I,
   buffer: [Option<T>; N],
   exhausted: bool,
   pub finished: bool,
+  _p: PhantomData<&'a T>,
 }
 
-impl<const N: usize, T, I> std::fmt::Debug for Window<N, T, I>
+impl<'a, const N: usize, T, I> std::fmt::Debug for Window<'a, N, T, I>
 where
   I: Iterator<Item = T>,
   T: std::fmt::Debug,
@@ -18,7 +22,7 @@ where
   }
 }
 
-impl<const N: usize, T, I> Window<N, T, I>
+impl<'a, const N: usize, T, I> Window<'a, N, T, I>
 where
   I: Iterator<Item = T>,
 {
@@ -29,6 +33,7 @@ where
       iterator: it,
       exhausted: false,
       finished: false,
+      _p: Default::default(),
     };
     s.normalize();
     s
@@ -63,7 +68,7 @@ where
   }
 }
 
-impl<const N: usize, T, I> Iterator for Window<N, T, I>
+impl<'a, const N: usize, T, I> Iterator for Window<'a, N, T, I>
 where
   I: Iterator<Item = T>,
 {

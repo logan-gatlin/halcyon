@@ -93,13 +93,17 @@ const CALL_PREC: Precedence = 12;
 
 const PARSER_LOOKAHEAD: usize = 3;
 
-type TokenIter<I> = crate::Window<PARSER_LOOKAHEAD, Token, I>;
+type TokenIter<'a, I> = crate::Window<'a, PARSER_LOOKAHEAD, Token, I>;
 
-pub struct Parser<I: Iterator<Item = Token>> {
-  iter: TokenIter<I>,
+pub struct Parser<'a, I: Iterator<Item = Token>>
+where
+  I: Iterator<Item = Token>,
+  I: 'a,
+{
+  iter: TokenIter<'a, I>,
 }
 
-impl<I: Iterator<Item = Token>> Iterator for Parser<I> {
+impl<'a, I: Iterator<Item = Token>> Iterator for Parser<'a, I> {
   type Item = Statement;
 
   fn next(&mut self) -> Option<Self::Item> {
@@ -131,7 +135,7 @@ impl<I: Iterator<Item = Token>> Iterator for Parser<I> {
   }
 }
 
-impl<I: Iterator<Item = Token>> Parser<I> {
+impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
   pub fn new(iter: I) -> Self {
     Self {
       iter: TokenIter::new(iter),

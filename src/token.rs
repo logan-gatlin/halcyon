@@ -119,15 +119,15 @@ fn t(tk: TokenKind, sp: Span) -> Result<Token> {
 
 const TOKENIZER_LOOKAHEAD: usize = 2;
 
-type CharIter<I> = crate::Window<TOKENIZER_LOOKAHEAD, char, I>;
+type CharIter<'a, I> = crate::Window<'a, TOKENIZER_LOOKAHEAD, char, I>;
 
-pub struct Tokenizer<I: Iterator<Item = char>> {
-  iter: CharIter<I>,
+pub struct Tokenizer<'a, I: Iterator<Item = char>> {
+  iter: CharIter<'a, I>,
   column: usize,
   row: usize,
 }
 
-impl<I: Iterator<Item = char>> Tokenizer<I> {
+impl<'a, I: Iterator<Item = char>> Tokenizer<'a, I> {
   pub fn new(iter: I) -> Self {
     Self {
       iter: CharIter::new(iter),
@@ -420,7 +420,7 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
   }
 }
 
-impl<I: Iterator<Item = char>> Iterator for Tokenizer<I> {
+impl<'a, I: Iterator<Item = char>> Iterator for Tokenizer<'a, I> {
   type Item = Token;
 
   fn next(&mut self) -> Option<Self::Item> {

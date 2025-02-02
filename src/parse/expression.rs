@@ -104,7 +104,7 @@ impl Expression {
   }
 }
 
-impl<I: Iterator<Item = Token>> Parser<I> {
+impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
   pub fn expression(&mut self, precedence: Precedence) -> Result<Expression> {
     use ExpressionKind as e;
     use TokenKind as t;

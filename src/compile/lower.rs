@@ -1,14 +1,10 @@
-use std::any::Any;
-
 use crate::{
   err::*,
-  error,
   semantic::{
+    Mangle, Type,
     consteval::ConstValue,
     ir::{Node, NodeKind},
-    Mangle, Type,
   },
-  Immediate as i,
 };
 
 use super::{AsmType as aty, Compiler, Wasm as asm};
@@ -19,18 +15,21 @@ impl ConstValue {
       ConstValue::Nothing => vec![],
       ConstValue::Integer(val) => {
         vec![asm::constant(aty::i64, val.to_string())]
-      }
+      },
       ConstValue::Real(val) => vec![asm::constant(aty::f64, val.to_string())],
       ConstValue::Boolean(val) => {
         vec![asm::constant(aty::i32, (*val as i32).to_string())]
-      }
-      ConstValue::String(_) => vec![asm::nop],
+      },
+      ConstValue::String { address, length } => vec![
+        asm::constant(aty::i32, length.to_string()),
+        asm::constant(aty::i32, address.to_string()),
+      ],
       ConstValue::Glyph(val) => {
         vec![asm::constant(aty::i32, (*val as u32).to_string())]
-      }
+      },
       ConstValue::Struct { member_values, .. } => {
         member_values.into_iter().flat_map(|v| v.lower()).collect()
-      }
+      },
     }
   }
 }
@@ -39,7 +38,7 @@ impl ConstValue {
 
 impl Compiler {
   fn new_name(&mut self) -> String {
-    let name = format!("__tmpname{}", self.unique_salt);
+    let name = format!("$_{}", self.unique_salt);
     self.unique_salt += 1;
     name
   }
@@ -66,7 +65,12 @@ impl Compiler {
       });
   }
 
-  fn make_register(mangle: Mangle, type_: &Type, regs: &mut Vec<asm>, global: bool) {
+  fn make_register(
+    mangle: Mangle,
+    type_: &Type,
+    regs: &mut Vec<asm>,
+    global: bool,
+  ) {
     type_
       .register_types()
       .into_iter()
@@ -81,12 +85,17 @@ impl Compiler {
       });
   }
 
-  fn get_register(mangle: Mangle, type_: &Type, instrs: &mut Vec<asm>, global: bool) {
+  fn get_register(
+    mangle: Mangle,
+    type_: &Type,
+    instrs: &mut Vec<asm>,
+    global: bool,
+  ) {
     type_
       .register_types()
       .into_iter()
-      .rev()
       .enumerate()
+      .rev()
       .for_each(|(id, _)| {
         instrs.push(asm::regget {
           ident: format!("${mangle}${id}"),
@@ -95,7 +104,12 @@ impl Compiler {
       });
   }
 
-  fn set_register(mangle: Mangle, type_: &Type, instrs: &mut Vec<asm>, global: bool) {
+  fn set_register(
+    mangle: Mangle,
+    type_: &Type,
+    instrs: &mut Vec<asm>,
+    global: bool,
+  ) {
     type_
       .register_types()
       .into_iter()
@@ -108,7 +122,12 @@ impl Compiler {
       });
   }
 
-  pub fn lower(&mut self, node: Node, regs: &mut Vec<asm>, instrs: &mut Vec<asm>) -> Result<()> {
+  pub fn lower(
+    &mut self,
+    node: Node,
+    regs: &mut Vec<asm>,
+    instrs: &mut Vec<asm>,
+  ) -> Result<()> {
     use NodeKind::*;
     match node.kind {
       Declaration {
@@ -122,52 +141,37 @@ impl Compiler {
           self.lower(*value.clone(), regs, instrs)?;
         } else if is_constant && global && value.type_.count_registers() != 0 {
           let consteval = value.constant_evaluate()?.lower();
-          Self::make_register_init(mangle, &value.type_, regs, global, consteval);
+          Self::make_register_init(
+            mangle,
+            &value.type_,
+            regs,
+            global,
+            consteval,
+          );
         } else {
           Self::make_register(mangle.clone(), &value.type_, regs, global);
           self.lower(*value.clone(), regs, instrs)?;
           Self::set_register(mangle.clone(), &value.type_, instrs, global);
         }
-      }
-      Immediate(immediate) => match immediate {
-        i::Unit => {}
-        i::Integer(string, base) => {
-          let int_value = i64::from_str_radix(&string, base as u32).unwrap();
-          let node = asm::constant(aty::i64, int_value.to_string());
-          instrs.push(node);
-        }
-        i::Real(r) => {
-          let real_value: f64 = r.parse().unwrap();
-          let node = asm::constant(aty::f64, real_value.to_string());
-          instrs.push(node);
-        }
-        i::String(_) => return error!("Strings are not yet implemented"),
-        i::Glyph(g) => {
-          let node = asm::constant(aty::i32, (g as u32).to_string());
-          instrs.push(node);
-        }
-        i::Boolean(b) => {
-          let node = asm::constant(aty::i32, if b { 1 } else { 0 }.to_string());
-          instrs.push(node);
-        }
       },
+      Immediate(im) => instrs.extend(im.lower().into_iter().rev()),
       Identifier { mangle, global, .. } => {
         if let Type::Function { .. } = node.type_ {
         } else {
           Self::get_register(mangle, &node.type_, instrs, global);
         }
-      }
+      },
       BinaryOp {
         opdef, left, right, ..
       } => {
         self.lower(*left, regs, instrs)?;
         self.lower(*right, regs, instrs)?;
         instrs.extend(opdef.asm);
-      }
+      },
       UnaryOp { opdef, child, .. } => {
         self.lower(*child, regs, instrs)?;
         instrs.extend(opdef.asm);
-      }
+      },
       Field { namespace, index } => {
         let Type::Struct {
           member_names,
@@ -188,29 +192,22 @@ impl Compiler {
           }
           // Save desired value to register
           else {
-            Self::make_register(temporary_name.clone(), &node.type_, regs, false);
-            Self::set_register(temporary_name.clone(), &node.type_, instrs, false);
+            Self::make_register(
+              temporary_name.clone(),
+              &node.type_,
+              regs,
+              false,
+            );
+            Self::set_register(
+              temporary_name.clone(),
+              &node.type_,
+              instrs,
+              false,
+            );
           }
         }
         Self::get_register(temporary_name, &node.type_, instrs, false);
-      }
-      If {
-        predicate,
-        then,
-        else_,
-      } => {
-        self.lower(*predicate, regs, instrs)?;
-        let mut then_block = vec![];
-        let mut else_block = vec![];
-        self.lower(*then, regs, &mut then_block)?;
-        if let Some(else_) = else_ {
-          self.lower(*else_, regs, &mut else_block)?;
-        }
-        instrs.push(asm::ifelse {
-          then: then_block,
-          else_: else_block,
-        });
-      }
+      },
       Call { mangle, params, .. } => {
         // TODO perform in expected left->right order here
         params
@@ -219,13 +216,13 @@ impl Compiler {
           .map(|p| self.lower(p, regs, instrs))
           .try_collect::<Vec<_>>()?;
         instrs.push(asm::call(mangle))
-      }
+      },
       Function {
-        mangle,
         param_mangles,
         nodes,
       } => {
         let Type::Function {
+          mangle,
           param_types,
           return_type,
           ..
@@ -251,33 +248,80 @@ impl Compiler {
         let mut regs_local = vec![];
         let mut instrs_local = vec![];
         self.lower(*nodes, &mut regs_local, &mut instrs_local)?;
+        instrs_local.push(asm::return_);
         regs_local.extend(instrs_local);
         let body = regs_local;
         instrs.push(asm::function {
-          ident: mangle,
+          ident: format!("${mangle}"),
           params,
           results: return_type.unwrap_type_name().unwrap().register_types(),
           body,
         })
-      }
+      },
       Block { nodes } => {
         nodes
           .into_iter()
           .map(|n| self.lower(n, regs, instrs))
           .try_collect::<Vec<_>>()?;
-      }
+      },
       Remainder { node } => {
         self.lower(*node, regs, instrs)?;
-      }
+      },
+      If {
+        predicate,
+        then,
+        else_,
+      } => {
+        self.lower(*predicate, regs, instrs)?;
+        let mut then_block = vec![];
+        let mut else_block = vec![];
+        let result_name = if node.type_.count_registers() == 0 {
+          "".to_string()
+        } else {
+          self.new_name()
+        };
+        Self::make_register(result_name.clone(), &node.type_, regs, false);
+        self.lower(*then, regs, &mut then_block)?;
+        Self::set_register(
+          result_name.clone(),
+          &node.type_,
+          &mut then_block,
+          false,
+        );
+        if let Some(else_) = else_ {
+          self.lower(*else_, regs, &mut else_block)?;
+          Self::set_register(
+            result_name.clone(),
+            &node.type_,
+            &mut else_block,
+            false,
+          );
+        }
+        instrs.push(asm::ifelse {
+          then: then_block,
+          else_: else_block,
+        });
+        Self::get_register(result_name, &node.type_, instrs, false);
+      },
       Loop {
         names,
         initials,
         body,
       } => {
-        names
-          .into_iter()
+        let result_name = if node.type_.count_registers() == 0 {
+          "".to_string()
+        } else {
+          self.new_name()
+        };
+        Self::make_register(result_name.clone(), &node.type_, regs, false);
+        let loop_registers: Vec<_> = names
+          .iter()
+          .cloned()
           .zip(initials.iter().map(|i| i.type_.clone()))
-          .for_each(|(name, type_)| Self::make_register(name, &type_, regs, false));
+          .collect();
+        loop_registers.iter().for_each(|(name, type_)| {
+          Self::make_register(name.clone(), &type_, regs, false)
+        });
         initials
           .into_iter()
           .rev()
@@ -288,7 +332,16 @@ impl Compiler {
         let mut loop_body = vec![];
         self.lower(*body, regs, &mut loop_body)?;
         self.break_stack.pop();
+        loop_registers.iter().for_each(|(name, type_)| {
+          Self::set_register(name.clone(), type_, &mut loop_body, false)
+        });
         let loop_name = self.new_name();
+        Self::set_register(
+          result_name.clone(),
+          &node.type_,
+          &mut loop_body,
+          false,
+        );
         loop_body.push(asm::branch(loop_name.clone()));
         let asm_loop = asm::loop_ {
           name: loop_name,
@@ -299,12 +352,13 @@ impl Compiler {
           body: vec![asm_loop],
         };
         instrs.push(asm_block);
-      }
+        Self::get_register(result_name, &node.type_, instrs, false);
+      },
       Break { expr } => {
         self.lower(*expr, regs, instrs)?;
         let current_block = self.break_stack.last().unwrap().clone();
         instrs.push(asm::branch(current_block));
-      }
+      },
       StructLiteral { names, values } => {
         let Type::Struct {
           member_names: ordered_names,
@@ -318,7 +372,7 @@ impl Compiler {
           let val = values[pos].clone();
           self.lower(val, regs, instrs)?;
         }
-      }
+      },
     };
     Ok(())
   }

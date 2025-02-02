@@ -1,8 +1,23 @@
-Box :: struct { a: integer, f: Box2, b: real, c: glyph };
-Box2 :: struct {}
-
-foo :: () {
-	b = Box.{ a: 1, f: Box2.{}, b: 2.0, c: 'a' };
-	t = b.b;
+fizzbuzz :: (number: integer) {
+  loop i: 0 {
+    print_string(
+      if i % 3 == 0 and i % 5 == 0 {
+        "fizzbuzz\n"
+      } else if i % 3 == 0{
+        "fizz\n"
+      } else if i % 5 == 0 {
+        "buzz\n"
+      } else {
+        ""
+      }
+    );
+    if i == number {
+      break;
+    }
+    i + 1
+  }
 }
 
+main :: () {
+  fizzbuzz(15);
+}

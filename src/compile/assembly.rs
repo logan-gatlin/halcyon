@@ -1,4 +1,4 @@
-use crate::semantic::{primitives::Primitive, Type};
+use crate::semantic::{Type, primitives::Primitive};
 
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy)]
@@ -33,6 +33,11 @@ pub struct WasmModule(pub Vec<Wasm>);
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone)]
 pub enum Wasm {
+  import {
+    ns1: String,
+    ns2: String,
+    object: Box<Wasm>,
+  },
   reg {
     type_: AsmType,
     ident: String,
@@ -89,6 +94,7 @@ pub enum Wasm {
   negate(AsmType),
   nop,
   trap,
+  custom(String),
   drop,
   memory {
     min: usize,
@@ -96,8 +102,9 @@ pub enum Wasm {
   },
   data {
     offset: usize,
-    content: String,
+    content: Vec<u8>,
   },
+  return_,
   comment(String),
   /// IDK what this does
   start(String),
