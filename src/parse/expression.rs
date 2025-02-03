@@ -5,8 +5,8 @@ use super::*;
 #[derive(Clone, Debug)]
 pub struct Parameters {
   pub arity: usize,
-  pub names: Vec<String>,
-  pub type_names: Vec<String>,
+  pub names: Vec<Expression>,
+  pub types: Vec<Expression>,
 }
 
 impl Default for Parameters {
@@ -14,7 +14,7 @@ impl Default for Parameters {
     Self {
       arity: 0,
       names: vec![],
-      type_names: vec![],
+      types: vec![],
     }
   }
 }
@@ -60,7 +60,7 @@ pub enum ExpressionKind {
   Parenthesis(Box<Expression>),
   FunctionDef {
     params: Parameters,
-    returns_str: Option<String>,
+    returns: Option<Box<Expression>>,
     body: Vec<Statement>,
   },
   FunctionCall {
@@ -69,8 +69,8 @@ pub enum ExpressionKind {
   },
   StructDef(Parameters),
   StructLiteral {
-    name: String,
-    args: Vec<(String, Expression)>,
+    struct_t: Box<Expression>,
+    params: Parameters,
   },
   Field {
     namespace: Box<Expression>,
@@ -83,8 +83,7 @@ pub enum ExpressionKind {
     else_: Option<Box<Expression>>,
   },
   Loop {
-    names: Vec<String>,
-    exprs: Vec<Expression>,
+    params: Parameters,
     body: Vec<Statement>,
   },
   Break {
@@ -138,38 +137,7 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
     while let Ok(next) = self.peek(0) {
       // Binary or mixed
       if let Ok(operator) = BinaryOp::try_from(&next.0) {
-        'binop: {
-          // Operator may be postfix unary
-          if let Ok(operator) = UnaryOp::try_from(&next.0)
-            && operator.assoc() == RIGHT_ASSOC
-          {
-            let is_unop = if let Err(_) = self.peek(1) {
-              true // Reached past end of input, must be unop
-            } else if let Ok(Token(t::EOF, _)) = self.peek(1) {
-              true // Reached end of input, must be unop
-            } else if let Ok(next2) = self.peek(1)
-              && (BinaryOp::try_from(&next2.0).is_ok()
-                || UnaryOp::try_from(&next2.0)
-                  .is_ok_and(|u| u.assoc() == RIGHT_ASSOC))
-            {
-              true // Next is op
-            } else {
-              false
-            };
-            // Op is postfix unary
-            if is_unop {
-              let span = next.1;
-              self.skip(1);
-              current = Expression::new(
-                e::Unary {
-                  op: operator,
-                  child: current.into(),
-                },
-                span,
-              );
-              break 'binop;
-            }
-          }
+        {
           let new_precedence = operator.precedence();
           if ((operator.assoc() == LEFT_ASSOC) && new_precedence <= precedence)
             || (new_precedence < precedence)
@@ -193,22 +161,36 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
           );
         }
       }
-      // Field
+      // Field or struct literal
       else if let Token(t::Dot, span) = next {
         if FIELD_PREC <= precedence {
           return Ok(current);
         }
         self.skip(1);
-        let field = self
-          .expression(FIELD_PREC)
-          .trace_span(span, "in field expression")?;
-        current = Expression::new(
-          e::Field {
-            namespace: current.into(),
-            field: field.into(),
-          },
-          span,
-        )
+        if self.eat(t::LeftBrace).is_ok() {
+          let params = self.parameters(span)?;
+          self
+            .eat(t::RightBrace)
+            .trace_span(span, "while parsing struct declaration")?;
+          current = Expression::new(
+            e::StructLiteral {
+              struct_t: current.into(),
+              params,
+            },
+            span,
+          )
+        } else {
+          let field = self
+            .expression(FIELD_PREC)
+            .trace_span(span, "in field expression")?;
+          current = Expression::new(
+            e::Field {
+              namespace: current.into(),
+              field: field.into(),
+            },
+            span,
+          )
+        }
       }
       // Function call
       else if let Token(t::LeftParen, mut span) = next {
@@ -260,32 +242,28 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
     Ok(current)
   }
 
-  pub fn parameters(&mut self, mut span: Span) -> Result<Parameters> {
+  pub fn parameters(&mut self, span: Span) -> Result<Parameters> {
     use TokenKind as t;
     let mut arity = 0;
     let mut names = vec![];
-    let mut type_names = vec![];
-    let mut strongly_typed = false;
+    let mut types = vec![];
     loop {
-      // Param name
-      let (name, span2) = match self.identifier() {
-        Ok((ident, span)) => (ident, span),
-        Err(_) => break,
-      };
-      span = span + span2;
-      names.push(name.clone());
-      // Param type (optional)
-      if self.eat(t::Colon).is_ok() {
-        let (type_name, span2) = self.identifier().trace_span(
-          span + span2,
-          format!("While parsing type of '{}'", name),
-        )?;
-        strongly_typed = true;
-        span = span + span2;
-        type_names.push(type_name);
+      // Name
+      let name = if let Ok(name) = self.expression(0) {
+        name
       } else {
-        type_names.push("".into());
-      }
+        break;
+      };
+      names.push(name);
+      // Colon
+      self.eat(t::Colon)?;
+      // Type
+      let type_ = if let Ok(type_) = self.expression(0) {
+        type_
+      } else {
+        return error!("Expected expression after ':'").span(&span);
+      };
+      types.push(type_);
       arity += 1;
       // Comma
       if !self.eat(t::Comma).is_ok() {
@@ -295,217 +273,14 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
         break;
       }
     }
-    // Back-propogate type names
-    if strongly_typed {
-      let mut last_name = "".to_string();
-      for name in type_names.iter_mut().rev() {
-        if name.is_empty() {
-          if last_name.is_empty() {
-            return error!("Cannot mix typed and untyped parameters");
-          } else {
-            *name = last_name.clone();
-          }
-        } else {
-          last_name = name.clone();
-        }
-      }
-    } else if arity != 0 {
-      return error!("Untyped parameters are not allowed (temporarily!)")
-        .span(&span);
-    }
     Ok(Parameters {
       arity,
       names,
-      type_names,
+      types,
     })
   }
 
-  /// nostruct: prevent parsing struct definitions to allow
-  /// for if and loop predicates without parenthesis
-  fn primary(&mut self) -> Result<Expression> {
-    use ExpressionKind as e;
-    use Immediate as im;
-    use TokenKind as t;
-    let next = self.peek(0)?;
-    let mut span = next.1;
-    let kind = match next.0 {
-      t::IntegerLiteral(i, b) => {
-        self.skip(1);
-        e::Immediate(im::Integer(i, b))
-      },
-      t::FloatLiteral(f) => {
-        self.skip(1);
-        e::Immediate(im::Real(f))
-      },
-      t::StringLiteral(s) => {
-        self.skip(1);
-        e::Immediate(im::String(s))
-      },
-      t::GlyphLiteral(c) => {
-        self.skip(1);
-        e::Immediate(im::Glyph(c))
-      },
-      t::True => {
-        self.skip(1);
-        e::Immediate(im::Boolean(true))
-      },
-      t::False => {
-        self.skip(1);
-        e::Immediate(im::Boolean(false))
-      },
-      t::Break => {
-        self.skip(1);
-        let expr = if let Ok(Token(t::Semicolon, _)) = self.peek(0) {
-          Expression {
-            kind: e::Immediate(Immediate::Unit),
-            span,
-          }
-        } else {
-          self
-            .expression(0)
-            .trace_span(span, "While parsing break expression")?
-        };
-        e::Break { expr: expr.into() }
-      },
-      t::If => return self.if_else(),
-      t::LeftBrace => {
-        let (block, span1) = self.block()?;
-        span = span + span1;
-        e::Block(block)
-      },
-      // Function definition
-      t::LeftParen
-        if (self.look(1, t::Identifier("".into())).is_ok()
-          && (self.look(2, t::Colon).is_ok()
-            || self.look(2, t::Comma).is_ok()))
-          || self.look(1, t::RightParen).is_ok() =>
-      {
-        self.skip(1);
-        let params = self.parameters(span)?;
-        let Token(_, span2) = self
-          .eat(t::RightParen)
-          .span(&span)
-          .trace_span(span, "while parsing function definition")?;
-        let returns_str = if let Ok(Token(_, span2)) = self.eat(t::Arrow) {
-          span = span + span2;
-          let (identifier, span2) = self
-            .identifier()
-            .trace_span(span, "while parsing function return type")?;
-          span = span + span2;
-          Some(identifier)
-        } else {
-          None
-        };
-        span = span + span2;
-        if returns_str.is_none()
-          && params.arity == 0
-          && self.peek(0).is_ok_and(|t| t.0 != t::LeftBrace)
-        {
-          e::Immediate(Immediate::Unit)
-        } else {
-          let (body, span2) = self
-            .block()
-            .trace_span(span, "while parsing function body")?;
-          span = span + span2;
-          e::FunctionDef {
-            params,
-            returns_str,
-            body,
-          }
-        }
-      },
-      // Struct definition
-      t::Struct => {
-        self.skip(1);
-        self.eat(t::LeftBrace)?;
-        let params = self.parameters(span)?;
-        self.eat(t::RightBrace)?;
-        e::StructDef(params)
-      },
-      // Struct literal
-      t::Identifier(name)
-        if self.look(1, t::Dot).is_ok()
-          && self.look(2, t::LeftBrace).is_ok() =>
-      {
-        self.skip(3);
-        let mut args = vec![];
-        loop {
-          let (name, span2) = match self.identifier() {
-            Ok((name, span)) => (name, span),
-            Err(_) => break,
-          };
-          span = span + span2;
-          self
-            .eat(t::Colon)
-            .trace_span(span, "while parsing struct parameter type")?;
-          let expr = self
-            .expression(0)
-            .trace_span(span, "while parsing struct parameter type")?;
-          span = span + expr.span;
-          args.push((name, expr));
-          if !self.eat(t::Comma).is_ok() {
-            break;
-          }
-        }
-        self
-          .eat(t::RightBrace)
-          .trace_span(span, "while parsing struct declaration")?;
-        e::StructLiteral { name, args }
-      },
-      t::Identifier(i) => {
-        self.skip(1);
-        e::Identifier { name: i }
-      },
-      // Loop
-      t::Loop => {
-        self.skip(1);
-        let mut args = vec![];
-        if self.look(0, t::LeftBrace).is_err() {
-          loop {
-            let (name, span2) = match self.identifier() {
-              Ok((name, span)) => (name, span),
-              Err(_) => break,
-            };
-            span = span + span2;
-            self
-              .eat(t::Colon)
-              .trace_span(span, "while parsing loop parameter type")?;
-            let expr = self
-              .expression(0)
-              .trace_span(span, "while parsing loop parameter type")?;
-            span = span + expr.span;
-            args.push((name, expr));
-            if !self.eat(t::Comma).is_ok() {
-              break;
-            }
-          }
-        }
-        let (body, span2) =
-          self.block().trace_span(span, "while parsing loop body")?;
-        span = span + span2;
-        let (names, exprs) = args.into_iter().unzip();
-        e::Loop { names, exprs, body }
-      },
-      // Parenthetical
-      t::LeftParen => {
-        self.skip(1);
-        let expr = self
-          .expression(0)
-          .trace("while parsing parenthesized expression")?;
-        self
-          .eat(t::RightParen)
-          .reason("Unclosed '('")
-          .span(&expr.span)?;
-        e::Parenthesis(expr.into())
-      },
-      _ => {
-        return error!("Expected expression, found {}", next.0).span(&span);
-      },
-    };
-    Ok(Expression::new(kind, span))
-  }
-
-  fn if_else(&mut self) -> Result<Expression> {
+  pub fn if_else(&mut self) -> Result<Expression> {
     use TokenKind as t;
     if let Ok(Token(_, span)) = self.eat(t::If) {
       let predicate = self
@@ -535,7 +310,7 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
     }
   }
 
-  fn identifier(&mut self) -> Result<(String, Span)> {
+  pub fn identifier(&mut self) -> Result<(String, Span)> {
     use TokenKind as t;
     match self.peek(0) {
       Ok(Token(t::Identifier(i), span)) => {

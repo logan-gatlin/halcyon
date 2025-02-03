@@ -4,7 +4,7 @@ use super::*;
 pub enum StatementKind {
   Declaration {
     name: String,
-    type_str: Option<String>,
+    type_: Option<Expression>,
     value: Expression,
     is_constant: bool,
   },
@@ -32,12 +32,16 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
       (Token(t::Identifier(name), span2), Ok(Token(t::Colon, span3))) => {
         self.skip(2);
         span = span + span2 + span3;
-        let type_str = match self.eat(t::Identifier("".into())) {
-          Ok(Token(t::Identifier(s), span2)) => {
-            span = span + span2;
-            Some(s)
-          },
-          _ => None,
+        let type_ = if let Ok(_) = self.look(0, t::Equal) {
+          None
+        } else if let Ok(_) = self.look(0, t::Colon) {
+          None
+        } else {
+          Some(
+            self
+              .expression(0)
+              .trace_span(span, "While parsing expression type hint")?,
+          )
         };
         let is_constant = if self.eat(t::Equal).is_ok() {
           false
@@ -62,7 +66,7 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
         let s = Statement {
           kind: s::Declaration {
             name,
-            type_str,
+            type_,
             value,
             is_constant,
           },
@@ -84,7 +88,7 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
           span,
           kind: s::Declaration {
             name,
-            type_str: None,
+            type_: None,
             value,
             is_constant: false,
           },

@@ -10,8 +10,6 @@ macro_rules! primitives {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
     #[allow(non_camel_case_types, dead_code)]
     pub enum Primitive {
-      integer_literal,
-      real_literal,
       $($i,)*
     }
 
@@ -27,8 +25,6 @@ macro_rules! primitives {
 
       pub fn mangle(&self) -> crate::semantic::Mangle {
         match self {
-          Primitive::integer_literal => crate::semantic::mangle_builtin("integer_literal"),
-          Primitive::real_literal => crate::semantic::mangle_builtin("real_literal"),
           $(
           Primitive::$i => crate::semantic::mangle_builtin(stringify!{$i}),
           )*
@@ -38,8 +34,6 @@ macro_rules! primitives {
     impl std::fmt::Display for Primitive {
       fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-          Primitive::integer_literal => write!(f, "integer literal"),
-          Primitive::real_literal => write!(f, "real literal"),
           $(Primitive::$i => write!(f, stringify!{$i}),)*
         }
       }

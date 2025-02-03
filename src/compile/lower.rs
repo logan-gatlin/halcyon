@@ -27,9 +27,11 @@ impl ConstValue {
       ConstValue::Glyph(val) => {
         vec![asm::constant(aty::i32, (*val as u32).to_string())]
       },
-      ConstValue::Struct { member_values, .. } => {
+      ConstValue::StructLiteral { member_values, .. } => {
         member_values.into_iter().flat_map(|v| v.lower()).collect()
       },
+      ConstValue::Function(_) => todo!(),
+      ConstValue::Type(_) => todo!(),
     }
   }
 }

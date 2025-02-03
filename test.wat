@@ -5,6 +5,7 @@
 ))
 (import "js" "memory" (memory 10 100))
 (data (i32.const 0) "fizzbuzz\0afizz\0abuzz\0a")
+
 (func $5anon-3
   (param $7number-2$0 i64)
   (local $2i-4$0 i64)
@@ -28,6 +29,7 @@
       i64.const 0
       i64.eq
       i32.and
+      i32.const 1
       (if (then
         i32.const 0
         i32.const 9

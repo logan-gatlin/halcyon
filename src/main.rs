@@ -1,18 +1,17 @@
 #![feature(let_chains)]
 #![feature(iterator_try_collect)]
-mod compile;
 mod err;
+mod evaluate;
 mod lookahead;
 mod parse;
 mod semantic;
 mod token;
-mod treewalk;
 use std::ops::Add;
 
-use compile::Compiler;
-use err::*;
+//use compile::Compiler;
 use lookahead::*;
 use parse::*;
+use semantic::Analyzer;
 use token::*;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -40,13 +39,7 @@ impl Add<Span> for Span {
   }
 }
 
-fn test_expression(expr: &str) {
-  let source = expr.to_string();
-  let tokens = Tokenizer::new(source.chars()).filter(|t| t.0.is_meaningful());
-  let mut parser = Parser::new(tokens);
-  println!("{:#?}", parser.statement().unwrap());
-}
-
+/*
 fn compile(input: String) -> Result<String> {
   let tokenizer = Tokenizer::new(input.chars()).filter(|t| t.0.is_meaningful());
   let parser = Parser::new(tokenizer);
@@ -59,18 +52,30 @@ fn compile(input: String) -> Result<String> {
 fn assemble(assembly: String) -> Result<Vec<u8>> {
   Compiler::assemble(assembly)
 }
+*/
 
 #[wasm_bindgen]
 pub fn parse_tree(input: String) -> String {
   let tokenizer = Tokenizer::new(input.chars()).filter(|t| t.0.is_meaningful());
   let parser = Parser::new(tokenizer);
-  let mut an = semantic::Analyzer::new();
-  match an.typecheck_program(parser.into_iter()) {
+  parser
+    .into_iter()
+    .map(|s| format!("{s:#?}"))
+    .collect::<Vec<_>>()
+    .join("\n")
+}
+
+#[wasm_bindgen]
+pub fn ast(input: String) -> String {
+  let tokenizer = Tokenizer::new(input.chars()).filter(|t| t.0.is_meaningful());
+  let parser = Parser::new(tokenizer);
+  let ast = Analyzer::analyze(parser);
+  match ast {
     Ok(m) => format!("{m:#?}"),
     Err(e) => format!("{e}"),
   }
 }
-
+/*
 #[wasm_bindgen]
 pub fn check_errors(input: String) -> String {
   match compile(input) {
@@ -84,7 +89,18 @@ pub fn try_compile(input: String) -> Vec<u8> {
   let asm = compile(input).unwrap_or_default();
   assemble(asm).unwrap_or_default()
 }
+*/
+fn main() {
+  parse();
+}
 
+fn parse() {
+  let source = include_str!("../demo.hal").to_string();
+  //let source = "(a: b&) {};".into();
+  let ast = ast(source);
+  println!("{ast}");
+}
+/*
 #[test]
 fn compile_file() {
   let assembly = compile(include_str!("../demo.hal").to_string()).unwrap();
@@ -92,3 +108,4 @@ fn compile_file() {
   let bytes = assemble(assembly).unwrap();
   std::fs::write("./test.wasm", bytes).unwrap();
 }
+*/

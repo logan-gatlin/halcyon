@@ -1,4 +1,4 @@
-use std::{hash::DefaultHasher, marker::PhantomData};
+use std::marker::PhantomData;
 
 pub struct Window<'a, const N: usize, T, I>
 where

@@ -1,24 +1,25 @@
 pub mod analyzer;
-pub mod bottom_up;
+//pub mod bottom_up;
 pub mod consteval;
+pub mod expression;
 pub mod ir;
-pub mod operators;
+//pub mod operators;
 pub mod primitives;
-pub mod top_down;
+//pub mod top_down;
+
+pub use consteval::*;
+pub use ir::*;
+pub use primitives::*;
 
 use std::collections::HashMap;
 
 use analyzer::*;
-use ir::Module;
-use operators::OpTable;
-pub use primitives::*;
+//use operators::OpTable;
 
-use crate::Statement;
 use crate::err::*;
 use crate::error;
 use crate::semantic::Primitive;
 
-pub const MAIN_MANGLE: &str = "main";
 pub type Mangle = String;
 
 impl Primitive {
@@ -27,48 +28,18 @@ impl Primitive {
   }
 }
 
+/// Convert parse tree to AST
 pub struct Analyzer {
   scope_depth: usize,
   salt: usize,
   path: Vec<String>,
   _name_to_symbol: HashMap<String, Symbol>,
-  _mangle_to_type: HashMap<Mangle, Type>,
   event_stack: Vec<Event>,
-  pub op_table: OpTable,
+  // pub op_table: OpTable,
   data_segment: Vec<u8>,
   data_offset: usize,
-  pub has_main: bool,
-}
-
-impl Analyzer {
-  pub fn static_allocate(&mut self, bytes: &[u8]) -> usize {
-    let old_offset = self.data_offset;
-    self.data_offset += bytes.len();
-    self.data_segment.extend(bytes);
-    old_offset
-  }
-
-  pub fn typecheck_program(
-    &mut self,
-    block: impl Iterator<Item = Statement>,
-  ) -> Result<Module> {
-    let mut module = self.analyze_module(block)?;
-    module.nodes = module
-      .nodes
-      .into_iter()
-      .map(|n| self.type_bottom_up(n))
-      .try_collect::<Vec<_>>()?
-      .into_iter()
-      .map(|n| self.type_top_down(Primitive::nothing.promote(), n))
-      .try_collect()?;
-    module.data = self.data_segment.clone();
-    if !self.has_main {
-      return error!(
-        "Program must contain a main function: `main :: () {{...}}`"
-      );
-    }
-    Ok(module)
-  }
+  constants: HashMap<Mangle, Node>,
+  main: Option<Mangle>,
 }
 
 #[derive(Debug, Clone)]
@@ -79,59 +50,49 @@ pub enum Type {
   Prim(Primitive),
   /// User defined type
   Struct {
-    name: Option<String>,
-    mangle: Mangle,
     member_names: Vec<String>,
     member_types: Vec<Type>,
   },
-  /// Unique function type
+  /// Function type
   Function {
-    // param names are part of the type to allow kwargs in the future
-    mangle: Mangle,
-    param_names: Vec<String>,
     param_types: Vec<Type>,
     return_type: Box<Type>,
   },
-  // Type type
-  Type(Box<Type>),
-  // Has the same type as X
-  SameAs(Mangle),
-  // Has the type X
-  IsType(Mangle),
-}
-
-impl Type {
-  pub fn expect_type_name(self) -> Result<Self> {
-    if let Type::Type(_) = self {
-      Ok(self)
-    } else {
-      error!("Expected the name of a type here, found '{self}'")
-    }
-  }
-
-  pub fn unwrap_type_name(self) -> Result<Self> {
-    if let Type::Type(t) = self {
-      Ok(*t)
-    } else {
-      error!("Expected the name of a type here, found '{self}'")
-    }
-  }
+  /// Alias type
+  Reference(Box<Type>),
+  /// Higher level type
+  Type,
 }
 
 impl PartialEq for Type {
   fn eq(&self, other: &Self) -> bool {
     use Type as t;
     match (self, other) {
-      (t::Ambiguous, t::Ambiguous) => true,
+      (t::Ambiguous, t::Ambiguous) => {
+        panic!("Tried to compare ambiguous types")
+      },
+      (t::Type, t::Type) => true,
       (t::Prim(p1), t::Prim(p2)) => p1 == p2,
-      (t::Struct { mangle: m1, .. }, t::Struct { mangle: m2, .. }) => m1 == m2,
-      (t::Function { mangle: m1, .. }, t::Function { mangle: m2, .. }) => {
-        m1 == m2
-      },
-      (t::Type(t1), t::Type(t2)) => t1 == t2,
-      (t::SameAs(t1), t::SameAs(t2)) => {
-        panic!("Tried to compare unresolved types '{t1}' and '{t2}'")
-      },
+      (
+        t::Struct {
+          member_names: names1,
+          member_types: types1,
+        },
+        t::Struct {
+          member_names: names2,
+          member_types: types2,
+        },
+      ) => names1 == names2 && types1 == types2,
+      (
+        t::Function {
+          param_types: p1,
+          return_type: r1,
+        },
+        t::Function {
+          param_types: p2,
+          return_type: r2,
+        },
+      ) => p1.len() == p2.len() && p1 == p2 && r1 == r2,
       _ => false,
     }
   }
@@ -144,14 +105,26 @@ impl std::hash::Hash for Type {
   fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
     match self {
       Type::Prim(primitive) => primitive.hash(state),
-      Type::Struct { mangle, .. } | Type::Function { mangle, .. } => {
-        mangle.hash(state)
+      Type::Struct {
+        member_names,
+        member_types,
+      } => {
+        member_names.hash(state);
+        member_types.hash(state);
       },
-      Type::Type(t) => t.hash(state),
-      Type::SameAs(t) | Type::IsType(t) => {
-        panic!("Tried to hash unresolved type '{t}'")
+      Type::Function {
+        param_types,
+        return_type,
+      } => {
+        param_types.hash(state);
+        return_type.hash(state);
       },
+      Type::Type => "type".hash(state),
       Type::Ambiguous => panic!("Tried to hash ambiguous type"),
+      Type::Reference(t) => {
+        "ref".hash(state);
+        t.hash(state);
+      },
     }
   }
 }
@@ -159,19 +132,35 @@ impl std::hash::Hash for Type {
 impl std::fmt::Display for Type {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
-      Type::Ambiguous => write!(f, "ambiguous"),
+      Type::Ambiguous => write!(f, "?"),
       Type::Prim(primitive) => write!(f, "{primitive}"),
-      Type::Struct { name, .. } => {
-        if let Some(n) = name {
-          write!(f, "{n}")
-        } else {
-          write!(f, "anonymous struct")
-        }
+      Type::Struct {
+        member_names,
+        member_types,
+      } => {
+        let fields = member_names
+          .into_iter()
+          .zip(member_types.into_iter())
+          .map(|(name, type_)| format!("{name}: {type_}"))
+          .collect::<Vec<_>>()
+          .join(", ");
+        write!(f, "struct {{ {fields} }}")
       },
-      Type::Type(tid) => write!(f, "{tid} (type)"),
-      Type::Function { .. } => write!(f, "func"),
-      Type::SameAs(m) => write!(f, "? (same as {m})"),
-      Type::IsType(m) => write!(f, "? (is {m})"),
+      Type::Type => write!(f, "type"),
+      Type::Function {
+        param_types,
+        return_type,
+      } => write!(
+        f,
+        "({}) -> {}",
+        param_types
+          .iter()
+          .map(|t| format!("{t}"))
+          .collect::<Vec<_>>()
+          .join(", "),
+        return_type
+      ),
+      Type::Reference(t) => write!(f, "{t}&"),
     }
   }
 }

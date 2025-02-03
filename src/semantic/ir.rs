@@ -1,17 +1,18 @@
-use std::collections::HashSet;
-
 use consteval::ConstValue;
-use operators::OpDef;
+//use operators::OpDef;
 
-use crate::{BinaryOp, Immediate, Span, UnaryOp};
-use crate::{err::*, error};
+use crate::{BinaryOp, Span, UnaryOp};
 
 use super::*;
 
 #[derive(Debug, Clone)]
+pub struct OpDef {}
+
+#[derive(Debug, Clone)]
 pub struct Module {
   pub data: Vec<u8>,
-  pub nodes: Vec<Node>,
+  pub constants: HashMap<Mangle, Node>,
+  pub main: Option<Mangle>,
 }
 
 #[derive(Debug, Clone)]
@@ -24,15 +25,21 @@ pub enum NodeKind {
   Break {
     expr: Box<Node>,
   },
-  Immediate(ConstValue),
+  ConstValue(ConstValue),
   Identifier {
     name: String,
     global: bool,
     mangle: Mangle,
   },
+  StructDef {
+    mangle: String,
+    member_names: Vec<String>,
+    member_types: Vec<Node>,
+  },
   StructLiteral {
-    names: Vec<String>,
-    values: Vec<Node>,
+    struct_t: Box<Node>,
+    param_names: Vec<String>,
+    param_values: Vec<Node>,
   },
   BinaryOp {
     op: BinaryOp,
@@ -61,14 +68,15 @@ pub enum NodeKind {
   },
   Function {
     param_mangles: Vec<Mangle>,
+    param_types: Vec<Node>,
+    returns: Box<Node>,
     nodes: Box<Node>,
   },
   Declaration {
     name: String,
     global: bool,
     mangle: Mangle,
-    is_constant: bool,
-    type_assert: Option<Type>,
+    type_assert: Option<Box<Node>>,
     value: Box<Node>,
   },
   Block {
@@ -77,6 +85,8 @@ pub enum NodeKind {
   Remainder {
     node: Box<Node>,
   },
+  /// Constant declaration that got lifted to global scope
+  Lifted,
 }
 
 #[derive(Debug, Clone)]
@@ -84,69 +94,4 @@ pub struct Node {
   pub span: Span,
   pub type_: Type,
   pub kind: NodeKind,
-}
-
-impl Analyzer {
-  pub fn resolve_type(
-    &self,
-    type_: Type,
-    mut history: HashSet<Mangle>,
-  ) -> Result<Type> {
-    match type_ {
-      Type::Type(t) => Ok(Type::Type(self.resolve_type(*t, history)?.into())),
-      Type::SameAs(mangle) => {
-        let t = self.mangle_to_type(&mangle)?;
-        if !history.insert(mangle) {
-          return error!("Cannot determine type, found circular dependency");
-        }
-        self.resolve_type(t.clone(), history)
-      },
-      Type::IsType(mangle) => {
-        let t = self.mangle_to_type(&mangle)?;
-        if !history.insert(mangle) {
-          return error!("Cannot determine type, found circular dependency");
-        }
-        self.resolve_type(t.clone(), history)?.unwrap_type_name()
-      },
-      Type::Struct {
-        name,
-        mangle,
-        member_names,
-        member_types,
-      } => Ok(Type::Struct {
-        name,
-        mangle,
-        member_names,
-        member_types: member_types
-          .into_iter()
-          .map(|t| self.resolve_type(t, history.clone()))
-          .try_collect::<Vec<_>>()?
-          .into_iter()
-          .map(|t| t.expect_type_name())
-          .try_collect()?,
-      }),
-      Type::Function {
-        mangle,
-        param_names,
-        param_types,
-        return_type,
-      } => Ok(Type::Function {
-        mangle,
-        param_names,
-        param_types: param_types
-          .into_iter()
-          .map(|t| self.resolve_type(t, history.clone()))
-          .try_collect::<Vec<_>>()?
-          .into_iter()
-          .map(|t| t.expect_type_name())
-          .try_collect()?,
-        return_type: self
-          .resolve_type(*return_type, history.clone())?
-          .expect_type_name()?
-          .into(),
-      }),
-      //Type::Ambiguous => error!("Cannot determine type")?,
-      t => Ok(t),
-    }
-  }
 }

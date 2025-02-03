@@ -118,14 +118,12 @@ impl Type {
         p::nothing | p::never => 0,
         p::glyph | p::integer | p::real | p::boolean => 1,
         p::string => 2,
-        _ => panic!("Counted registers of literal type"),
       },
-      Type::Struct { member_types, .. } => member_types
-        .iter()
-        .map(|t| t.clone().unwrap_type_name().unwrap().count_registers())
-        .sum(),
+      Type::Struct { member_types, .. } => {
+        member_types.iter().map(|t| t.count_registers()).sum()
+      },
       Type::Function { .. } => 1,
-      Type::Type(_) => 0,
+      Type::Type => 0,
       _ => panic!("Counted registers of ambiguous type"),
     }
   }
@@ -141,14 +139,13 @@ impl Type {
         p::boolean => vec![a::i32],
         p::string => vec![a::PTR_T, a::PTR_T],
         p::glyph => vec![a::i32],
-        p::integer_literal | p::real_literal => panic!("Splatted literal type"),
       },
       Type::Struct { member_types, .. } => member_types
         .iter()
-        .flat_map(|t| t.clone().unwrap_type_name().unwrap().register_types())
+        .flat_map(|t| t.register_types())
         .collect(),
       Type::Function { .. } => vec![a::funcref],
-      Type::Type(_) => vec![],
+      Type::Type => vec![],
       _ => panic!("Splatted ambiguous type"),
     }
   }

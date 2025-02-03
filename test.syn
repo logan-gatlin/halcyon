@@ -1,0 +1,12 @@
+Statement {
+    kind: Error(
+        (1:20) Expected LeftBrace, found Semicolon
+        > (1:12) while parsing function body
+        > (1:1) while parsing expression statement
+        ,
+    ),
+    span: Span {
+        row: 1,
+        column: 20,
+    },
+}
