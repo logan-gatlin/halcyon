@@ -1,10 +1,15 @@
 use std::collections::HashMap;
 
 use crate::{
-  diagnostic, err::*, error, semantic::primitives::Primitive, Span, Statement, StatementKind,
+  Span, Statement, StatementKind, diagnostic,
+  err::*,
+  error,
+  semantic::{ConstValue, primitives::Primitive},
 };
 
-use super::{ir::*, mangle_builtin, operators::OpTable, Analyzer, Mangle, Type};
+use super::{
+  Analyzer, Mangle, Type, ir::*, mangle_builtin, operators::OpTable,
+};
 use NodeKind as n;
 
 #[derive(Debug, Clone)]
@@ -55,7 +60,7 @@ impl Analyzer {
 
   pub fn prelude(&mut self) {
     // Define primitive types
-    let mut define_type = |name: String| {
+    let mut define_type = |name: String, value: Primitive| {
       let mangle = mangle_builtin(&name);
       self._name_to_symbol.insert(
         name,
@@ -65,9 +70,17 @@ impl Analyzer {
           is_constant: true,
         },
       );
+      self.constants.insert(
+        mangle,
+        Node {
+          span: Span { row: 0, column: 0 },
+          type_: Type::Type,
+          kind: n::ConstValue(ConstValue::Type(Type::Prim(value))),
+        },
+      )
     };
     for p in Primitive::ALL {
-      define_type(p.to_string());
+      define_type(p.to_string(), p);
     }
     // Primitive standard library
     const PRINT_STRING: &str = "print_string";
@@ -94,7 +107,11 @@ impl Analyzer {
     returned_salt
   }
 
-  pub fn define_name(&mut self, name: impl Into<String>, is_constant: bool) -> Result<Mangle> {
+  pub fn define_name(
+    &mut self,
+    name: impl Into<String>,
+    is_constant: bool,
+  ) -> Result<Mangle> {
     let name = name.into();
     let mut path = self.path.clone();
     path.push(name.clone());
@@ -142,14 +159,14 @@ impl Analyzer {
         Event::ScopeStart => {
           self.scope_depth -= 1;
           break;
-        }
+        },
         Event::Modify { name, old_value } => {
           if let Some(old) = old_value {
             self._name_to_symbol.insert(name, old);
           } else {
             self._name_to_symbol.remove(&name);
           }
-        }
+        },
       }
     }
   }
@@ -170,7 +187,10 @@ impl Analyzer {
     }
   }
 
-  pub fn analyze_module(&mut self, block: impl Iterator<Item = Statement>) -> Result<Module> {
+  pub fn analyze_module(
+    &mut self,
+    block: impl Iterator<Item = Statement>,
+  ) -> Result<Module> {
     let Node {
       kind: NodeKind::Block { mut nodes },
       ..
@@ -184,7 +204,8 @@ impl Analyzer {
         if let NodeKind::Lifted = n.kind {
           Ok(())
         } else {
-          error!("Only constant declarations are allowed in global scope").span(&n.span)
+          error!("Only constant declarations are allowed in global scope")
+            .span(&n.span)
         }
       })
       .try_collect::<Vec<_>>()?;
@@ -195,7 +216,10 @@ impl Analyzer {
     })
   }
 
-  pub fn analyze_scope(&mut self, block: impl Iterator<Item = Statement>) -> Result<Node> {
+  pub fn analyze_scope(
+    &mut self,
+    block: impl Iterator<Item = Statement>,
+  ) -> Result<Node> {
     let nodes = block
       // Pass 1 - define constant names
       .map(|stmt| {
@@ -280,7 +304,7 @@ impl Analyzer {
             },
           }
         }
-      }
+      },
       s::Expression(expression) => self.analyze_expression(expression)?,
       s::Remainder(expression) => {
         let node = self.analyze_expression(expression)?;
@@ -289,7 +313,7 @@ impl Analyzer {
           type_: node.type_.clone(),
           kind: n::Remainder { node: node.into() },
         }
-      }
+      },
       s::Error(diagnostic) => return Err(diagnostic),
     })
   }

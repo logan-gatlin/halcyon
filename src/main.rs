@@ -1,5 +1,7 @@
 #![feature(let_chains)]
 #![feature(iterator_try_collect)]
+#![allow(dead_code)]
+#![allow(unused_variables)]
 mod err;
 mod evaluate;
 mod lookahead;
@@ -11,7 +13,7 @@ use std::ops::Add;
 //use compile::Compiler;
 use lookahead::*;
 use parse::*;
-use semantic::{typecheck::type_module, Analyzer};
+use semantic::{Analyzer, typecheck::type_module};
 use token::*;
 use wasm_bindgen::prelude::wasm_bindgen;
 

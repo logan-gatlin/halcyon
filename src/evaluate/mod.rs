@@ -58,7 +58,7 @@ impl ConstValue {
       ConstValue::Boolean(val) => vec![e::i32(val as i32)],
       ConstValue::String { address, length } => {
         vec![e::i32(address as i32), e::i32(length as i32)]
-      }
+      },
       ConstValue::Glyph(val) => vec![e::i32(val as i32)],
       ConstValue::Function(val) => vec![e::funcref(val)],
       ConstValue::StructLiteral { member_values, .. } => member_values
@@ -70,9 +70,14 @@ impl ConstValue {
     }
   }
 
-  pub fn from_exvalue(expects: Type, stack: &mut Vec<ExValue>) -> Result<ConstValue> {
+  pub fn from_exvalue(
+    expects: Type,
+    stack: &mut Vec<ExValue>,
+  ) -> Result<ConstValue> {
     let irretrievable = error!("Cannot retrieve '{expects}' from exvalues");
-    let unexpected = error!("Found unexpected value on stack when retrieving '{expects}' type");
+    let unexpected = error!(
+      "Found unexpected value on stack when retrieving '{expects}' type"
+    );
     let mut pop = || stack.pop().reason("Not enough values on the stack");
     match expects {
       Type::Ambiguous => irretrievable,
@@ -86,21 +91,21 @@ impl ConstValue {
           } else {
             unexpected
           }
-        }
+        },
         Primitive::real => {
           if let ExValue::f64(val) = pop()? {
             Ok(ConstValue::Real(val))
           } else {
             unexpected
           }
-        }
+        },
         Primitive::boolean => {
           if let ExValue::i32(val) = pop()? {
             Ok(ConstValue::Boolean(val == 1))
           } else {
             unexpected
           }
-        }
+        },
         Primitive::string => {
           let ExValue::i32(length) = pop()? else {
             return unexpected;
@@ -112,16 +117,17 @@ impl ConstValue {
             length: length as usize,
             address: address as usize,
           })
-        }
+        },
         Primitive::glyph => {
           if let ExValue::i32(val) = pop()? {
             Ok(ConstValue::Glyph(
-              char::from_u32(val as u32).reason("Failed to decode glyph from top of stack")?,
+              char::from_u32(val as u32)
+                .reason("Failed to decode glyph from top of stack")?,
             ))
           } else {
             unexpected
           }
-        }
+        },
       },
       Type::Struct {
         member_types,
@@ -140,14 +146,14 @@ impl ConstValue {
         } else {
           unexpected
         }
-      }
+      },
       Type::Type => {
         if let ExValue::type_(val) = pop()? {
           Ok(ConstValue::Type(val))
         } else {
           unexpected
         }
-      }
+      },
     }
   }
 }
@@ -173,15 +179,15 @@ impl VM {
   }
 
   fn interpret(&mut self, instr: ExWasm) -> Result<()> {
-    let unexpected =
-      |expects| error!("Found unexpected value on stack when retrieving '{expects}' type");
+    let unexpected = |expects| {
+      error!("Found unexpected value on stack when retrieving '{expects}' type")
+    };
     match instr {
       ExWasm::basic(wasm) => match wasm {
         Wasm::import { ns1, ns2, object } => todo!(),
         Wasm::reg {
           type_,
           ident,
-          global,
           initial,
         } => todo!(),
         Wasm::regset { ident, global } => todo!(),
@@ -226,8 +232,8 @@ impl VM {
         Wasm::data { offset, content } => todo!(),
         Wasm::return_ => todo!(),
         Wasm::end => todo!(),
-        Wasm::comment(_) => todo!(),
-        Wasm::start(_) => todo!(),
+        Wasm::comment(_) => Ok(()),
+        Wasm::start(_) => Ok(()),
       },
       ExWasm::push(const_value) => Ok(self.push_constval(const_value)),
       ExWasm::pop(t) => self.pop_type(t).map(|_| {}),
@@ -238,7 +244,7 @@ impl VM {
           return unexpected("type");
         }
         Ok(())
-      }
+      },
     }
   }
 }

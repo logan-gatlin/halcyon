@@ -13,20 +13,22 @@ impl Analyzer {
         type_ = immediate.type_of().promote();
         let const_val = match immediate {
           Immediate::Unit => ConstValue::Nothing,
-          Immediate::Integer(val, base) => {
-            ConstValue::Integer(parse_int_literal(&val, base as u32).span(&expr.span)?)
-          }
-          Immediate::Real(val) => ConstValue::Real(parse_real_literal(&val).span(&expr.span)?),
+          Immediate::Integer(val, base) => ConstValue::Integer(
+            parse_int_literal(&val, base as u32).span(&expr.span)?,
+          ),
+          Immediate::Real(val) => {
+            ConstValue::Real(parse_real_literal(&val).span(&expr.span)?)
+          },
           Immediate::String(val) => {
             let length = val.len();
             let address = self.static_allocate(val.as_bytes());
             ConstValue::String { address, length }
-          }
+          },
           Immediate::Glyph(val) => ConstValue::Glyph(val),
           Immediate::Boolean(val) => ConstValue::Boolean(val),
         };
         n::ConstValue(const_val)
-      }
+      },
       e::Identifier { name } => {
         let symbol = self.name_to_symbol(&name).span(&expr.span)?;
         let mangle = symbol.mangle.clone();
@@ -35,7 +37,7 @@ impl Analyzer {
           constant: symbol.is_constant,
           mangle,
         }
-      }
+      },
       e::Binary { op, left, right } => {
         let left = self.analyze_expression(*left)?.into();
         let right = self.analyze_expression(*right)?.into();
@@ -45,7 +47,7 @@ impl Analyzer {
           left,
           right,
         }
-      }
+      },
       e::Unary { op, child } => {
         let child = self.analyze_expression(*child)?.into();
         n::UnaryOp {
@@ -53,10 +55,10 @@ impl Analyzer {
           opdef: OpDef::default(),
           child,
         }
-      }
+      },
       e::Parenthesis(expression) => {
         return self.analyze_expression(*expression);
-      }
+      },
       e::FunctionDef {
         params,
         returns,
@@ -69,7 +71,8 @@ impl Analyzer {
         let mut param_types = Vec::with_capacity(params.arity);
         for i in 0..params.arity {
           let e::Identifier { name } = &params.names[i].kind else {
-            return error!("Function parameter name must be an identifier").span(&expr.span);
+            return error!("Function parameter name must be an identifier")
+              .span(&expr.span);
           };
           let mangle = self.define_name(name, false)?;
           let type_ = self.analyze_expression(params.types[i].clone())?;
@@ -100,6 +103,7 @@ impl Analyzer {
             span: expr.span,
             type_: type_.clone(),
             kind: n::Function {
+              mangle: mangle.clone(),
               param_mangles,
               param_types,
               returns,
@@ -108,7 +112,7 @@ impl Analyzer {
           },
         );
         n::ConstValue(ConstValue::Function(mangle))
-      }
+      },
       e::FunctionCall { callee, args } => {
         let callee = self.analyze_expression(*callee)?.into();
         let params = args
@@ -120,7 +124,7 @@ impl Analyzer {
           params,
           mangle: "".into(),
         }
-      }
+      },
       e::StructDef(params) => {
         let mut member_names = vec![];
         let mut member_types = vec![];
@@ -151,14 +155,15 @@ impl Analyzer {
           constant: true,
           mangle,
         }
-      }
+      },
       e::StructLiteral { struct_t, params } => {
         let struct_t = self.analyze_expression(*struct_t)?;
         let mut param_names = vec![];
         let mut param_values = vec![];
         for i in 0..params.arity {
           let e::Identifier { name } = params.names[i].kind.clone() else {
-            return error!("Struct literal field name must be an identifier").span(&expr.span);
+            return error!("Struct literal field name must be an identifier")
+              .span(&expr.span);
           };
           param_names.push(name);
           let value = self.analyze_expression(params.types[i].clone())?;
@@ -169,7 +174,7 @@ impl Analyzer {
           param_names,
           param_values,
         }
-      }
+      },
       e::Field { namespace, field } => {
         let namespace = self.analyze_expression(*namespace)?;
         let Expression {
@@ -183,13 +188,13 @@ impl Analyzer {
           namespace: namespace.into(),
           index,
         }
-      }
+      },
       e::Block(block) => {
         self.enscope();
         let block = self.analyze_scope(block.into_iter())?;
         self.descope();
         return Ok(block);
-      }
+      },
       e::If {
         predicate,
         block,
@@ -212,7 +217,7 @@ impl Analyzer {
           then,
           else_,
         }
-      }
+      },
       e::Loop { params, body } => {
         let mut names = vec![];
         let mut initials = vec![];
@@ -237,12 +242,12 @@ impl Analyzer {
           initials,
           body: body.into(),
         }
-      }
+      },
       e::Break { expr } => {
         let expr = self.analyze_expression(*expr)?;
         type_ = Primitive::never.promote();
         n::Break { expr: expr.into() }
-      }
+      },
     };
     Ok(Node {
       span: expr.span,

@@ -19,7 +19,6 @@ pub enum Wasm {
   reg {
     type_: WasmType,
     ident: String,
-    global: bool,
     initial: Option<Box<Wasm>>,
   },
   regset {
