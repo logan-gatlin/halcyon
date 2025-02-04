@@ -3,12 +3,14 @@ pub mod analyzer;
 pub mod consteval;
 pub mod expression;
 pub mod ir;
-//pub mod operators;
+pub mod operators;
 pub mod primitives;
+pub mod typecheck;
 //pub mod top_down;
 
 pub use consteval::*;
 pub use ir::*;
+use operators::OpTable;
 pub use primitives::*;
 
 use std::collections::HashMap;
@@ -35,7 +37,7 @@ pub struct Analyzer {
   path: Vec<String>,
   _name_to_symbol: HashMap<String, Symbol>,
   event_stack: Vec<Event>,
-  // pub op_table: OpTable,
+  pub op_table: OpTable,
   data_segment: Vec<u8>,
   data_offset: usize,
   constants: HashMap<Mangle, Node>,
@@ -70,7 +72,7 @@ impl PartialEq for Type {
     match (self, other) {
       (t::Ambiguous, t::Ambiguous) => {
         panic!("Tried to compare ambiguous types")
-      },
+      }
       (t::Type, t::Type) => true,
       (t::Prim(p1), t::Prim(p2)) => p1 == p2,
       (
@@ -98,8 +100,7 @@ impl PartialEq for Type {
   }
 }
 
-impl Eq for Type {
-}
+impl Eq for Type {}
 
 impl std::hash::Hash for Type {
   fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -111,20 +112,20 @@ impl std::hash::Hash for Type {
       } => {
         member_names.hash(state);
         member_types.hash(state);
-      },
+      }
       Type::Function {
         param_types,
         return_type,
       } => {
         param_types.hash(state);
         return_type.hash(state);
-      },
+      }
       Type::Type => "type".hash(state),
       Type::Ambiguous => panic!("Tried to hash ambiguous type"),
       Type::Reference(t) => {
         "ref".hash(state);
         t.hash(state);
-      },
+      }
     }
   }
 }
@@ -145,7 +146,7 @@ impl std::fmt::Display for Type {
           .collect::<Vec<_>>()
           .join(", ");
         write!(f, "struct {{ {fields} }}")
-      },
+      }
       Type::Type => write!(f, "type"),
       Type::Function {
         param_types,

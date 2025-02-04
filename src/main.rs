@@ -11,7 +11,7 @@ use std::ops::Add;
 //use compile::Compiler;
 use lookahead::*;
 use parse::*;
-use semantic::Analyzer;
+use semantic::{typecheck::type_module, Analyzer};
 use token::*;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -91,15 +91,13 @@ pub fn try_compile(input: String) -> Vec<u8> {
 }
 */
 fn main() {
-  parse();
+  let input = include_str!("../demo.hal").to_string();
+  let tokenizer = Tokenizer::new(input.chars()).filter(|t| t.0.is_meaningful());
+  let parser = Parser::new(tokenizer);
+  let ast = Analyzer::analyze(parser).unwrap();
+  type_module(ast).unwrap();
 }
 
-fn parse() {
-  let source = include_str!("../demo.hal").to_string();
-  //let source = "(a: b&) {};".into();
-  let ast = ast(source);
-  println!("{ast}");
-}
 /*
 #[test]
 fn compile_file() {

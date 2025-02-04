@@ -1,5 +1,4 @@
 pub mod assembly;
-mod interpreter;
 pub mod lower;
 pub mod normalize;
 pub mod text;

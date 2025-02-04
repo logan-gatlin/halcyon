@@ -1,12 +1,10 @@
 use consteval::ConstValue;
+use operators::OpDef;
 //use operators::OpDef;
 
 use crate::{BinaryOp, Span, UnaryOp};
 
 use super::*;
-
-#[derive(Debug, Clone)]
-pub struct OpDef {}
 
 #[derive(Debug, Clone)]
 pub struct Module {
@@ -28,7 +26,7 @@ pub enum NodeKind {
   ConstValue(ConstValue),
   Identifier {
     name: String,
-    global: bool,
+    constant: bool,
     mangle: Mangle,
   },
   StructDef {

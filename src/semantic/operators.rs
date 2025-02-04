@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::hash::Hasher;
 
-use crate::compile::{AsmType, Wasm};
+use crate::evaluate::wasm::{Wasm, WasmType};
 use crate::semantic::primitives::Primitive;
 use crate::{diagnostic, BinaryOp, UnaryOp};
 use crate::{err::*, error};
@@ -88,9 +88,9 @@ impl OpTable {
   }
 
   pub fn prelude(&mut self) {
-    use AsmType::*;
     use Primitive::*;
     use Wasm::*;
+    use WasmType::*;
     {
       use BinaryOp::*;
       let mut b = |op: BinaryOp, p1: Primitive, p2: Primitive, prod: Primitive, asm: Vec<Wasm>| {
