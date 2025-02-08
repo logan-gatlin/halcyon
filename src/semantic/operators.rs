@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::hash::Hasher;
 
-use crate::evaluate::wasm::{Wasm, WasmType};
+use crate::evaluate::{Wasm, WasmType, WasmValue};
 use crate::semantic::primitives::Primitive;
-use crate::{diagnostic, BinaryOp, UnaryOp};
+use crate::{BinaryOp, UnaryOp, diagnostic};
 use crate::{err::*, error};
 
 use super::Type;
@@ -35,8 +35,10 @@ impl PartialEq for UnaryOpKey {
   }
 }
 
-impl Eq for BinaryOpKey {}
-impl Eq for UnaryOpKey {}
+impl Eq for BinaryOpKey {
+}
+impl Eq for UnaryOpKey {
+}
 
 #[derive(Clone, Debug)]
 pub struct OpDef {
@@ -48,7 +50,7 @@ impl Default for OpDef {
   fn default() -> Self {
     OpDef {
       produces: Type::Ambiguous,
-      asm: vec![Wasm::nop],
+      asm: vec![Wasm::Nop],
     }
   }
 }
@@ -89,146 +91,188 @@ impl OpTable {
 
   pub fn prelude(&mut self) {
     use Primitive::*;
-    use Wasm::*;
+    use Wasm as w;
     use WasmType::*;
+    use WasmValue as v;
     {
       use BinaryOp::*;
-      let mut b = |op: BinaryOp, p1: Primitive, p2: Primitive, prod: Primitive, asm: Vec<Wasm>| {
+      let mut b = |op: BinaryOp,
+                   p1: Primitive,
+                   p2: Primitive,
+                   prod: Primitive,
+                   asm: Vec<Wasm>| {
         self
-          .define_binary(op, Type::Prim(p1), Type::Prim(p2), Type::Prim(prod), asm)
+          .define_binary(
+            op,
+            Type::Prim(p1),
+            Type::Prim(p2),
+            Type::Prim(prod),
+            asm,
+          )
           .unwrap();
       };
       // math
-      b(Plus, integer, integer, integer, vec![add(i64)]);
-      b(Plus, real, real, real, vec![add(f64)]);
-      b(Minus, integer, integer, integer, vec![subtract(i64)]);
-      b(Minus, real, real, real, vec![subtract(f64)]);
-      b(Star, integer, integer, integer, vec![multiply(i64)]);
-      b(Star, real, real, real, vec![multiply(f64)]);
-      b(Slash, integer, integer, integer, vec![divide(i64)]);
-      b(Slash, real, real, real, vec![divide(f64)]);
-      b(Percent, integer, integer, integer, vec![remainder(i64)]);
+      b(Plus, integer, integer, integer, vec![w::Add(I64)]);
+      b(Plus, real, real, real, vec![w::Add(F64)]);
+      b(Minus, integer, integer, integer, vec![w::Subtract(I64)]);
+      b(Minus, real, real, real, vec![w::Subtract(F64)]);
+      b(Star, integer, integer, integer, vec![w::Multiply(I64)]);
+      b(Star, real, real, real, vec![w::Multiply(F64)]);
+      b(Slash, integer, integer, integer, vec![w::Divide(I64)]);
+      b(Slash, real, real, real, vec![w::Divide(F64)]);
+      b(Percent, integer, integer, integer, vec![w::Remainder(I64)]);
       // logical
-      b(And, boolean, boolean, boolean, vec![and(i32)]);
-      b(And, integer, integer, integer, vec![and(i64)]);
-      b(Or, boolean, boolean, boolean, vec![or(i32)]);
-      b(Or, integer, integer, integer, vec![or(i64)]);
-      b(Xor, boolean, boolean, boolean, vec![or(i32)]);
-      b(Xor, integer, integer, integer, vec![xor(i64)]);
+      b(And, boolean, boolean, boolean, vec![w::And(I64)]);
+      b(And, integer, integer, integer, vec![w::And(I64)]);
+      b(Or, boolean, boolean, boolean, vec![w::Or(I64)]);
+      b(Or, integer, integer, integer, vec![w::Or(I64)]);
+      b(Xor, boolean, boolean, boolean, vec![w::Or(I64)]);
+      b(Xor, integer, integer, integer, vec![w::Xor(I64)]);
       b(
         Nand,
         boolean,
         boolean,
         boolean,
-        vec![and(i32), constant(i32, "1".into()), xor(i32)],
+        vec![w::And(I64), w::Constant(v::I32(1)), w::Xor(I64)],
       );
       b(
         Nand,
         integer,
         integer,
         integer,
-        vec![and(i64), constant(i64, "-1".into()), xor(i64)],
+        vec![w::And(I64), w::Constant(v::I64(-1)), w::Xor(I64)],
       );
-      b(Xnor, boolean, boolean, boolean, vec![equal(i32)]);
-      b(Xnor, integer, integer, integer, vec![equal(i64)]);
+      b(Xnor, boolean, boolean, boolean, vec![w::Equal(I64)]);
+      b(Xnor, integer, integer, integer, vec![w::Equal(I64)]);
       b(
         Nor,
         boolean,
         boolean,
         boolean,
-        vec![or(i32), constant(i32, "1".into()), xor(i32)],
+        vec![w::Or(I64), w::Constant(v::I32(1)), w::Xor(I64)],
       );
       b(
         Nor,
         integer,
         integer,
         integer,
-        vec![or(i64), constant(i64, "-1".into()), xor(i64)],
+        vec![w::Or(I64), w::Constant(v::I64(-1)), w::Xor(I64)],
       );
       // Relative value
-      b(DoubleEqual, boolean, boolean, boolean, vec![equal(i32)]);
-      b(DoubleEqual, integer, integer, boolean, vec![equal(i64)]);
-      b(DoubleEqual, real, real, boolean, vec![equal(f64)]);
+      b(DoubleEqual, boolean, boolean, boolean, vec![w::Equal(I64)]);
+      b(DoubleEqual, integer, integer, boolean, vec![w::Equal(I64)]);
+      b(DoubleEqual, real, real, boolean, vec![w::Equal(F64)]);
       b(
         DoubleEqual,
         nothing,
         nothing,
         boolean,
-        vec![constant(i32, "1".into())],
+        vec![w::Constant(v::I32(1))],
       );
-      b(DoubleEqual, glyph, glyph, boolean, vec![equal(i32)]);
-      b(Less, integer, integer, boolean, vec![lesser_s(i64)]);
-      b(Less, glyph, glyph, boolean, vec![lesser_u(i32)]);
-      b(Less, real, real, boolean, vec![lesser_s(f64)]);
-      b(Greater, integer, integer, boolean, vec![greater_s(i64)]);
-      b(Greater, glyph, glyph, boolean, vec![greater_u(i32)]);
-      b(Greater, real, real, boolean, vec![greater_s(f64)]);
+      b(DoubleEqual, glyph, glyph, boolean, vec![w::Equal(I64)]);
+      b(Less, integer, integer, boolean, vec![w::LesserSigned(I64)]);
+      b(Less, glyph, glyph, boolean, vec![w::LesserUnsigned(I64)]);
+      b(Less, real, real, boolean, vec![w::LesserSigned(F64)]);
+      b(
+        Greater,
+        integer,
+        integer,
+        boolean,
+        vec![w::GreaterSigned(I64)],
+      );
+      b(
+        Greater,
+        glyph,
+        glyph,
+        boolean,
+        vec![w::GreaterUnsigned(I64)],
+      );
+      b(Greater, real, real, boolean, vec![w::GreaterSigned(F64)]);
       b(
         LessEqual,
         integer,
         integer,
         boolean,
-        vec![lesserequal_s(i64)],
+        vec![w::LesserEqualSigned(I64)],
       );
-      b(LessEqual, glyph, glyph, boolean, vec![lesserequal_u(i32)]);
-      b(LessEqual, real, real, boolean, vec![lesserequal_s(f64)]);
+      b(
+        LessEqual,
+        glyph,
+        glyph,
+        boolean,
+        vec![w::LesserEqualUnsigned(I64)],
+      );
+      b(
+        LessEqual,
+        real,
+        real,
+        boolean,
+        vec![w::LesserEqualSigned(F64)],
+      );
       b(
         GreaterEqual,
         integer,
         integer,
         boolean,
-        vec![greaterequal_s(i64)],
+        vec![w::GreaterEqualSigned(I64)],
       );
       b(
         GreaterEqual,
         glyph,
         glyph,
         boolean,
-        vec![greaterequal_u(i32)],
+        vec![w::GreaterEqualUnsigned(I64)],
       );
-      b(GreaterEqual, real, real, boolean, vec![greaterequal_s(f64)]);
-      b(BangEqual, boolean, boolean, boolean, vec![unequal(i32)]);
-      b(BangEqual, integer, integer, boolean, vec![unequal(i64)]);
-      b(BangEqual, glyph, glyph, boolean, vec![unequal(i32)]);
-      b(BangEqual, real, real, boolean, vec![unequal(f64)]);
+      b(
+        GreaterEqual,
+        real,
+        real,
+        boolean,
+        vec![w::GreaterEqualSigned(F64)],
+      );
+      b(BangEqual, boolean, boolean, boolean, vec![w::Unequal(I64)]);
+      b(BangEqual, integer, integer, boolean, vec![w::Unequal(I64)]);
+      b(BangEqual, glyph, glyph, boolean, vec![w::Unequal(I64)]);
+      b(BangEqual, real, real, boolean, vec![w::Unequal(F64)]);
       b(
         BangEqual,
         nothing,
         nothing,
         boolean,
-        vec![constant(i32, "0".into())],
+        vec![w::Constant(v::I32(0))],
       );
     }
     {
       use UnaryOp::*;
-      let mut u = |op: UnaryOp, p1: Primitive, prod: Primitive, asm: Vec<Wasm>| {
-        self
-          .define_unary(op, Type::Prim(p1), Type::Prim(prod), asm)
-          .unwrap();
-      };
+      let mut u =
+        |op: UnaryOp, p1: Primitive, prod: Primitive, asm: Vec<Wasm>| {
+          self
+            .define_unary(op, Type::Prim(p1), Type::Prim(prod), asm)
+            .unwrap();
+        };
       u(
         Minus,
         integer,
         integer,
         vec![
-          constant(i64, "-1".into()),
-          xor(i64),
-          constant(i64, "1".into()),
-          add(i64),
+          w::Constant(v::I64(-1)),
+          w::Xor(I64),
+          w::Constant(v::I64(1)),
+          w::Add(I64),
         ],
       );
-      u(Minus, real, real, vec![negate(f64)]);
+      u(Minus, real, real, vec![w::Negate(F64)]);
       u(
         Not,
         integer,
         integer,
-        vec![constant(i64, "-1".into()), xor(i64)],
+        vec![w::Constant(v::I64(-1)), w::Xor(I64)],
       );
       u(
         Not,
         boolean,
         boolean,
-        vec![constant(i32, "1".into()), xor(i32)],
+        vec![w::Constant(v::I32(1)), w::Xor(I64)],
       );
     }
   }
@@ -265,14 +309,15 @@ impl OpTable {
     let old = self
       .unary_map
       .insert(UnaryOpKey { op, on }, OpDef { produces, asm });
-    if old.is_some() {
-      err
-    } else {
-      Ok(())
-    }
+    if old.is_some() { err } else { Ok(()) }
   }
 
-  pub fn try_binary(&self, op: BinaryOp, left: &Type, right: &Type) -> Result<OpDef> {
+  pub fn try_binary(
+    &self,
+    op: BinaryOp,
+    left: &Type,
+    right: &Type,
+  ) -> Result<OpDef> {
     self
       .binary_map
       .get(

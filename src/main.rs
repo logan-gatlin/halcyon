@@ -2,18 +2,18 @@
 #![feature(iterator_try_collect)]
 #![allow(dead_code)]
 #![allow(unused_variables)]
+mod buffer;
 mod err;
 mod evaluate;
-mod lookahead;
+mod flow;
 mod parse;
 mod semantic;
 mod token;
 use std::ops::Add;
 
-//use compile::Compiler;
-use lookahead::*;
+use buffer::*;
 use parse::*;
-use semantic::{Analyzer, typecheck::type_module};
+use semantic::Analyzer;
 use token::*;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -97,7 +97,6 @@ fn main() {
   let tokenizer = Tokenizer::new(input.chars()).filter(|t| t.0.is_meaningful());
   let parser = Parser::new(tokenizer);
   let ast = Analyzer::analyze(parser).unwrap();
-  type_module(ast).unwrap();
 }
 
 /*

@@ -1,4 +1,3 @@
-use consteval::ConstValue;
 use operators::OpDef;
 //use operators::OpDef;
 
@@ -6,9 +5,40 @@ use crate::{BinaryOp, Span, UnaryOp};
 
 use super::*;
 
+pub fn parse_int_literal(value: &str, base: u32) -> Result<i64> {
+  i64::from_str_radix(value, base)
+    .reason(format!("Failed to parse integer literal '{value}'"))
+}
+
+pub fn parse_real_literal(value: &str) -> Result<f64> {
+  value
+    .parse()
+    .ok()
+    .reason(format!("Failed to parse real literal '{value}'"))
+}
+
+#[derive(Clone, Debug)]
+pub enum ConstValue {
+  Nothing,
+  Integer(i64),
+  Real(f64),
+  Boolean(bool),
+  String {
+    address: usize,
+    length: usize,
+  },
+  Glyph(char),
+  Function(Mangle),
+  StructLiteral {
+    member_names: Vec<String>,
+    member_values: Vec<ConstValue>,
+  },
+  Type(Type),
+}
+
 #[derive(Debug, Clone)]
 pub struct Module {
-  pub data: Vec<u8>,
+  pub heap: Vec<Vec<u8>>,
   pub constants: HashMap<Mangle, Node>,
   pub main: Option<Mangle>,
 }
@@ -60,7 +90,6 @@ pub enum NodeKind {
     else_: Option<Box<Node>>,
   },
   Call {
-    mangle: Mangle,
     callee: Box<Node>,
     params: Vec<Node>,
   },
@@ -145,11 +174,7 @@ impl Node {
           it(else_)?;
         }
       },
-      n::Call {
-        mangle,
-        callee,
-        params,
-      } => {
+      n::Call { callee, params } => {
         it(callee)?;
         params.into_iter().try_for_each(|p| it(p))?;
       },
@@ -239,11 +264,7 @@ impl Node {
           it(else_)?;
         }
       },
-      n::Call {
-        mangle,
-        callee,
-        params,
-      } => {
+      n::Call { callee, params } => {
         it(callee)?;
         params.into_iter().try_for_each(|p| it(p))?;
       },

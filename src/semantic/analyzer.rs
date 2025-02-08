@@ -42,8 +42,7 @@ impl Analyzer {
       _name_to_symbol: HashMap::new(),
       event_stack: vec![],
       op_table: OpTable::new(),
-      data_segment: vec![],
-      data_offset: 0,
+      heap: vec![vec![]],
       constants: HashMap::new(),
       main: None,
     };
@@ -51,16 +50,9 @@ impl Analyzer {
     this
   }
 
-  pub fn static_allocate(&mut self, bytes: &[u8]) -> usize {
-    let old_offset = self.data_offset;
-    self.data_offset += bytes.len();
-    self.data_segment.extend(bytes);
-    old_offset
-  }
-
   pub fn prelude(&mut self) {
     // Define primitive types
-    let mut define_type = |name: String, value: Primitive| {
+    let mut define_type = |name: String, value: Type| {
       let mangle = mangle_builtin(&name);
       self._name_to_symbol.insert(
         name,
@@ -75,13 +67,14 @@ impl Analyzer {
         Node {
           span: Span { row: 0, column: 0 },
           type_: Type::Type,
-          kind: n::ConstValue(ConstValue::Type(Type::Prim(value))),
+          kind: n::ConstValue(ConstValue::Type(value)),
         },
       )
     };
     for p in Primitive::ALL {
-      define_type(p.to_string(), p);
+      define_type(p.to_string(), p.promote());
     }
+    define_type("type".to_string(), Type::Type);
     // Primitive standard library
     const PRINT_STRING: &str = "print_string";
     self._name_to_symbol.insert(
@@ -92,6 +85,11 @@ impl Analyzer {
         is_constant: true,
       },
     );
+  }
+
+  pub fn allocate(&mut self, bytes: &[u8]) -> usize {
+    self.heap.push(bytes.into());
+    self.heap.len() - 1
   }
 
   pub(crate) fn name_to_symbol(&self, name: &str) -> Result<&Symbol> {
@@ -210,7 +208,7 @@ impl Analyzer {
       })
       .try_collect::<Vec<_>>()?;
     Ok(Module {
-      data: self.data_segment.clone(),
+      heap: self.heap.clone(),
       constants: self.constants.clone(),
       main: self.main.clone(),
     })

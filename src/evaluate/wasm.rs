@@ -1,81 +1,81 @@
+use crate::semantic::Mangle;
+
 #[allow(non_camel_case_types)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum WasmType {
-  funcref,
-  f32,
-  f64,
-  i32,
-  i64,
+  FuncRef,
+  F32,
+  F64,
+  I32,
+  I64,
 }
 
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone)]
+pub enum WasmValue {
+  FuncRef(Mangle),
+  F32(f32),
+  F64(f64),
+  I32(i32),
+  I64(i64),
+}
+
+#[derive(Debug, Clone)]
 pub enum Wasm {
-  import {
+  Import {
     ns1: String,
     ns2: String,
     object: Box<Wasm>,
   },
-  reg {
-    type_: WasmType,
-    ident: String,
-    initial: Option<Box<Wasm>>,
-  },
-  regset {
-    ident: String,
-    global: bool,
-  },
-  regget {
-    ident: String,
-    global: bool,
-  },
-  function {
+  Local(WasmType, String),
+  LocalSet(String),
+  LocalGet(String),
+  Function {
     ident: String,
     params: Vec<(String, WasmType)>,
     results: Vec<WasmType>,
     body: Vec<Wasm>,
   },
-  if_,
-  else_,
-  loop_(String),
-  block(String),
-  branch(String),
-  call(String),
-  constant(WasmType, String),
-  add(WasmType),
-  subtract(WasmType),
-  multiply(WasmType),
-  divide(WasmType),
-  remainder(WasmType),
-  and(WasmType),
-  or(WasmType),
-  xor(WasmType),
-  equal(WasmType),
-  unequal(WasmType),
-  greater_s(WasmType),
-  greater_u(WasmType),
-  lesser_s(WasmType),
-  lesser_u(WasmType),
-  greaterequal_s(WasmType),
-  greaterequal_u(WasmType),
-  lesserequal_s(WasmType),
-  lesserequal_u(WasmType),
-  negate(WasmType),
-  nop,
-  trap,
-  custom(String),
-  drop,
-  memory {
+  If,
+  Else,
+  Loop(String),
+  Block(String),
+  Branch(String),
+  Call(String),
+  Constant(WasmValue),
+  Add(WasmType),
+  Subtract(WasmType),
+  Multiply(WasmType),
+  Divide(WasmType),
+  Remainder(WasmType),
+  And(WasmType),
+  Or(WasmType),
+  Xor(WasmType),
+  Equal(WasmType),
+  Unequal(WasmType),
+  GreaterSigned(WasmType),
+  GreaterUnsigned(WasmType),
+  LesserSigned(WasmType),
+  LesserUnsigned(WasmType),
+  GreaterEqualSigned(WasmType),
+  GreaterEqualUnsigned(WasmType),
+  LesserEqualSigned(WasmType),
+  LesserEqualUnsigned(WasmType),
+  Negate(WasmType),
+  Nop,
+  Unreachable,
+  Custom(String),
+  Drop,
+  Memory {
     min: usize,
     max: usize,
   },
-  data {
+  Data {
     offset: usize,
     content: Vec<u8>,
   },
-  return_,
-  end,
-  comment(String),
-  /// IDK what this does
-  start(String),
+  Return,
+  End,
+  Comment(String),
+  Start(String),
 }

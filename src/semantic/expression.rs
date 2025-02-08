@@ -1,5 +1,5 @@
 use super::*;
-use crate::{parse::*, semantic::consteval::ConstValue};
+use crate::{parse::*, semantic::ir::ConstValue};
 
 use super::operators::OpDef;
 use NodeKind as n;
@@ -20,9 +20,10 @@ impl Analyzer {
             ConstValue::Real(parse_real_literal(&val).span(&expr.span)?)
           },
           Immediate::String(val) => {
-            let length = val.len();
-            let address = self.static_allocate(val.as_bytes());
-            ConstValue::String { address, length }
+            let bytes = val.into_bytes();
+            let length = bytes.len();
+            let address = self.allocate(&bytes);
+            ConstValue::String { length, address }
           },
           Immediate::Glyph(val) => ConstValue::Glyph(val),
           Immediate::Boolean(val) => ConstValue::Boolean(val),
@@ -119,11 +120,7 @@ impl Analyzer {
           .into_iter()
           .map(|a| self.analyze_expression(a))
           .try_collect::<Vec<_>>()?;
-        n::Call {
-          callee,
-          params,
-          mangle: "".into(),
-        }
+        n::Call { callee, params }
       },
       e::StructDef(params) => {
         let mut member_names = vec![];
