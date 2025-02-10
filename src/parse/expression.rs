@@ -61,7 +61,7 @@ pub enum ExpressionKind {
   FunctionDef {
     params: Parameters,
     returns: Option<Box<Expression>>,
-    body: Vec<Statement>,
+    body: Box<Expression>,
   },
   FunctionCall {
     callee: Box<Expression>,
@@ -79,12 +79,12 @@ pub enum ExpressionKind {
   Block(Vec<Statement>),
   If {
     predicate: Box<Expression>,
-    block: Vec<Statement>,
+    then: Box<Expression>,
     else_: Option<Box<Expression>>,
   },
   Loop {
     params: Parameters,
-    body: Vec<Statement>,
+    body: Box<Expression>,
   },
   Break {
     expr: Box<Expression>,
@@ -287,10 +287,14 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
         .expression(0)
         .trace_span(span, "in predicate of 'if' statement")?;
       let span = span + predicate.span;
-      let block = self
+      let (block, span2) = self
         .block()
         .trace_span(span, "in block of 'if' statement")?;
-      let (block, span) = (block.0, span + block.1);
+      let then = Box::new(Expression {
+        kind: ExpressionKind::Block(block),
+        span: span2,
+      });
+      let span = span + span2;
       let else_ = if self.eat(t::Else).is_ok() {
         Some(Box::new(self.if_else()?))
       } else {
@@ -299,7 +303,7 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
       Ok(Expression::new(
         ExpressionKind::If {
           predicate: predicate.into(),
-          block,
+          then,
           else_,
         },
         span,

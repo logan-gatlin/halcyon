@@ -84,6 +84,10 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
           let (body, span2) = self
             .block()
             .trace_span(span, "while parsing function body")?;
+          let body = Box::new(Expression {
+            kind: e::Block(body),
+            span: span2,
+          });
           span = span + span2;
           e::FunctionDef {
             params,
@@ -124,6 +128,10 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
         let params = self.parameters(span)?;
         let (body, span2) =
           self.block().trace_span(span, "while parsing loop body")?;
+        let body = Box::new(Expression {
+          kind: ExpressionKind::Block(body),
+          span: span2,
+        });
         span = span + span2;
         e::Loop { params, body }
       },

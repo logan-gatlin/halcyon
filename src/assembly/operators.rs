@@ -1,12 +1,10 @@
+use crate::ir::types::{Primitive, Type};
+use crate::{BinaryOp, UnaryOp, diagnostic};
+use crate::{err::*, error};
 use std::collections::HashMap;
 use std::hash::Hasher;
 
-use crate::evaluate::{Wasm, WasmType, WasmValue};
-use crate::semantic::primitives::Primitive;
-use crate::{BinaryOp, UnaryOp, diagnostic};
-use crate::{err::*, error};
-
-use super::Type;
+use super::{Wasm, WasmType, WasmValue};
 
 #[derive(Clone, Debug)]
 struct BinaryOpKey {
@@ -334,6 +332,15 @@ impl OpTable {
   }
 
   pub fn try_unary(&self, op: UnaryOp, on: &Type) -> Result<OpDef> {
+    if let UnaryOp::Tilda = op
+      && on != &Type::Prim(Primitive::nothing)
+    {
+      return Ok(OpDef {
+        produces: Primitive::nothing.promote(),
+        // TODO revisit this
+        asm: vec![],
+      });
+    }
     self
       .unary_map
       .get(&UnaryOpKey { op, on: on.clone() })

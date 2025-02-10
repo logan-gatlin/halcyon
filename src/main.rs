@@ -2,18 +2,18 @@
 #![feature(iterator_try_collect)]
 #![allow(dead_code)]
 #![allow(unused_variables)]
+mod assembly;
 mod buffer;
 mod err;
-mod evaluate;
-mod flow;
+mod ir;
+mod naming;
 mod parse;
-mod semantic;
 mod token;
 use std::ops::Add;
 
 use buffer::*;
+use naming::Analyzer;
 use parse::*;
-use semantic::Analyzer;
 use token::*;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -71,11 +71,14 @@ pub fn parse_tree(input: String) -> String {
 pub fn ast(input: String) -> String {
   let tokenizer = Tokenizer::new(input.chars()).filter(|t| t.0.is_meaningful());
   let parser = Parser::new(tokenizer);
+  todo!()
+  /*
   let ast = Analyzer::analyze(parser);
   match ast {
     Ok(m) => format!("{m:#?}"),
     Err(e) => format!("{e}"),
   }
+  */
 }
 /*
 #[wasm_bindgen]
@@ -96,7 +99,7 @@ fn main() {
   let input = include_str!("../demo.hal").to_string();
   let tokenizer = Tokenizer::new(input.chars()).filter(|t| t.0.is_meaningful());
   let parser = Parser::new(tokenizer);
-  let ast = Analyzer::analyze(parser).unwrap();
+  //let ast = Analyzer::analyze(parser).unwrap();
 }
 
 /*

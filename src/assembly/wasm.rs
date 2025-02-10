@@ -1,4 +1,4 @@
-use crate::semantic::Mangle;
+use crate::naming::Mangle;
 
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone)]

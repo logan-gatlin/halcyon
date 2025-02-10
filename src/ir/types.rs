@@ -1,43 +1,56 @@
-pub mod analyzer;
-//pub mod bottom_up;
-pub mod expression;
-pub mod ir;
-pub mod operators;
-pub mod primitives;
-//pub mod top_down;
+macro_rules! count {
+    () => (0usize);
+    ($x:tt $($xs:tt)* ) => (1usize + count!($($xs)*));
+}
 
-pub use ir::*;
-use operators::OpTable;
-pub use primitives::*;
+macro_rules! primitives {
+  ( $($i:ident),* ) => {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+    #[allow(non_camel_case_types, dead_code)]
+    pub enum Primitive {
+      $($i,)*
+    }
 
-use std::collections::HashMap;
+    impl Primitive {
+      pub const ALL: [Primitive; count!($($i)*,) - 1] = [$(Primitive::$i),*];
 
-use analyzer::*;
-//use operators::OpTable;
+      pub fn from_string(string: &str) -> Option<Self> {
+        match string {
+          $(stringify!{$i} => Some(Self::$i),)*
+          _ => None,
+        }
+      }
 
-use crate::err::*;
-use crate::error;
-use crate::semantic::Primitive;
+      pub fn mangle(&self) -> crate::naming::Mangle {
+        match self {
+          $(
+          Primitive::$i => crate::naming::mangle_builtin(stringify!{$i}),
+          )*
+        }
+      }
+    }
+    impl std::fmt::Display for Primitive {
+      fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+          $(Primitive::$i => write!(f, stringify!{$i}),)*
+        }
+      }
+    }
+  };
+}
 
-pub type Mangle = String;
+primitives! {
+  nothing, never,
+  integer,
+  real,
+  boolean,
+  string, glyph
+}
 
 impl Primitive {
   pub fn promote(self) -> Type {
     Type::Prim(self)
   }
-}
-
-/// Convert parse tree to AST
-pub struct Analyzer {
-  pub scope_depth: usize,
-  pub salt: usize,
-  pub path: Vec<String>,
-  pub event_stack: Vec<Event>,
-  pub op_table: OpTable,
-  pub heap: Vec<Vec<u8>>,
-  pub constants: HashMap<Mangle, Node>,
-  pub main: Option<Mangle>,
-  _name_to_symbol: HashMap<String, Symbol>,
 }
 
 #[derive(Debug, Clone)]
@@ -60,6 +73,12 @@ pub enum Type {
   Reference(Box<Type>),
   /// Higher level type
   Type,
+}
+
+impl Default for Type {
+  fn default() -> Self {
+    Self::Ambiguous
+  }
 }
 
 impl PartialEq for Type {
@@ -161,28 +180,4 @@ impl std::fmt::Display for Type {
       Type::Reference(t) => write!(f, "{t}&"),
     }
   }
-}
-
-/// Name mangle syntax:
-/// mangle ::= "$" path salt
-/// path ::= {path-element}*
-/// path-element ::= length ident
-/// ident ::= _a-zA-Z {_a-zA-Z0-9}*
-/// length ::= {0-9}+
-/// salt ::= {a-zA-Z}*
-pub fn mangle_name(path: Vec<String>, salt: &str) -> Mangle {
-  let mut buf: Vec<u8> = vec![];
-  for p in path {
-    let puny = punycode::encode(&p).unwrap();
-    let bytes = format!("{}{puny}", puny.len());
-    buf.extend_from_slice(bytes.as_bytes());
-  }
-  buf.extend_from_slice(salt.as_bytes());
-  String::from_utf8(buf).unwrap()
-}
-
-/// Builtin mangle syntax:
-/// "$" {ident}
-pub fn mangle_builtin(name: impl std::fmt::Display) -> Mangle {
-  format!("{name}")
 }
