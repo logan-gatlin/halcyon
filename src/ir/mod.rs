@@ -1,5 +1,7 @@
 pub mod types;
 
+use std::collections::HashMap;
+
 use types::Type;
 
 use crate::{
@@ -75,13 +77,36 @@ impl Default for Block {
 }
 
 #[derive(Debug, Clone)]
-pub struct Ir {
-  pub kind: IrKind,
-  pub type_: Type,
-  pub span: Span,
+pub struct Module {
+  pub heap: Vec<Vec<u8>>,
+  pub functions: HashMap<Mangle, FunctionInfo>,
+  pub constants: HashMap<Mangle, IrPtr>,
+  pub parameters: HashMap<Mangle, IrPtr>,
+  pub blocks: Vec<Block>,
 }
 
 #[derive(Debug, Clone)]
+pub struct FunctionInfo {
+  pub mangle: Mangle,
+  pub arity: usize,
+  pub parameter_mangles: Vec<Mangle>,
+  pub block: IrPtr,
+}
+
+#[derive(Clone)]
+pub struct Ir {
+  pub type_: Type,
+  pub span: Span,
+  pub kind: IrKind,
+}
+
+impl std::fmt::Debug for Ir {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "{:#?}", self.kind)
+  }
+}
+
+#[derive(Clone)]
 pub enum IrKind {
   /// Push a constant value
   Const(ConstValue),
@@ -105,12 +130,38 @@ pub enum IrKind {
   /// Pop 1 function, pop N argument values, call the
   /// function and push its return value
   Call { arity: usize },
+  /// Clear the stack of any values up to the last enscope
+  Drop,
   /// Inserts a scope guard, prevents popping values pushed
   /// before this point
   Enscope,
-  /// Clear the stack frame save for one value. If no value
-  /// exists before an enscope, push 'nothing' value
+  /// Remove a previously placed scope guard, leaving any
+  /// remaining values on the stack
   Descope,
+}
+
+impl std::fmt::Debug for IrKind {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      IrKind::Const(const_value) => write!(f, "const {const_value}"),
+      IrKind::Set(mangle) => write!(f, "set {mangle}"),
+      IrKind::Get(mangle) => write!(f, "get {mangle}"),
+      IrKind::BinaryOp { kind, def } => write!(f, "binary {kind}"),
+      IrKind::UnaryOp { kind, def } => write!(f, "unary {kind}"),
+      IrKind::Field(name) => write!(f, "field {name}"),
+      IrKind::StructLiteral { param_names } => {
+        write!(f, "struct literal {}", param_names.len())
+      },
+      IrKind::StructDef { param_names } => {
+        write!(f, "struct definition {}", param_names.len())
+      },
+      IrKind::TypeAssert => write!(f, "type assert"),
+      IrKind::Call { arity } => write!(f, "call {arity}"),
+      IrKind::Drop => write!(f, "drop"),
+      IrKind::Enscope => write!(f, "enscope"),
+      IrKind::Descope => write!(f, "descope"),
+    }
+  }
 }
 
 #[derive(Clone, Debug)]
@@ -130,4 +181,23 @@ pub enum ConstValue {
     member_values: Vec<ConstValue>,
   },
   Type(Type),
+}
+
+impl std::fmt::Display for ConstValue {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      ConstValue::Nothing => write!(f, "()"),
+      ConstValue::String { address, length } => write!(f, "string {address}"),
+      ConstValue::Function(val) => write!(f, "function {val}"),
+      ConstValue::StructLiteral {
+        member_names,
+        member_values,
+      } => write!(f, "struct"),
+      ConstValue::Type(val) => write!(f, "{val}"),
+      ConstValue::Integer(val) => write!(f, "{val}"),
+      ConstValue::Real(val) => write!(f, "{val}"),
+      ConstValue::Glyph(val) => write!(f, "{val}"),
+      ConstValue::Boolean(val) => write!(f, "{val}"),
+    }
+  }
 }

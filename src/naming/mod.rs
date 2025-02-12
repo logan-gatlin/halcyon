@@ -6,8 +6,12 @@ use crate::diagnostic;
 use crate::err::*;
 use crate::error;
 use crate::ir::Block;
+use crate::ir::FunctionInfo;
 use crate::ir::Ir;
 use crate::ir::IrPtr;
+use crate::ir::Module;
+use crate::ir::types::Primitive;
+use crate::parse::Statement;
 
 pub type Mangle = String;
 
@@ -58,7 +62,11 @@ pub struct Analyzer {
   pub path: Vec<String>,
   pub event_stack: Vec<Event>,
   pub heap: Vec<Vec<u8>>,
+  // Constant expressions to evaluate
   pub constants: HashMap<Mangle, IrPtr>,
+  // Parameter types to evaluate
+  pub parameters: HashMap<Mangle, IrPtr>,
+  pub functions: HashMap<Mangle, FunctionInfo>,
   pub blocks: Vec<Block>,
   pub main: Option<Mangle>,
   pub break_targets: Vec<IrPtr>,
@@ -67,22 +75,40 @@ pub struct Analyzer {
 
 impl Analyzer {
   pub(crate) const TERMINUS: IrPtr = 0;
-  pub(crate) const UNREACHABLE: IrPtr = 1;
 
   fn new() -> Self {
-    let this = Self {
-      path: vec![String::new()],
+    let mut this = Self {
+      path: vec![],
       event_stack: vec![],
       heap: vec![],
       constants: HashMap::new(),
+      parameters: HashMap::new(),
+      functions: HashMap::new(),
       scope_depth: 0,
       salt: 0,
-      blocks: vec![Block::Terminal, Block::Unreachable],
+      blocks: vec![Block::Terminal],
       main: None,
       break_targets: vec![],
       _name_to_symbol: HashMap::new(),
     };
+    for prim in Primitive::ALL {
+      this.define_name(format!("{prim}"), true).unwrap();
+    }
+    this.define_name("print_string", true).unwrap();
     this
+  }
+
+  pub fn analyze(stmts: impl IntoIterator<Item = Statement>) -> Result<Module> {
+    let mut this = Self::new();
+    let root = this.new_block();
+    let entry = this.analyze_block(stmts, root)?;
+    Ok(Module {
+      heap: this.heap,
+      functions: this.functions,
+      constants: this.constants,
+      parameters: this.parameters,
+      blocks: this.blocks,
+    })
   }
 
   pub(crate) fn new_block(&mut self) -> IrPtr {

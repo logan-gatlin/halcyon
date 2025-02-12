@@ -2,7 +2,7 @@ use crate::{
   diagnostic,
   err::*,
   error,
-  ir::{Block, ConstValue, Ir, IrKind, IrPtr, types::Primitive},
+  ir::{Block, ConstValue, FunctionInfo, Ir, IrKind, IrPtr, types::Primitive},
   parse::{Expression, ExpressionKind, Immediate, Statement, StatementKind},
 };
 
@@ -23,20 +23,15 @@ pub fn parse_real_literal(value: &str) -> Result<f64> {
 use IrKind as i;
 
 impl Analyzer {
-  fn analyze_block(
+  pub(crate) fn analyze_block(
     &mut self,
     stmts: impl IntoIterator<Item = Statement>,
-  ) -> Result<Option<IrPtr>> {
-    let mut tail: Option<IrPtr> = None;
+    mut block: IrPtr,
+  ) -> Result<IrPtr> {
     for s in stmts {
-      if let Some((new_head, new_tail)) = self.analyze_stmt(s)? {
-        if let Some(tail) = tail {
-          self.blocks[tail].set_next(new_head);
-        }
-        tail = Some(new_tail);
-      };
+      block = self.analyze_stmt(s, block)?;
     }
-    Ok(tail)
+    Ok(block)
   }
 
   fn unreachable_error() -> Diagnostic {
@@ -48,14 +43,13 @@ impl Analyzer {
   fn analyze_stmt(
     &mut self,
     stmt: Statement,
-  ) -> Result<Option<(IrPtr, IrPtr)>> {
+    mut block: IrPtr,
+  ) -> Result<IrPtr> {
     let ir = |kind| Ir {
       kind,
       type_: Default::default(),
       span: stmt.span,
     };
-    let head = self.new_block();
-    let mut tail = head;
     match stmt.kind {
       StatementKind::Declaration {
         name,
@@ -63,26 +57,39 @@ impl Analyzer {
         value,
         is_constant,
       } => {
-        tail = self.analyze_expr(value, tail)?;
+        let old_breaks = self.break_targets.clone();
+        let mut new_block = if is_constant {
+          self.break_targets = vec![];
+          self.new_block()
+        } else {
+          block
+        };
+        let head = new_block;
+        new_block = self.analyze_expr(value, new_block)?;
         if let Some(type_) = type_ {
-          tail = self.analyze_expr(type_, tail)?;
+          new_block = self.analyze_expr(type_, new_block)?;
+          self.push(new_block, ir(i::TypeAssert));
         };
         let mangle = self.define_name(name, is_constant).span(&stmt.span)?;
-        self.push(tail, ir(i::Set(mangle.clone())));
+        self.push(new_block, ir(i::Set(mangle.clone())));
+        self.push(new_block, ir(i::Drop));
         if is_constant {
+          self.break_targets = old_breaks;
           self.constants.insert(mangle, head);
-          return Ok(None);
         }
       },
       StatementKind::Expression(expression) => {
-        tail = self.analyze_expr(expression, tail)?;
+        block = self.analyze_expr(expression, block)?;
+        if !self.blocks[block].is_terminal() {
+          self.push(block, ir(i::Drop));
+        }
       },
       StatementKind::Remainder(expression) => {
-        tail = self.analyze_expr(expression, tail)?;
+        block = self.analyze_expr(expression, block)?;
       },
       StatementKind::Error(diagnostic) => return Err(diagnostic),
     };
-    Ok(Some((head, tail)))
+    Ok(block)
   }
 
   // Returns the tail block
@@ -92,6 +99,9 @@ impl Analyzer {
     mut block: IrPtr,
   ) -> Result<IrPtr> {
     use ExpressionKind as e;
+    if block == Self::TERMINUS {
+      return Ok(Self::TERMINUS);
+    }
     let ir = |kind| Ir {
       kind,
       type_: Default::default(),
@@ -153,7 +163,41 @@ impl Analyzer {
         returns,
         body,
       } => {
-        todo!()
+        self.start_function();
+        let function_mangle = self.define_unique("function");
+        let mut param_names = Vec::with_capacity(params.arity);
+        let mut parameter_mangles = Vec::with_capacity(params.arity);
+        for i in 0..params.arity {
+          let e::Identifier { name } = &params.names[i].kind else {
+            return error!("Function parameter name must be an identifier")
+              .span(&expr.span);
+          };
+          if param_names.contains(name) {
+            return error!("Multiple parameters have the same name: '{name}'")
+              .span(&expr.span);
+          }
+          param_names.push(name.clone());
+          let param_mangle = self.define_name(name, false)?;
+          parameter_mangles.push(param_mangle.clone());
+          let param_block = self.new_block();
+          self.parameters.insert(param_mangle, param_block);
+          self.analyze_expr(params.types[i].clone(), param_block)?;
+        }
+        let func_block = self.new_block();
+        self.analyze_expr(*body, func_block)?;
+        self.push(
+          block,
+          ir(i::Const(ConstValue::Function(function_mangle.clone()))),
+        );
+        self.functions.insert(
+          function_mangle.clone(),
+          FunctionInfo {
+            mangle: function_mangle,
+            arity: params.arity,
+            parameter_mangles,
+            block,
+          },
+        );
       },
       e::FunctionCall { callee, args } => {
         let arity = args.len();
@@ -209,11 +253,13 @@ impl Analyzer {
         self.push(block, ir(i::Field(field_name)));
       },
       e::Block(statements) => {
+        self.enscope();
         self.push(block, ir(i::Enscope));
-        if let Some(new_tail) = self.analyze_block(statements)? {
-          block = new_tail;
+        block = self.analyze_block(statements, block)?;
+        if !self.blocks[block].is_terminal() {
+          self.push(block, ir(i::Descope));
         }
-        self.push(block, ir(i::Descope));
+        self.descope();
       },
       e::If {
         predicate,
@@ -234,7 +280,6 @@ impl Analyzer {
         let else_block_tail = if let Some(else_) = else_ {
           self.analyze_expr(*else_, else_block_head)?
         } else {
-          self.push(else_block_head, ir(i::Const(ConstValue::Nothing)));
           else_block_head
         };
         // Hook then and else blocks
@@ -252,10 +297,10 @@ impl Analyzer {
           || !self.blocks[else_block_tail].is_terminal()
         {
           let converge_block = self.new_block();
-          if self.blocks[then_block_tail].is_terminal() {
+          if !self.blocks[then_block_tail].is_terminal() {
             self.blocks[then_block_tail].set_next(converge_block);
           }
-          if self.blocks[else_block_tail].is_terminal() {
+          if !self.blocks[else_block_tail].is_terminal() {
             self.blocks[else_block_tail].set_next(converge_block);
           }
           block = converge_block;
@@ -266,6 +311,27 @@ impl Analyzer {
         }
       },
       e::Loop { params, body } => {
+        if params.arity > 1 {
+          return error!("Only one loop parameter allowed for now")
+            .span(&expr.span);
+        }
+        let mut param_names = Vec::with_capacity(params.arity);
+        let mut param_mangles = Vec::with_capacity(params.arity);
+        for p in 0..params.arity {
+          let e::Identifier { name } = &params.names[p].kind else {
+            return error!("Function parameter name must be an identifier")
+              .span(&expr.span);
+          };
+          if param_names.contains(name) {
+            return error!("Multiple parameters have the same name: '{name}'")
+              .span(&expr.span);
+          }
+          param_names.push(name.clone());
+          let param_mangle = self.define_name(name, false)?;
+          param_mangles.push(param_mangle.clone());
+          block = self.analyze_expr(params.types[p].clone(), block)?;
+          self.push(block, ir(i::Set(param_mangle)))
+        }
         // Create loop target
         let loop_head = self.new_block();
         self.blocks[block].set_next(loop_head);
@@ -277,6 +343,9 @@ impl Analyzer {
         self.break_targets.pop().unwrap();
         // If the loop iterates at least once
         if !self.blocks[loop_tail].is_terminal() {
+          for mangle in param_mangles {
+            self.push(loop_tail, ir(i::Set(mangle)));
+          }
           self.blocks[loop_tail].set_next(loop_tail);
           block = break_target;
           self.blocks[break_target] = Block::basic();
@@ -297,6 +366,7 @@ impl Analyzer {
         if self.blocks[block].is_terminal() {
           return Err(Self::unreachable_error()).span(&span);
         }
+        self.push(block, ir(i::Descope));
         block = if let Some(target) = self.break_targets.last() {
           *target
         } else {

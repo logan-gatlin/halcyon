@@ -99,7 +99,11 @@ fn main() {
   let input = include_str!("../demo.hal").to_string();
   let tokenizer = Tokenizer::new(input.chars()).filter(|t| t.0.is_meaningful());
   let parser = Parser::new(tokenizer);
-  //let ast = Analyzer::analyze(parser).unwrap();
+  let module = Analyzer::analyze(parser).unwrap();
+  println!(
+    "{:#?}",
+    module.blocks.into_iter().enumerate().collect::<Vec<_>>()
+  );
 }
 
 /*
