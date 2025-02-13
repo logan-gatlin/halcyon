@@ -23,21 +23,30 @@ async function draw_graph() {
   var cy = cytoscape({
     container: document.getElementById('cy'), // container to render in
     elements: json,
-    style: [ // the stylesheet for the graph
+    style: [
       {
         selector: 'node',
         style: {
-          'background-color': '#666',
-          'label': 'data(id)'
+          'background-color': '#333',
+          'color': '#fff',
+          'padding': '2em',
+          'label': 'data(label)',
+          'text-halign':'center',
+          'text-valign':'center',
+          'width': 'label',
+          'height':'label',
+          'shape':'square',
+          'text-wrap': 'wrap'
         }
       },
 
       {
         selector: 'edge',
         style: {
-          'width': 3,
-          'line-color': '#ccc',
-          'target-arrow-color': '#ccc',
+          'width': 4,
+          'line-color': '#ff0000',
+          'target-arrow-color': '#ff0000',
+          'edge-target-arrow-size': '8.0',
           'target-arrow-shape': 'triangle',
           'curve-style': 'bezier'
         }

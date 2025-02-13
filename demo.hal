@@ -1,1 +1,7 @@
-loop i: 0 {};
+loop i: 0 {
+	if i > 5 {
+		break;
+	} else {
+		i + 1
+	}
+};

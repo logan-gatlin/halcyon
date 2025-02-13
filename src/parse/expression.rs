@@ -87,7 +87,7 @@ pub enum ExpressionKind {
     body: Box<Expression>,
   },
   Break {
-    expr: Box<Expression>,
+    expr: Option<Box<Expression>>,
   },
 }
 

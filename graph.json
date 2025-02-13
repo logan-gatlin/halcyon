@@ -1,6 +1,16 @@
-[
-{ "data": { "id": "0" } },
-{ "data": { "id": "1", "content":"const 0\nset 2i-8"} }, { "data": { "source": "1", "target": "2" }, "group": "edges" },
-{ "data": { "id": "2", "content":"enscope\ndescope\nset 2i-8"} }, { "data": { "source": "2", "target": "2" }, "group": "edges" },
-{ "data": { "id": "3", "content":"drop"} }, { "data": { "source": "3", "target": "0" }, "group": "edges" }
-]
+[{ "data": { "id": "0", "label": "TERMINAL" } },
+{ "data": { "id": "1", "label": "push 0\nset 2i-8" } },
+{ "data": { "id": "2", "label": "start scope\nget 2i-8\npush 5\nbinary Greater\nset 10predicate-9" } },
+{ "data": { "id": "3", "label": "drop" } },
+{ "data": { "id": "4", "label": "BRANCH" } },
+{ "data": { "id": "5", "label": "start scope\nend scope" } },
+{ "data": { "id": "6", "label": "start scope\nget 2i-8\npush 1\nbinary Plus\nend scope" } },
+{ "data": { "id": "7", "label": "end scope\nset 2i-8" } },
+{ "data": { "source": "1", "target": "2" }, "group": "edges" },
+{ "data": { "source": "2", "target": "4" }, "group": "edges" },
+{ "data": { "source": "3", "target": "0" }, "group": "edges" },
+{ "data": { "source": "4", "target": "5" }, "group": "edges" },
+{ "data": { "source": "4", "target": "6" }, "group": "edges" },
+{ "data": { "source": "5", "target": "3" }, "group": "edges" },
+{ "data": { "source": "6", "target": "7" }, "group": "edges" },
+{ "data": { "source": "7", "target": "2" }, "group": "edges" }]

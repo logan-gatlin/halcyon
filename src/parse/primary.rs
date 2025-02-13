@@ -34,14 +34,13 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
       t::Break => {
         self.skip(1);
         let expr = if let Ok(Token(t::Semicolon, _)) = self.peek(0) {
-          Expression {
-            kind: e::Immediate(Immediate::Unit),
-            span,
-          }
+          None
         } else {
-          self
-            .expression(0)
-            .trace_span(span, "While parsing break expression")?
+          Some(Box::new(
+            self
+              .expression(0)
+              .trace_span(span, "While parsing break expression")?,
+          ))
         };
         e::Break { expr: expr.into() }
       },
@@ -104,20 +103,6 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
         self.eat(t::RightBrace)?;
         e::StructDef(params)
       },
-      // Struct literal
-      /*
-      t::Identifier(name)
-        if self.look(1, t::Dot).is_ok()
-          && self.look(2, t::LeftBrace).is_ok() =>
-      {
-        self.skip(3);
-        let params = self.parameters(span)?;
-        self
-          .eat(t::RightBrace)
-          .trace_span(span, "while parsing struct declaration")?;
-        e::StructLiteral { name, params }
-      },
-      */
       t::Identifier(i) => {
         self.skip(1);
         e::Identifier { name: i }

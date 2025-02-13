@@ -1,6 +1,7 @@
 pub mod build_ir;
 
 use std::collections::HashMap;
+use std::collections::HashSet;
 
 use crate::diagnostic;
 use crate::err::*;
@@ -109,6 +110,43 @@ impl Analyzer {
       parameters: this.parameters,
       blocks: this.blocks,
     })
+  }
+
+  pub(crate) fn node_reaches(&mut self, from: IrPtr, to: IrPtr) -> bool {
+    let mut visited = HashSet::new();
+    let mut to_visit = vec![];
+    let mut current_node = from;
+    loop {
+      if current_node == to {
+        return true;
+      }
+      visited.insert(current_node);
+      match self.blocks.get(current_node) {
+        Some(Block::Unreachable) | Some(Block::Terminal) => {},
+        Some(Block::Basic { next, .. }) => {
+          to_visit.push(next);
+        },
+        Some(Block::Branch {
+          when_true,
+          when_false,
+          ..
+        }) => {
+          to_visit.push(when_true);
+          to_visit.push(when_false);
+        },
+        None => {},
+      };
+      loop {
+        if let Some(n) = to_visit.pop() {
+          if !visited.contains(n) {
+            current_node = *n;
+            break;
+          }
+        } else {
+          return false;
+        }
+      }
+    }
   }
 
   pub(crate) fn new_block(&mut self) -> IrPtr {

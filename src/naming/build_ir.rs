@@ -99,8 +99,8 @@ impl Analyzer {
     mut block: IrPtr,
   ) -> Result<IrPtr> {
     use ExpressionKind as e;
-    if block == Self::TERMINUS {
-      return Ok(Self::TERMINUS);
+    if self.blocks[block].is_terminal() {
+      return Ok(block);
     }
     let ir = |kind| Ir {
       kind,
@@ -272,6 +272,7 @@ impl Analyzer {
         self.push(block, ir(i::Set(predicate_mangle.clone())));
         // Hook branch block
         let branch_block = self.new_block();
+        println!("BRANCH {branch_block}");
         self.blocks[block].set_next(branch_block);
         // Analyze then and else blocks
         let then_block_head = self.new_block();
@@ -290,6 +291,7 @@ impl Analyzer {
         };
         // If both branches already converge at some point
         if then_block_tail == else_block_tail {
+          println!("Converge {then_block_tail}");
           block = then_block_tail
         }
         // If at least one branch does not diverge
@@ -334,40 +336,55 @@ impl Analyzer {
         }
         // Create loop target
         let loop_head = self.new_block();
+        println!("HEAD: {loop_head}");
         self.blocks[block].set_next(loop_head);
         // Set up break target
         let break_target = self.new_block();
+        println!("BREAK: {break_target}");
         self.blocks[break_target] = Block::Terminal;
         self.break_targets.push(break_target);
         let loop_tail = self.analyze_expr(*body, loop_head)?;
+        println!("TAIL: {loop_tail}");
         self.break_targets.pop().unwrap();
-        // If the loop iterates at least once
-        if !self.blocks[loop_tail].is_terminal() {
+        // Loop always diverges
+        if loop_tail == Self::TERMINUS {
           for mangle in param_mangles {
             self.push(loop_tail, ir(i::Set(mangle)));
           }
-          self.blocks[loop_tail].set_next(loop_tail);
-          block = break_target;
-          self.blocks[break_target] = Block::basic();
+          self.blocks[loop_tail].set_next(loop_head);
+          self.blocks[break_target] = Block::Unreachable;
+          block = Self::TERMINUS;
         }
-        // If the loop does not iterate or diverge
+        // Loop always breaks or breaks conditionally
         else if loop_tail == break_target {
-          block = break_target;
           self.blocks[break_target] = Block::basic();
+          block = break_target;
+        } else if self.node_reaches(loop_head, break_target) {
+          for mangle in param_mangles {
+            self.push(loop_tail, ir(i::Set(mangle)));
+          }
+          self.blocks[loop_tail].set_next(loop_head);
+          self.blocks[break_target] = Block::basic();
+          block = break_target;
         }
-        // If loop always diverges
+        // Loop is infinite
         else {
-          block = loop_tail;
+          self.blocks[break_target] = Block::Unreachable;
+          self.blocks[loop_tail].set_next(loop_head);
+          block = Self::TERMINUS;
         }
       },
-      e::Break { expr } => {
+      e::Break { expr: expression } => {
         let span = expr.span;
-        block = self.analyze_expr(*expr, block)?;
-        if self.blocks[block].is_terminal() {
-          return Err(Self::unreachable_error()).span(&span);
+        if let Some(expr) = expression {
+          block = self.analyze_expr(*expr, block)?;
+          if self.blocks[block].is_terminal() {
+            return Err(Self::unreachable_error()).span(&span);
+          }
         }
         self.push(block, ir(i::Descope));
         block = if let Some(target) = self.break_targets.last() {
+          self.blocks[block].set_next(*target);
           *target
         } else {
           return error!("A 'break' must be inside of a loop").span(&span);

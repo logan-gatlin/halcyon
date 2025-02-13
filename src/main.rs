@@ -5,6 +5,7 @@
 mod assembly;
 mod buffer;
 mod err;
+mod graph;
 mod ir;
 mod naming;
 mod parse;

@@ -5,10 +5,11 @@ use std::collections::HashMap;
 use types::Type;
 
 use crate::{
+  Span,
   assembly::operators::OpDef,
+  graph::Graph,
   naming::Mangle,
   parse::{BinaryOp, UnaryOp},
-  Span,
 };
 
 /// Reference to another IR node
@@ -87,41 +88,36 @@ pub struct Module {
 
 impl Module {
   pub fn to_json(&self) -> String {
-    let mut nodes = vec![];
+    let mut graph = Graph::new();
     for (i, b) in self.blocks.iter().enumerate() {
-      let node = match b {
-        Block::Terminal => format!(r#"{{ "data": {{ "id": "{i}" }} }}"#),
-        Block::Unreachable => format!(r#"{{ "data": {{ "id": "{i}" }} }}"#),
+      match b {
+        Block::Terminal => {
+          graph.new_node(i.to_string(), "TERMINAL".to_string());
+        },
+        Block::Unreachable => {
+          graph.new_node(i.to_string(), "UNREACHABLE".to_string());
+        },
         Block::Basic { body, next } => {
           let body = body
-            .iter()
-            .map(|i| format!("{i:?}"))
+            .into_iter()
+            .map(|b| format!("{b:?}"))
             .collect::<Vec<_>>()
             .join("\\n");
-          format!(
-            r#"{{ "data": {{ "id": "{i}", "content":"{body}"}} }}, {{ "data": {{ "source": "{i}", "target": "{next}" }}, "group": "edges" }}"#
-          )
-        }
+          graph.new_node(i.to_string(), format!("{body}"));
+          graph.new_edge(i.to_string(), next.to_string());
+        },
         Block::Branch {
           predicate_mangle,
           when_true,
           when_false,
         } => {
-          let node = format!(
-            r#"{{ "data": {{ "id": "{i}", "content": "predicate {predicate_mangle}" }} }}"#
-          );
-          let edge1 = format!(
-            r#"{{ "data": {{ "source": "{i}", "target": "{when_true}" }}, "group": "edges" }}"#
-          );
-          let edge2 = format!(
-            r#"{{ "data": {{ "source": "{i}", "target": "{when_false}"}}, "group": "edges" }}"#
-          );
-          format!("{node},{edge1},{edge2}")
-        }
+          graph.new_node(i.to_string(), "BRANCH".into());
+          graph.new_edge(i.to_string(), when_true.to_string());
+          graph.new_edge(i.to_string(), when_false.to_string());
+        },
       };
-      nodes.push(node);
     }
-    format!("[\n{}\n]", nodes.join(",\n"))
+    graph.to_json()
   }
 }
 
@@ -183,7 +179,7 @@ pub enum IrKind {
 impl std::fmt::Debug for IrKind {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
-      IrKind::Const(const_value) => write!(f, "const {const_value}"),
+      IrKind::Const(const_value) => write!(f, "push {const_value}"),
       IrKind::Set(mangle) => write!(f, "set {mangle}"),
       IrKind::Get(mangle) => write!(f, "get {mangle}"),
       IrKind::BinaryOp { kind, def } => write!(f, "binary {kind}"),
@@ -191,15 +187,15 @@ impl std::fmt::Debug for IrKind {
       IrKind::Field(name) => write!(f, "field {name}"),
       IrKind::StructLiteral { param_names } => {
         write!(f, "struct literal {}", param_names.len())
-      }
+      },
       IrKind::StructDef { param_names } => {
         write!(f, "struct definition {}", param_names.len())
-      }
+      },
       IrKind::TypeAssert => write!(f, "type assert"),
       IrKind::Call { arity } => write!(f, "call {arity}"),
       IrKind::Drop => write!(f, "drop"),
-      IrKind::Enscope => write!(f, "enscope"),
-      IrKind::Descope => write!(f, "descope"),
+      IrKind::Enscope => write!(f, "start scope"),
+      IrKind::Descope => write!(f, "end scope"),
     }
   }
 }
