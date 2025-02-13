@@ -1,0 +1,6 @@
+[
+{ "data": { "id": "0" } },
+{ "data": { "id": "1", "content":"const 0\nset 2i-8"} }, { "data": { "source": "1", "target": "2" }, "group": "edges" },
+{ "data": { "id": "2", "content":"enscope\ndescope\nset 2i-8"} }, { "data": { "source": "2", "target": "2" }, "group": "edges" },
+{ "data": { "id": "3", "content":"drop"} }, { "data": { "source": "3", "target": "0" }, "group": "edges" }
+]

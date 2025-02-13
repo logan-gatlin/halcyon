@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+#cy {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  z-index: 10;
+}
+</style>
+
+<script src="https://cdn.jsdelivr.net/npm/elkjs@0.9.3/lib/elk.bundled.js"> </script>
+<script src="https://unpkg.com/cytoscape/dist/cytoscape.min.js"> </script>
+<script src="./cytoscape-elk.js"> </script>
+<script>
+async function draw_graph() {
+  const json_url = "./graph.json";
+  const response = await fetch(json_url);
+  const json = await response.json();
+  var cy = cytoscape({
+    container: document.getElementById('cy'), // container to render in
+    elements: json,
+    style: [ // the stylesheet for the graph
+      {
+        selector: 'node',
+        style: {
+          'background-color': '#666',
+          'label': 'data(id)'
+        }
+      },
+
+      {
+        selector: 'edge',
+        style: {
+          'width': 3,
+          'line-color': '#ccc',
+          'target-arrow-color': '#ccc',
+          'target-arrow-shape': 'triangle',
+          'curve-style': 'bezier'
+        }
+      }
+    ],
+
+    layout: {
+      name: 'elk',
+      elk: {
+        algorithm: 'layered',
+      },
+    }
+
+  });
+}
+draw_graph();
+</script>
+</head>
+<body>
+<div id="cy"> </div>
+</body>
+</html>

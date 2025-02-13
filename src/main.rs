@@ -100,10 +100,8 @@ fn main() {
   let tokenizer = Tokenizer::new(input.chars()).filter(|t| t.0.is_meaningful());
   let parser = Parser::new(tokenizer);
   let module = Analyzer::analyze(parser).unwrap();
-  println!(
-    "{:#?}",
-    module.blocks.into_iter().enumerate().collect::<Vec<_>>()
-  );
+  let json = module.to_json();
+  std::fs::write("./graph.json", json).unwrap();
 }
 
 /*

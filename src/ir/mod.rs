@@ -5,10 +5,10 @@ use std::collections::HashMap;
 use types::Type;
 
 use crate::{
-  Span,
   assembly::operators::OpDef,
   naming::Mangle,
   parse::{BinaryOp, UnaryOp},
+  Span,
 };
 
 /// Reference to another IR node
@@ -85,6 +85,46 @@ pub struct Module {
   pub blocks: Vec<Block>,
 }
 
+impl Module {
+  pub fn to_json(&self) -> String {
+    let mut nodes = vec![];
+    for (i, b) in self.blocks.iter().enumerate() {
+      let node = match b {
+        Block::Terminal => format!(r#"{{ "data": {{ "id": "{i}" }} }}"#),
+        Block::Unreachable => format!(r#"{{ "data": {{ "id": "{i}" }} }}"#),
+        Block::Basic { body, next } => {
+          let body = body
+            .iter()
+            .map(|i| format!("{i:?}"))
+            .collect::<Vec<_>>()
+            .join("\\n");
+          format!(
+            r#"{{ "data": {{ "id": "{i}", "content":"{body}"}} }}, {{ "data": {{ "source": "{i}", "target": "{next}" }}, "group": "edges" }}"#
+          )
+        }
+        Block::Branch {
+          predicate_mangle,
+          when_true,
+          when_false,
+        } => {
+          let node = format!(
+            r#"{{ "data": {{ "id": "{i}", "content": "predicate {predicate_mangle}" }} }}"#
+          );
+          let edge1 = format!(
+            r#"{{ "data": {{ "source": "{i}", "target": "{when_true}" }}, "group": "edges" }}"#
+          );
+          let edge2 = format!(
+            r#"{{ "data": {{ "source": "{i}", "target": "{when_false}"}}, "group": "edges" }}"#
+          );
+          format!("{node},{edge1},{edge2}")
+        }
+      };
+      nodes.push(node);
+    }
+    format!("[\n{}\n]", nodes.join(",\n"))
+  }
+}
+
 #[derive(Debug, Clone)]
 pub struct FunctionInfo {
   pub mangle: Mangle,
@@ -151,10 +191,10 @@ impl std::fmt::Debug for IrKind {
       IrKind::Field(name) => write!(f, "field {name}"),
       IrKind::StructLiteral { param_names } => {
         write!(f, "struct literal {}", param_names.len())
-      },
+      }
       IrKind::StructDef { param_names } => {
         write!(f, "struct definition {}", param_names.len())
-      },
+      }
       IrKind::TypeAssert => write!(f, "type assert"),
       IrKind::Call { arity } => write!(f, "call {arity}"),
       IrKind::Drop => write!(f, "drop"),
