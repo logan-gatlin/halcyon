@@ -1,7 +1,2 @@
-loop i: 0 {
-	if i > 5 {
-		break;
-	} else {
-		i + 1
-	}
-};
+i :: 2 + 2;
+b :: i + 4;

@@ -26,12 +26,26 @@ impl Analyzer {
   pub(crate) fn analyze_block(
     &mut self,
     stmts: impl IntoIterator<Item = Statement>,
-    mut block: IrPtr,
+    block: IrPtr,
   ) -> Result<IrPtr> {
-    for s in stmts {
-      block = self.analyze_stmt(s, block)?;
-    }
-    Ok(block)
+    stmts
+      .into_iter()
+      .map(|s| {
+        if let StatementKind::Declaration {
+          is_constant: true,
+          name,
+          ..
+        } = &s.kind
+        {
+          let span = s.span;
+          self.define_name(name, true).map(|_| s).span(&span)
+        } else {
+          Ok(s)
+        }
+      })
+      .try_collect::<Vec<_>>()?
+      .into_iter()
+      .try_fold(block, |block, stmt| self.analyze_stmt(stmt, block))
   }
 
   fn unreachable_error() -> Diagnostic {
@@ -70,7 +84,11 @@ impl Analyzer {
           new_block = self.analyze_expr(type_, new_block)?;
           self.push(new_block, ir(i::TypeAssert));
         };
-        let mangle = self.define_name(name, is_constant).span(&stmt.span)?;
+        let mangle = if is_constant {
+          self.name_to_symbol(&name)?.mangle.clone()
+        } else {
+          self.define_name(name, is_constant).span(&stmt.span)?
+        };
         self.push(new_block, ir(i::Set(mangle.clone())));
         self.push(new_block, ir(i::Drop));
         if is_constant {
@@ -268,11 +286,8 @@ impl Analyzer {
       } => {
         // Capture predicate
         block = self.analyze_expr(*predicate, block)?;
-        let predicate_mangle = self.define_unique("predicate");
-        self.push(block, ir(i::Set(predicate_mangle.clone())));
         // Hook branch block
         let branch_block = self.new_block();
-        println!("BRANCH {branch_block}");
         self.blocks[block].set_next(branch_block);
         // Analyze then and else blocks
         let then_block_head = self.new_block();
@@ -285,7 +300,6 @@ impl Analyzer {
         };
         // Hook then and else blocks
         self.blocks[branch_block] = Block::Branch {
-          predicate_mangle,
           when_true: then_block_head,
           when_false: else_block_head,
         };
@@ -294,21 +308,30 @@ impl Analyzer {
           println!("Converge {then_block_tail}");
           block = then_block_tail
         }
-        // If at least one branch does not diverge
+        // If only the else block diverges
         else if !self.blocks[then_block_tail].is_terminal()
-          || !self.blocks[else_block_tail].is_terminal()
+          && self.blocks[else_block_tail].is_terminal()
+        {
+          block = then_block_tail;
+        }
+        // If only the then block diverges
+        else if !self.blocks[else_block_tail].is_terminal()
+          && self.blocks[then_block_tail].is_terminal()
+        {
+          block = else_block_tail;
+        }
+        // If neither branch diverge
+        else if !self.blocks[then_block_tail].is_terminal()
+          && !self.blocks[else_block_tail].is_terminal()
         {
           let converge_block = self.new_block();
-          if !self.blocks[then_block_tail].is_terminal() {
-            self.blocks[then_block_tail].set_next(converge_block);
-          }
-          if !self.blocks[else_block_tail].is_terminal() {
-            self.blocks[else_block_tail].set_next(converge_block);
-          }
+          self.blocks[then_block_tail].set_next(converge_block);
+          self.blocks[else_block_tail].set_next(converge_block);
           block = converge_block;
         }
         // If both blocks diverge
         else {
+          println!("Both diverge");
           block = Self::TERMINUS
         }
       },
@@ -336,15 +359,12 @@ impl Analyzer {
         }
         // Create loop target
         let loop_head = self.new_block();
-        println!("HEAD: {loop_head}");
         self.blocks[block].set_next(loop_head);
         // Set up break target
         let break_target = self.new_block();
-        println!("BREAK: {break_target}");
         self.blocks[break_target] = Block::Terminal;
         self.break_targets.push(break_target);
         let loop_tail = self.analyze_expr(*body, loop_head)?;
-        println!("TAIL: {loop_tail}");
         self.break_targets.pop().unwrap();
         // Loop always diverges
         if loop_tail == Self::TERMINUS {

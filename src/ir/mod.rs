@@ -1,3 +1,4 @@
+pub mod consteval;
 pub mod types;
 
 use std::collections::HashMap;
@@ -19,15 +20,8 @@ pub type IrPtr = usize;
 pub enum Block {
   Terminal,
   Unreachable,
-  Basic {
-    body: Vec<Ir>,
-    next: IrPtr,
-  },
-  Branch {
-    predicate_mangle: Mangle,
-    when_true: IrPtr,
-    when_false: IrPtr,
-  },
+  Basic { body: Vec<Ir>, next: IrPtr },
+  Branch { when_true: IrPtr, when_false: IrPtr },
 }
 
 impl Block {
@@ -80,8 +74,8 @@ impl Default for Block {
 #[derive(Debug, Clone)]
 pub struct Module {
   pub heap: Vec<Vec<u8>>,
-  pub functions: HashMap<Mangle, FunctionInfo>,
   pub constants: HashMap<Mangle, IrPtr>,
+  pub functions: HashMap<Mangle, FunctionInfo>,
   pub parameters: HashMap<Mangle, IrPtr>,
   pub blocks: Vec<Block>,
 }
@@ -98,16 +92,18 @@ impl Module {
           graph.new_node(i.to_string(), "UNREACHABLE".to_string());
         },
         Block::Basic { body, next } => {
-          let body = body
+          let mut body = body
             .into_iter()
             .map(|b| format!("{b:?}"))
             .collect::<Vec<_>>()
             .join("\\n");
+          if body.is_empty() {
+            body = "(empty)".to_string();
+          }
           graph.new_node(i.to_string(), format!("{body}"));
           graph.new_edge(i.to_string(), next.to_string());
         },
         Block::Branch {
-          predicate_mangle,
           when_true,
           when_false,
         } => {
@@ -117,6 +113,12 @@ impl Module {
         },
       };
     }
+    graph.edges = graph
+      .edges
+      .into_iter()
+      .filter(|e| e.target != "0".to_string())
+      .collect();
+    graph.nodes.remove(0);
     graph.to_json()
   }
 }
