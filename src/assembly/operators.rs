@@ -102,9 +102,9 @@ impl OpTable {
         self
           .define_binary(
             op,
-            Type::Prim(p1),
-            Type::Prim(p2),
-            Type::Prim(prod),
+            Type::Primitive(p1),
+            Type::Primitive(p2),
+            Type::Primitive(prod),
             asm,
           )
           .unwrap();
@@ -245,7 +245,7 @@ impl OpTable {
       let mut u =
         |op: UnaryOp, p1: Primitive, prod: Primitive, asm: Vec<Wasm>| {
           self
-            .define_unary(op, Type::Prim(p1), Type::Prim(prod), asm)
+            .define_unary(op, Type::Primitive(p1), Type::Primitive(prod), asm)
             .unwrap();
         };
       u(
@@ -333,7 +333,7 @@ impl OpTable {
 
   pub fn try_unary(&self, op: UnaryOp, on: &Type) -> Result<OpDef> {
     if let UnaryOp::Tilda = op
-      && on != &Type::Prim(Primitive::nothing)
+      && on != &Type::Primitive(Primitive::nothing)
     {
       return Ok(OpDef {
         produces: Primitive::nothing.promote(),

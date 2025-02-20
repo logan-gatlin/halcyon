@@ -103,6 +103,16 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
         self.eat(t::RightBrace)?;
         e::StructDef(params)
       },
+      // Anonymous struct initialization
+      t::Dot if matches!(self.peek(1), Ok(Token(t::LeftBrace, _))) => {
+        self.skip(2);
+        let params = self.parameters(span)?;
+        self.eat(t::RightBrace)?;
+        e::StructLiteral {
+          struct_t: None,
+          params,
+        }
+      },
       t::Identifier(i) => {
         self.skip(1);
         e::Identifier { name: i }

@@ -69,7 +69,7 @@ pub enum ExpressionKind {
   },
   StructDef(Parameters),
   StructLiteral {
-    struct_t: Box<Expression>,
+    struct_t: Option<Box<Expression>>,
     params: Parameters,
   },
   Field {
@@ -174,7 +174,7 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
             .trace_span(span, "while parsing struct declaration")?;
           current = Expression::new(
             e::StructLiteral {
-              struct_t: current.into(),
+              struct_t: Some(current.into()),
               params,
             },
             span,

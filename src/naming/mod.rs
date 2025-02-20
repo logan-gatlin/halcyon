@@ -12,6 +12,7 @@ use crate::ir::Ir;
 use crate::ir::IrPtr;
 use crate::ir::Module;
 use crate::ir::types::Primitive;
+use crate::ir::types::Type;
 use crate::parse::Statement;
 
 pub type Mangle = String;
@@ -37,7 +38,7 @@ pub fn mangle_name(path: Vec<String>, salt: &str) -> Mangle {
 /// Builtin mangle syntax:
 /// "$" {ident}
 pub fn mangle_builtin(name: impl std::fmt::Display) -> Mangle {
-  format!("{name}")
+  format!("_{name}")
 }
 
 #[derive(Debug, Clone)]
@@ -93,9 +94,10 @@ impl Analyzer {
       _name_to_symbol: HashMap::new(),
     };
     for prim in Primitive::ALL {
-      this.define_name(format!("{prim}"), true).unwrap();
+      this.define_builtin(format!("{prim}"));
     }
-    this.define_name("print_string", true).unwrap();
+    this.define_builtin(format!("{}", Type::Type));
+    this.define_builtin("print_string");
     this
   }
 
@@ -184,6 +186,26 @@ impl Analyzer {
     let salt = self.next_salt();
     let mangle = mangle_name(path, &salt);
     mangle
+  }
+
+  pub(crate) fn define_builtin(&mut self, name: impl Into<String>) {
+    let name = name.into();
+    let path = vec![name.clone()];
+    let mangle = mangle_builtin(&name);
+    assert!(
+      self
+        ._name_to_symbol
+        .insert(
+          name.clone(),
+          Symbol {
+            mangle,
+            scope_depth: 0,
+            is_constant: true,
+          },
+        )
+        .is_none(),
+      "Multiple definitions of builtin {name}"
+    );
   }
 
   pub(crate) fn define_name(

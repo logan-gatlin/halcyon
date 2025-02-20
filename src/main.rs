@@ -12,7 +12,9 @@ mod parse;
 mod token;
 use std::ops::Add;
 
+use assembly::{operators::OpTable, vm::VirtualMachine};
 use buffer::*;
+use ir::{ConstValue, solver::Solver, types::Primitive};
 use naming::Analyzer;
 use parse::*;
 use token::*;
@@ -100,10 +102,26 @@ fn main() {
   let input = include_str!("../demo.hal").to_string();
   let tokenizer = Tokenizer::new(input.chars()).filter(|t| t.0.is_meaningful());
   let parser = Parser::new(tokenizer);
-  let mut module = Analzer::analyze(parser).unwrap();
-  module.consteval();
+  let mut module = Analyzer::analyze(parser).unwrap();
   let json = module.to_json();
   std::fs::write("./graph.json", json).unwrap();
+  println!("{:#?}", module.blocks);
+  println!("-----");
+  let mut solver = Solver::new(module);
+  solver.evaluate_const().unwrap();
+  /*
+  let bin = OpTable::new()
+    .try_binary(
+      BinaryOp::Minus,
+      &Primitive::integer.promote(),
+      &Primitive::integer.promote(),
+    )
+    .unwrap();
+  let left = ConstValue::Integer(5);
+  let right = ConstValue::Integer(4);
+  let result = VirtualMachine::run(vec![left, right], bin.asm, bin.produces);
+  println!("{result:?}");
+  */
 }
 
 /*

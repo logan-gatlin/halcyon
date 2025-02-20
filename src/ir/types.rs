@@ -49,7 +49,7 @@ primitives! {
 
 impl Primitive {
   pub fn promote(self) -> Type {
-    Type::Prim(self)
+    Type::Primitive(self)
   }
 }
 
@@ -58,7 +58,7 @@ pub enum Type {
   /// Indeterminate type
   Ambiguous,
   /// A primitive type
-  Prim(Primitive),
+  Primitive(Primitive),
   /// User defined type
   Struct {
     member_names: Vec<String>,
@@ -75,6 +75,15 @@ pub enum Type {
   Type,
 }
 
+impl Type {
+  pub fn unwrap_reference(mut self) -> Self {
+    while let Self::Reference(t) = self {
+      self = *t;
+    }
+    self
+  }
+}
+
 impl Default for Type {
   fn default() -> Self {
     Self::Ambiguous
@@ -89,7 +98,7 @@ impl PartialEq for Type {
         panic!("Tried to compare ambiguous types")
       },
       (t::Type, t::Type) => true,
-      (t::Prim(p1), t::Prim(p2)) => p1 == p2,
+      (t::Primitive(p1), t::Primitive(p2)) => p1 == p2,
       (
         t::Struct {
           member_names: names1,
@@ -121,7 +130,7 @@ impl Eq for Type {
 impl std::hash::Hash for Type {
   fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
     match self {
-      Type::Prim(primitive) => primitive.hash(state),
+      Type::Primitive(primitive) => primitive.hash(state),
       Type::Struct {
         member_names,
         member_types,
@@ -150,7 +159,7 @@ impl std::fmt::Display for Type {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       Type::Ambiguous => write!(f, "?"),
-      Type::Prim(primitive) => write!(f, "{primitive}"),
+      Type::Primitive(primitive) => write!(f, "{primitive}"),
       Type::Struct {
         member_names,
         member_types,

@@ -1,4 +1,6 @@
 pub mod consteval;
+pub mod solver;
+mod typecheck;
 pub mod types;
 
 use std::collections::HashMap;
@@ -20,8 +22,16 @@ pub type IrPtr = usize;
 pub enum Block {
   Terminal,
   Unreachable,
-  Basic { body: Vec<Ir>, next: IrPtr },
-  Branch { when_true: IrPtr, when_false: IrPtr },
+  Basic {
+    body: Vec<Ir>,
+    next: IrPtr,
+    typed: bool,
+  },
+  Branch {
+    span: Span,
+    when_true: IrPtr,
+    when_false: IrPtr,
+  },
 }
 
 impl Block {
@@ -29,6 +39,7 @@ impl Block {
     Self::Basic {
       body: vec![],
       next: 0,
+      typed: false,
     }
   }
 
@@ -91,10 +102,10 @@ impl Module {
         Block::Unreachable => {
           graph.new_node(i.to_string(), "UNREACHABLE".to_string());
         },
-        Block::Basic { body, next } => {
+        Block::Basic { body, next, typed } => {
           let mut body = body
             .into_iter()
-            .map(|b| format!("{b:?}"))
+            .map(|ir| format!("{ir:?}"))
             .collect::<Vec<_>>()
             .join("\\n");
           if body.is_empty() {
@@ -106,6 +117,7 @@ impl Module {
         Block::Branch {
           when_true,
           when_false,
+          ..
         } => {
           graph.new_node(i.to_string(), "BRANCH".into());
           graph.new_edge(i.to_string(), when_true.to_string());
@@ -128,19 +140,25 @@ pub struct FunctionInfo {
   pub mangle: Mangle,
   pub arity: usize,
   pub parameter_mangles: Vec<Mangle>,
+  pub returns_mangle: Option<Mangle>,
   pub block: IrPtr,
 }
 
 #[derive(Clone)]
 pub struct Ir {
-  pub type_: Type,
   pub span: Span,
+  pub const_bound: bool,
   pub kind: IrKind,
 }
 
 impl std::fmt::Debug for Ir {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "{:#?}", self.kind)
+    write!(
+      f,
+      "{:#?}{}",
+      self.kind,
+      if self.const_bound { " *" } else { "" }
+    )
   }
 }
 
@@ -153,9 +171,9 @@ pub enum IrKind {
   /// Push a named value
   Get(Mangle),
   /// Pop 2 values, apply a binary operator, push the result
-  BinaryOp { kind: BinaryOp, def: OpDef },
+  BinaryOp { kind: BinaryOp },
   /// Pop 1 value, apply a unary operator, push the result
-  UnaryOp { kind: UnaryOp, def: OpDef },
+  UnaryOp { kind: UnaryOp },
   /// Pop 1 value, push the named field value
   Field(String),
   /// Pop N values, construct a new value and push it
@@ -172,10 +190,10 @@ pub enum IrKind {
   Drop,
   /// Inserts a scope guard, prevents popping values pushed
   /// before this point
-  Enscope,
+  StartScope,
   /// Remove a previously placed scope guard, leaving any
   /// remaining values on the stack
-  Descope,
+  EndScope,
 }
 
 impl std::fmt::Debug for IrKind {
@@ -184,8 +202,8 @@ impl std::fmt::Debug for IrKind {
       IrKind::Const(const_value) => write!(f, "push {const_value}"),
       IrKind::Set(mangle) => write!(f, "set {mangle}"),
       IrKind::Get(mangle) => write!(f, "get {mangle}"),
-      IrKind::BinaryOp { kind, def } => write!(f, "binary {kind}"),
-      IrKind::UnaryOp { kind, def } => write!(f, "unary {kind}"),
+      IrKind::BinaryOp { kind } => write!(f, "binary {kind}"),
+      IrKind::UnaryOp { kind } => write!(f, "unary {kind}"),
       IrKind::Field(name) => write!(f, "field {name}"),
       IrKind::StructLiteral { param_names } => {
         write!(f, "struct literal {}", param_names.len())
@@ -196,8 +214,8 @@ impl std::fmt::Debug for IrKind {
       IrKind::TypeAssert => write!(f, "type assert"),
       IrKind::Call { arity } => write!(f, "call {arity}"),
       IrKind::Drop => write!(f, "drop"),
-      IrKind::Enscope => write!(f, "start scope"),
-      IrKind::Descope => write!(f, "end scope"),
+      IrKind::StartScope => write!(f, "start scope"),
+      IrKind::EndScope => write!(f, "end scope"),
     }
   }
 }
