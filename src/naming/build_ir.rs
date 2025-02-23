@@ -59,16 +59,16 @@ impl Analyzer {
     &mut self,
     stmt: Statement,
     mut block: IrPtr,
-    const_bound: bool,
+    is_typecheck: bool,
   ) -> Result<IrPtr> {
     let ir = |kind| Ir {
       kind,
-      const_bound: false,
+      typecheck_only: is_typecheck,
       span: stmt.span,
     };
-    let cir = |kind| Ir {
+    let tir = |kind| Ir {
       kind,
-      const_bound: true,
+      typecheck_only: true,
       span: stmt.span,
     };
     match stmt.kind {
@@ -78,11 +78,6 @@ impl Analyzer {
         value,
         is_constant,
       } => {
-        let ir = |kind| Ir {
-          kind,
-          const_bound: is_constant,
-          span: stmt.span,
-        };
         let old_breaks = self.break_targets.clone();
         let mut new_block = if is_constant {
           self.break_targets = vec![];
@@ -91,15 +86,15 @@ impl Analyzer {
           block
         };
         let head = new_block;
-        new_block = self.analyze_expr(value, new_block, is_constant)?;
-        if let Some(type_) = type_ {
-          new_block = self.analyze_expr(type_, new_block, true)?;
-          self.push(new_block, cir(i::TypeAssert));
-        };
+        new_block = self.analyze_expr(value, new_block, is_typecheck)?;
         let mangle = if is_constant {
           self.name_to_symbol(&name)?.mangle.clone()
         } else {
           self.define_name(name, is_constant).span(&stmt.span)?
+        };
+        if let Some(type_) = type_ {
+          new_block = self.analyze_expr(type_, new_block, true)?;
+          self.push(new_block, tir(i::TypeAssert(Some(mangle.clone()))));
         };
         self.push(new_block, ir(i::Set(mangle.clone())));
         self.push(new_block, ir(i::Drop));
@@ -109,13 +104,13 @@ impl Analyzer {
         }
       },
       StatementKind::Expression(expression) => {
-        block = self.analyze_expr(expression, block, const_bound)?;
+        block = self.analyze_expr(expression, block, is_typecheck)?;
         if !self.blocks[block].is_terminal() {
           self.push(block, ir(i::Drop));
         }
       },
       StatementKind::Remainder(expression) => {
-        block = self.analyze_expr(expression, block, const_bound)?;
+        block = self.analyze_expr(expression, block, is_typecheck)?;
       },
       StatementKind::Error(diagnostic) => return Err(diagnostic),
     };
@@ -127,7 +122,7 @@ impl Analyzer {
     &mut self,
     expr: Expression,
     mut block: IrPtr,
-    const_bound: bool,
+    is_typecheck: bool,
   ) -> Result<IrPtr> {
     use ExpressionKind as e;
     if self.blocks[block].is_terminal() {
@@ -135,12 +130,12 @@ impl Analyzer {
     }
     let ir = |kind| Ir {
       kind,
-      const_bound,
+      typecheck_only: is_typecheck,
       span: expr.span,
     };
-    let cir = |kind| Ir {
+    let tir = |kind| Ir {
       kind,
-      const_bound: true,
+      typecheck_only: true,
       span: expr.span,
     };
     match expr.kind {
@@ -172,23 +167,19 @@ impl Analyzer {
           is_constant,
           ..
         } = self.name_to_symbol(&name).span(&expr.span)?.clone();
-        if is_constant {
-          self.push(block, cir(i::Get(mangle)));
-        } else {
-          self.push(block, ir(i::Get(mangle)));
-        }
+        self.push(block, ir(i::Get(mangle)));
       },
       e::Binary { op, left, right } => {
-        block = self.analyze_expr(*left, block, const_bound)?;
-        block = self.analyze_expr(*right, block, const_bound)?;
+        block = self.analyze_expr(*left, block, is_typecheck)?;
+        block = self.analyze_expr(*right, block, is_typecheck)?;
         self.push(block, ir(i::BinaryOp { kind: op }))
       },
       e::Unary { op, child } => {
-        block = self.analyze_expr(*child, block, const_bound)?;
+        block = self.analyze_expr(*child, block, is_typecheck)?;
         self.push(block, ir(i::UnaryOp { kind: op }))
       },
       e::Parenthesis(expression) => {
-        block = self.analyze_expr(*expression, block, const_bound)?;
+        block = self.analyze_expr(*expression, block, is_typecheck)?;
       },
       e::FunctionDef {
         params,
@@ -227,7 +218,7 @@ impl Analyzer {
           None
         };
         let func_block = self.new_block();
-        self.analyze_expr(*body, func_block, const_bound)?;
+        self.analyze_expr(*body, func_block, is_typecheck)?;
         self.push(
           block,
           ir(i::Const(ConstValue::Function(function_mangle.clone()))),
@@ -245,11 +236,11 @@ impl Analyzer {
       },
       e::FunctionCall { callee, args } => {
         let arity = args.len();
-        block = self.analyze_expr(*callee, block, const_bound)?;
+        block = self.analyze_expr(*callee, block, is_typecheck)?;
         let callee_mangle = self.define_unique("callee");
         self.push(block, ir(i::Set(callee_mangle.clone())));
         for a in args {
-          block = self.analyze_expr(a, block, const_bound)?;
+          block = self.analyze_expr(a, block, is_typecheck)?;
         }
         self.push(block, ir(i::Get(callee_mangle)));
         self.push(block, ir(i::Call { arity }));
@@ -267,7 +258,7 @@ impl Analyzer {
           })
           .try_collect::<Vec<_>>()?;
         for t in parameters.types {
-          block = self.analyze_expr(t, block, const_bound)?;
+          block = self.analyze_expr(t, block, is_typecheck)?;
         }
         self.push(block, ir(i::StructDef { param_names }));
       },
@@ -286,7 +277,7 @@ impl Analyzer {
         let struct_t_mangle = if let Some(struct_t) = struct_t {
           block = self.analyze_expr(*struct_t, block, true)?;
           let mangle = self.define_unique("struct_t");
-          self.push(block, cir(i::Set(mangle.clone())));
+          self.push(block, tir(i::Set(mangle.clone())));
           Some(mangle)
         } else {
           None
@@ -296,15 +287,15 @@ impl Analyzer {
         }
         self.push(block, ir(i::StructLiteral { param_names }));
         if let Some(struct_t_mangle) = struct_t_mangle {
-          self.push(block, ir(i::Get(struct_t_mangle)));
-          self.push(block, ir(i::TypeAssert));
+          self.push(block, tir(i::Get(struct_t_mangle)));
+          self.push(block, tir(i::TypeAssert(None)));
         }
       },
       e::Field { namespace, field } => {
         let e::Identifier { name: field_name } = field.kind else {
           return error!("Field must be an identifier").span(&field.span);
         };
-        block = self.analyze_expr(*namespace, block, const_bound)?;
+        block = self.analyze_expr(*namespace, block, is_typecheck)?;
         self.push(block, ir(i::Field(field_name)));
       },
       e::Block(statements) => {
@@ -322,17 +313,17 @@ impl Analyzer {
         else_,
       } => {
         // Capture predicate
-        block = self.analyze_expr(*predicate, block, const_bound)?;
+        block = self.analyze_expr(*predicate, block, is_typecheck)?;
         // Hook branch block
         let branch_block = self.new_block();
         self.blocks[block].set_next(branch_block);
         // Analyze then and else blocks
         let then_block_head = self.new_block();
         let then_block_tail =
-          self.analyze_expr(*then, then_block_head, const_bound)?;
+          self.analyze_expr(*then, then_block_head, is_typecheck)?;
         let else_block_head = self.new_block();
         let else_block_tail = if let Some(else_) = else_ {
-          self.analyze_expr(*else_, else_block_head, const_bound)?
+          self.analyze_expr(*else_, else_block_head, is_typecheck)?
         } else {
           else_block_head
         };
@@ -394,7 +385,7 @@ impl Analyzer {
           let param_mangle = self.define_name(name, false)?;
           param_mangles.push(param_mangle.clone());
           block =
-            self.analyze_expr(params.types[p].clone(), block, const_bound)?;
+            self.analyze_expr(params.types[p].clone(), block, is_typecheck)?;
           self.push(block, ir(i::Set(param_mangle)))
         }
         // Create loop target
@@ -404,7 +395,7 @@ impl Analyzer {
         let break_target = self.new_block();
         self.blocks[break_target] = Block::Terminal;
         self.break_targets.push(break_target);
-        let loop_tail = self.analyze_expr(*body, loop_head, const_bound)?;
+        let loop_tail = self.analyze_expr(*body, loop_head, is_typecheck)?;
         self.break_targets.pop().unwrap();
         // Loop always diverges
         if loop_tail == Self::TERMINUS {
@@ -437,7 +428,7 @@ impl Analyzer {
       e::Break { expr: expression } => {
         let span = expr.span;
         if let Some(expr) = expression {
-          block = self.analyze_expr(*expr, block, const_bound)?;
+          block = self.analyze_expr(*expr, block, is_typecheck)?;
           if self.blocks[block].is_terminal() {
             return Err(Self::unreachable_error()).span(&span);
           }

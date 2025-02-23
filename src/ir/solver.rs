@@ -18,10 +18,10 @@ pub(super) enum StackValue {
 pub struct Solver {
   pub module: Module,
   pub dependency_graph: HashMap<Mangle, HashSet<Mangle>>,
-  pub const_type_map: HashMap<Mangle, Type>,
+  pub type_map: HashMap<Mangle, Type>,
   pub const_value_map: HashMap<Mangle, ConstValue>,
   pub rt_value_map: HashMap<Mangle, ConstValue>,
-  pub stack: Vec<StackValue>,
+  pub(super) value_stack: Vec<StackValue>,
 }
 
 impl Solver {
@@ -58,22 +58,22 @@ impl Solver {
 
     // Prelude
     let mut const_value_map = HashMap::new();
-    let mut const_type_map = HashMap::new();
+    let mut type_map = HashMap::new();
     for p in Primitive::ALL {
       let mangle = mangle_builtin(p.to_string());
       const_value_map.insert(mangle.clone(), ConstValue::Type(p.promote()));
-      const_type_map.insert(mangle, Type::Type);
+      type_map.insert(mangle, Type::Type);
     }
     let type_mangle = mangle_builtin(format!("{}", Type::Type));
     const_value_map.insert(type_mangle.clone(), ConstValue::Type(Type::Type));
-    const_type_map.insert(type_mangle, Type::Type);
+    type_map.insert(type_mangle, Type::Type);
     Self {
       module,
       dependency_graph,
-      const_type_map,
+      type_map,
       const_value_map,
       rt_value_map: Default::default(),
-      stack: Default::default(),
+      value_stack: Default::default(),
     }
   }
 }

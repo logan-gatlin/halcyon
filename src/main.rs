@@ -12,9 +12,8 @@ mod parse;
 mod token;
 use std::ops::Add;
 
-use assembly::{operators::OpTable, vm::VirtualMachine};
 use buffer::*;
-use ir::{ConstValue, solver::Solver, types::Primitive};
+use ir::solver::Solver;
 use naming::Analyzer;
 use parse::*;
 use token::*;
@@ -99,16 +98,16 @@ pub fn try_compile(input: String) -> Vec<u8> {
 }
 */
 fn main() {
-  let input = include_str!("../demo.hal").to_string();
+  let input = include_str!("../demo.hc").to_string();
   let tokenizer = Tokenizer::new(input.chars()).filter(|t| t.0.is_meaningful());
   let parser = Parser::new(tokenizer);
-  let mut module = Analyzer::analyze(parser).unwrap();
+  let module = Analyzer::analyze(parser).unwrap();
   let json = module.to_json();
   std::fs::write("./graph.json", json).unwrap();
   println!("{:#?}", module.blocks);
   println!("-----");
   let mut solver = Solver::new(module);
-  solver.evaluate_const().unwrap();
+  solver.conseval_module().unwrap();
   /*
   let bin = OpTable::new()
     .try_binary(

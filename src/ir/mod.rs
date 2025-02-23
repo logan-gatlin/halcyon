@@ -1,6 +1,6 @@
 pub mod consteval;
+mod reduction;
 pub mod solver;
-mod typecheck;
 pub mod types;
 
 use std::collections::HashMap;
@@ -9,7 +9,6 @@ use types::Type;
 
 use crate::{
   Span,
-  assembly::operators::OpDef,
   graph::Graph,
   naming::Mangle,
   parse::{BinaryOp, UnaryOp},
@@ -147,7 +146,7 @@ pub struct FunctionInfo {
 #[derive(Clone)]
 pub struct Ir {
   pub span: Span,
-  pub const_bound: bool,
+  pub typecheck_only: bool,
   pub kind: IrKind,
 }
 
@@ -157,7 +156,7 @@ impl std::fmt::Debug for Ir {
       f,
       "{:#?}{}",
       self.kind,
-      if self.const_bound { " *" } else { "" }
+      if self.typecheck_only { " *" } else { "" }
     )
   }
 }
@@ -182,7 +181,7 @@ pub enum IrKind {
   StructDef { param_names: Vec<String> },
   /// Pop 1 type, assert that the next value on the stack is
   /// of that type. Keep this second value on the stack
-  TypeAssert,
+  TypeAssert(Option<Mangle>),
   /// Pop 1 function, pop N argument values, call the
   /// function and push its return value
   Call { arity: usize },
@@ -211,7 +210,15 @@ impl std::fmt::Debug for IrKind {
       IrKind::StructDef { param_names } => {
         write!(f, "struct definition {}", param_names.len())
       },
-      IrKind::TypeAssert => write!(f, "type assert"),
+      IrKind::TypeAssert(mangle) => write!(
+        f,
+        "type assert{}",
+        if let Some(mangle) = mangle {
+          format!(" ({mangle})")
+        } else {
+          format!("")
+        }
+      ),
       IrKind::Call { arity } => write!(f, "call {arity}"),
       IrKind::Drop => write!(f, "drop"),
       IrKind::StartScope => write!(f, "start scope"),
