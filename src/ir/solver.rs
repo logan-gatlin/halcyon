@@ -7,11 +7,21 @@ use super::{
   types::{Primitive, Type},
 };
 
+pub const RECURSION_LIMIT: usize = 0x100;
+pub const LOCAL_EVAL_LIMIT: usize = 0x1000;
+pub const GLOBAL_EVAL_LIMIT: usize = 0x10000;
+
 #[derive(Debug, Clone)]
 pub(super) enum StackValue {
   Value(ConstValue),
   OldValue((Mangle, ConstValue)),
   Guard,
+}
+#[derive(Debug, Clone)]
+pub(super) struct ReturnAddress {
+  pub block: usize,
+  pub ip: usize,
+  pub expected_type: Type,
 }
 
 #[derive(Debug, Clone)]
@@ -19,35 +29,56 @@ pub struct Solver {
   pub module: Module,
   pub dependency_graph: HashMap<Mangle, HashSet<Mangle>>,
   pub type_map: HashMap<Mangle, Type>,
+  pub assert_map: HashMap<Mangle, Type>,
   pub const_value_map: HashMap<Mangle, ConstValue>,
   pub rt_value_map: HashMap<Mangle, ConstValue>,
   pub(super) value_stack: Vec<StackValue>,
+  pub(super) control_stack: Vec<ReturnAddress>,
+  pub(super) ip: usize,
+  pub(super) block: usize,
 }
 
 impl Solver {
   pub fn new(module: Module) -> Self {
-    let function_dependencies = module.functions.iter().map(|(mangle, func)| {
-      let mut deps = HashSet::new();
-      for p in &func.parameter_mangles {
-        deps = deps
-          .union(&module.find_type_dependencies(*module.parameters.get(p).unwrap()))
-          .cloned()
-          .collect();
-      }
-      if let Some(r) = &func.returns_mangle {
-        deps = deps
-          .union(&module.find_type_dependencies(*module.parameters.get(r).unwrap()))
-          .cloned()
-          .collect();
-      }
-
+    let assertion_dependencies =
+      module.type_assertions.iter().map(|(mangle, assert)| {
+        let mut deps = module.find_type_dependencies(*assert);
+        deps.remove(mangle);
+        (mangle.clone(), deps)
+      });
+    let function_dependencies =
+      module.functions.iter().map(|(mangle, func)| {
+        let mut deps = HashSet::new();
+        for p in &func.parameter_mangles {
+          deps =
+            deps
+              .union(&module.find_type_dependencies(
+                *module.type_assertions.get(p).unwrap(),
+              ))
+              .cloned()
+              .collect();
+        }
+        if let Some(r) = &func.returns_mangle {
+          deps =
+            deps
+              .union(&module.find_type_dependencies(
+                *module.type_assertions.get(r).unwrap(),
+              ))
+              .cloned()
+              .collect();
+        }
+        deps.remove(mangle);
+        (mangle.clone(), deps)
+      });
+    let constant_dependencies = module.constants.iter().map(|(mangle, ptr)| {
+      let mut deps = module.find_type_dependencies(*ptr);
+      deps.remove(mangle);
       (mangle.clone(), deps)
     });
-    let constant_dependencies = module
-      .constants
-      .iter()
-      .map(|(mangle, ptr)| (mangle.clone(), module.find_type_dependencies(*ptr)));
-    let dependency_graph = function_dependencies.chain(constant_dependencies).collect();
+    let dependency_graph = assertion_dependencies
+      .chain(function_dependencies)
+      .chain(constant_dependencies)
+      .collect();
 
     // Prelude
     let mut const_value_map = HashMap::new();
@@ -65,8 +96,12 @@ impl Solver {
       dependency_graph,
       type_map,
       const_value_map,
+      assert_map: Default::default(),
       rt_value_map: Default::default(),
       value_stack: Default::default(),
+      control_stack: Default::default(),
+      ip: 0,
+      block: 0,
     }
   }
 }
@@ -84,7 +119,7 @@ impl Module {
     loop {
       visited.insert(current_block);
       match &self.blocks[current_block] {
-        Block::Terminal | Block::Unreachable => {}
+        Block::Terminal | Block::Unreachable => {},
         Block::Basic { body, next, typed } => {
           to_visit.push(*next);
           body.into_iter().for_each(|ir| {
@@ -93,19 +128,20 @@ impl Module {
             {
               deps.insert(ident.clone());
               to_visit.push(*block);
-            } else if let IrKind::Const(ConstValue::Function(mangle)) = &ir.kind {
+            } else if let IrKind::Const(ConstValue::Function(mangle)) = &ir.kind
+            {
               let func = self.functions.get(mangle).unwrap();
               for p in &func.parameter_mangles {
-                to_visit.push(*self.parameters.get(p).unwrap());
+                to_visit.push(*self.type_assertions.get(p).unwrap());
               }
               if let Some(mangle) = &func.returns_mangle {
-                to_visit.push(*self.parameters.get(mangle).unwrap());
+                to_visit.push(*self.type_assertions.get(mangle).unwrap());
               }
               deps.insert(mangle.clone());
               to_visit.push(func.block);
             }
           });
-        }
+        },
         Block::Branch {
           when_true,
           when_false,
@@ -113,7 +149,7 @@ impl Module {
         } => {
           to_visit.push(*when_true);
           to_visit.push(*when_false);
-        }
+        },
       }
       loop {
         if let Some(ptr) = to_visit.pop() {

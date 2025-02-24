@@ -1,5 +1,5 @@
 pub mod consteval;
-mod reduction;
+pub mod interpret;
 pub mod solver;
 pub mod types;
 
@@ -86,7 +86,7 @@ pub struct Module {
   pub heap: Vec<Vec<u8>>,
   pub constants: HashMap<Mangle, IrPtr>,
   pub functions: HashMap<Mangle, FunctionInfo>,
-  pub parameters: HashMap<Mangle, IrPtr>,
+  pub type_assertions: HashMap<Mangle, IrPtr>,
   pub blocks: Vec<Block>,
 }
 
@@ -234,7 +234,7 @@ pub enum ConstValue {
   Real(f64),
   Boolean(bool),
   String {
-    address: usize,
+    virtual_address: usize,
     length: usize,
   },
   Glyph(char),
@@ -250,7 +250,10 @@ impl std::fmt::Display for ConstValue {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       ConstValue::Nothing => write!(f, "()"),
-      ConstValue::String { address, length } => write!(f, "string {address}"),
+      ConstValue::String {
+        virtual_address: address,
+        length,
+      } => write!(f, "string {address}"),
       ConstValue::Function(val) => write!(f, "function {val}"),
       ConstValue::StructLiteral {
         member_names,

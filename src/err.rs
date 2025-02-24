@@ -12,7 +12,7 @@ pub struct Diagnostic {
 #[macro_export]
 macro_rules! error {
   ($($arg:tt)*) => {
-    Err(Diagnostic {
+    Err(crate::err::Diagnostic {
       reason: format!($($arg)*),
       span: None,
       backtrace: Vec::new(),
@@ -22,7 +22,7 @@ macro_rules! error {
 #[macro_export]
 macro_rules! diagnostic {
   ($($arg:tt)*) => {
-    Diagnostic {
+    crate::err::Diagnostic {
       reason: format!($($arg)*),
       span: None,
       backtrace: Vec::new(),
@@ -75,8 +75,12 @@ impl From<std::num::ParseIntError> for Diagnostic {
   fn from(value: std::num::ParseIntError) -> Self {
     use std::num::IntErrorKind::*;
     match value.kind() {
-      PosOverflow | NegOverflow => Diagnostic::new("Integer value is too large to represent", None),
-      InvalidDigit => Diagnostic::new("Integer value containts invalid digits", None),
+      PosOverflow | NegOverflow => {
+        Diagnostic::new("Integer value is too large to represent", None)
+      },
+      InvalidDigit => {
+        Diagnostic::new("Integer value containts invalid digits", None)
+      },
       _ => Diagnostic::new("Integer value could not be parsed", None),
     }
   }
@@ -135,7 +139,9 @@ impl<T, S: Into<String>> IntoDiagnostic<T, S> for Option<T> {
   }
 }
 
-impl<T, E: Into<Diagnostic>, S: Into<String>> IntoDiagnostic<T, S> for std::result::Result<T, E> {
+impl<T, E: Into<Diagnostic>, S: Into<String>> IntoDiagnostic<T, S>
+  for std::result::Result<T, E>
+{
   fn reason(self, s: S) -> Result<T> {
     self.map_err(|e| e.into()).map_err(|mut e| {
       if e.reason == "" {

@@ -1,16 +1,2 @@
-[{ "data": { "id": "1", "label": "(empty)" } },
-{ "data": { "id": "2", "label": "push function 9function-2\nset 6array-0\ndrop" } },
-{ "data": { "id": "3", "label": "get _type" } },
-{ "data": { "id": "4", "label": "get _integer" } },
-{ "data": { "id": "5", "label": "get _type" } },
-{ "data": { "id": "6", "label": "start scope\nget 5size-4\npush 0\nbinary Greater" } },
-{ "data": { "id": "7", "label": "BRANCH" } },
-{ "data": { "id": "8", "label": "start scope\nget 2T-3\nget 6array-0\nset 7callee-6\nget 2T-3\nget 5size-4\npush 1\nbinary Minus\nget 7callee-6\ncall 2\nstruct definition 2\nend scope" } },
-{ "data": { "id": "9", "label": "start scope\nget _nothing\nend scope" } },
-{ "data": { "id": "10", "label": "end scope" } },
-{ "data": { "id": "11", "label": "get 6array-0\nset 7callee-7\nget _integer\npush 4\nget 7callee-7\ncall 2\nset 10IntArray4-1\ndrop" } },
-{ "data": { "source": "6", "target": "7" }, "group": "edges" },
-{ "data": { "source": "7", "target": "8" }, "group": "edges" },
-{ "data": { "source": "7", "target": "9" }, "group": "edges" },
-{ "data": { "source": "8", "target": "10" }, "group": "edges" },
-{ "data": { "source": "9", "target": "10" }, "group": "edges" }]
+[{ "data": { "id": "1", "label": "get _type\nset 2a-0\ndrop" } },
+{ "data": { "id": "2", "label": "get _type" } }]

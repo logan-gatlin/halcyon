@@ -1,65 +1,79 @@
-pub mod build_ir;
-pub mod canon;
-
 use std::collections::HashMap;
-use std::collections::HashSet;
 
-use crate::diagnostic;
-use crate::err::*;
-use crate::error;
-use crate::ir::Block;
-use crate::ir::FunctionInfo;
-use crate::ir::Ir;
-use crate::ir::IrPtr;
-use crate::ir::Module;
-use crate::ir::types::Primitive;
-use crate::ir::types::Type;
-use crate::parse::Statement;
-
-pub type Mangle = String;
-
-/// Name mangle syntax:
-/// mangle ::= "$" path salt
-/// path ::= {path-element}*
-/// path-element ::= length ident
-/// ident ::= _a-zA-Z {_a-zA-Z0-9}*
-/// length ::= {0-9}+
-/// salt ::= {a-zA-Z}*
-pub fn mangle_name(path: Vec<String>, salt: &str) -> Mangle {
-  let mut buf: Vec<u8> = vec![];
-  for p in path {
-    let puny = punycode::encode(&p).unwrap();
-    let bytes = format!("{}{puny}", puny.len());
-    buf.extend_from_slice(bytes.as_bytes());
-  }
-  buf.extend_from_slice(salt.as_bytes());
-  String::from_utf8(buf).unwrap()
-}
-
-/// Builtin mangle syntax:
-/// "$" {ident}
-pub fn mangle_builtin(name: impl std::fmt::Display) -> Mangle {
-  format!("_{name}")
-}
-
-#[derive(Debug, Clone)]
-pub struct Symbol {
-  pub mangle: Mangle,
-  pub scope_depth: usize,
-  pub is_constant: bool,
-}
-
-#[derive(Debug, Clone)]
-pub enum Event {
-  ScopeStart,
-  Modify {
-    name: String,
-    old_value: Option<Symbol>,
+use crate::{
+  Span, diagnostic,
+  err::*,
+  error,
+  ir::{
+    ConstValue, IrPtr,
+    types::{Primitive, Type},
   },
+  naming::{
+    build_ir::{parse_int_literal, parse_real_literal},
+    mangle_builtin,
+  },
+  parse::{BinaryOp, Expression, ExpressionKind, Immediate, UnaryOp},
+};
+
+use super::{Event, Mangle, Symbol, mangle_name};
+
+#[derive(Debug, Clone)]
+pub struct CanonNode {
+  pub kind: CanonKind,
+  pub span: Span,
+  pub type_: Type,
 }
 
-/// Convert parse tree to AST
-pub struct Analyzer {
+#[derive(Debug, Clone)]
+pub enum CanonKind {
+  Declaration {
+    assignee: Mangle,
+    is_constant: bool,
+    type_assert: Option<IrPtr>,
+    value: IrPtr,
+  },
+  Immediate(ConstValue),
+  Block(Vec<IrPtr>),
+  Identifier(Mangle),
+  StructDef {
+    fields: Vec<String>,
+    types: Vec<IrPtr>,
+  },
+  StructLiteral {
+    field_names: Vec<String>,
+    field_values: Vec<IrPtr>,
+  },
+  Binary {
+    op: BinaryOp,
+    left: IrPtr,
+    right: IrPtr,
+  },
+  Unary {
+    op: UnaryOp,
+    child: IrPtr,
+  },
+  FunctionDef {
+    parameters: Vec<Mangle>,
+    parameter_types: Vec<IrPtr>,
+  },
+  FunctionCall {
+    callee: IrPtr,
+    arguments: Vec<IrPtr>,
+  },
+  If {
+    predicate: IrPtr,
+    then: IrPtr,
+    else_: IrPtr,
+  },
+  Loop {
+    parameters: Vec<Mangle>,
+    parameter_values: Vec<IrPtr>,
+  },
+  Break(Option<IrPtr>),
+}
+
+pub struct Canonizer {
+  pub ir: Vec<Option<CanonNode>>,
   pub scope_depth: usize,
   pub salt: usize,
   pub path: Vec<String>,
@@ -69,18 +83,85 @@ pub struct Analyzer {
   pub constants: HashMap<Mangle, IrPtr>,
   // Parameter types to evaluate
   pub type_assertions: HashMap<Mangle, IrPtr>,
-  pub functions: HashMap<Mangle, FunctionInfo>,
-  pub blocks: Vec<Block>,
+  pub functions: HashMap<Mangle, IrPtr>,
   pub main: Option<Mangle>,
   pub break_targets: Vec<IrPtr>,
   _name_to_symbol: HashMap<String, Symbol>,
 }
 
-impl Analyzer {
-  pub(crate) const TERMINUS: IrPtr = 0;
+impl Canonizer {
+  fn canon_expr(&mut self, expr: Expression) -> Result<IrPtr> {
+    use CanonKind as k;
+    use ExpressionKind as e;
+    let kind = match expr.kind {
+      e::Immediate(immediate) => match immediate {
+        Immediate::Unit => CanonKind::Immediate(ConstValue::Nothing),
+        Immediate::Integer(val, base) => CanonKind::Immediate(
+          ConstValue::Integer(parse_int_literal(&val, base as u32)?),
+        ),
+        Immediate::Real(val) => {
+          CanonKind::Immediate(ConstValue::Real(parse_real_literal(&val)?))
+        },
+        Immediate::String(val) => {
+          let bytes = val.into_bytes();
+          let address = self.allocate(&bytes);
+          CanonKind::Immediate(ConstValue::String {
+            virtual_address: address,
+            length: bytes.len(),
+          })
+        },
+        Immediate::Glyph(val) => CanonKind::Immediate(ConstValue::Glyph(val)),
+        Immediate::Boolean(val) => {
+          CanonKind::Immediate(ConstValue::Boolean(val))
+        },
+      },
+      e::Identifier { name } => {
+        let Symbol { mangle, .. } =
+          self.name_to_symbol(&name).span(&expr.span)?.clone();
+        k::Identifier(mangle)
+      },
+      e::Binary { op, left, right } => {
+        let node = self.new_node();
+        let left = self.canon_expr(*left)?;
+        let right = self.canon_expr(*right)?;
+        k::Binary { op, left, right }
+      },
+      e::Unary { op, child } => {
+        let child = self.canon_expr(*child)?;
+        k::Unary { op, child }
+      },
+      e::Parenthesis(expression) => return self.canon_expr(*expression),
+      e::FunctionDef {
+        params,
+        returns,
+        body,
+      } => todo!(),
+      e::FunctionCall { callee, args } => {
+        let callee = self.canon_expr(*callee)?;
+        let arguments = args
+          .into_iter()
+          .map(|a| self.canon_expr(a))
+          .try_collect::<Vec<_>>()?;
+        k::FunctionCall { callee, arguments }
+      },
+      e::StructDef(parameters) => todo!(),
+      e::StructLiteral { struct_t, params } => todo!(),
+      e::Field { namespace, field } => todo!(),
+      e::Block(statements) => todo!(),
+      e::If {
+        predicate,
+        then,
+        else_,
+      } => todo!(),
+      e::Loop { params, body } => todo!(),
+      e::Break { expr } => todo!(),
+    };
+    todo!()
+  }
 
   fn new() -> Self {
     let mut this = Self {
+      ir: vec![],
       path: vec![],
       event_stack: vec![],
       heap: vec![],
@@ -89,7 +170,6 @@ impl Analyzer {
       functions: HashMap::new(),
       scope_depth: 0,
       salt: 0,
-      blocks: vec![Block::Terminal],
       main: None,
       break_targets: vec![],
       _name_to_symbol: HashMap::new(),
@@ -102,64 +182,14 @@ impl Analyzer {
     this
   }
 
-  pub fn analyze(stmts: impl IntoIterator<Item = Statement>) -> Result<Module> {
-    let mut this = Self::new();
-    let root = this.new_block();
-    let entry = this.analyze_block(stmts, root)?;
-    Ok(Module {
-      heap: this.heap,
-      functions: this.functions,
-      constants: this.constants,
-      type_assertions: this.type_assertions,
-      blocks: this.blocks,
-    })
+  pub(crate) fn new_node(&mut self) -> IrPtr {
+    self.ir.push(None);
+    self.ir.len() - 1
   }
 
-  pub(crate) fn node_reaches(&mut self, from: IrPtr, to: IrPtr) -> bool {
-    let mut visited = HashSet::new();
-    let mut to_visit = vec![];
-    let mut current_node = from;
-    loop {
-      if current_node == to {
-        return true;
-      }
-      visited.insert(current_node);
-      match self.blocks.get(current_node) {
-        Some(Block::Unreachable) | Some(Block::Terminal) => {},
-        Some(Block::Basic { next, .. }) => {
-          to_visit.push(next);
-        },
-        Some(Block::Branch {
-          when_true,
-          when_false,
-          ..
-        }) => {
-          to_visit.push(when_true);
-          to_visit.push(when_false);
-        },
-        None => {},
-      };
-      loop {
-        if let Some(n) = to_visit.pop() {
-          if !visited.contains(n) {
-            current_node = *n;
-            break;
-          }
-        } else {
-          return false;
-        }
-      }
-    }
-  }
-
-  pub(crate) fn new_block(&mut self) -> IrPtr {
-    let ptr = self.blocks.len();
-    self.blocks.push(Block::basic());
-    ptr
-  }
-
-  pub(crate) fn push(&mut self, ir_ptr: IrPtr, ir: Ir) {
-    self.blocks[ir_ptr].push(ir);
+  pub(crate) fn set_node(&mut self, position: IrPtr, node: CanonNode) {
+    assert!(self.ir[position].is_none());
+    self.ir[position] = Some(node);
   }
 
   pub(crate) fn name_to_symbol(&self, name: &str) -> Result<&Symbol> {

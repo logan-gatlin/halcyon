@@ -19,7 +19,10 @@ fn const_to_wasm(c: ConstValue) -> Vec<WasmValue> {
     ConstValue::Integer(val) => vec![w::I64(val)],
     ConstValue::Real(val) => vec![w::F64(val)],
     ConstValue::Boolean(val) => vec![w::I32(val as i32)],
-    ConstValue::String { address, length } => {
+    ConstValue::String {
+      virtual_address: address,
+      length,
+    } => {
       vec![w::I32(address as i32), w::I32(length as i32)]
     },
     ConstValue::Glyph(val) => vec![w::I32(val as i32)],
@@ -86,7 +89,7 @@ impl VirtualMachine {
             return err;
           };
           Ok(ConstValue::String {
-            address: ptr as usize,
+            virtual_address: ptr as usize,
             length: len as usize,
           })
         },
