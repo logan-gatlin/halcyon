@@ -11,11 +11,11 @@ impl Solver {
       Some(StackValue::Value(v)) => v,
       Some(StackValue::OldValue(v)) => {
         panic!()
-      },
+      }
       Some(StackValue::Guard) => {
         self.value_stack.push(StackValue::Guard);
         ConstValue::Nothing
-      },
+      }
       None => ConstValue::Nothing,
     }
   }
@@ -37,9 +37,7 @@ impl Solver {
 
   fn retrieve_state(&mut self) {
     self.rt_value_map.clear();
-    while let Some(StackValue::OldValue((mangle, val))) =
-      self.value_stack.last()
-    {
+    while let Some(StackValue::OldValue((mangle, val))) = self.value_stack.last() {
       self.rt_value_map.insert(mangle.clone(), val.clone());
       self.value_stack.pop();
     }
@@ -69,16 +67,16 @@ impl Solver {
       .clone()
       .into_iter()
       .collect::<Vec<_>>();
-    deps
-      .sort_unstable_by(|(_, deps1), (_, deps2)| deps1.len().cmp(&deps2.len()));
+    deps.sort_unstable_by(|(_, deps1), (_, deps2)| deps1.len().cmp(&deps2.len()));
     println!("{deps:#?}");
+    // Iterate constants from least to most dependencies
     for (mangle, deps) in deps {
       self.rt_value_map.clear();
       self.value_stack.clear();
       if deps.contains(&mangle) {
         return error!("Encountered circular dependency");
       }
-      // Type function
+      // If constant is a function, type it
       if let Some(func) = self.module.functions.get(&mangle).cloned() {
         let mut param_types = vec![];
         for (id, m) in func.parameter_mangles.into_iter().enumerate() {
@@ -105,18 +103,13 @@ impl Solver {
         } else {
           Primitive::nothing.promote()
         };
-        self.type_map.insert(
-          func.mangle,
-          Type::Function {
-            param_types,
-            return_type: return_type.into(),
-          },
-        );
+        self.type_map.insert(func.mangle, Type::Function {
+          param_types,
+          return_type: return_type.into(),
+        });
       }
-      // Resolve constants
-      else if let Some(const_block) =
-        self.module.constants.get(&mangle).cloned()
-      {
+      // Otherwise, resolve the constant
+      else if let Some(const_block) = self.module.constants.get(&mangle).cloned() {
         self.evaluate_block(const_block, false)?;
         let value = self.pop();
         self
@@ -126,14 +119,17 @@ impl Solver {
         panic!("Unhandled dependent {mangle}");
       }
     }
+    // Resolve type assertions in unvisited functions
+    /*
     println!(
       "{:#?}",
       self
-        .const_value_map
+        .type_map
         .iter()
         .filter(|n| !n.0.starts_with("_"))
         .collect::<Vec<_>>()
     );
+    */
     Ok(())
   }
 
@@ -146,9 +142,7 @@ impl Solver {
       ConstValue::Boolean(_) => p::boolean.promote(),
       ConstValue::String { address, length } => p::string.promote(),
       ConstValue::Glyph(_) => p::glyph.promote(),
-      ConstValue::Function(mangle) => {
-        self.type_map.get(mangle).unwrap().clone()
-      },
+      ConstValue::Function(mangle) => self.type_map.get(mangle).unwrap().clone(),
       ConstValue::StructLiteral {
         member_names,
         member_values,
@@ -161,16 +155,12 @@ impl Solver {
           member_names: member_names.clone(),
           member_types,
         }
-      },
+      }
       ConstValue::Type(_) => Type::Type,
     }
   }
 
-  fn evaluate_block(
-    &mut self,
-    mut block: IrPtr,
-    typecheck_only: bool,
-  ) -> Result<()> {
+  fn evaluate_block(&mut self, mut block: IrPtr, typecheck_only: bool) -> Result<()> {
     self.value_stack.clear();
     let optable = OpTable::new();
     let mut cflow_stack = vec![];
@@ -193,10 +183,10 @@ impl Solver {
           } else {
             break;
           }
-        },
+        }
         Block::Unreachable => {
           return error!("Encountered unreachable during constant evaluation");
-        },
+        }
         Block::Branch {
           span,
           when_true,
@@ -214,7 +204,7 @@ impl Solver {
             )
             .span(&span),
           }
-        },
+        }
         Block::Basic { body, next, typed } => {
           if ip == body.len() {
             ip = 0;
@@ -227,7 +217,7 @@ impl Solver {
             )
           } else {
             let instr = &body[ip];
-            if !instr.typecheck_only && typecheck_only {
+            if instr.typecheck_only != typecheck_only {
               ip += 1;
               continue;
             }
@@ -237,8 +227,7 @@ impl Solver {
               IrKind::Set(mangle) => {
                 let value = self.pop();
                 let set_type = self.type_of_const(&value);
-                let old_type =
-                  self.type_map.insert(mangle.clone(), set_type.clone());
+                let old_type = self.type_map.insert(mangle.clone(), set_type.clone());
                 if let Some(old_type) = old_type
                   && set_type != old_type
                 {
@@ -250,15 +239,13 @@ impl Solver {
                 }
                 if self.module.constants.contains_key(mangle) {
                   if self.const_value_map.contains_key(mangle) {
-                    panic!(
-                      "Duplicate initializations of {mangle} during const-eval"
-                    )
+                    panic!("Duplicate initializations of {mangle} during const-eval")
                   }
                   self.const_value_map.insert(mangle.clone(), value);
                 } else {
                   self.rt_value_map.insert(mangle.clone(), value);
                 };
-              },
+              }
               IrKind::Get(mangle) => {
                 let map = if self.const_value_map.contains_key(mangle) {
                   &mut self.const_value_map
@@ -269,7 +256,7 @@ impl Solver {
                   panic!("Value map is missing {mangle}");
                 };
                 self.push(value.clone());
-              },
+              }
               IrKind::BinaryOp { kind } => {
                 let right = self.pop();
                 let right_t = self.type_of_const(&right);
@@ -278,32 +265,25 @@ impl Solver {
                 let opdef = optable
                   .try_binary(*kind, &left_t, &right_t)
                   .span(&instr.span)?;
-                let result = VirtualMachine::run(
-                  vec![left, right],
-                  opdef.asm,
-                  opdef.produces,
-                )
-                .span(&instr.span)?;
+                let result = VirtualMachine::run(vec![left, right], opdef.asm, opdef.produces)
+                  .span(&instr.span)?;
                 self.push(result);
-              },
+              }
               IrKind::UnaryOp { kind } => {
                 let on = self.pop();
                 let on_t = self.type_of_const(&on);
-                let opdef =
-                  optable.try_unary(*kind, &on_t).span(&instr.span)?;
+                let opdef = optable.try_unary(*kind, &on_t).span(&instr.span)?;
                 let result =
-                  VirtualMachine::run(vec![on], opdef.asm, opdef.produces)
-                    .span(&instr.span)?;
+                  VirtualMachine::run(vec![on], opdef.asm, opdef.produces).span(&instr.span)?;
                 self.push(result);
-              },
+              }
               IrKind::Field(field_name) => {
                 let ConstValue::StructLiteral {
                   member_names,
                   member_values,
                 } = self.pop()
                 else {
-                  return error!("Only struct literals can have fields")
-                    .span(&instr.span);
+                  return error!("Only struct literals can have fields").span(&instr.span);
                 };
                 let pos = member_names
                   .iter()
@@ -311,7 +291,7 @@ impl Solver {
                   .reason("Struct does not contain field '{field}'")
                   .span(&instr.span)?;
                 self.push(member_values[pos].clone());
-              },
+              }
               IrKind::StructLiteral { param_names } => {
                 let member_values: Vec<_> =
                   (0..param_names.len()).map(|_| self.pop()).rev().collect();
@@ -319,7 +299,7 @@ impl Solver {
                   member_names: param_names.clone(),
                   member_values,
                 })
-              },
+              }
               IrKind::StructDef { param_names } => {
                 let mut member_types: Vec<_> = (0..param_names.len())
                   .rev()
@@ -341,14 +321,12 @@ impl Solver {
                   member_names: param_names.clone(),
                   member_types,
                 }))
-              },
+              }
               IrKind::TypeAssert(mangle) => {
                 let assert_val = self.pop();
                 let ConstValue::Type(assert_t) = assert_val else {
-                  return error!(
-                    "Type assertion expects a type, but recieved a term"
-                  )
-                  .span(&instr.span);
+                  return error!("Type assertion expects a type, but recieved a term")
+                    .span(&instr.span);
                 };
                 let actual_val = self.pop();
                 let actual_t = self.type_of_const(&actual_val);
@@ -363,7 +341,7 @@ impl Solver {
                   self.type_map.insert(mangle.clone(), assert_t);
                 }
                 self.push(actual_val);
-              },
+              }
               IrKind::Call { arity } => {
                 let func = self.pop();
                 let func_type = self.type_of_const(&func);
@@ -372,8 +350,7 @@ impl Solver {
                   return_type,
                 } = func_type
                 else {
-                  return error!("Cannot call type '{func_type}'")
-                    .span(&instr.span);
+                  return error!("Cannot call type '{func_type}'").span(&instr.span);
                 };
                 if param_types.len() != *arity {
                   return error!(
@@ -417,17 +394,17 @@ impl Solver {
                     self.rt_value_map.insert(mangle.clone(), value);
                   });
                 continue; // Prevent IP from incrementing
-              },
+              }
               IrKind::Drop => {
                 self.pop();
-              },
+              }
               IrKind::StartScope => self.start_scope_v(),
               IrKind::EndScope => self.end_scope_v(),
             }
             ip += 1;
             Ok(block)
           }
-        },
+        }
       }?;
     }
     Ok(())

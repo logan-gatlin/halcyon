@@ -26,35 +26,28 @@ pub struct Solver {
 
 impl Solver {
   pub fn new(module: Module) -> Self {
-    let function_dependencies =
-      module.functions.iter().map(|(mangle, func)| {
-        let mut deps = HashSet::new();
-        for p in &func.parameter_mangles {
-          deps = deps
-            .union(
-              &module
-                .find_type_dependencies(*module.parameters.get(p).unwrap()),
-            )
-            .cloned()
-            .collect();
-        }
-        if let Some(r) = &func.returns_mangle {
-          deps = deps
-            .union(
-              &module
-                .find_type_dependencies(*module.parameters.get(r).unwrap()),
-            )
-            .cloned()
-            .collect();
-        }
+    let function_dependencies = module.functions.iter().map(|(mangle, func)| {
+      let mut deps = HashSet::new();
+      for p in &func.parameter_mangles {
+        deps = deps
+          .union(&module.find_type_dependencies(*module.parameters.get(p).unwrap()))
+          .cloned()
+          .collect();
+      }
+      if let Some(r) = &func.returns_mangle {
+        deps = deps
+          .union(&module.find_type_dependencies(*module.parameters.get(r).unwrap()))
+          .cloned()
+          .collect();
+      }
 
-        (mangle.clone(), deps)
-      });
-    let constant_dependencies = module.constants.iter().map(|(mangle, ptr)| {
-      (mangle.clone(), module.find_type_dependencies(*ptr))
+      (mangle.clone(), deps)
     });
-    let dependency_graph =
-      function_dependencies.chain(constant_dependencies).collect();
+    let constant_dependencies = module
+      .constants
+      .iter()
+      .map(|(mangle, ptr)| (mangle.clone(), module.find_type_dependencies(*ptr)));
+    let dependency_graph = function_dependencies.chain(constant_dependencies).collect();
 
     // Prelude
     let mut const_value_map = HashMap::new();
@@ -91,7 +84,7 @@ impl Module {
     loop {
       visited.insert(current_block);
       match &self.blocks[current_block] {
-        Block::Terminal | Block::Unreachable => {},
+        Block::Terminal | Block::Unreachable => {}
         Block::Basic { body, next, typed } => {
           to_visit.push(*next);
           body.into_iter().for_each(|ir| {
@@ -100,8 +93,7 @@ impl Module {
             {
               deps.insert(ident.clone());
               to_visit.push(*block);
-            } else if let IrKind::Const(ConstValue::Function(mangle)) = &ir.kind
-            {
+            } else if let IrKind::Const(ConstValue::Function(mangle)) = &ir.kind {
               let func = self.functions.get(mangle).unwrap();
               for p in &func.parameter_mangles {
                 to_visit.push(*self.parameters.get(p).unwrap());
@@ -110,10 +102,10 @@ impl Module {
                 to_visit.push(*self.parameters.get(mangle).unwrap());
               }
               deps.insert(mangle.clone());
-              //to_visit.push(func.block);
+              to_visit.push(func.block);
             }
           });
-        },
+        }
         Block::Branch {
           when_true,
           when_false,
@@ -121,7 +113,7 @@ impl Module {
         } => {
           to_visit.push(*when_true);
           to_visit.push(*when_false);
-        },
+        }
       }
       loop {
         if let Some(ptr) = to_visit.pop() {

@@ -1,12 +1,3 @@
-array :: (T: type, size: integer) -> type {
-    if size > 0 {
-        struct {
-            inner: T,
-            next: array(T, size - 1)
-        }
-    } else {
-        nothing
-    }
-};
+a :: () {}
 
-IntArray4 :: array(integer, 4);
+b :: () {}
