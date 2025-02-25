@@ -118,7 +118,7 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
       self.skip(1);
       let child = self
         .expression(operator.precedence())
-        .trace(format!("while parsing unary {}", operator))
+        .trace_span(span, format!("while parsing unary {}", operator))
         .span(&span)?;
       let span = span + child.span;
       Expression::new(
@@ -148,7 +148,7 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
           let span = next.1;
           let rhs = self
             .expression(new_precedence)
-            .trace(format!("while parsing binary {}", operator))
+            .trace_span(span, format!("while parsing binary {}", operator))
             .span(&span)?;
           let span = next.1 + rhs.span;
           current = Expression::new(
@@ -200,13 +200,14 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
         self.skip(1);
         let mut args = vec![];
         loop {
-          match self.expression(0) {
-            Ok(a) => {
-              span = span + a.span;
-              args.push(a)
-            },
-            Err(_) => break,
-          };
+          if self.eat(t::RightParen).is_ok() {
+            break;
+          }
+          let arg = self
+            .expression(0)
+            .trace_span(span, "while parsing function call")?;
+          span = span + arg.span;
+          args.push(arg);
           if !self.eat(t::Comma).is_ok() {
             break;
           }
@@ -217,7 +218,7 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
             callee: current.into(),
             args,
           },
-          span + span2,
+          span,
         );
       }
       // Unary postfix

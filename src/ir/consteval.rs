@@ -3,13 +3,13 @@ use std::collections::HashSet;
 use crate::{err::*, error, ir::types::Primitive};
 
 use super::solver::{Solver, StackValue};
-use super::{Block, ConstValue, IrPtr, types::Type};
+use super::{ConstValue, types::Type};
 
 impl Solver {
   pub(super) fn pop(&mut self) -> ConstValue {
     match self.value_stack.pop() {
       Some(StackValue::Value(v)) => v,
-      Some(StackValue::OldValue(v)) => {
+      Some(StackValue::OldValue(_)) => {
         panic!()
       },
       Some(StackValue::Guard) => {
@@ -63,7 +63,7 @@ impl Solver {
     self.push(last);
   }
 
-  pub fn conseval_module(&mut self) -> Result<()> {
+  pub fn consteval_module(&mut self) -> Result<()> {
     let mut deps = self
       .dependency_graph
       .clone()
@@ -74,7 +74,7 @@ impl Solver {
     let mut resolved = HashSet::new();
     println!("{deps:#?}");
     // Iterate constants from least to most dependencies
-    for (mangle, deps) in deps {
+    for (mangle, _) in deps {
       self.rt_value_map.clear();
       self.value_stack.clear();
       resolved.insert(mangle.clone());
@@ -161,10 +161,7 @@ impl Solver {
       ConstValue::Integer(_) => p::integer.promote(),
       ConstValue::Real(_) => p::real.promote(),
       ConstValue::Boolean(_) => p::boolean.promote(),
-      ConstValue::String {
-        virtual_address: address,
-        length,
-      } => p::string.promote(),
+      ConstValue::String { .. } => p::string.promote(),
       ConstValue::Glyph(_) => p::glyph.promote(),
       ConstValue::Function(mangle) => {
         self.type_map.get(mangle).unwrap().clone()
@@ -184,29 +181,5 @@ impl Solver {
       },
       ConstValue::Type(_) => Type::Type,
     }
-  }
-
-  pub fn check_asserts(&self, mut block: IrPtr) -> Result<()> {
-    let mut visited: HashSet<IrPtr> = HashSet::new();
-    let mut to_visit = vec![];
-    loop {
-      visited.insert(block);
-      match &self.module.blocks[block] {
-        Block::Terminal | Block::Unreachable => {},
-        Block::Basic { body, next, typed } => {
-          to_visit.push(next);
-          for ir in body {}
-        },
-        Block::Branch {
-          span,
-          when_true,
-          when_false,
-        } => {
-          to_visit.push(when_true);
-          to_visit.push(when_false);
-        },
-      }
-    }
-    todo!()
   }
 }

@@ -32,7 +32,6 @@ macro_rules! diagnostic {
 
 impl Diagnostic {
   pub fn new(reason: impl Into<String>, span: Option<Span>) -> Self {
-    let a = "/*";
     Self {
       reason: reason.into(),
       span,

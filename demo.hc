@@ -4,7 +4,7 @@ array :: (T: type, size: integer) -> type {
 	} else {
 		struct {
 			value: T,
-			next: array(T, size - )
+			next: array(T, size - 1)
 		}
 	}
 }

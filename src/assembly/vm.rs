@@ -1,5 +1,6 @@
 use super::{Wasm, WasmValue};
 use crate::{
+  assembly::WasmType,
   err::*,
   error,
   ir::{
@@ -27,15 +28,12 @@ fn const_to_wasm(c: ConstValue) -> Vec<WasmValue> {
     },
     ConstValue::Glyph(val) => vec![w::I32(val as i32)],
     ConstValue::Function(val) => vec![w::FuncRef(val)],
-    ConstValue::StructLiteral {
-      member_names,
-      member_values,
-    } => member_values
+    ConstValue::StructLiteral { member_values, .. } => member_values
       .into_iter()
       .rev()
       .flat_map(|c| const_to_wasm(c))
       .collect(),
-    ConstValue::Type(val) => panic!("Type 'Type' has no WASM representation"),
+    ConstValue::Type(_) => panic!("Type 'Type' has no WASM representation"),
   }
 }
 
@@ -103,33 +101,30 @@ impl VirtualMachine {
           ))
         },
       },
-      Type::Struct {
-        member_names,
-        member_types,
-      } => todo!(),
-      Type::Function {
-        param_types,
-        return_type,
-      } => todo!(),
+      Type::Struct { .. } => todo!(),
+      Type::Function { .. } => todo!(),
       Type::Reference(_) => todo!(),
       Type::Ambiguous => todo!(),
       Type::Type => panic!("Type 'Type' has no WASM representation"),
     }
   }
 
+  #[allow(unused_variables)]
   pub fn exec(&mut self, instr: Wasm) -> Result<()> {
+    use WasmType as t;
     use WasmValue as v;
     let mut pop = || self.stack.pop().reason("Popped an empty stack");
+    // TODO fix ignored op type
     match instr {
       Wasm::Constant(wasm_value) => self.stack.push(wasm_value),
       Wasm::Add(wasm_type) => {
         let right = pop()?;
         let left = pop()?;
-        let result = match (&left, &right) {
-          (v::I32(l), v::I32(r)) => v::I32(l + r),
-          (v::I64(l), v::I64(r)) => v::I64(l + r),
-          (v::F32(l), v::F32(r)) => v::F32(l + r),
-          (v::F64(l), v::F64(r)) => v::F64(l + r),
+        let result = match (&left, &right, wasm_type) {
+          (v::I32(l), v::I32(r), t::I32) => v::I32(l + r),
+          (v::I64(l), v::I64(r), t::I64) => v::I64(l + r),
+          (v::F32(l), v::F32(r), t::F32) => v::F32(l + r),
+          (v::F64(l), v::F64(r), t::F64) => v::F64(l + r),
           _ => return error!("Invalid add operands: {left:?}, {right:?}"),
         };
         self.stack.push(result);

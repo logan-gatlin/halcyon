@@ -156,7 +156,9 @@ impl Canonizer {
     this
   }
 
-  pub fn canonize_ast(stmts: Vec<Statement>) -> Result<Vec<CanonNode>> {
+  pub fn canonize_ast(
+    stmts: Vec<Statement>,
+  ) -> Result<(Vec<CanonNode>, Vec<Vec<u8>>)> {
     let mut this = Self::new();
     let top_node = this.new_node();
     let top_nodes = this.canon_block(stmts)?;
@@ -174,6 +176,7 @@ impl Canonizer {
       .into_iter()
       .map(|ir| ir.ok_or(diagnostic!("Empty node in IR array")))
       .try_collect::<Vec<_>>()
+      .map(|m| (m, this.heap))
   }
 
   pub(crate) fn new_node(&mut self) -> IrPtr {
@@ -215,7 +218,6 @@ impl Canonizer {
 
   pub(crate) fn define_builtin(&mut self, name: impl Into<String>) {
     let name = name.into();
-    let path = vec![name.clone()];
     let mangle = mangle_builtin(&name);
     assert!(
       self

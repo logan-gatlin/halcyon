@@ -6,7 +6,7 @@ use crate::{
 };
 
 use super::{
-  Ir, IrPtr,
+  IrPtr,
   solver::{ReturnAddress, Solver},
 };
 
@@ -79,7 +79,7 @@ impl Solver {
             .span(&span),
           }
         },
-        Block::Basic { body, next, typed } => {
+        Block::Basic { body, next } => {
           if self.ip == body.len() {
             self.ip = 0;
             Ok(next)

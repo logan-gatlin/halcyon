@@ -42,9 +42,9 @@ impl Canonizer {
       .into_iter()
       .unzip();
     if let Some(pos) = {
-      let mut set = names.iter();
       let mut unique = HashSet::new();
-      set.position(move |x| unique.insert(x))
+      let mut set = names.iter();
+      set.position(move |x| !unique.insert(x))
     } {
       return error!(
         "{error_hint} parameter {} must have a unique name",
@@ -74,10 +74,11 @@ impl Canonizer {
         }
       })
       .try_collect::<Vec<_>>()?;
-    stmts
+    let v = stmts
       .into_iter()
       .map(|s| self.canon_statement(s))
-      .try_collect::<Vec<_>>()
+      .try_collect::<Vec<_>>();
+    v
   }
 
   fn canon_statement(&mut self, stmt: Statement) -> Result<IrPtr> {

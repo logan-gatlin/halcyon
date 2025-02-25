@@ -24,7 +24,6 @@ pub enum Block {
   Basic {
     body: Vec<Ir>,
     next: IrPtr,
-    typed: bool,
   },
   Branch {
     span: Span,
@@ -38,7 +37,6 @@ impl Block {
     Self::Basic {
       body: vec![],
       next: 0,
-      typed: false,
     }
   }
 
@@ -101,7 +99,7 @@ impl Module {
         Block::Unreachable => {
           graph.new_node(i.to_string(), "UNREACHABLE".to_string());
         },
-        Block::Basic { body, next, typed } => {
+        Block::Basic { body, next } => {
           let mut body = body
             .into_iter()
             .map(|ir| format!("{ir:?}"))
@@ -248,13 +246,10 @@ impl std::fmt::Display for ConstValue {
       ConstValue::Nothing => write!(f, "()"),
       ConstValue::String {
         virtual_address: address,
-        length,
+        ..
       } => write!(f, "string {address}"),
       ConstValue::Function(val) => write!(f, "function {val}"),
-      ConstValue::StructLiteral {
-        member_names,
-        member_values,
-      } => write!(f, "struct"),
+      ConstValue::StructLiteral { .. } => write!(f, "struct"),
       ConstValue::Type(val) => write!(f, "{val}"),
       ConstValue::Integer(val) => write!(f, "{val}"),
       ConstValue::Real(val) => write!(f, "{val}"),

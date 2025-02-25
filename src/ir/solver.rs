@@ -120,7 +120,7 @@ impl Module {
       visited.insert(current_block);
       match &self.blocks[current_block] {
         Block::Terminal | Block::Unreachable => {},
-        Block::Basic { body, next, typed } => {
+        Block::Basic { body, next } => {
           to_visit.push(*next);
           body.into_iter().for_each(|ir| {
             if let IrKind::Get(ident) = &ir.kind

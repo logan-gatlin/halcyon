@@ -4,7 +4,7 @@ use crate::{
   diagnostic,
   err::*,
   error,
-  ir::{Block, ConstValue, FunctionInfo, Ir, IrKind, IrPtr},
+  ir::{Block, ConstValue, FunctionInfo, Ir, IrKind, IrPtr, Module},
   naming::CanonKind,
 };
 
@@ -15,20 +15,40 @@ fn unreachable_error() -> Diagnostic {
 }
 
 pub struct Analyzer {
-  pub(super) module: Vec<CanonNode>,
-  pub(super) blocks: Vec<Block>,
-  pub(super) break_stack: Vec<IrPtr>,
-  pub(super) functions: HashMap<Mangle, FunctionInfo>,
-  pub(super) constants: HashMap<Mangle, IrPtr>,
-  pub(super) type_assertions: HashMap<Mangle, IrPtr>,
+  nodes: Vec<CanonNode>,
+  blocks: Vec<Block>,
+  break_stack: Vec<IrPtr>,
+  functions: HashMap<Mangle, FunctionInfo>,
+  constants: HashMap<Mangle, IrPtr>,
+  type_assertions: HashMap<Mangle, IrPtr>,
 }
 
 impl Analyzer {
-  pub const TERMINUS: IrPtr = 0;
+  const TERMINUS: IrPtr = 0;
 
-  pub fn new(module: Vec<CanonNode>) -> Self {
+  pub fn analyze(nodes: Vec<CanonNode>, heap: Vec<Vec<u8>>) -> Result<Module> {
+    let mut this = Self::new(nodes);
+    let block = this.new_block();
+    this.analyze_node(0, block)?;
+    let Analyzer {
+      blocks,
+      functions,
+      constants,
+      type_assertions,
+      ..
+    } = this;
+    Ok(Module {
+      heap,
+      constants,
+      functions,
+      type_assertions,
+      blocks,
+    })
+  }
+
+  fn new(module: Vec<CanonNode>) -> Self {
     Self {
-      module,
+      nodes: module,
       blocks: vec![Block::Terminal],
       break_stack: Default::default(),
       functions: Default::default(),
@@ -41,12 +61,11 @@ impl Analyzer {
     self.blocks.push(Block::Basic {
       body: vec![],
       next: 0,
-      typed: false,
     });
     self.blocks.len() - 1
   }
 
-  pub(crate) fn node_reaches(&mut self, from: IrPtr, to: IrPtr) -> bool {
+  fn node_reaches(&mut self, from: IrPtr, to: IrPtr) -> bool {
     let mut visited = HashSet::new();
     let mut to_visit = vec![];
     let mut current_node = from;
@@ -90,7 +109,10 @@ impl Analyzer {
   fn analyze_node(&mut self, node: IrPtr, mut block: IrPtr) -> Result<IrPtr> {
     use CanonKind as k;
     use IrKind as i;
-    let node = self.module[block].clone();
+    let node = self.nodes[node].clone();
+    if self.blocks[block].is_terminal() {
+      return Ok(block);
+    }
     let ir = |kind| Ir {
       kind,
       span: node.span,
@@ -145,7 +167,7 @@ impl Analyzer {
         block = items.into_iter().try_fold(block, |block, node| {
           let new_block = self.analyze_node(node, block);
           if let Ok(new_block) = new_block {
-            if let k::Remainder(_) = &self.module[node].kind {
+            if let k::Remainder(_) = &self.nodes[node].kind {
             } else {
               // Drop excess values if this statement is not a remainder
               self.push(new_block, ir(i::Drop));
@@ -279,9 +301,9 @@ impl Analyzer {
         }
       },
       k::StructDef { fields, types } => {
-        for t in types {
-          block = self.analyze_node(t, block)?;
-        }
+        block = types
+          .into_iter()
+          .try_fold(block, |block, type_| self.analyze_node(type_, block))?;
         self.push(block, ir(i::StructDef { fields }));
       },
       k::StructLiteral {
@@ -296,9 +318,9 @@ impl Analyzer {
         } else {
           None
         };
-        for t in field_values {
-          block = self.analyze_node(t, block)?;
-        }
+        block = field_values
+          .into_iter()
+          .try_fold(block, |block, value| self.analyze_node(value, block))?;
         self.push(
           block,
           ir(i::StructLiteral {

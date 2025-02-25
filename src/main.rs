@@ -1,5 +1,6 @@
 #![feature(let_chains)]
 #![feature(iterator_try_collect)]
+#![allow(unused_imports)]
 mod assembly;
 mod buffer;
 mod err;
@@ -12,6 +13,7 @@ use std::ops::Add;
 
 use buffer::*;
 use ir::solver::Solver;
+use naming::{Canonizer, control_flow::Analyzer};
 use parse::*;
 use token::*;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -69,7 +71,7 @@ pub fn parse_tree(input: String) -> String {
 #[wasm_bindgen]
 pub fn ast(input: String) -> String {
   let tokenizer = Tokenizer::new(input.chars()).filter(|t| t.0.is_meaningful());
-  let parser = Parser::new(tokenizer);
+  let parse_tree = Parser::new(tokenizer);
   todo!()
   /*
   let ast = Analyzer::analyze(parser);
@@ -97,16 +99,11 @@ pub fn try_compile(input: String) -> Vec<u8> {
 fn main() {
   let input = include_str!("../demo.hc").to_string();
   let tokenizer = Tokenizer::new(input.chars()).filter(|t| t.0.is_meaningful());
-  let parser = Parser::new(tokenizer);
-  /*
-  let module = Analyzer::analyze(parser).unwrap();
-  let json = module.to_json();
-  std::fs::write("./graph.json", json).unwrap();
-  println!("{:#?}", module.blocks);
-  println!("-----");
-  let mut solver = Solver::new(module);
-  solver.conseval_module().unwrap();
-  */
+  let parse_tree = Parser::new(tokenizer).collect::<Vec<_>>();
+  let (ast, heap) = Canonizer::canonize_ast(parse_tree).unwrap();
+  let cflow = Analyzer::analyze(ast.clone(), heap.clone()).unwrap();
+  let mut solver = Solver::new(cflow);
+  solver.consteval_module().unwrap();
 }
 
 /*
