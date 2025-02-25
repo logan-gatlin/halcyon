@@ -1,20 +1,19 @@
-pub mod build_ir;
 pub mod canon;
+pub mod control_flow;
 
 use std::collections::HashMap;
-use std::collections::HashSet;
 
+use crate::Span;
 use crate::diagnostic;
 use crate::err::*;
 use crate::error;
-use crate::ir::Block;
-use crate::ir::FunctionInfo;
-use crate::ir::Ir;
+use crate::ir::ConstValue;
 use crate::ir::IrPtr;
-use crate::ir::Module;
 use crate::ir::types::Primitive;
 use crate::ir::types::Type;
+use crate::parse::BinaryOp;
 use crate::parse::Statement;
+use crate::parse::UnaryOp;
 
 pub type Mangle = String;
 
@@ -57,41 +56,96 @@ pub enum Event {
     old_value: Option<Symbol>,
   },
 }
+#[derive(Debug, Clone)]
+pub struct CanonNode {
+  pub kind: CanonKind,
+  pub span: Span,
+  pub type_: Type,
+}
 
-/// Convert parse tree to AST
-pub struct Analyzer {
+#[derive(Debug, Clone)]
+pub enum CanonKind {
+  Remainder(IrPtr),
+  Declaration {
+    assignee: Mangle,
+    is_constant: bool,
+    type_assert: Option<IrPtr>,
+    value: IrPtr,
+  },
+  Immediate(ConstValue),
+  Block(Vec<IrPtr>),
+  Identifier(Mangle),
+  StructDef {
+    fields: Vec<String>,
+    types: Vec<IrPtr>,
+  },
+  StructLiteral {
+    struct_t: Option<(IrPtr, Mangle)>,
+    field_names: Vec<String>,
+    field_values: Vec<IrPtr>,
+  },
+  Field {
+    of: IrPtr,
+    index: String,
+  },
+  Binary {
+    op: BinaryOp,
+    left: IrPtr,
+    right: IrPtr,
+  },
+  Unary {
+    op: UnaryOp,
+    child: IrPtr,
+  },
+  FunctionDef {
+    name: Mangle,
+    parameter_names: Vec<Mangle>,
+    parameter_types: Vec<IrPtr>,
+    returns: Option<(IrPtr, Mangle)>,
+    body: IrPtr,
+  },
+  FunctionCall {
+    callee: IrPtr,
+    callee_name: Mangle,
+    arguments: Vec<IrPtr>,
+  },
+  If {
+    predicate: IrPtr,
+    then: IrPtr,
+    else_: Option<IrPtr>,
+  },
+  Loop {
+    parameter_names: Vec<Mangle>,
+    parameter_values: Vec<IrPtr>,
+    body: IrPtr,
+  },
+  Break(Option<IrPtr>),
+}
+
+#[derive(Debug, Clone)]
+pub struct Canonizer {
+  pub ir: Vec<Option<CanonNode>>,
   pub scope_depth: usize,
   pub salt: usize,
   pub path: Vec<String>,
   pub event_stack: Vec<Event>,
   pub heap: Vec<Vec<u8>>,
-  // Constant expressions to evaluate
-  pub constants: HashMap<Mangle, IrPtr>,
-  // Parameter types to evaluate
-  pub type_assertions: HashMap<Mangle, IrPtr>,
-  pub functions: HashMap<Mangle, FunctionInfo>,
-  pub blocks: Vec<Block>,
+  pub functions: HashMap<Mangle, IrPtr>,
   pub main: Option<Mangle>,
-  pub break_targets: Vec<IrPtr>,
   _name_to_symbol: HashMap<String, Symbol>,
 }
 
-impl Analyzer {
-  pub(crate) const TERMINUS: IrPtr = 0;
-
+impl Canonizer {
   fn new() -> Self {
     let mut this = Self {
+      ir: vec![],
       path: vec![],
       event_stack: vec![],
       heap: vec![],
-      constants: HashMap::new(),
-      type_assertions: HashMap::new(),
       functions: HashMap::new(),
       scope_depth: 0,
       salt: 0,
-      blocks: vec![Block::Terminal],
       main: None,
-      break_targets: vec![],
       _name_to_symbol: HashMap::new(),
     };
     for prim in Primitive::ALL {
@@ -102,64 +156,34 @@ impl Analyzer {
     this
   }
 
-  pub fn analyze(stmts: impl IntoIterator<Item = Statement>) -> Result<Module> {
+  pub fn canonize_ast(stmts: Vec<Statement>) -> Result<Vec<CanonNode>> {
     let mut this = Self::new();
-    let root = this.new_block();
-    let entry = this.analyze_block(stmts, root)?;
-    Ok(Module {
-      heap: this.heap,
-      functions: this.functions,
-      constants: this.constants,
-      type_assertions: this.type_assertions,
-      blocks: this.blocks,
-    })
+    let top_node = this.new_node();
+    let top_nodes = this.canon_block(stmts)?;
+    this.set_node(
+      top_node,
+      CanonNode {
+        kind: CanonKind::Block(top_nodes),
+        span: Span { row: 0, column: 0 },
+        type_: Type::default(),
+      },
+    );
+    this
+      .ir
+      .clone()
+      .into_iter()
+      .map(|ir| ir.ok_or(diagnostic!("Empty node in IR array")))
+      .try_collect::<Vec<_>>()
   }
 
-  pub(crate) fn node_reaches(&mut self, from: IrPtr, to: IrPtr) -> bool {
-    let mut visited = HashSet::new();
-    let mut to_visit = vec![];
-    let mut current_node = from;
-    loop {
-      if current_node == to {
-        return true;
-      }
-      visited.insert(current_node);
-      match self.blocks.get(current_node) {
-        Some(Block::Unreachable) | Some(Block::Terminal) => {},
-        Some(Block::Basic { next, .. }) => {
-          to_visit.push(next);
-        },
-        Some(Block::Branch {
-          when_true,
-          when_false,
-          ..
-        }) => {
-          to_visit.push(when_true);
-          to_visit.push(when_false);
-        },
-        None => {},
-      };
-      loop {
-        if let Some(n) = to_visit.pop() {
-          if !visited.contains(n) {
-            current_node = *n;
-            break;
-          }
-        } else {
-          return false;
-        }
-      }
-    }
+  pub(crate) fn new_node(&mut self) -> IrPtr {
+    self.ir.push(None);
+    self.ir.len() - 1
   }
 
-  pub(crate) fn new_block(&mut self) -> IrPtr {
-    let ptr = self.blocks.len();
-    self.blocks.push(Block::basic());
-    ptr
-  }
-
-  pub(crate) fn push(&mut self, ir_ptr: IrPtr, ir: Ir) {
-    self.blocks[ir_ptr].push(ir);
+  pub(crate) fn set_node(&mut self, position: IrPtr, node: CanonNode) {
+    assert!(self.ir[position].is_none());
+    self.ir[position] = Some(node);
   }
 
   pub(crate) fn name_to_symbol(&self, name: &str) -> Result<&Symbol> {

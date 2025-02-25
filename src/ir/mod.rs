@@ -146,18 +146,12 @@ pub struct FunctionInfo {
 #[derive(Clone)]
 pub struct Ir {
   pub span: Span,
-  pub typecheck_only: bool,
   pub kind: IrKind,
 }
 
 impl std::fmt::Debug for Ir {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(
-      f,
-      "{:#?}{}",
-      self.kind,
-      if self.typecheck_only { " *" } else { "" }
-    )
+    write!(f, "{:#?}", self.kind,)
   }
 }
 
@@ -178,7 +172,7 @@ pub enum IrKind {
   /// Pop N values, construct a new value and push it
   StructLiteral { param_names: Vec<String> },
   /// Pop N type values, push a new struct definition
-  StructDef { param_names: Vec<String> },
+  StructDef { fields: Vec<String> },
   /// Pop 1 type, assert that the next value on the stack is
   /// of that type. Keep this second value on the stack
   TypeAssert(Option<Mangle>),
@@ -207,7 +201,9 @@ impl std::fmt::Debug for IrKind {
       IrKind::StructLiteral { param_names } => {
         write!(f, "struct literal {}", param_names.len())
       },
-      IrKind::StructDef { param_names } => {
+      IrKind::StructDef {
+        fields: param_names,
+      } => {
         write!(f, "struct definition {}", param_names.len())
       },
       IrKind::TypeAssert(mangle) => write!(

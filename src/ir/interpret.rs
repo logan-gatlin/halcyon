@@ -188,7 +188,9 @@ impl Solver {
                   member_values,
                 })
               },
-              IrKind::StructDef { param_names } => {
+              IrKind::StructDef {
+                fields: param_names,
+              } => {
                 let mut member_types: Vec<_> = (0..param_names.len())
                   .rev()
                   .map(|i| {

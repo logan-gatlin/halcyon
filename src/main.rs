@@ -1,7 +1,5 @@
 #![feature(let_chains)]
 #![feature(iterator_try_collect)]
-#![allow(dead_code)]
-#![allow(unused_variables)]
 mod assembly;
 mod buffer;
 mod err;
@@ -14,7 +12,6 @@ use std::ops::Add;
 
 use buffer::*;
 use ir::solver::Solver;
-use naming::Analyzer;
 use parse::*;
 use token::*;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -101,6 +98,7 @@ fn main() {
   let input = include_str!("../demo.hc").to_string();
   let tokenizer = Tokenizer::new(input.chars()).filter(|t| t.0.is_meaningful());
   let parser = Parser::new(tokenizer);
+  /*
   let module = Analyzer::analyze(parser).unwrap();
   let json = module.to_json();
   std::fs::write("./graph.json", json).unwrap();
@@ -108,18 +106,6 @@ fn main() {
   println!("-----");
   let mut solver = Solver::new(module);
   solver.conseval_module().unwrap();
-  /*
-  let bin = OpTable::new()
-    .try_binary(
-      BinaryOp::Minus,
-      &Primitive::integer.promote(),
-      &Primitive::integer.promote(),
-    )
-    .unwrap();
-  let left = ConstValue::Integer(5);
-  let right = ConstValue::Integer(4);
-  let result = VirtualMachine::run(vec![left, right], bin.asm, bin.produces);
-  println!("{result:?}");
   */
 }
 
