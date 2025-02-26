@@ -9,8 +9,23 @@ array :: (T: type, size: integer) -> type {
 	}
 }
 
-IntArray4 :: array(integer, 4);
+/*
+IntArray4 :: {
+	loop i: 0 {
+		print_integer(i);
+		i + 1
+	}
+};
+*/
+IntArray2 :: array(integer, 2);
 
 main :: () {
+	IntArray2.{
+		value: 0,
+		next: .{
+			value: 1,
+			next: (),
+		}
+	};
 }
 

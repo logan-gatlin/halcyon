@@ -6,7 +6,6 @@
 (import "js" "memory" (memory 10 100))
 (data (i32.const 0) "fizzbuzz\0afizz\0abuzz\0a")
 
-(type $tup (struct i64))
 
 (func $5anon-3
   (param $7number-2$0 i64)

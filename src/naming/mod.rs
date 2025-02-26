@@ -128,11 +128,22 @@ pub enum CanonKind {
   Break(Option<IrPtr>),
 }
 
+#[derive(Debug, Clone)]
 pub struct CanonizedModule {
   pub nodes: Vec<CanonNode>,
   pub functions: HashMap<Mangle, IrPtr>,
   pub heap: Vec<Vec<u8>>,
   pub main: Option<Mangle>,
+}
+
+impl CanonizedModule {
+  pub fn type_of(&self, node: IrPtr) -> Type {
+    self.nodes[node].type_.clone()
+  }
+
+  pub fn span_of(&self, node: IrPtr) -> Span {
+    self.nodes[node].span
+  }
 }
 
 #[derive(Debug, Clone)]

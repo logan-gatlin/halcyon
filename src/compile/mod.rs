@@ -1,0 +1,91 @@
+use crate::{
+  assembly::WasmType,
+  ir::{
+    IrPtr,
+    types::{Primitive, Type},
+  },
+  naming::CanonizedModule,
+};
+
+mod lower;
+
+pub const PAGE_SIZE: usize = 64_000;
+
+pub struct Compiler {
+  /// Unique salt added to the names of WASM loops, blocks,
+  /// and compiler generated temporary registers.
+  /// Incremented after every use
+  unique_salt: usize,
+  /// The name of WASM blocks which can be 'broken' out of
+  /// are pushed onto this stack for inner break statements
+  /// to refer to
+  break_stack: Vec<String>,
+
+  module: CanonizedModule,
+}
+
+impl Compiler {
+  pub fn new(module: CanonizedModule) -> Self {
+    Self {
+      unique_salt: 0,
+      break_stack: vec![],
+      module,
+    }
+  }
+
+  pub fn compile(module: CanonizedModule, to_compile: Vec<IrPtr>) {
+    let mut this = Self::new(module);
+    let mut regs = vec![];
+    let mut instrs = vec![];
+    for func in to_compile {
+      this.lower(func, &mut regs, &mut instrs).unwrap();
+    }
+    regs.extend_from_slice(&instrs);
+    for r in regs {
+      println!("{}", r.to_wat());
+    }
+  }
+}
+
+impl Type {
+  pub const PTR_T: WasmType = WasmType::I32;
+
+  pub fn count_registers(&self) -> usize {
+    use Primitive as p;
+    match self {
+      Type::Primitive(primitive) => match primitive {
+        p::nothing | p::never => 0,
+        p::glyph | p::integer | p::real | p::boolean => 1,
+        p::string => 2,
+      },
+      Type::Struct { member_types, .. } => {
+        member_types.iter().map(|t| t.count_registers()).sum()
+      },
+      Type::Function { .. } => 1,
+      Type::Type => 0,
+      _ => panic!("Counted registers of ambiguous type"),
+    }
+  }
+
+  pub fn register_types(&self) -> Vec<WasmType> {
+    use Primitive as p;
+    use WasmType as a;
+    match self {
+      Type::Primitive(primitive) => match primitive {
+        p::nothing | p::never => vec![],
+        p::integer => vec![a::I64],
+        p::real => vec![a::F64],
+        p::boolean => vec![a::I32],
+        p::string => vec![Self::PTR_T, Self::PTR_T],
+        p::glyph => vec![a::I32],
+      },
+      Type::Struct { member_types, .. } => member_types
+        .iter()
+        .flat_map(|t| t.register_types())
+        .collect(),
+      Type::Function { .. } => vec![a::FuncRef],
+      Type::Type => vec![],
+      _ => panic!("Splatted ambiguous type"),
+    }
+  }
+}

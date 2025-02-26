@@ -13,27 +13,50 @@ pub struct VirtualMachine {
   pub stack: Vec<WasmValue>,
 }
 
-fn const_to_wasm(c: ConstValue) -> Vec<WasmValue> {
-  use WasmValue as w;
-  match c {
-    ConstValue::Nothing => vec![],
-    ConstValue::Integer(val) => vec![w::I64(val)],
-    ConstValue::Real(val) => vec![w::F64(val)],
-    ConstValue::Boolean(val) => vec![w::I32(val as i32)],
-    ConstValue::String {
-      virtual_address: address,
-      length,
-    } => {
-      vec![w::I32(address as i32), w::I32(length as i32)]
-    },
-    ConstValue::Glyph(val) => vec![w::I32(val as i32)],
-    ConstValue::Function(val) => vec![w::FuncRef(val)],
-    ConstValue::StructLiteral { member_values, .. } => member_values
-      .into_iter()
-      .rev()
-      .flat_map(|c| const_to_wasm(c))
-      .collect(),
-    ConstValue::Type(_) => panic!("Type 'Type' has no WASM representation"),
+impl ConstValue {
+  pub fn to_wasm_type(self) -> Vec<WasmType> {
+    use WasmType as w;
+    match self {
+      ConstValue::Nothing => vec![],
+      ConstValue::Integer(_) => vec![w::I64],
+      ConstValue::Real(_) => vec![w::F64],
+      ConstValue::Boolean(_) => vec![w::I32],
+      ConstValue::String { .. } => {
+        vec![w::I32, w::I32]
+      },
+      ConstValue::Glyph(_) => vec![w::I32],
+      ConstValue::Function(_) => vec![w::FuncRef],
+      ConstValue::StructLiteral { member_values, .. } => member_values
+        .into_iter()
+        .rev()
+        .flat_map(|c| c.to_wasm_type())
+        .collect(),
+      ConstValue::Type(_) => panic!("Type 'Type' has no WASM representation"),
+    }
+  }
+
+  pub fn to_wasm_value(self) -> Vec<WasmValue> {
+    use WasmValue as w;
+    match self {
+      ConstValue::Nothing => vec![],
+      ConstValue::Integer(val) => vec![w::I64(val)],
+      ConstValue::Real(val) => vec![w::F64(val)],
+      ConstValue::Boolean(val) => vec![w::I32(val as i32)],
+      ConstValue::String {
+        virtual_address: address,
+        length,
+      } => {
+        vec![w::I32(address as i32), w::I32(length as i32)]
+      },
+      ConstValue::Glyph(val) => vec![w::I32(val as i32)],
+      ConstValue::Function(val) => vec![w::FuncRef(val)],
+      ConstValue::StructLiteral { member_values, .. } => member_values
+        .into_iter()
+        .rev()
+        .flat_map(|c| c.to_wasm_value())
+        .collect(),
+      ConstValue::Type(_) => panic!("Type 'Type' has no WASM representation"),
+    }
   }
 }
 
@@ -48,7 +71,7 @@ impl VirtualMachine {
     let mut this = Self {
       stack: initial_stack
         .into_iter()
-        .flat_map(|c| const_to_wasm(c))
+        .flat_map(|c| c.to_wasm_value())
         .collect(),
     };
     for op in ops {

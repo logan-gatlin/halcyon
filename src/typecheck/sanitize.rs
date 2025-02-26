@@ -12,14 +12,6 @@ use super::TypeChecker;
 use CanonKind::*;
 
 impl TypeChecker {
-  fn type_of(&self, node: IrPtr) -> Type {
-    self.module.nodes[node].type_.clone()
-  }
-
-  fn span_of(&self, node: IrPtr) -> Span {
-    self.module.nodes[node].span
-  }
-
   pub(super) fn sanitize_main(&self) -> Result<HashSet<IrPtr>> {
     let Some(main) = self.module.main.clone() else {
       return error!("Program does not contain a 'main' function");
@@ -68,7 +60,7 @@ impl TypeChecker {
       }
     }
     let mut sanitize = move |ptr| self.sanitize_node(ptr, to_visit);
-    if self.type_of(node).ambiguous() {
+    if self.module.type_of(node).ambiguous() {
       return err.span(&span);
     }
     match &self.module.nodes[node].kind {
@@ -78,9 +70,9 @@ impl TypeChecker {
       Declaration {
         is_constant, value, ..
       } => {
-        let type_ = self.type_of(*value);
+        let type_ = self.module.type_of(*value);
         if (type_.ambiguous() || type_ == Type::Type) && !is_constant {
-          return err.span(&self.span_of(*value));
+          return err.span(&self.module.span_of(*value));
         }
         if !is_constant {
           sanitize(*value)?;

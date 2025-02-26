@@ -3,6 +3,7 @@
 #![allow(unused_imports)]
 mod assembly;
 mod buffer;
+mod compile;
 mod err;
 mod graph;
 mod ir;
@@ -13,6 +14,7 @@ mod typecheck;
 use std::ops::Add;
 
 use buffer::*;
+use compile::Compiler;
 use ir::solver::Solver;
 use naming::{Canonizer, control_flow::Analyzer};
 use parse::*;
@@ -57,4 +59,5 @@ fn main() {
   let solution = Solver::solve(cflow).unwrap();
   let (module, clean_nodes) =
     TypeChecker::typecheck(canon_module, solution).unwrap();
+  Compiler::compile(module, clean_nodes.into_iter().collect());
 }

@@ -271,8 +271,18 @@ impl Canonizer {
         } else {
           None
         };
-        let field_names =
-          self.extract_names("Structure literal", params.names.iter())?;
+        let field_names = params
+          .names
+          .iter()
+          .map(|n| {
+            if let e::Identifier { name } = &n.kind {
+              Ok(name.clone())
+            } else {
+              error!("Structure definition field must be an identifier")
+                .span(&n.span)
+            }
+          })
+          .try_collect::<Vec<_>>()?;
         let field_values = params
           .types
           .into_iter()
