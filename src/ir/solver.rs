@@ -1,5 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
+use crate::err::*;
+use crate::naming::builtins::Builtin;
 use crate::naming::{Mangle, mangle_builtin};
 
 use super::{
@@ -38,8 +40,36 @@ pub struct Solver {
   pub(super) block: usize,
 }
 
+#[derive(Debug, Clone)]
+pub struct Solution {
+  pub constants: HashMap<Mangle, ConstValue>,
+  pub assertions: HashMap<Mangle, Type>,
+}
+
 impl Solver {
-  pub fn new(module: Module) -> Self {
+  pub fn solve(module: Module) -> Result<Solution> {
+    let mut this = Self::new(module);
+    this.consteval_module()?;
+    // Account for implicit function type assertions
+    for (name, type_) in &this.type_map {
+      if let Type::Function { .. } = type_ {
+        this.assert_map.insert(name.clone(), type_.clone());
+      }
+    }
+    this.assert_map.insert(
+      mangle_builtin("print_string"),
+      Type::Function {
+        param_types: vec![Primitive::string.promote()],
+        return_type: Box::new(Primitive::nothing.promote()),
+      },
+    );
+    Ok(Solution {
+      constants: this.const_value_map.clone(),
+      assertions: this.assert_map.clone(),
+    })
+  }
+
+  fn new(module: Module) -> Self {
     let assertion_dependencies =
       module.type_assertions.iter().map(|(mangle, assert)| {
         let mut deps = module.find_type_dependencies(*assert);
@@ -88,9 +118,11 @@ impl Solver {
       const_value_map.insert(mangle.clone(), ConstValue::Type(p.promote()));
       type_map.insert(mangle, Type::Type);
     }
-    let type_mangle = mangle_builtin(format!("{}", Type::Type));
-    const_value_map.insert(type_mangle.clone(), ConstValue::Type(Type::Type));
-    type_map.insert(type_mangle, Type::Type);
+    for b in Builtin::ALL {
+      let mangle = mangle_builtin(b.to_string());
+      const_value_map.insert(mangle.clone(), b.value());
+      type_map.insert(mangle, b.type_());
+    }
     Self {
       module,
       dependency_graph,

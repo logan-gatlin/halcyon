@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use super::Canonizer;
 use crate::{
   Span,
+  assembly::operators::OpDef,
   err::*,
   error,
   ir::{ConstValue, IrPtr, types::Type},
@@ -94,7 +95,9 @@ impl Canonizer {
         let assignee = if is_constant {
           self.name_to_symbol(&name).span(&stmt.span)?.mangle.clone()
         } else {
-          self.define_name(name, is_constant).span(&stmt.span)?
+          self
+            .define_name(name.clone(), is_constant)
+            .span(&stmt.span)?
         };
         let type_assert = if let Some(type_) = type_ {
           Some(self.canon_expr(type_)?)
@@ -102,6 +105,19 @@ impl Canonizer {
           None
         };
         let value = self.canon_expr(value)?;
+        // Hook main
+        if is_constant && name == "main" && self.scope_depth == 0 {
+          if let CanonKind::FunctionDef { name, .. } =
+            &self.nodes[value].clone().unwrap().kind
+          {
+            self.main = Some(name.clone());
+          } else {
+            return error!(
+              "Identifier 'main' in this context must be a function"
+            )
+            .span(&stmt.span);
+          }
+        }
         k::Declaration {
           assignee,
           is_constant,
@@ -110,7 +126,7 @@ impl Canonizer {
         }
       },
       StatementKind::Expression(expression) => {
-        self.ir.pop();
+        self.nodes.pop();
         return self.canon_expr(expression);
       },
       StatementKind::Remainder(expression) => {
@@ -161,14 +177,23 @@ impl Canonizer {
       e::Binary { op, left, right } => {
         let left = self.canon_expr(*left)?;
         let right = self.canon_expr(*right)?;
-        k::Binary { op, left, right }
+        k::Binary {
+          op,
+          opdef: OpDef::default(),
+          left,
+          right,
+        }
       },
       e::Unary { op, child } => {
         let child = self.canon_expr(*child)?;
-        k::Unary { op, child }
+        k::Unary {
+          op,
+          opdef: OpDef::default(),
+          child,
+        }
       },
       e::Parenthesis(expression) => {
-        self.ir.pop();
+        self.nodes.pop();
         return self.canon_expr(*expression);
       },
       e::FunctionDef {
@@ -178,6 +203,7 @@ impl Canonizer {
       } => {
         self.start_function();
         let function_mangle = self.define_unique("function");
+        self.functions.insert(function_mangle.clone(), node);
         self.enscope();
         let parameter_names =
           self.extract_names("Function", params.names.iter())?;
@@ -217,8 +243,18 @@ impl Canonizer {
         }
       },
       e::StructDef(parameters) => {
-        let fields = self
-          .extract_names("Structure definition", parameters.names.iter())?;
+        let fields = parameters
+          .names
+          .iter()
+          .map(|n| {
+            if let e::Identifier { name } = &n.kind {
+              Ok(name.clone())
+            } else {
+              error!("Structure definition field must be an identifier")
+                .span(&n.span)
+            }
+          })
+          .try_collect::<Vec<_>>()?;
         let types = parameters
           .types
           .into_iter()

@@ -244,12 +244,9 @@ impl std::fmt::Display for ConstValue {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       ConstValue::Nothing => write!(f, "()"),
-      ConstValue::String {
-        virtual_address: address,
-        ..
-      } => write!(f, "string {address}"),
-      ConstValue::Function(val) => write!(f, "function {val}"),
-      ConstValue::StructLiteral { .. } => write!(f, "struct"),
+      ConstValue::String { .. } => write!(f, "<string>"),
+      ConstValue::Function(val) => write!(f, "<function>"),
+      ConstValue::StructLiteral { .. } => write!(f, "<struct>"),
       ConstValue::Type(val) => write!(f, "{val}"),
       ConstValue::Integer(val) => write!(f, "{val}"),
       ConstValue::Real(val) => write!(f, "{val}"),

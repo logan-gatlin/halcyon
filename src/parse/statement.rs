@@ -40,7 +40,7 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
           Some(
             self
               .expression(0)
-              .trace_span(span, "While parsing expression type hint")?,
+              .trace_span(span, "While parsing type assertion")?,
           )
         };
         let is_constant = if self.eat(t::Equal).is_ok() {
@@ -83,7 +83,7 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
         span = span + span2 + span3;
         let value = self
           .expression(0)
-          .trace_span(span, "while parsing assignment")?;
+          .trace_span(span, "while parsing declaration")?;
         Statement {
           span,
           kind: s::Declaration {
@@ -97,9 +97,7 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
       // Expression
       (Token(_, span2), _) => {
         span = span + span2;
-        let expr = self
-          .expression(0)
-          .trace_span(span, "while parsing expression statement")?;
+        let expr = self.expression(0)?;
         span = span + expr.span;
         if self.look(0, t::RightBrace).is_ok() {
           return Ok(Statement {

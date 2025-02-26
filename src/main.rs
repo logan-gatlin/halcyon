@@ -9,6 +9,7 @@ mod ir;
 mod naming;
 mod parse;
 mod token;
+mod typecheck;
 use std::ops::Add;
 
 use buffer::*;
@@ -16,7 +17,12 @@ use ir::solver::Solver;
 use naming::{Canonizer, control_flow::Analyzer};
 use parse::*;
 use token::*;
+use typecheck::TypeChecker;
 use wasm_bindgen::prelude::wasm_bindgen;
+
+pub fn compiler_print(s: impl Into<String>) {
+  println!("{}", s.into())
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct Span {
@@ -42,76 +48,13 @@ impl Add<Span> for Span {
   }
 }
 
-/*
-fn compile(input: String) -> Result<String> {
-  let tokenizer = Tokenizer::new(input.chars()).filter(|t| t.0.is_meaningful());
-  let parser = Parser::new(tokenizer);
-  let mut an = semantic::Analyzer::new();
-  let n = an.typecheck_program(parser.into_iter())?;
-  let mut c = Compiler::new();
-  c.compile(n.clone())
-}
-
-fn assemble(assembly: String) -> Result<Vec<u8>> {
-  Compiler::assemble(assembly)
-}
-*/
-
-#[wasm_bindgen]
-pub fn parse_tree(input: String) -> String {
-  let tokenizer = Tokenizer::new(input.chars()).filter(|t| t.0.is_meaningful());
-  let parser = Parser::new(tokenizer);
-  parser
-    .into_iter()
-    .map(|s| format!("{s:#?}"))
-    .collect::<Vec<_>>()
-    .join("\n")
-}
-
-#[wasm_bindgen]
-pub fn ast(input: String) -> String {
-  let tokenizer = Tokenizer::new(input.chars()).filter(|t| t.0.is_meaningful());
-  let parse_tree = Parser::new(tokenizer);
-  todo!()
-  /*
-  let ast = Analyzer::analyze(parser);
-  match ast {
-    Ok(m) => format!("{m:#?}"),
-    Err(e) => format!("{e}"),
-  }
-  */
-}
-/*
-#[wasm_bindgen]
-pub fn check_errors(input: String) -> String {
-  match compile(input) {
-    Ok(_) => "Compiled successfully!".to_string(),
-    Err(e) => format!("{e}"),
-  }
-}
-
-#[wasm_bindgen]
-pub fn try_compile(input: String) -> Vec<u8> {
-  let asm = compile(input).unwrap_or_default();
-  assemble(asm).unwrap_or_default()
-}
-*/
 fn main() {
   let input = include_str!("../demo.hc").to_string();
   let tokenizer = Tokenizer::new(input.chars()).filter(|t| t.0.is_meaningful());
   let parse_tree = Parser::new(tokenizer).collect::<Vec<_>>();
-  let (ast, heap) = Canonizer::canonize_ast(parse_tree).unwrap();
-  let cflow = Analyzer::analyze(ast.clone(), heap.clone()).unwrap();
-  let mut solver = Solver::new(cflow);
-  solver.consteval_module().unwrap();
+  let canon_module = Canonizer::canonize_ast(parse_tree).unwrap();
+  let cflow = Analyzer::analyze(&canon_module).unwrap();
+  let solution = Solver::solve(cflow).unwrap();
+  let (module, clean_nodes) =
+    TypeChecker::typecheck(canon_module, solution).unwrap();
 }
-
-/*
-#[test]
-fn compile_file() {
-  let assembly = compile(include_str!("../demo.hal").to_string()).unwrap();
-  std::fs::write("./test.wat", assembly.clone()).unwrap();
-  let bytes = assemble(assembly).unwrap();
-  std::fs::write("./test.wasm", bytes).unwrap();
-}
-*/

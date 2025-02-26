@@ -72,7 +72,6 @@ impl Solver {
     deps
       .sort_unstable_by(|(_, deps1), (_, deps2)| deps1.len().cmp(&deps2.len()));
     let mut resolved = HashSet::new();
-    println!("{deps:#?}");
     // Iterate constants from least to most dependencies
     for (mangle, _) in deps {
       self.rt_value_map.clear();
@@ -143,14 +142,6 @@ impl Solver {
         self.assert_map.insert(mangle, assert);
       }
     }
-    println!(
-      "{:#?}",
-      self
-        .assert_map
-        .iter()
-        .filter(|n| !n.0.starts_with("_"))
-        .collect::<Vec<_>>()
-    );
     Ok(())
   }
 

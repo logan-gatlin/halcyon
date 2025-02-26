@@ -1,8 +1,10 @@
 use crate::{
   assembly::{operators::OpTable, vm::VirtualMachine},
+  compiler_print,
   err::*,
   error,
   ir::{Block, ConstValue, IrKind, solver::RECURSION_LIMIT, types::Type},
+  naming::builtins::Builtin,
 };
 
 use super::{
@@ -93,7 +95,6 @@ impl Solver {
             )
           } else {
             let instr = &body[self.ip];
-            //println!("{instr:?}");
             match &instr.kind {
               IrKind::Const(const_value) => self.push(const_value.clone()),
               IrKind::Set(mangle) => {
@@ -129,10 +130,7 @@ impl Solver {
                 };
                 let Some(value) = map.get(mangle).cloned() else {
                   return error!(
-                    "Failed to evaluate recursive expression. Recursion \
-                     during compile-time evaluation is experimental. It is \
-                     possible what you are trying to do is syntactically \
-                     valid, but currently it is not supported"
+                    "This term seems to have a circular definition"
                   )
                   .span(&instr.span);
                 };
@@ -275,27 +273,39 @@ impl Solver {
                 let ConstValue::Function(mangle) = func else {
                   unreachable!()
                 };
-                self.save_state();
-                //cflow_stack.push((block, ip + 1));
-                self.control_stack.push(ReturnAddress {
-                  block: self.block,
-                  ip: self.ip + 1,
-                  expected_type: *return_type,
-                });
-                let fun = self.module.functions.get(&mangle).unwrap();
-                self.block = fun.block;
-                self.ip = 0;
-                values
-                  .into_iter()
-                  .rev()
-                  .zip(fun.parameter_mangles.iter())
-                  .for_each(|(value, mangle)| {
-                    self.rt_value_map.insert(mangle.clone(), value);
+                if let Some(builtin) = Builtin::from_mangle(&mangle) {
+                  values.into_iter().rev().for_each(|v| self.push(v));
+                  self.execute_builtin(builtin).span(&instr.span)?;
+                } else {
+                  self.save_state();
+                  self.control_stack.push(ReturnAddress {
+                    block: self.block,
+                    ip: self.ip + 1,
+                    expected_type: *return_type,
                   });
-                continue; // Prevent IP from incrementing
+                  let fun = self.module.functions.get(&mangle).unwrap();
+                  values
+                    .into_iter()
+                    .rev()
+                    .zip(fun.parameter_mangles.iter())
+                    .for_each(|(value, mangle)| {
+                      self.rt_value_map.insert(mangle.clone(), value);
+                    });
+                  self.block = fun.block;
+                  self.ip = 0;
+                  continue; // Prevent IP from incrementing
+                }
               },
               IrKind::Drop => {
-                self.pop();
+                let dropped = self.pop();
+                // Linear type logic
+                /*
+                if let ConstValue::Nothing = &dropped {
+                } else {
+                  return error!("Value {dropped} failed to be consumed")
+                    .span(&instr.span);
+                }
+                */
               },
               IrKind::StartScope => self.start_scope_v(),
               IrKind::EndScope => self.end_scope_v(),
@@ -306,6 +316,47 @@ impl Solver {
         },
       }?;
     }
+    Ok(())
+  }
+
+  fn execute_builtin(&mut self, builtin: Builtin) -> Result<()> {
+    match builtin {
+      Builtin::Type => panic!(),
+      Builtin::PrintString => {
+        let ConstValue::String {
+          virtual_address, ..
+        } = self.pop()
+        else {
+          panic!();
+        };
+        let s = String::from_utf8_lossy(&self.module.heap[virtual_address]);
+        compiler_print(s);
+      },
+      Builtin::PrintGlyph => {
+        let ConstValue::Glyph(g) = self.pop() else {
+          panic!();
+        };
+        compiler_print(g);
+      },
+      Builtin::PrintInteger => {
+        let ConstValue::Integer(i) = self.pop() else {
+          panic!();
+        };
+        compiler_print(i.to_string());
+      },
+      Builtin::PrintBoolean => {
+        let ConstValue::Boolean(b) = self.pop() else {
+          panic!();
+        };
+        compiler_print(b.to_string());
+      },
+      Builtin::PrintType => {
+        let ConstValue::Type(t) = self.pop() else {
+          panic!();
+        };
+        compiler_print(format!("{t}"));
+      },
+    };
     Ok(())
   }
 }

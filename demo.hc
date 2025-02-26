@@ -11,3 +11,6 @@ array :: (T: type, size: integer) -> type {
 
 IntArray4 :: array(integer, 4);
 
+main :: () {
+}
+

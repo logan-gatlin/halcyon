@@ -209,10 +209,13 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
           span = span + arg.span;
           args.push(arg);
           if !self.eat(t::Comma).is_ok() {
-            break;
+            if self.eat(t::RightParen).is_ok() {
+              break;
+            } else {
+              return error!("Missing comma after this argument").span(&span);
+            }
           }
         }
-        let Token(_, span2) = self.eat(t::RightParen).span(&span)?;
         current = Expression::new(
           e::FunctionCall {
             callee: current.into(),

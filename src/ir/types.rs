@@ -76,6 +76,14 @@ pub enum Type {
 }
 
 impl Type {
+  pub fn ambiguous(&self) -> bool {
+    if let Self::Ambiguous = self {
+      true
+    } else {
+      false
+    }
+  }
+
   pub fn unwrap_reference(mut self) -> Self {
     while let Self::Reference(t) = self {
       self = *t;
@@ -155,6 +163,13 @@ impl std::hash::Hash for Type {
   }
 }
 
+fn indent(s: String) -> String {
+  s.lines()
+    .map(|l| format!("    {l}"))
+    .collect::<Vec<_>>()
+    .join("\n")
+}
+
 impl std::fmt::Display for Type {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
@@ -169,8 +184,9 @@ impl std::fmt::Display for Type {
           .zip(member_types.into_iter())
           .map(|(name, type_)| format!("{name}: {type_}"))
           .collect::<Vec<_>>()
-          .join(", ");
-        write!(f, "struct {{ {fields} }}")
+          .join(",\n");
+        let fields = indent(fields);
+        write!(f, "struct {{\n{fields}\n}}")
       },
       Type::Type => write!(f, "type"),
       Type::Function {

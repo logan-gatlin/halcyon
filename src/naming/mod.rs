@@ -1,9 +1,13 @@
+pub mod builtins;
 pub mod canon;
 pub mod control_flow;
 
 use std::collections::HashMap;
 
+use builtins::Builtin;
+
 use crate::Span;
+use crate::assembly::operators::OpDef;
 use crate::diagnostic;
 use crate::err::*;
 use crate::error;
@@ -90,11 +94,13 @@ pub enum CanonKind {
   },
   Binary {
     op: BinaryOp,
+    opdef: OpDef,
     left: IrPtr,
     right: IrPtr,
   },
   Unary {
     op: UnaryOp,
+    opdef: OpDef,
     child: IrPtr,
   },
   FunctionDef {
@@ -122,15 +128,22 @@ pub enum CanonKind {
   Break(Option<IrPtr>),
 }
 
+pub struct CanonizedModule {
+  pub nodes: Vec<CanonNode>,
+  pub functions: HashMap<Mangle, IrPtr>,
+  pub heap: Vec<Vec<u8>>,
+  pub main: Option<Mangle>,
+}
+
 #[derive(Debug, Clone)]
 pub struct Canonizer {
-  pub ir: Vec<Option<CanonNode>>,
+  pub nodes: Vec<Option<CanonNode>>,
+  pub functions: HashMap<Mangle, IrPtr>,
   pub scope_depth: usize,
   pub salt: usize,
   pub path: Vec<String>,
   pub event_stack: Vec<Event>,
   pub heap: Vec<Vec<u8>>,
-  pub functions: HashMap<Mangle, IrPtr>,
   pub main: Option<Mangle>,
   _name_to_symbol: HashMap<String, Symbol>,
 }
@@ -138,11 +151,11 @@ pub struct Canonizer {
 impl Canonizer {
   fn new() -> Self {
     let mut this = Self {
-      ir: vec![],
+      nodes: vec![],
+      functions: HashMap::new(),
       path: vec![],
       event_stack: vec![],
       heap: vec![],
-      functions: HashMap::new(),
       scope_depth: 0,
       salt: 0,
       main: None,
@@ -151,14 +164,13 @@ impl Canonizer {
     for prim in Primitive::ALL {
       this.define_builtin(format!("{prim}"));
     }
-    this.define_builtin(format!("{}", Type::Type));
-    this.define_builtin("print_string");
+    for builtin in Builtin::ALL {
+      this.define_builtin(builtin.to_string())
+    }
     this
   }
 
-  pub fn canonize_ast(
-    stmts: Vec<Statement>,
-  ) -> Result<(Vec<CanonNode>, Vec<Vec<u8>>)> {
+  pub fn canonize_ast(stmts: Vec<Statement>) -> Result<CanonizedModule> {
     let mut this = Self::new();
     let top_node = this.new_node();
     let top_nodes = this.canon_block(stmts)?;
@@ -171,22 +183,27 @@ impl Canonizer {
       },
     );
     this
-      .ir
+      .nodes
       .clone()
       .into_iter()
       .map(|ir| ir.ok_or(diagnostic!("Empty node in IR array")))
       .try_collect::<Vec<_>>()
-      .map(|m| (m, this.heap))
+      .map(|m| CanonizedModule {
+        nodes: m,
+        functions: this.functions,
+        heap: this.heap,
+        main: this.main,
+      })
   }
 
   pub(crate) fn new_node(&mut self) -> IrPtr {
-    self.ir.push(None);
-    self.ir.len() - 1
+    self.nodes.push(None);
+    self.nodes.len() - 1
   }
 
   pub(crate) fn set_node(&mut self, position: IrPtr, node: CanonNode) {
-    assert!(self.ir[position].is_none());
-    self.ir[position] = Some(node);
+    assert!(self.nodes[position].is_none());
+    self.nodes[position] = Some(node);
   }
 
   pub(crate) fn name_to_symbol(&self, name: &str) -> Result<&Symbol> {

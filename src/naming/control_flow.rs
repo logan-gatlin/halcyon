@@ -8,7 +8,7 @@ use crate::{
   naming::CanonKind,
 };
 
-use super::{CanonNode, Mangle};
+use super::{CanonNode, CanonizedModule, Mangle};
 
 fn unreachable_error() -> Diagnostic {
   diagnostic!("This expression is unreachable")
@@ -26,8 +26,8 @@ pub struct Analyzer {
 impl Analyzer {
   const TERMINUS: IrPtr = 0;
 
-  pub fn analyze(nodes: Vec<CanonNode>, heap: Vec<Vec<u8>>) -> Result<Module> {
-    let mut this = Self::new(nodes);
+  pub fn analyze(canon_mod: &CanonizedModule) -> Result<Module> {
+    let mut this = Self::new(canon_mod.nodes.clone());
     let block = this.new_block();
     this.analyze_node(0, block)?;
     let Analyzer {
@@ -38,7 +38,7 @@ impl Analyzer {
       ..
     } = this;
     Ok(Module {
-      heap,
+      heap: canon_mod.heap.clone(),
       constants,
       functions,
       type_assertions,
@@ -164,6 +164,7 @@ impl Analyzer {
         self.push(block, ir(i::Const(const_value)));
       },
       k::Block(items) => {
+        self.push(block, ir(i::StartScope));
         block = items.into_iter().try_fold(block, |block, node| {
           let new_block = self.analyze_node(node, block);
           if let Ok(new_block) = new_block {
@@ -175,16 +176,21 @@ impl Analyzer {
           }
           new_block
         })?;
+        if !self.blocks[block].is_terminal() {
+          self.push(block, ir(i::EndScope));
+        }
       },
       k::Identifier(mangle) => {
         self.push(block, ir(i::Get(mangle)));
       },
-      k::Binary { op, left, right } => {
+      k::Binary {
+        op, left, right, ..
+      } => {
         block = self.analyze_node(left, block)?;
         block = self.analyze_node(right, block)?;
         self.push(block, ir(i::BinaryOp { kind: op }));
       },
-      k::Unary { op, child } => {
+      k::Unary { op, child, .. } => {
         block = self.analyze_node(child, block)?;
         self.push(block, ir(i::UnaryOp { kind: op }));
       },
