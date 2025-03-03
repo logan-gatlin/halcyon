@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use crate::{
   err::*,
-  ir::{IrPtr, solver::Solution},
+  ir::{IrPtr, solver::Solution, types::Type},
   naming::CanonizedModule,
 };
 
@@ -12,6 +12,7 @@ mod sanitize;
 pub struct TypeChecker {
   pub module: CanonizedModule,
   pub solution: Solution,
+  pub break_stack: Vec<Type>,
 }
 
 impl TypeChecker {

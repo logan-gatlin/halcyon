@@ -9,6 +9,8 @@ mod graph;
 mod ir;
 mod naming;
 mod parse;
+#[cfg(test)]
+mod tests;
 mod token;
 mod typecheck;
 use std::ops::Add;
@@ -51,6 +53,8 @@ impl Add<Span> for Span {
 }
 
 fn main() {
+  let s = Span { row: 0, column: 1 };
+  s.row;
   let input = include_str!("../demo.hc").to_string();
   let tokenizer = Tokenizer::new(input.chars()).filter(|t| t.0.is_meaningful());
   let parse_tree = Parser::new(tokenizer).collect::<Vec<_>>();

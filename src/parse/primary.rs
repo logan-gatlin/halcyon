@@ -89,7 +89,7 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
           });
           span = span + span2;
           e::FunctionDef {
-            params,
+            parameters: params,
             returns,
             body,
           }
@@ -110,7 +110,7 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
         self.eat(t::RightBrace)?;
         e::StructLiteral {
           struct_t: None,
-          params,
+          parameters: params,
         }
       },
       t::Identifier(i) => {
@@ -120,7 +120,11 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
       // Loop
       t::Loop => {
         self.skip(1);
-        let params = self.parameters(span)?;
+        let params = if let Ok(Token(t::LeftBrace, _)) = self.peek(0) {
+          Parameters::default()
+        } else {
+          self.parameters(span)?
+        };
         let (body, span2) =
           self.block().trace_span(span, "while parsing loop body")?;
         let body = Box::new(Expression {
@@ -128,7 +132,10 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
           span: span2,
         });
         span = span + span2;
-        e::Loop { params, body }
+        e::Loop {
+          parameters: params,
+          body,
+        }
       },
       // Parenthetical
       t::LeftParen => {

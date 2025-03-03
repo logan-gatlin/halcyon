@@ -18,6 +18,7 @@ impl ConstValue {
     use WasmType as w;
     match self {
       ConstValue::Nothing => vec![],
+      ConstValue::Never => vec![],
       ConstValue::Integer(_) => vec![w::I64],
       ConstValue::Real(_) => vec![w::F64],
       ConstValue::Boolean(_) => vec![w::I32],
@@ -39,6 +40,7 @@ impl ConstValue {
     use WasmValue as w;
     match self {
       ConstValue::Nothing => vec![],
+      ConstValue::Never => vec![],
       ConstValue::Integer(val) => vec![w::I64(val)],
       ConstValue::Real(val) => vec![w::F64(val)],
       ConstValue::Boolean(val) => vec![w::I32(val as i32)],
@@ -81,7 +83,7 @@ impl VirtualMachine {
     match expects {
       Type::Primitive(primitive) => match primitive {
         Primitive::nothing => Ok(ConstValue::Nothing),
-        Primitive::never => {
+        Primitive::unreachable => {
           panic!("Cannot construct never primitive from wasm")
         },
         Primitive::integer => {

@@ -149,6 +149,7 @@ impl Solver {
     use Primitive as p;
     match val {
       ConstValue::Nothing => p::nothing.promote(),
+      ConstValue::Never => p::unreachable.promote(),
       ConstValue::Integer(_) => p::integer.promote(),
       ConstValue::Real(_) => p::real.promote(),
       ConstValue::Boolean(_) => p::boolean.promote(),

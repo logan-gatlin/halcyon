@@ -5,8 +5,9 @@ use super::*;
 #[derive(Clone, Debug)]
 pub struct Parameters {
   pub arity: usize,
-  pub names: Vec<Expression>,
+  pub names: Vec<String>,
   pub types: Vec<Expression>,
+  pub spans: Vec<Span>,
 }
 
 impl Default for Parameters {
@@ -15,6 +16,7 @@ impl Default for Parameters {
       arity: 0,
       names: vec![],
       types: vec![],
+      spans: vec![],
     }
   }
 }
@@ -59,7 +61,7 @@ pub enum ExpressionKind {
   },
   Parenthesis(Box<Expression>),
   FunctionDef {
-    params: Parameters,
+    parameters: Parameters,
     returns: Option<Box<Expression>>,
     body: Box<Expression>,
   },
@@ -70,7 +72,7 @@ pub enum ExpressionKind {
   StructDef(Parameters),
   StructLiteral {
     struct_t: Option<Box<Expression>>,
-    params: Parameters,
+    parameters: Parameters,
   },
   Field {
     namespace: Box<Expression>,
@@ -83,7 +85,7 @@ pub enum ExpressionKind {
     else_: Option<Box<Expression>>,
   },
   Loop {
-    params: Parameters,
+    parameters: Parameters,
     body: Box<Expression>,
   },
   Break {
@@ -175,7 +177,7 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
           current = Expression::new(
             e::StructLiteral {
               struct_t: Some(current.into()),
-              params,
+              parameters: params,
             },
             span,
           )
@@ -251,9 +253,10 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
     let mut arity = 0;
     let mut names = vec![];
     let mut types = vec![];
+    let mut spans = vec![];
     loop {
       // Name
-      let name = if let Ok(name) = self.expression(0) {
+      let (name, span_name) = if let Ok(name) = self.identifier() {
         name
       } else {
         break;
@@ -267,6 +270,7 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
       } else {
         return error!("Expected expression after ':'").span(&span);
       };
+      spans.push(span_name + type_.span);
       types.push(type_);
       arity += 1;
       // Comma
@@ -281,6 +285,7 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
       arity,
       names,
       types,
+      spans,
     })
   }
 

@@ -8,7 +8,9 @@ use crate::{
   error,
   ir::{ConstValue, IrPtr, types::Type},
   naming::{CanonKind, CanonNode, Symbol},
-  parse::{Expression, ExpressionKind, Immediate, Statement, StatementKind},
+  parse::{
+    Expression, ExpressionKind, Immediate, Parameters, Statement, StatementKind,
+  },
 };
 
 pub fn parse_int_literal(value: &str, base: u32) -> Result<i64> {
@@ -24,24 +26,13 @@ pub fn parse_real_literal(value: &str) -> Result<f64> {
 }
 
 impl Canonizer {
-  fn extract_names<'a>(
+  fn validate_parameters<'a>(
     &mut self,
     error_hint: &str,
-    iter: impl Iterator<Item = &'a Expression>,
-  ) -> Result<Vec<String>> {
-    let (names, spans): (Vec<String>, Vec<Span>) = iter
-      .enumerate()
-      .map(|(id, n)| {
-        if let ExpressionKind::Identifier { name } = &n.kind {
-          Ok((self.define_name(name, false)?, n.span))
-        } else {
-          error!("{error_hint} parameter {} must be an identifier", id + 1)
-            .span(&n.span)
-        }
-      })
-      .try_collect::<Vec<_>>()?
-      .into_iter()
-      .unzip();
+    parameters: &Parameters,
+  ) -> Result<()> {
+    let names = parameters.names.clone();
+    let spans = &parameters.spans;
     if let Some(pos) = {
       let mut unique = HashSet::new();
       let mut set = names.iter();
@@ -53,7 +44,7 @@ impl Canonizer {
       )
       .span(&spans[pos]);
     }
-    Ok(names)
+    Ok(())
   }
 
   pub(super) fn canon_block(
@@ -197,7 +188,7 @@ impl Canonizer {
         return self.canon_expr(*expression);
       },
       e::FunctionDef {
-        params,
+        parameters,
         returns,
         body,
       } => {
@@ -205,9 +196,9 @@ impl Canonizer {
         let function_mangle = self.define_unique("function");
         self.functions.insert(function_mangle.clone(), node);
         self.enscope();
-        let parameter_names =
-          self.extract_names("Function", params.names.iter())?;
-        let parameter_types = params
+        self.validate_parameters("Function", &parameters)?;
+        let parameter_names = parameters.names.clone();
+        let parameter_types = parameters
           .types
           .into_iter()
           .map(|e| self.canon_expr(e))
@@ -243,18 +234,7 @@ impl Canonizer {
         }
       },
       e::StructDef(parameters) => {
-        let fields = parameters
-          .names
-          .iter()
-          .map(|n| {
-            if let e::Identifier { name } = &n.kind {
-              Ok(name.clone())
-            } else {
-              error!("Structure definition field must be an identifier")
-                .span(&n.span)
-            }
-          })
-          .try_collect::<Vec<_>>()?;
+        let fields = parameters.names.clone();
         let types = parameters
           .types
           .into_iter()
@@ -262,7 +242,10 @@ impl Canonizer {
           .try_collect::<Vec<_>>()?;
         k::StructDef { fields, types }
       },
-      e::StructLiteral { struct_t, params } => {
+      e::StructLiteral {
+        struct_t,
+        parameters,
+      } => {
         let struct_t = if let Some(struct_t) = struct_t {
           Some((
             self.canon_expr(*struct_t)?,
@@ -271,19 +254,8 @@ impl Canonizer {
         } else {
           None
         };
-        let field_names = params
-          .names
-          .iter()
-          .map(|n| {
-            if let e::Identifier { name } = &n.kind {
-              Ok(name.clone())
-            } else {
-              error!("Structure definition field must be an identifier")
-                .span(&n.span)
-            }
-          })
-          .try_collect::<Vec<_>>()?;
-        let field_values = params
+        let field_names = parameters.names.clone();
+        let field_values = parameters
           .types
           .into_iter()
           .map(|t| self.canon_expr(t))
@@ -325,11 +297,11 @@ impl Canonizer {
           else_,
         }
       },
-      e::Loop { params, body } => {
+      e::Loop { parameters, body } => {
         self.enscope();
-        let parameter_names =
-          self.extract_names("Loop", params.names.iter())?;
-        let parameter_values = params
+        self.validate_parameters("Loop", &parameters)?;
+        let parameter_names = parameters.names.clone();
+        let parameter_values = parameters
           .types
           .into_iter()
           .map(|e| self.canon_expr(e))

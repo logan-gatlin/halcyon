@@ -17,12 +17,17 @@ use super::TypeChecker;
 
 impl TypeChecker {
   pub(super) fn new(module: CanonizedModule, solution: Solution) -> Self {
-    Self { module, solution }
+    Self {
+      module,
+      solution,
+      break_stack: vec![],
+    }
   }
 
   pub(super) fn const_type(&self, const_value: &ConstValue) -> Type {
     match const_value {
       ConstValue::Nothing => p::nothing.promote(),
+      ConstValue::Never => p::unreachable.promote(),
       ConstValue::Integer(_) => p::integer.promote(),
       ConstValue::Real(_) => p::real.promote(),
       ConstValue::Boolean(_) => p::boolean.promote(),
@@ -148,17 +153,25 @@ impl TypeChecker {
       },
       Immediate(const_value) => self.const_type(&const_value),
       Block(items) => {
+        let mut never = false;
         let length = items.len();
         let mut type_ = None;
         for (id, item) in items.into_iter().enumerate() {
           let produces = self.check(item)?;
+          if produces == p::unreachable.promote() {
+            never = true;
+          }
           if let Remainder(_) = &self.module.nodes[item].kind
             && id == length - 1
           {
             type_ = Some(produces);
           }
         }
-        type_.unwrap_or(p::nothing.promote())
+        if never {
+          p::unreachable.promote()
+        } else {
+          type_.unwrap_or(p::nothing.promote())
+        }
       },
       Identifier(name) => {
         if let Some(c) = self.solution.constants.get(&name).cloned() {
@@ -336,35 +349,54 @@ impl TypeChecker {
           )
           .span(&span);
         }
-        if then_t != else_t {
-          return error!(
-            "The 'then' branch produces the type '{then_t}', but the 'else' \
-             branch produces the type '{else_t}'"
-          )
-          .span(&span);
-        }
-        then_t
+        use Type::Primitive as P;
+        let result_t = match (then_t, else_t) {
+          (P(p::unreachable), P(p::unreachable)) => P(p::unreachable),
+          (P(p::unreachable), P(t)) | (P(t), P(p::unreachable)) => P(t),
+          (then_t, else_t) => {
+            return error!(
+              "The 'then' branch produces the type '{then_t}', but the 'else' \
+               branch produces the type '{else_t}'"
+            )
+            .span(&span);
+          },
+        };
+        result_t
       },
       Loop {
         parameter_names,
         parameter_values,
         body,
       } => {
+        let mut param_values = vec![];
         for (name, value) in parameter_names
           .into_iter()
           .zip(parameter_values.into_iter())
         {
           let value_t = self.check(value)?;
+          param_values.push(value_t.clone());
           self.solution.assertions.insert(name, value_t);
         }
-        self.check(body)?;
-        p::nothing.promote()
+        self.break_stack.push(p::unreachable.promote());
+        let body_t = self.check(body)?;
+        self.break_stack.pop().unwrap()
       },
       Break(maybe_node) => {
-        if let Some(break_node) = maybe_node {
-          self.check(break_node)?;
+        let type_ = if let Some(break_node) = maybe_node {
+          self.check(break_node)?
+        } else {
+          p::nothing.promote()
+        };
+        let break_t = self.break_stack.last_mut().unwrap();
+        if break_t != &p::unreachable.promote() && &type_ != break_t {
+          return error!(
+            "This loop produces the type '{break_t}', but this break \
+             expression has the type '{type_}'"
+          )
+          .span(&span);
         }
-        p::never.promote()
+        *self.break_stack.last_mut().unwrap() = type_;
+        p::unreachable.promote()
       },
     };
     self.module.nodes[node].type_ = type_.clone();

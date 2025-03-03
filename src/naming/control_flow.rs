@@ -176,9 +176,7 @@ impl Analyzer {
           }
           new_block
         })?;
-        if !self.blocks[block].is_terminal() {
-          self.push(block, ir(i::EndScope));
-        }
+        self.push(block, ir(i::EndScope));
       },
       k::Identifier(mangle) => {
         self.push(block, ir(i::Get(mangle)));
@@ -276,7 +274,6 @@ impl Analyzer {
         };
         // If both branches already converge at some point
         if then_block_tail == else_block_tail {
-          println!("Converge {then_block_tail}");
           block = then_block_tail
         }
         // If only the else block diverges
@@ -302,7 +299,6 @@ impl Analyzer {
         }
         // If both blocks diverge
         else {
-          println!("Both diverge");
           block = Self::TERMINUS
         }
       },
@@ -401,6 +397,7 @@ impl Analyzer {
             return Err(unreachable_error()).span(&span);
           }
         }
+        self.push(block, ir(i::Const(ConstValue::Never)));
         self.push(block, ir(i::EndScope));
         block = if let Some(target) = self.break_stack.last() {
           self.blocks[block].set_next(*target);

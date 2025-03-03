@@ -11,6 +11,12 @@ mod lower;
 
 pub const PAGE_SIZE: usize = 64_000;
 
+#[derive(Debug, Clone)]
+struct BreakTarget {
+  block_name: String,
+  result_name: String,
+}
+
 pub struct Compiler {
   /// Unique salt added to the names of WASM loops, blocks,
   /// and compiler generated temporary registers.
@@ -19,7 +25,7 @@ pub struct Compiler {
   /// The name of WASM blocks which can be 'broken' out of
   /// are pushed onto this stack for inner break statements
   /// to refer to
-  break_stack: Vec<String>,
+  break_stack: Vec<BreakTarget>,
 
   module: CanonizedModule,
 }
@@ -41,9 +47,14 @@ impl Compiler {
       this.lower(func, &mut regs, &mut instrs).unwrap();
     }
     regs.extend_from_slice(&instrs);
+    let mut wasm = String::new();
     for r in regs {
-      println!("{}", r.to_wat());
+      wasm.push_str(&format!("{}\n", r.to_wat()));
     }
+    println!("{wasm}");
+    std::fs::write("test.wat", wasm.clone()).unwrap();
+    let binary = wat::parse_str(wasm).unwrap();
+    std::fs::write("test.wasm", binary.clone()).unwrap();
   }
 }
 
@@ -54,7 +65,7 @@ impl Type {
     use Primitive as p;
     match self {
       Type::Primitive(primitive) => match primitive {
-        p::nothing | p::never => 0,
+        p::nothing | p::unreachable => 0,
         p::glyph | p::integer | p::real | p::boolean => 1,
         p::string => 2,
       },
@@ -72,7 +83,7 @@ impl Type {
     use WasmType as a;
     match self {
       Type::Primitive(primitive) => match primitive {
-        p::nothing | p::never => vec![],
+        p::nothing | p::unreachable => vec![],
         p::integer => vec![a::I64],
         p::real => vec![a::F64],
         p::boolean => vec![a::I32],

@@ -32,11 +32,11 @@ impl Wasm {
       Wasm::Else => {
         format!("else")
       },
-      Wasm::Block(name) => format!("block {name}"),
-      Wasm::Loop(name) => format!("loop {name}",),
-      Wasm::Local(type_, name) => format!("(local {name} {type_})"),
-      Wasm::LocalGet(name) => format!("(local.get {name})"),
-      Wasm::LocalSet(name) => format!("(local.set {name})"),
+      Wasm::Block(name) => format!("block ${name}"),
+      Wasm::Loop(name) => format!("loop ${name}",),
+      Wasm::Local(type_, name) => format!("(local ${name} {type_})"),
+      Wasm::LocalGet(name) => format!("(local.get ${name})"),
+      Wasm::LocalSet(name) => format!("(local.set ${name})"),
       Wasm::Function {
         ident,
         params,
@@ -45,7 +45,7 @@ impl Wasm {
       } => {
         let params: String = params
           .into_iter()
-          .map(|(name, ty)| format!("\n{}(param {name} {ty})", Self::INDENT))
+          .map(|(name, ty)| format!("\n{}(param ${name} {ty})", Self::INDENT))
           .collect();
         let results: String = results
           .into_iter()
@@ -54,7 +54,7 @@ impl Wasm {
         format!("(func {ident}{params}{results}\n{})", block(body))
       },
       Wasm::End => format!("end"),
-      Wasm::Branch(lp) => format!("br {lp}"),
+      Wasm::Branch(lp) => format!("br ${lp}"),
       Wasm::Call(func) => format!("call ${func}"),
       Wasm::Constant(val) => format!("{}.const {val}", val.type_of()),
       Wasm::Add(asm_type) => format!("{asm_type}.add"),
@@ -97,7 +97,7 @@ impl Wasm {
       Wasm::Unreachable => format!("unreachable"),
       Wasm::Comment(msg) => format!(";; {}", msg),
       Wasm::Drop => format!("drop"),
-      Wasm::Start(func) => format!("(start {func})"),
+      Wasm::Start(func) => format!("(start ${func})"),
       Wasm::Return => format!("return"),
     };
     s

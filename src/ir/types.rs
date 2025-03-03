@@ -40,7 +40,7 @@ macro_rules! primitives {
 }
 
 primitives! {
-  nothing, never,
+  nothing, unreachable,
   integer,
   real,
   boolean,

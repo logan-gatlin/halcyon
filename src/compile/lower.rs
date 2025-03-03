@@ -1,7 +1,11 @@
 use crate::{
   assembly::{Wasm, WasmType},
+  compile::BreakTarget,
   err::*,
-  ir::{ConstValue, IrPtr, types::Type},
+  ir::{
+    ConstValue, IrPtr,
+    types::{Primitive, Type},
+  },
   naming::{CanonKind, Mangle},
 };
 
@@ -11,7 +15,7 @@ use WasmType as aty;
 use super::Compiler;
 impl Compiler {
   fn new_name(&mut self) -> String {
-    let name = format!("$_{}", self.unique_salt);
+    let name = format!("_{}", self.unique_salt);
     self.unique_salt += 1;
     name
   }
@@ -21,7 +25,7 @@ impl Compiler {
       .register_types()
       .into_iter()
       .enumerate()
-      .for_each(|(id, t)| regs.push(asm::Local(t, format!("${mangle}${id}"))));
+      .for_each(|(id, t)| regs.push(asm::Local(t, format!("{mangle}${id}"))));
   }
 
   fn get_register(mangle: Mangle, type_: &Type, instrs: &mut Vec<asm>) {
@@ -30,9 +34,7 @@ impl Compiler {
       .into_iter()
       .enumerate()
       .rev()
-      .for_each(|(id, _)| {
-        instrs.push(asm::LocalGet(format!("${mangle}${id}")))
-      });
+      .for_each(|(id, _)| instrs.push(asm::LocalGet(format!("{mangle}${id}"))));
   }
 
   fn set_register(mangle: Mangle, type_: &Type, instrs: &mut Vec<asm>) {
@@ -40,9 +42,7 @@ impl Compiler {
       .register_types()
       .into_iter()
       .enumerate()
-      .for_each(|(id, _)| {
-        instrs.push(asm::LocalSet(format!("${mangle}${id}")))
-      });
+      .for_each(|(id, _)| instrs.push(asm::LocalSet(format!("{mangle}${id}"))));
   }
 
   pub fn lower(
@@ -233,8 +233,11 @@ impl Compiler {
           .map(|i| self.lower(i, regs, instrs))
           .try_collect::<Vec<_>>()?;
         let block_name = self.new_name();
-        instrs.push(asm::Loop(block_name.clone()));
-        self.break_stack.push(block_name.clone());
+        instrs.push(asm::Block(block_name.clone()));
+        self.break_stack.push(BreakTarget {
+          block_name,
+          result_name: result_name.clone(),
+        });
         let loop_name = self.new_name();
         instrs.push(asm::Loop(loop_name.clone()));
         self.lower(body, regs, instrs)?;
@@ -242,18 +245,24 @@ impl Compiler {
         loop_registers.iter().for_each(|(name, type_)| {
           Self::set_register(name.clone(), type_, instrs)
         });
-        Self::set_register(result_name.clone(), &type_, instrs);
         instrs.push(asm::Branch(loop_name.clone()));
         instrs.push(asm::End);
         instrs.push(asm::End);
         Self::get_register(result_name, &type_, instrs);
       },
       Break(expr) => {
-        if let Some(expr) = expr {
+        let type_ = if let Some(expr) = expr {
           self.lower(expr, regs, instrs)?;
-        }
-        let current_block = self.break_stack.last().unwrap().clone();
-        instrs.push(asm::Branch(current_block));
+          self.module.type_of(expr)
+        } else {
+          Type::Primitive(Primitive::nothing)
+        };
+        let BreakTarget {
+          block_name,
+          result_name,
+        } = self.break_stack.last().unwrap().clone();
+        Self::set_register(result_name, &type_, instrs);
+        instrs.push(asm::Branch(block_name));
       },
       StructLiteral { field_values, .. } => {
         for value in field_values {
