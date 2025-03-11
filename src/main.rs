@@ -7,6 +7,7 @@ mod compile;
 mod err;
 mod graph;
 mod ir;
+mod lint;
 mod naming;
 mod parse;
 #[cfg(test)]
