@@ -33,9 +33,7 @@ impl TypeChecker {
       ConstValue::Boolean(_) => p::boolean.promote(),
       ConstValue::String { .. } => p::string.promote(),
       ConstValue::Glyph(_) => p::glyph.promote(),
-      ConstValue::Function(mangle) => {
-        self.solution.assertions.get(mangle).unwrap().clone()
-      },
+      ConstValue::Function(mangle) => self.solution.assertions.get(mangle).unwrap().clone(),
       ConstValue::StructLiteral {
         member_names,
         member_values,
@@ -69,10 +67,9 @@ impl TypeChecker {
           .into_iter()
           .map(|t| match self.consteval(t) {
             Ok(Some(ConstValue::Type(t))) => Ok(Some(t)),
-            Ok(Some(c)) => error!(
-              "Structure definition expects type, but recieved term '{c}'"
-            )
-            .span(&span),
+            Ok(Some(c)) => {
+              error!("Structure definition expects type, but recieved term '{c}'").span(&span)
+            }
 
             Ok(None) => Ok(None),
             Err(e) => Err(e),
@@ -87,7 +84,7 @@ impl TypeChecker {
           member_names: fields,
           member_types: types,
         }))
-      },
+      }
       StructLiteral {
         struct_t,
         field_names,
@@ -140,17 +137,15 @@ impl TypeChecker {
         let value_t = self.check(value)?;
         if let Some(assert) = self.solution.assertions.get(&assignee) {
           if !value_t.ambiguous() && !is_constant && &value_t != assert {
-            return error!(
-              "Asserted type is {assert}, but expression has type {value_t}"
-            )
-            .span(&span);
+            return error!("Asserted type is {assert}, but expression has type {value_t}")
+              .span(&span);
           }
         }
         if !is_constant {
           self.solution.assertions.insert(assignee, value_t);
         }
         p::nothing.promote()
-      },
+      }
       Immediate(const_value) => self.const_type(&const_value),
       Block(items) => {
         let mut never = false;
@@ -172,7 +167,7 @@ impl TypeChecker {
         } else {
           type_.unwrap_or(p::nothing.promote())
         }
-      },
+      }
       Identifier(name) => {
         if let Some(c) = self.solution.constants.get(&name).cloned() {
           let type_ = self.const_type(&c);
@@ -181,7 +176,7 @@ impl TypeChecker {
         } else {
           self.solution.assertions.get(&name).unwrap().clone()
         }
-      },
+      }
       StructDef { .. } => Type::Type,
       StructLiteral {
         struct_t,
@@ -212,18 +207,14 @@ impl TypeChecker {
         };
         if let Some(value) = value {
           let ConstValue::Type(expected @ Type::Struct { .. }) = value else {
-            return error!("Expected structure type, but found term {value}")
-              .span(&span);
+            return error!("Expected structure type, but found term {value}").span(&span);
           };
           if expected != node_type {
-            return error!(
-              "Expected type '{expected}', but found '{node_type}'"
-            )
-            .span(&span);
+            return error!("Expected type '{expected}', but found '{node_type}'").span(&span);
           }
         }
         node_type
-      },
+      }
       Field { of, index } => {
         let struct_t = self.check(of)?;
         if struct_t.ambiguous() {
@@ -245,7 +236,7 @@ impl TypeChecker {
           )
           .span(&span)?;
         member_types[pos].clone()
-      },
+      }
       Binary {
         op, left, right, ..
       } => {
@@ -264,7 +255,7 @@ impl TypeChecker {
           right,
         };
         opdef.produces
-      },
+      }
       Unary { op, child, .. } => {
         let child_t = self.check(child)?;
         let opdef = OpTable::new().try_unary(op, &child_t).span(&span)?;
@@ -274,7 +265,7 @@ impl TypeChecker {
           child,
         };
         opdef.produces
-      },
+      }
       FunctionDef { name, body, .. } => {
         let func_type = self.solution.assertions.get(&name).cloned().unwrap();
         let Type::Function { return_type, .. } = &func_type else {
@@ -289,7 +280,7 @@ impl TypeChecker {
           .span(&span);
         }
         func_type
-      },
+      }
       FunctionCall {
         callee, arguments, ..
       } => {
@@ -326,7 +317,7 @@ impl TypeChecker {
           }
         }
         *return_type
-      },
+      }
       If {
         predicate,
         then,
@@ -359,28 +350,31 @@ impl TypeChecker {
                branch produces the type '{else_t}'"
             )
             .span(&span);
-          },
+          }
         };
         result_t
-      },
+      }
       Loop {
         parameter_names,
         parameter_values,
         body,
       } => {
-        let mut param_values = vec![];
+        let mut param_types = vec![];
         for (name, value) in parameter_names
           .into_iter()
           .zip(parameter_values.into_iter())
         {
           let value_t = self.check(value)?;
-          param_values.push(value_t.clone());
+          param_types.push(value_t.clone());
           self.solution.assertions.insert(name, value_t);
         }
         self.break_stack.push(p::unreachable.promote());
         let body_t = self.check(body)?;
-        self.break_stack.pop().unwrap()
-      },
+        let break_t = self.break_stack.pop().unwrap();
+        let actual_types = vec![body_t];
+        if param_types != actual_types {}
+        break_t
+      }
       Break(maybe_node) => {
         let type_ = if let Some(break_node) = maybe_node {
           self.check(break_node)?
@@ -397,7 +391,7 @@ impl TypeChecker {
         }
         *self.break_stack.last_mut().unwrap() = type_;
         p::unreachable.promote()
-      },
+      }
     };
     self.module.nodes[node].type_ = type_.clone();
     Ok(type_)

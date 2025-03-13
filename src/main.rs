@@ -55,14 +55,12 @@ impl Add<Span> for Span {
 
 fn main() {
   let s = Span { row: 0, column: 1 };
-  s.row;
   let input = include_str!("../demo.hc").to_string();
   let tokenizer = Tokenizer::new(input.chars()).filter(|t| t.0.is_meaningful());
   let parse_tree = Parser::new(tokenizer).collect::<Vec<_>>();
   let canon_module = Canonizer::canonize_ast(parse_tree).unwrap();
   let cflow = Analyzer::analyze(&canon_module).unwrap();
   let solution = Solver::solve(cflow).unwrap();
-  let (module, clean_nodes) =
-    TypeChecker::typecheck(canon_module, solution).unwrap();
+  let (module, clean_nodes) = TypeChecker::typecheck(canon_module, solution).unwrap();
   Compiler::compile(module, clean_nodes.into_iter().collect());
 }

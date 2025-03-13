@@ -40,14 +40,14 @@ impl<'a, I: Iterator<Item = Token>> Iterator for Parser<'a, I> {
             let next = self.next_tok();
             match next {
               Ok(Token(t::Semicolon | t::RightBrace | t::EOF, _)) => break,
-              _ => {},
+              _ => {}
             }
           }
           return Some(Statement {
             span: e.span.unwrap_or(Span { row: 0, column: 0 }),
             kind: s::Error(e),
           });
-        },
+        }
       }
     }
   }
@@ -85,7 +85,7 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
       Ok(t) => {
         self.skip(1);
         Ok(t)
-      },
+      }
       Err(e) => Err(e),
     }
   }
@@ -109,12 +109,12 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
         Ok(t) => {
           span = span + t.1;
           break;
-        },
+        }
         _ => {
           let statement = self.statement()?;
           span = span + statement.span;
           statements.push(statement);
-        },
+        }
       };
     }
     Ok((statements, span))

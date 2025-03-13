@@ -5,7 +5,7 @@ main :: () {
 		} else {
 			break .{a: 2, b: 3};
 		}
-		1
-	}.a + 2;
+		"asdf"
+	};
 }
 

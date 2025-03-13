@@ -33,10 +33,8 @@ impl PartialEq for UnaryOpKey {
   }
 }
 
-impl Eq for BinaryOpKey {
-}
-impl Eq for UnaryOpKey {
-}
+impl Eq for BinaryOpKey {}
+impl Eq for UnaryOpKey {}
 
 #[derive(Clone, Debug)]
 pub struct OpDef {
@@ -94,11 +92,7 @@ impl OpTable {
     use WasmValue as v;
     {
       use BinaryOp::*;
-      let mut b = |op: BinaryOp,
-                   p1: Primitive,
-                   p2: Primitive,
-                   prod: Primitive,
-                   asm: Vec<Wasm>| {
+      let mut b = |op: BinaryOp, p1: Primitive, p2: Primitive, prod: Primitive, asm: Vec<Wasm>| {
         self
           .define_binary(
             op,
@@ -126,152 +120,94 @@ impl OpTable {
       b(Or, integer, integer, integer, vec![w::Or(I64)]);
       b(Xor, boolean, boolean, boolean, vec![w::Or(I64)]);
       b(Xor, integer, integer, integer, vec![w::Xor(I64)]);
-      b(
-        Nand,
-        boolean,
-        boolean,
-        boolean,
-        vec![w::And(I64), w::Constant(v::I32(1)), w::Xor(I64)],
-      );
-      b(
-        Nand,
-        integer,
-        integer,
-        integer,
-        vec![w::And(I64), w::Constant(v::I64(-1)), w::Xor(I64)],
-      );
+      b(Nand, boolean, boolean, boolean, vec![
+        w::And(I64),
+        w::Constant(v::I32(1)),
+        w::Xor(I64),
+      ]);
+      b(Nand, integer, integer, integer, vec![
+        w::And(I64),
+        w::Constant(v::I64(-1)),
+        w::Xor(I64),
+      ]);
       b(Xnor, boolean, boolean, boolean, vec![w::Equal(I64)]);
       b(Xnor, integer, integer, integer, vec![w::Equal(I64)]);
-      b(
-        Nor,
-        boolean,
-        boolean,
-        boolean,
-        vec![w::Or(I64), w::Constant(v::I32(1)), w::Xor(I64)],
-      );
-      b(
-        Nor,
-        integer,
-        integer,
-        integer,
-        vec![w::Or(I64), w::Constant(v::I64(-1)), w::Xor(I64)],
-      );
+      b(Nor, boolean, boolean, boolean, vec![
+        w::Or(I64),
+        w::Constant(v::I32(1)),
+        w::Xor(I64),
+      ]);
+      b(Nor, integer, integer, integer, vec![
+        w::Or(I64),
+        w::Constant(v::I64(-1)),
+        w::Xor(I64),
+      ]);
       // Relative value
       b(DoubleEqual, boolean, boolean, boolean, vec![w::Equal(I64)]);
       b(DoubleEqual, integer, integer, boolean, vec![w::Equal(I64)]);
       b(DoubleEqual, real, real, boolean, vec![w::Equal(F64)]);
-      b(
-        DoubleEqual,
-        nothing,
-        nothing,
-        boolean,
-        vec![w::Constant(v::I32(1))],
-      );
+      b(DoubleEqual, nothing, nothing, boolean, vec![w::Constant(
+        v::I32(1),
+      )]);
       b(DoubleEqual, glyph, glyph, boolean, vec![w::Equal(I64)]);
       b(Less, integer, integer, boolean, vec![w::LesserSigned(I64)]);
       b(Less, glyph, glyph, boolean, vec![w::LesserUnsigned(I64)]);
       b(Less, real, real, boolean, vec![w::LesserSigned(F64)]);
-      b(
-        Greater,
-        integer,
-        integer,
-        boolean,
-        vec![w::GreaterSigned(I64)],
-      );
-      b(
-        Greater,
-        glyph,
-        glyph,
-        boolean,
-        vec![w::GreaterUnsigned(I64)],
-      );
+      b(Greater, integer, integer, boolean, vec![w::GreaterSigned(
+        I64,
+      )]);
+      b(Greater, glyph, glyph, boolean, vec![w::GreaterUnsigned(
+        I64,
+      )]);
       b(Greater, real, real, boolean, vec![w::GreaterSigned(F64)]);
-      b(
-        LessEqual,
-        integer,
-        integer,
-        boolean,
-        vec![w::LesserEqualSigned(I64)],
-      );
-      b(
-        LessEqual,
-        glyph,
-        glyph,
-        boolean,
-        vec![w::LesserEqualUnsigned(I64)],
-      );
-      b(
-        LessEqual,
-        real,
-        real,
-        boolean,
-        vec![w::LesserEqualSigned(F64)],
-      );
-      b(
-        GreaterEqual,
-        integer,
-        integer,
-        boolean,
-        vec![w::GreaterEqualSigned(I64)],
-      );
-      b(
-        GreaterEqual,
-        glyph,
-        glyph,
-        boolean,
-        vec![w::GreaterEqualUnsigned(I64)],
-      );
-      b(
-        GreaterEqual,
-        real,
-        real,
-        boolean,
-        vec![w::GreaterEqualSigned(F64)],
-      );
+      b(LessEqual, integer, integer, boolean, vec![
+        w::LesserEqualSigned(I64),
+      ]);
+      b(LessEqual, glyph, glyph, boolean, vec![
+        w::LesserEqualUnsigned(I64),
+      ]);
+      b(LessEqual, real, real, boolean, vec![w::LesserEqualSigned(
+        F64,
+      )]);
+      b(GreaterEqual, integer, integer, boolean, vec![
+        w::GreaterEqualSigned(I64),
+      ]);
+      b(GreaterEqual, glyph, glyph, boolean, vec![
+        w::GreaterEqualUnsigned(I64),
+      ]);
+      b(GreaterEqual, real, real, boolean, vec![
+        w::GreaterEqualSigned(F64),
+      ]);
       b(BangEqual, boolean, boolean, boolean, vec![w::Unequal(I64)]);
       b(BangEqual, integer, integer, boolean, vec![w::Unequal(I64)]);
       b(BangEqual, glyph, glyph, boolean, vec![w::Unequal(I64)]);
       b(BangEqual, real, real, boolean, vec![w::Unequal(F64)]);
-      b(
-        BangEqual,
-        nothing,
-        nothing,
-        boolean,
-        vec![w::Constant(v::I32(0))],
-      );
+      b(BangEqual, nothing, nothing, boolean, vec![w::Constant(
+        v::I32(0),
+      )]);
     }
     {
       use UnaryOp::*;
-      let mut u =
-        |op: UnaryOp, p1: Primitive, prod: Primitive, asm: Vec<Wasm>| {
-          self
-            .define_unary(op, Type::Primitive(p1), Type::Primitive(prod), asm)
-            .unwrap();
-        };
-      u(
-        Minus,
-        integer,
-        integer,
-        vec![
-          w::Constant(v::I64(-1)),
-          w::Xor(I64),
-          w::Constant(v::I64(1)),
-          w::Add(I64),
-        ],
-      );
+      let mut u = |op: UnaryOp, p1: Primitive, prod: Primitive, asm: Vec<Wasm>| {
+        self
+          .define_unary(op, Type::Primitive(p1), Type::Primitive(prod), asm)
+          .unwrap();
+      };
+      u(Minus, integer, integer, vec![
+        w::Constant(v::I64(-1)),
+        w::Xor(I64),
+        w::Constant(v::I64(1)),
+        w::Add(I64),
+      ]);
       u(Minus, real, real, vec![w::Negate(F64)]);
-      u(
-        Not,
-        integer,
-        integer,
-        vec![w::Constant(v::I64(-1)), w::Xor(I64)],
-      );
-      u(
-        Not,
-        boolean,
-        boolean,
-        vec![w::Constant(v::I32(1)), w::Xor(I64)],
-      );
+      u(Not, integer, integer, vec![
+        w::Constant(v::I64(-1)),
+        w::Xor(I64),
+      ]);
+      u(Not, boolean, boolean, vec![
+        w::Constant(v::I32(1)),
+        w::Xor(I64),
+      ]);
     }
   }
 
@@ -310,12 +246,7 @@ impl OpTable {
     if old.is_some() { err } else { Ok(()) }
   }
 
-  pub fn try_binary(
-    &self,
-    op: BinaryOp,
-    left: &Type,
-    right: &Type,
-  ) -> Result<OpDef> {
+  pub fn try_binary(&self, op: BinaryOp, left: &Type, right: &Type) -> Result<OpDef> {
     self
       .binary_map
       .get(

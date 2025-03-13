@@ -1,6 +1,5 @@
 use crate::Span;
-use crate::err::*;
-use crate::error;
+use crate::lint::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Base {
@@ -78,7 +77,7 @@ pub enum TokenKind {
   SmallComment(String),
   BigComment(String),
 
-  Error(Diagnostic),
+  Error(Lint),
   Idk,
   EOF,
 }
@@ -86,10 +85,7 @@ pub enum TokenKind {
 impl TokenKind {
   pub fn is_meaningful(&self) -> bool {
     match self {
-      Self::Whitespace(_)
-      | Self::SmallComment(_)
-      | Self::BigComment(_)
-      | Self::Idk => false,
+      Self::Whitespace(_) | Self::SmallComment(_) | Self::BigComment(_) | Self::Idk => false,
       _ => true,
     }
   }
@@ -101,19 +97,78 @@ impl PartialEq for TokenKind {
   }
 }
 
-impl Eq for TokenKind {
-}
+impl Eq for TokenKind {}
 
 impl std::fmt::Display for TokenKind {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "{self:?}")
+    use TokenKind::*;
+    write!(f, "{}", match self {
+      LeftParen => "(",
+      RightParen => ")",
+      LeftBrace => "{",
+      RightBrace => "}",
+      LeftSquare => "[",
+      RightSquare => "]",
+      Comma => ",",
+      Colon => ":",
+      Semicolon => ";",
+      Dot => ".",
+      DotDot => "..",
+      Plus => "+",
+      Minus => "-",
+      Slash => "/",
+      Star => "*",
+      Percent => "%",
+      Tilda => "~",
+      Arrow => "->",
+      FatArrow => "=>",
+      Bang => "!",
+      BangEqual => "!=",
+      Question => "?",
+      QuestionEqual => "?=",
+      Equal => "=",
+      DoubleEqual => "==",
+      Greater => ">",
+      GreaterEqual => ">=",
+      Less => "<",
+      LessEqual => "<=",
+      Pipe => "|",
+      Ampersand => "&",
+      Carrot => "^",
+      Hash => "#",
+      DotDotEqual => "..=",
+      Identifier(_) => "identifier",
+      StringLiteral(_) => "string literal",
+      GlyphLiteral(_) => "glyph literal",
+      IntegerLiteral(_, _) => "integer literal",
+      FloatLiteral(_) => "float literal",
+      Loop => "loop",
+      If => "if",
+      Else => "else",
+      And => "and",
+      Or => "or",
+      Xor => "xor",
+      Not => "not",
+      Nand => "nand",
+      Nor => "nor",
+      Xnor => "xnor",
+      Break => "break",
+      True => "true",
+      False => "false",
+      Struct => "struct",
+      Whitespace(_) => "whitespace",
+      BigComment(_) | SmallComment(_) => "comment",
+      Error(_) => "error",
+      Idk => "idk",
+      EOF => "EOF",
+    })
   }
 }
 
 #[derive(Clone, Debug)]
 pub struct Token(pub TokenKind, pub Span);
 
-fn t(tk: TokenKind, sp: Span) -> Result<Token> {
+fn t(tk: TokenKind, sp: Span) -> Result<Token, Lint> {
   Ok(Token(tk, sp))
 }
 
@@ -142,11 +197,11 @@ impl<'a, I: Iterator<Item = char>> Tokenizer<'a, I> {
         self.row += 1;
         self.column = 1;
         Some(c)
-      },
+      }
       Some(c) => {
         self.column += 1;
         Some(c)
-      },
+      }
       _ => None,
     }
   }
@@ -158,7 +213,7 @@ impl<'a, I: Iterator<Item = char>> Tokenizer<'a, I> {
       let c = match self.next_char() {
         Some(c) if c == terminator && !escape => {
           break;
-        },
+        }
         Some(c) => {
           if c == '\\' {
             escape = !escape;
@@ -166,7 +221,7 @@ impl<'a, I: Iterator<Item = char>> Tokenizer<'a, I> {
             escape = false;
           }
           c
-        },
+        }
         None => return None,
       };
       buffer.push(c)
@@ -178,7 +233,15 @@ impl<'a, I: Iterator<Item = char>> Tokenizer<'a, I> {
     self.iter.peek(n).clone()
   }
 
-  fn _next(&mut self) -> Result<Token> {
+  fn lint(&self, lint: TokenLint, span: Span) -> Lint {
+    Lint {
+      kind: Box::new(lint),
+      span: Some(span),
+      file: None,
+    }
+  }
+
+  fn _next(&mut self) -> Result<Token, Lint> {
     use TokenKind::*;
     let position = Span {
       row: self.row,
@@ -186,15 +249,8 @@ impl<'a, I: Iterator<Item = char>> Tokenizer<'a, I> {
     };
     let current = match self.next_char() {
       Some(std::char::REPLACEMENT_CHARACTER) => {
-        return t(
-          Error(Diagnostic {
-            reason: "Non-UTF8 encoded glyph".into(),
-            span: Some(position),
-            backtrace: vec![],
-          }),
-          position,
-        );
-      },
+        return Err(self.lint(TokenLint::InvalidGlyph, position));
+      }
       Some(c) => c,
       None => return t(EOF, position),
     };
@@ -323,19 +379,18 @@ impl<'a, I: Iterator<Item = char>> Tokenizer<'a, I> {
     if current == '\'' {
       let buffer = self
         .delimited('\'')
-        .reason("Single quote (') was opened, but never closed")
-        .span(&position)?;
+        .lint(TokenLint::UnclosedDelimeter('\''))
+        .span(position)?;
       let baked = bake_string(&buffer)?;
       if baked.len() != 1 {
-        return error!("Single quote (') contains more than one character")
-          .span(&position);
+        return lint(TokenLint::GlyphTooLong).span(position);
       }
       let kind = GlyphLiteral(
         baked
           .chars()
           .next()
-          .reason("Single quote (') contains no characters")
-          .span(&position)?,
+          .lint(TokenLint::GlyphTooLong)
+          .span(position)?,
       );
       return t(kind, position);
     }
@@ -343,8 +398,8 @@ impl<'a, I: Iterator<Item = char>> Tokenizer<'a, I> {
     if current == '"' {
       let buffer = self
         .delimited('\"')
-        .reason("Double quote (\") was opened, but never closed")
-        .span(&position)?;
+        .lint(TokenLint::UnclosedDelimeter('\"'))
+        .span(position)?;
       let kind = StringLiteral(bake_string(&buffer)?);
       return t(kind, position);
     }
@@ -434,7 +489,7 @@ impl<'a, I: Iterator<Item = char>> Iterator for Tokenizer<'a, I> {
   }
 }
 
-fn bake_string(s: &str) -> Result<String> {
+fn bake_string(s: &str) -> Result<String, Lint> {
   let mut baked = String::with_capacity(s.len());
   let mut it = s.chars();
   loop {
@@ -456,8 +511,8 @@ fn bake_string(s: &str) -> Result<String> {
             let num = (a << 4) | b;
             char::from_u32(num)
           };
-          a().reason(format!("Found invalid ASCII (\\aXX) escape sequence"))?
-        },
+          a().lint(TokenLint::InvalidAsciiEscape)?
+        }
         Some('u') => {
           // Unicode escapes
           let mut a = || {
@@ -468,11 +523,11 @@ fn bake_string(s: &str) -> Result<String> {
             let num = (a << 12) | (b << 8) | (c << 4) | d;
             char::from_u32(num)
           };
-          a().reason("Found invalid Unicode (\\uXXXX) escape sequence")?
-        },
-        _ => {
-          return Err(Diagnostic::new("Found invalid escape sequence", None));
-        },
+          a().lint(TokenLint::InvalidUnicodeEscape)?
+        }
+        c => {
+          return lint(TokenLint::UnknownEscape(c.unwrap_or(' ')));
+        }
       }),
       // Unremarkable character
       Some(c) => baked.push(c),
