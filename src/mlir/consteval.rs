@@ -1,10 +1,8 @@
 use std::collections::HashSet;
 
-use crate::{ir::types::Primitive, lint::*};
+use crate::{hlir::*, lint::*};
 
-use super::solver::{Solver, StackValue};
-use super::types::TypeLint;
-use super::{ConstValue, types::Type};
+use super::*;
 
 impl Solver {
   pub(super) fn pop(&mut self) -> ConstValue {
@@ -12,11 +10,11 @@ impl Solver {
       Some(StackValue::Value(v)) => v,
       Some(StackValue::OldValue(_)) => {
         panic!()
-      },
+      }
       Some(StackValue::Guard) => {
         self.value_stack.push(StackValue::Guard);
         ConstValue::Nothing
-      },
+      }
       None => ConstValue::Nothing,
     }
   }
@@ -38,9 +36,7 @@ impl Solver {
 
   pub(super) fn retrieve_state(&mut self) {
     self.rt_value_map.clear();
-    while let Some(StackValue::OldValue((mangle, val))) =
-      self.value_stack.last()
-    {
+    while let Some(StackValue::OldValue((mangle, val))) = self.value_stack.last() {
       self.rt_value_map.insert(mangle.clone(), val.clone());
       self.value_stack.pop();
     }
@@ -70,8 +66,7 @@ impl Solver {
       .clone()
       .into_iter()
       .collect::<Vec<_>>();
-    deps
-      .sort_unstable_by(|(_, deps1), (_, deps2)| deps1.len().cmp(&deps2.len()));
+    deps.sort_unstable_by(|(_, deps1), (_, deps2)| deps1.len().cmp(&deps2.len()));
     let mut resolved = HashSet::new();
     // Iterate constants from least to most dependencies
     for (mangle, _) in deps {
@@ -86,7 +81,7 @@ impl Solver {
           self.evaluate_block(*block)?;
           let top = self.pop().clone();
           let ConstValue::Type(t) = top else {
-            return Err(lint_nospan(TypeLint::TypeMismatch as LintKind))
+            return Err(lint_nospan(TypeLint::TypeMismatch))
               .context("type")
               .context(format!("{}", self.type_of_const(&top)));
           };
@@ -97,7 +92,7 @@ impl Solver {
           self.evaluate_block(*block)?;
           let top = self.pop().clone();
           let ConstValue::Type(t) = top else {
-            return Err(lint_nospan(TypeLint::TypeMismatch as LintKind))
+            return Err(lint_nospan(TypeLint::TypeMismatch))
               .context("type")
               .context(format!("{}", self.type_of_const(&top)));
           };
@@ -105,36 +100,29 @@ impl Solver {
         } else {
           Primitive::nothing.promote()
         };
-        self.type_map.insert(
-          func.mangle,
-          Type::Function {
-            param_types,
-            return_type: return_type.into(),
-          },
-        );
+        self.type_map.insert(func.mangle, Type::Function {
+          param_types,
+          return_type: return_type.into(),
+        });
       }
       // Otherwise, resolve the constant
-      else if let Some(const_block) =
-        self.module.constants.get(&mangle).cloned()
-      {
+      else if let Some(const_block) = self.module.constants.get(&mangle).cloned() {
         self.evaluate_block(const_block)?;
         let value = self.pop();
         self
           .type_map
           .insert(mangle.clone(), self.type_of_const(&value));
-      } else if let Some(assert_block) =
-        self.module.type_assertions.get(&mangle).cloned()
-      {
+      } else if let Some(assert_block) = self.module.type_assertions.get(&mangle).cloned() {
         self.evaluate_block(assert_block)?;
         let top = self.pop();
         let ConstValue::Type(assert) = top else {
-          return Err(lint_nospan(TypeLint::TypeMismatch as LintKind))
+          return Err(lint_nospan(TypeLint::TypeMismatch))
             .context("type")
             .context(format!("{}", self.type_of_const(&top)));
         };
         if let Some(existing_type) = self.type_map.get(&mangle) {
           if existing_type != &assert {
-            return Err(lint_nospan(TypeLint::TypeMismatch as LintKind))
+            return Err(lint_nospan(TypeLint::TypeMismatch))
               .context(format!("{assert}"))
               .context(format!("{existing_type}"));
           }
@@ -155,9 +143,7 @@ impl Solver {
       ConstValue::Boolean(_) => p::boolean.promote(),
       ConstValue::String { .. } => p::string.promote(),
       ConstValue::Glyph(_) => p::glyph.promote(),
-      ConstValue::Function(mangle) => {
-        self.type_map.get(mangle).unwrap().clone()
-      },
+      ConstValue::Function(mangle) => self.type_map.get(mangle).unwrap().clone(),
       ConstValue::StructLiteral {
         member_names,
         member_values,
@@ -170,7 +156,7 @@ impl Solver {
           member_names: member_names.clone(),
           member_types,
         }
-      },
+      }
       ConstValue::Type(_) => Type::Type,
     }
   }

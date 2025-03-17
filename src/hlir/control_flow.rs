@@ -1,15 +1,11 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::{
-  ir::{Block, ConstValue, FunctionInfo, Ir, IrKind, IrPtr, Module},
-  lint::*,
-  naming::{CanonKind, NameLint},
-};
+use crate::{hlir::*, lint::*, mlir::*};
 
-use super::{CanonNode, CanonizedModule, Mangle};
+use super::{CanonizedModule, HlIrNode, Mangle};
 
 pub struct Analyzer {
-  nodes: Vec<CanonNode>,
+  nodes: Vec<HlIrNode>,
   blocks: Vec<Block>,
   break_stack: Vec<IrPtr>,
   functions: HashMap<Mangle, FunctionInfo>,
@@ -40,7 +36,7 @@ impl Analyzer {
     })
   }
 
-  fn new(module: Vec<CanonNode>) -> Self {
+  fn new(module: Vec<HlIrNode>) -> Self {
     Self {
       nodes: module,
       blocks: vec![Block::Terminal],
@@ -69,10 +65,10 @@ impl Analyzer {
       }
       visited.insert(current_node);
       match self.blocks.get(current_node) {
-        Some(Block::Unreachable) | Some(Block::Terminal) => {},
+        Some(Block::Unreachable) | Some(Block::Terminal) => {}
         Some(Block::Basic { next, .. }) => {
           to_visit.push(next);
-        },
+        }
         Some(Block::Branch {
           when_true,
           when_false,
@@ -80,8 +76,8 @@ impl Analyzer {
         }) => {
           to_visit.push(when_true);
           to_visit.push(when_false);
-        },
-        None => {},
+        }
+        None => {}
       };
       loop {
         if let Some(n) = to_visit.pop() {
@@ -96,18 +92,18 @@ impl Analyzer {
     }
   }
 
-  fn push(&mut self, block: IrPtr, ir: Ir) {
+  fn push(&mut self, block: IrPtr, ir: MlIrNode) {
     self.blocks[block].push(ir);
   }
 
   fn analyze_node(&mut self, node: IrPtr, mut block: IrPtr) -> Result<IrPtr> {
-    use CanonKind as k;
-    use IrKind as i;
+    use HlIrKind as k;
+    use MlIrKind as i;
     let node = self.nodes[node].clone();
     if self.blocks[block].is_terminal() {
       return Ok(block);
     }
-    let ir = |kind| Ir {
+    let ir = |kind| MlIrNode {
       kind,
       span: node.span,
     };
@@ -150,10 +146,10 @@ impl Analyzer {
         } else {
           block = new_block;
         }
-      },
+      }
       k::Immediate(const_value) => {
         self.push(block, ir(i::Const(const_value)));
-      },
+      }
       k::Block(items) => {
         self.push(block, ir(i::StartScope));
         let length = items.len();
@@ -165,21 +161,21 @@ impl Analyzer {
           block = new_block;
         }
         self.push(block, ir(i::EndScope));
-      },
+      }
       k::Identifier(mangle) => {
         self.push(block, ir(i::Get(mangle)));
-      },
+      }
       k::Binary {
         op, left, right, ..
       } => {
         block = self.analyze_node(left, block)?;
         block = self.analyze_node(right, block)?;
         self.push(block, ir(i::BinaryOp { kind: op }));
-      },
+      }
       k::Unary { op, child, .. } => {
         block = self.analyze_node(child, block)?;
         self.push(block, ir(i::UnaryOp { kind: op }));
-      },
+      }
       k::FunctionDef {
         name,
         parameter_names,
@@ -196,31 +192,27 @@ impl Analyzer {
             self.analyze_node(t, param_block)
           })
           .try_collect::<Vec<_>>()?;
-        let returns_mangle =
-          if let Some((return_type, returns_mangle)) = returns {
-            let return_type_block = self.new_block();
-            self
-              .type_assertions
-              .insert(returns_mangle.clone(), return_type_block);
-            self.analyze_node(return_type, return_type_block)?;
-            Some(returns_mangle)
-          } else {
-            None
-          };
+        let returns_mangle = if let Some((return_type, returns_mangle)) = returns {
+          let return_type_block = self.new_block();
+          self
+            .type_assertions
+            .insert(returns_mangle.clone(), return_type_block);
+          self.analyze_node(return_type, return_type_block)?;
+          Some(returns_mangle)
+        } else {
+          None
+        };
         let func_block = self.new_block();
         self.analyze_node(body, func_block)?;
         self.push(block, ir(i::Const(ConstValue::Function(name.clone()))));
-        self.functions.insert(
-          name.clone(),
-          FunctionInfo {
-            mangle: name,
-            arity: parameter_names.len(),
-            parameter_mangles: parameter_names,
-            returns_mangle,
-            block: func_block,
-          },
-        );
-      },
+        self.functions.insert(name.clone(), FunctionInfo {
+          mangle: name,
+          arity: parameter_names.len(),
+          parameter_mangles: parameter_names,
+          returns_mangle,
+          block: func_block,
+        });
+      }
       k::FunctionCall {
         callee,
         callee_name,
@@ -234,7 +226,7 @@ impl Analyzer {
         }
         self.push(block, ir(i::Get(callee_name)));
         self.push(block, ir(i::Call { arity }));
-      },
+      }
       k::If {
         predicate,
         then,
@@ -289,13 +281,13 @@ impl Analyzer {
         else {
           block = Self::TERMINUS
         }
-      },
+      }
       k::StructDef { fields, types } => {
         block = types
           .into_iter()
           .try_fold(block, |block, type_| self.analyze_node(type_, block))?;
         self.push(block, ir(i::StructDef { fields }));
-      },
+      }
       k::StructLiteral {
         struct_t,
         field_names,
@@ -321,11 +313,11 @@ impl Analyzer {
           self.push(block, ir(i::Get(struct_t_mangle)));
           self.push(block, ir(i::TypeAssert(None)));
         }
-      },
+      }
       k::Field { of, index } => {
         block = self.analyze_node(of, block)?;
         self.push(block, ir(i::Field(index)));
-      },
+      }
       k::Loop {
         parameter_names,
         parameter_values,
@@ -333,11 +325,7 @@ impl Analyzer {
       } => {
         let arity = parameter_names.len();
         if arity > 1 {
-          return Err(lint(
-            NameLint::MultipleLoopParams as LintKind,
-            node.span,
-            &[],
-          ));
+          return Err(lint(NameLint::MultipleLoopParams, node.span, &[]));
         }
         for p in 0..arity {
           block = self.analyze_node(parameter_values[p], block)?;
@@ -379,7 +367,7 @@ impl Analyzer {
           self.blocks[loop_tail].set_next(loop_head);
           block = Self::TERMINUS;
         }
-      },
+      }
       k::Break(value) => {
         let span = node.span;
         if let Some(expr) = value {
@@ -394,9 +382,9 @@ impl Analyzer {
           self.blocks[block].set_next(*target);
           *target
         } else {
-          return Err(lint(NameLint::NoBreakTarget as LintKind, span, &[]));
+          return Err(lint(NameLint::NoBreakTarget, span, &[]));
         };
-      },
+      }
     };
     Ok(block)
   }

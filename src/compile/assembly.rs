@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use crate::naming::Mangle;
+use crate::hlir::Mangle;
 
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone)]
@@ -10,6 +10,10 @@ pub enum WasmType {
   F64,
   I32,
   I64,
+}
+
+impl WasmType {
+  pub const PTR_T: Self = Self::I32;
 }
 
 impl Display for WasmType {

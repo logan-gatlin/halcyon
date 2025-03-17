@@ -21,10 +21,10 @@ macro_rules! primitives {
         }
       }
 
-      pub fn mangle(&self) -> crate::naming::Mangle {
+      pub fn mangle(&self) -> crate::hlir::Mangle {
         match self {
           $(
-          Primitive::$i => crate::naming::mangle_builtin(stringify!{$i}),
+          Primitive::$i => crate::hlir::mangle_builtin(stringify!{$i}),
           )*
         }
       }
@@ -104,7 +104,7 @@ impl PartialEq for Type {
     match (self, other) {
       (t::Ambiguous, t::Ambiguous) => {
         panic!("Tried to compare ambiguous types")
-      },
+      }
       (t::Type, t::Type) => true,
       (t::Primitive(p1), t::Primitive(p2)) => p1 == p2,
       (
@@ -132,8 +132,7 @@ impl PartialEq for Type {
   }
 }
 
-impl Eq for Type {
-}
+impl Eq for Type {}
 
 impl std::hash::Hash for Type {
   fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -145,20 +144,20 @@ impl std::hash::Hash for Type {
       } => {
         member_names.hash(state);
         member_types.hash(state);
-      },
+      }
       Type::Function {
         param_types,
         return_type,
       } => {
         param_types.hash(state);
         return_type.hash(state);
-      },
+      }
       Type::Type => "type".hash(state),
       Type::Ambiguous => panic!("Tried to hash ambiguous type"),
       Type::Reference(t) => {
         "ref".hash(state);
         t.hash(state);
-      },
+      }
     }
   }
 }
@@ -187,7 +186,7 @@ impl std::fmt::Display for Type {
           .join(",\n");
         let fields = indent(fields);
         write!(f, "struct {{\n{fields}\n}}")
-      },
+      }
       Type::Type => write!(f, "type"),
       Type::Function {
         param_types,
@@ -205,17 +204,4 @@ impl std::fmt::Display for Type {
       Type::Reference(t) => write!(f, "{t}&"),
     }
   }
-}
-
-#[repr(usize)]
-pub enum TypeLint {
-  TypeMismatch = 4000,
-  NoFieldOnType = 4007,
-  FieldMissing = 4008,
-  NonFunctionCall = 4009,
-  TooManyArgs = 4010,
-  TooFewArgs = 4011,
-  BinaryOpUndefined = 4012,
-  UnaryOpUndefined = 4013,
-  Sanitization = 4014,
 }

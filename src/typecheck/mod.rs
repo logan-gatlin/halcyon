@@ -1,9 +1,9 @@
 use std::collections::HashSet;
 
 use crate::{
-  ir::{IrPtr, solver::Solution, types::Type},
+  hlir::{CanonizedModule, types::Type},
   lint::*,
-  naming::CanonizedModule,
+  mlir::{IrPtr, solver::Solution},
 };
 
 mod checking;

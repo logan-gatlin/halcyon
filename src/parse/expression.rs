@@ -1,6 +1,5 @@
-use crate::{Base, token::TokenLint};
-
 use super::*;
+use crate::operator::*;
 
 #[derive(Clone, Debug)]
 pub struct Parameters {
@@ -114,11 +113,9 @@ impl<I: Iterator<Item = Token>> Parser<I> {
     let mut current = if let Ok(operator) = UnaryOp::try_from(&next.0) {
       let span = next.1;
       if operator.assoc() == RIGHT_ASSOC {
-        return Err(lint(
-          ParseLint::MissingPostfixUnaryOperand as LintKind,
-          span,
-          &[format!("{operator}")],
-        ));
+        return Err(lint(ParseLint::MissingPostfixUnaryOperand, span, &[
+          format!("{operator}"),
+        ]));
       }
       self.skip(1);
       let child = self.expression(operator.precedence()).span(span)?;
@@ -172,7 +169,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
           let params = self.parameters(span)?;
           self
             .eat(t::RightBrace)
-            .lint(TokenLint::MissingDelimeter as LintKind)
+            .lint(TokenLint::MissingDelimeter)
             .context("}")
             .span(span)?;
           current = Expression::new(
@@ -211,7 +208,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
             if self.eat(t::RightParen).is_some() {
               break;
             } else {
-              return Err(lint(ParseLint::MissingComma as LintKind, span, &[]));
+              return Err(lint(ParseLint::MissingComma, span, &[]));
             }
           }
         }
@@ -228,11 +225,9 @@ impl<I: Iterator<Item = Token>> Parser<I> {
         self.skip(1);
         let span = next.1;
         if operator.assoc() == LEFT_ASSOC {
-          return Err(lint(
-            ParseLint::MissingPrefixUnaryOperand as LintKind,
-            span,
-            &[format!("{operator}")],
-          ));
+          return Err(lint(ParseLint::MissingPrefixUnaryOperand, span, &[
+            format!("{operator}"),
+          ]));
         }
         current = Expression::new(
           e::Unary {
@@ -262,12 +257,8 @@ impl<I: Iterator<Item = Token>> Parser<I> {
         t::Identifier(s) => s,
         t::RightBrace | t::RightParen | t::RightSquare => break,
         _ => {
-          return Err(lint(
-            TokenLint::MissingDelimeter as LintKind,
-            span,
-            &["}".to_string()],
-          ));
-        },
+          return Err(lint(TokenLint::MissingDelimeter, span, &["}".to_string()]));
+        }
       };
       self.skip(1);
       let name_span = name_token.1;
@@ -276,7 +267,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
       // Colon
       let colon_span = self
         .eat(t::Colon)
-        .lint(ParseLint::MissingFunctionParameterType as LintKind)
+        .lint(ParseLint::MissingFunctionParameterType)
         .span(name_span)?
         .1;
       span += colon_span;
@@ -285,11 +276,11 @@ impl<I: Iterator<Item = Token>> Parser<I> {
         Ok(t) => t,
         Err(_) => {
           return Err(lint(
-            ParseLint::MissingFunctionParameterType as LintKind,
+            ParseLint::MissingFunctionParameterType,
             name_span + colon_span,
             &[name],
           ));
-        },
+        }
       };
       span += type_.span;
       spans.push(name_span + type_.span);
@@ -298,7 +289,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
       // Comma
       if !self.eat(t::Comma).is_some() {
         if self.look(0, t::Identifier("".into())).is_some() {
-          return Err(lint(ParseLint::MissingComma as LintKind, span, &[]));
+          return Err(lint(ParseLint::MissingComma, span, &[]));
         }
         break;
       }
@@ -348,12 +339,8 @@ impl<I: Iterator<Item = Token>> Parser<I> {
       Token(t::Identifier(i), span) => {
         self.skip(1);
         Ok((i, span))
-      },
-      _ => Err(lint(
-        ParseLint::ExpectedIdentifier as LintKind,
-        self.last_span,
-        &[],
-      )),
+      }
+      _ => Err(lint(ParseLint::ExpectedIdentifier, self.last_span, &[])),
     }
   }
 }

@@ -24,13 +24,13 @@ impl Wasm {
       Wasm::Custom(s) => s.clone(),
       Wasm::Import { ns1, ns2, object } => {
         format!("(import \"{ns1}\" \"{ns2}\" {})", object.to_wat())
-      },
+      }
       Wasm::If => {
         format!("if")
-      },
+      }
       Wasm::Else => {
         format!("else")
-      },
+      }
       Wasm::Block(name) => format!("block ${name}"),
       Wasm::Loop(name) => format!("loop ${name}",),
       Wasm::Local(type_, name) => format!("(local ${name} {type_})"),
@@ -57,7 +57,7 @@ impl Wasm {
           .map(|r| format!("\n{}(result {r})", Self::INDENT))
           .collect();
         format!("(func ${ident}{params}{results}\n{})", block(body))
-      },
+      }
       Wasm::End => format!("end"),
       Wasm::Branch(lp) => format!("br ${lp}"),
       Wasm::Call(func) => format!("call ${func}"),
@@ -74,16 +74,16 @@ impl Wasm {
       Wasm::Unequal(asm_type) => format!("{asm_type}.ne"),
       Wasm::GreaterSigned(asm_type) => {
         format!("{asm_type}.gt{}", isfloat(asm_type))
-      },
+      }
       Wasm::LesserSigned(asm_type) => {
         format!("{asm_type}.lt{}", isfloat(asm_type))
-      },
+      }
       Wasm::GreaterEqualSigned(asm_type) => {
         format!("{asm_type}.ge{}", isfloat(asm_type))
-      },
+      }
       Wasm::LesserEqualSigned(asm_type) => {
         format!("{asm_type}.le{}", isfloat(asm_type))
-      },
+      }
       Wasm::GreaterUnsigned(asm_type) => format!("{asm_type}.gt_u"),
       Wasm::LesserUnsigned(asm_type) => format!("{asm_type}.lt_u"),
       Wasm::GreaterEqualUnsigned(asm_type) => format!("{asm_type}.ge_u"),
@@ -91,13 +91,13 @@ impl Wasm {
       Wasm::Negate(asm_type) => format!("{asm_type}.neg"),
       Wasm::Memory { min, max } => {
         format!("(memory {min} {max})")
-      },
+      }
       Wasm::Data { offset, content } => {
         format!(
           "(data (i32.const {offset}) \"{}\")",
           data_to_string(content)
         )
-      },
+      }
       Wasm::Nop => "nop".into(),
       Wasm::Unreachable => format!("unreachable"),
       Wasm::Comment(msg) => format!(";; {}", msg),
@@ -113,11 +113,7 @@ fn data_to_string(buf: &[u8]) -> String {
   let mut output = Vec::with_capacity(buf.len());
   for byte in buf {
     let byte = *byte;
-    if byte.is_ascii()
-      && !byte.is_ascii_control()
-      && byte != b'"'
-      && byte != b'\\'
-    {
+    if byte.is_ascii() && !byte.is_ascii_control() && byte != b'"' && byte != b'\\' {
       output.push(byte);
     } else {
       output.extend(format!("\\{byte:02x}").as_bytes());

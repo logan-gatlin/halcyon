@@ -1,15 +1,14 @@
 use std::collections::HashMap;
 
-use crate::{
-  assembly::{Wasm, WasmType},
-  ir::{
-    ConstValue, IrPtr,
-    types::{Primitive, Type},
-  },
-  naming::{CanonKind, CanonizedModule},
-};
+use crate::{hlir::*, mlir::*};
 
+pub mod assembly;
 mod lower;
+mod text;
+pub mod vm;
+
+pub use assembly::*;
+pub use vm::*;
 
 #[derive(Debug, Clone)]
 struct BreakTarget {
@@ -50,7 +49,7 @@ impl Compiler {
         (index + val.len(), item + 1)
       });
     for n in &mut self.module.nodes {
-      if let CanonKind::Immediate(ConstValue::String {
+      if let HlIrKind::Immediate(ConstValue::String {
         ref mut virtual_address,
         ..
       }) = n.kind
@@ -64,50 +63,16 @@ impl Compiler {
   pub fn compile(module: CanonizedModule, to_compile: Vec<IrPtr>) -> String {
     let mut this = Self::new(module);
     let heap = this.build_data();
-    let mut regs = vec![
-      Wasm::Import {
-        ns1: "js".to_string(),
-        ns2: "memory".to_string(),
-        object: Wasm::Memory { min: 10, max: 100 }.into(),
-      },
-      Wasm::Import {
-        ns1: "js".to_string(),
-        ns2: "print_string".to_string(),
-        object: Wasm::Function {
-          ident: "_print_string".into(),
-          params: vec![("".into(), WasmType::I32), ("".into(), WasmType::I32)],
-          body: vec![],
-          results: vec![],
-        }
-        .into(),
-      },
-      Wasm::Import {
-        ns1: "js".to_string(),
-        ns2: "print_integer".to_string(),
-        object: Wasm::Function {
-          ident: "_print_integer".into(),
-          params: vec![("".into(), WasmType::I64)],
-          body: vec![],
-          results: vec![],
-        }
-        .into(),
-      },
-      Wasm::Import {
-        ns1: "js".to_string(),
-        ns2: "print_real".to_string(),
-        object: Wasm::Function {
-          ident: "_print_real".into(),
-          params: vec![("".into(), WasmType::I64)],
-          body: vec![],
-          results: vec![],
-        }
-        .into(),
-      },
-      Wasm::Data {
-        offset: 0,
-        content: heap,
-      },
-    ];
+    let mut regs: Vec<Wasm> = Builtin::ALL.into_iter().flat_map(|b| b.import()).collect();
+    regs.push(Wasm::Import {
+      ns1: "js".to_string(),
+      ns2: "memory".to_string(),
+      object: Wasm::Memory { min: 10, max: 100 }.into(),
+    });
+    regs.push(Wasm::Data {
+      offset: 0,
+      content: heap,
+    });
     let mut instrs = vec![];
     for func in to_compile {
       this.lower(func, &mut regs, &mut instrs).unwrap();
@@ -123,8 +88,6 @@ impl Compiler {
 }
 
 impl Type {
-  pub const PTR_T: WasmType = WasmType::I32;
-
   pub fn count_registers(&self) -> usize {
     use Primitive as p;
     match self {
@@ -133,9 +96,7 @@ impl Type {
         p::glyph | p::integer | p::real | p::boolean => 1,
         p::string => 2,
       },
-      Type::Struct { member_types, .. } => {
-        member_types.iter().map(|t| t.count_registers()).sum()
-      },
+      Type::Struct { member_types, .. } => member_types.iter().map(|t| t.count_registers()).sum(),
       Type::Function { .. } => 1,
       Type::Type => 0,
       _ => panic!("Counted registers of ambiguous type"),
@@ -151,7 +112,7 @@ impl Type {
         p::integer => vec![a::I64],
         p::real => vec![a::F64],
         p::boolean => vec![a::I32],
-        p::string => vec![Self::PTR_T, Self::PTR_T],
+        p::string => vec![a::PTR_T, a::PTR_T],
         p::glyph => vec![a::I32],
       },
       Type::Struct { member_types, .. } => member_types

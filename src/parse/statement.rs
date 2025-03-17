@@ -43,11 +43,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
         } else if self.eat(t::Colon).is_some() {
           true
         } else {
-          return Err(lint(
-            ParseLint::MissingAssignee as LintKind,
-            span,
-            &[name.clone()],
-          ));
+          return Err(lint(ParseLint::MissingAssignee, span, &[name.clone()]));
         };
         let value = self.expression(0).span(span)?;
         span = span + value.span;
@@ -61,7 +57,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
           span,
         };
         s
-      },
+      }
       // Assignment
       (Token(t::Identifier(name), span2), Token(t::Equal, span3)) => {
         self.skip(2);
@@ -76,7 +72,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
             is_constant: false,
           },
         }
-      },
+      }
       // Expression
       (Token(_, span2), _) => {
         span = span + span2;
@@ -86,14 +82,17 @@ impl<I: Iterator<Item = Token>> Parser<I> {
           span,
           kind: s::Expression(expr),
         }
-      },
+      }
     };
     // Check for semicolon
-    if self.eat(t::NewLine).is_some() || self.eat(t::EOF).is_some() {
+    if self.eat(t::NewLine).is_some()
+      || self.eat(t::EOF).is_some()
+      || self.eat(t::Semicolon).is_some()
+    {
       self.eat_newlines();
       Ok(statement)
     } else {
-      return Err(lint(ParseLint::MissingSemicolon as LintKind, span, &[]));
+      return Err(lint(ParseLint::MissingSemicolon, span, &[]));
     }
   }
 }

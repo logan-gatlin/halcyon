@@ -1,21 +1,22 @@
+pub mod kinds;
 pub mod render;
 pub mod span;
 
+pub use kinds::*;
 pub use span::*;
 
 use crate::token::{Token, TokenKind};
 
-pub type LintKind = usize;
 pub type Result<T> = std::result::Result<T, Lint>;
 
 #[derive(Clone, Debug)]
 pub struct Lint {
-  pub kind: LintKind,
+  pub kind: usize,
   pub context: Vec<String>,
   pub span: Option<Span>,
 }
 
-pub fn lint(kind: LintKind, span: Span, context: &[String]) -> Lint {
+pub fn lint(kind: impl Into<usize>, span: Span, context: &[String]) -> Lint {
   Lint {
     kind: kind.into(),
     context: context.to_vec(),
@@ -23,7 +24,7 @@ pub fn lint(kind: LintKind, span: Span, context: &[String]) -> Lint {
   }
 }
 
-pub fn lint_nospan(kind: LintKind) -> Lint {
+pub fn lint_nospan(kind: impl Into<usize>) -> Lint {
   Lint {
     kind: kind.into(),
     span: None,
@@ -32,15 +33,15 @@ pub fn lint_nospan(kind: LintKind) -> Lint {
 }
 
 pub trait OrLint<T> {
-  fn lint(self, lint: LintKind) -> Result<T>;
+  fn lint(self, lint: impl Into<usize>) -> Result<T>;
 }
 
 impl<T, E> OrLint<T> for std::result::Result<T, E> {
-  fn lint(self, lint: LintKind) -> Result<T> {
+  fn lint(self, lint: impl Into<usize>) -> Result<T> {
     match self {
       Ok(v) => Ok(v),
       Err(_) => Err(Lint {
-        kind: lint,
+        kind: lint.into(),
         context: vec![],
         span: None,
       }),
@@ -49,11 +50,11 @@ impl<T, E> OrLint<T> for std::result::Result<T, E> {
 }
 
 impl<T> OrLint<T> for std::option::Option<T> {
-  fn lint(self, lint: LintKind) -> Result<T> {
+  fn lint(self, lint: impl Into<usize>) -> Result<T> {
     match self {
       Some(v) => Ok(v),
       None => Err(Lint {
-        kind: lint,
+        kind: lint.into(),
         context: vec![],
         span: None,
       }),
@@ -71,7 +72,7 @@ impl<T> WithSpan for std::result::Result<T, Lint> {
       Err(mut l) => {
         l.span = l.span.or(Some(span));
         Err(l)
-      },
+      }
     }
   }
 }
@@ -87,7 +88,7 @@ impl<T> WithContext for std::result::Result<T, Lint> {
       Err(mut l) => {
         l.context.push(parameter.into());
         Err(l)
-      },
+      }
     }
   }
 }

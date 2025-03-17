@@ -1,21 +1,21 @@
 #![feature(let_chains)]
 #![feature(iterator_try_collect)]
 #![allow(unused_imports)]
-mod assembly;
 mod compile;
 mod graph;
-mod ir;
+mod hlir;
 mod lint;
-mod naming;
+mod mlir;
+mod operator;
 mod parse;
 mod token;
 mod typecheck;
 
 use compile::Compiler;
-use ir::solver::Solver;
+use hlir::*;
 use lint::render::{Linter, UnwrapLint};
 pub use lint::*;
-use naming::{Canonizer, control_flow::Analyzer};
+use mlir::*;
 use parse::*;
 use std::{
   ops::{Add, AddAssign},
@@ -43,10 +43,9 @@ fn main() {
   let canon_module = Canonizer::canonize_ast(parse_tree).unwrap_lint(&linter);
   let cflow = Analyzer::analyze(&canon_module).unwrap_lint(&linter);
   let solution = Solver::solve(cflow).unwrap_lint(&linter);
-  let (module, clean_nodes) =
-    TypeChecker::typecheck(canon_module, solution).unwrap_lint(&linter);
+  let (module, clean_nodes) = TypeChecker::typecheck(canon_module, solution).unwrap_lint(&linter);
   let assembly = Compiler::compile(module, clean_nodes.into_iter().collect());
-  //println!("{assembly}");
+  println!("{assembly}");
   compiler_print(format!(
     "Compiled successfully in {}ms",
     Instant::now().duration_since(start_time).as_millis(),

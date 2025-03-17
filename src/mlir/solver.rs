@@ -1,13 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
+use crate::hlir::*;
 use crate::lint::*;
-use crate::naming::builtins::Builtin;
-use crate::naming::{Mangle, mangle_builtin};
 
-use super::{
-  Block, ConstValue, IrKind, IrPtr, Module,
-  types::{Primitive, Type},
-};
+use super::*;
 
 pub const RECURSION_LIMIT: usize = 0x100;
 pub const LOCAL_EVAL_LIMIT: usize = 0x1000;
@@ -56,13 +52,12 @@ impl Solver {
         this.assert_map.insert(name.clone(), type_.clone());
       }
     }
-    this.assert_map.insert(
-      mangle_builtin("print_string"),
-      Type::Function {
+    this
+      .assert_map
+      .insert(mangle_builtin("print_string"), Type::Function {
         param_types: vec![Primitive::string.promote()],
         return_type: Box::new(Primitive::nothing.promote()),
-      },
-    );
+      });
     Ok(Solution {
       constants: this.const_value_map.clone(),
       assertions: this.assert_map.clone(),
@@ -70,36 +65,28 @@ impl Solver {
   }
 
   fn new(module: Module) -> Self {
-    let assertion_dependencies =
-      module.type_assertions.iter().map(|(mangle, assert)| {
-        let mut deps = module.find_type_dependencies(*assert);
-        deps.remove(mangle);
-        (mangle.clone(), deps)
-      });
-    let function_dependencies =
-      module.functions.iter().map(|(mangle, func)| {
-        let mut deps = HashSet::new();
-        for p in &func.parameter_mangles {
-          deps =
-            deps
-              .union(&module.find_type_dependencies(
-                *module.type_assertions.get(p).unwrap(),
-              ))
-              .cloned()
-              .collect();
-        }
-        if let Some(r) = &func.returns_mangle {
-          deps =
-            deps
-              .union(&module.find_type_dependencies(
-                *module.type_assertions.get(r).unwrap(),
-              ))
-              .cloned()
-              .collect();
-        }
-        deps.remove(mangle);
-        (mangle.clone(), deps)
-      });
+    let assertion_dependencies = module.type_assertions.iter().map(|(mangle, assert)| {
+      let mut deps = module.find_type_dependencies(*assert);
+      deps.remove(mangle);
+      (mangle.clone(), deps)
+    });
+    let function_dependencies = module.functions.iter().map(|(mangle, func)| {
+      let mut deps = HashSet::new();
+      for p in &func.parameter_mangles {
+        deps = deps
+          .union(&module.find_type_dependencies(*module.type_assertions.get(p).unwrap()))
+          .cloned()
+          .collect();
+      }
+      if let Some(r) = &func.returns_mangle {
+        deps = deps
+          .union(&module.find_type_dependencies(*module.type_assertions.get(r).unwrap()))
+          .cloned()
+          .collect();
+      }
+      deps.remove(mangle);
+      (mangle.clone(), deps)
+    });
     let constant_dependencies = module.constants.iter().map(|(mangle, ptr)| {
       let mut deps = module.find_type_dependencies(*ptr);
       deps.remove(mangle);
@@ -151,17 +138,16 @@ impl Module {
     loop {
       visited.insert(current_block);
       match &self.blocks[current_block] {
-        Block::Terminal | Block::Unreachable => {},
+        Block::Terminal | Block::Unreachable => {}
         Block::Basic { body, next } => {
           to_visit.push(*next);
           body.into_iter().for_each(|ir| {
-            if let IrKind::Get(ident) = &ir.kind
+            if let MlIrKind::Get(ident) = &ir.kind
               && let Some(block) = self.constants.get(ident)
             {
               deps.insert(ident.clone());
               to_visit.push(*block);
-            } else if let IrKind::Const(ConstValue::Function(mangle)) = &ir.kind
-            {
+            } else if let MlIrKind::Const(ConstValue::Function(mangle)) = &ir.kind {
               let func = self.functions.get(mangle).unwrap();
               for p in &func.parameter_mangles {
                 to_visit.push(*self.type_assertions.get(p).unwrap());
@@ -173,7 +159,7 @@ impl Module {
               to_visit.push(func.block);
             }
           });
-        },
+        }
         Block::Branch {
           when_true,
           when_false,
@@ -181,7 +167,7 @@ impl Module {
         } => {
           to_visit.push(*when_true);
           to_visit.push(*when_false);
-        },
+        }
       }
       loop {
         if let Some(ptr) = to_visit.pop() {

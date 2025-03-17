@@ -1,27 +1,14 @@
-pub(crate) mod expression;
-pub mod operators;
-pub mod primary;
-pub(crate) mod statement;
-pub use expression::*;
+mod expression;
+mod primary;
+mod statement;
+
 use multipeek::{MultiPeek, multipeek};
-pub use operators::*;
+
+pub use expression::*;
 pub use statement::*;
 
-pub use crate::lint::*;
-use crate::{Span, Token, TokenKind, token::TokenLint};
-
-pub enum ParseLint {
-  UnexpectedToken = 2000,
-  MissingBody = 2001,
-  MissingBinaryOperand = 2002,
-  MissingPrefixUnaryOperand = 2003,
-  MissingPostfixUnaryOperand = 2004,
-  MissingComma = 2005,
-  MissingFunctionParameterType = 2006,
-  ExpectedIdentifier = 2007,
-  MissingAssignee = 2008,
-  MissingSemicolon = 2009,
-}
+pub(super) use crate::lint::*;
+use crate::token::*;
 
 pub fn parse(iter: impl IntoIterator<Item = Token>) -> Vec<Statement> {
   Parser::new(iter.into_iter()).collect()
@@ -51,7 +38,7 @@ impl<I: Iterator<Item = Token>> Iterator for Parser<I> {
           span: e.span.expect("No span for tokenizer error"),
           kind: StatementKind::Error(e),
         })
-      },
+      }
     }
   }
 }
@@ -70,11 +57,8 @@ impl<I: Iterator<Item = Token>> Parser<I> {
       let next = self.next_tok();
       self.last_span = next.1;
       match next.0 {
-        TokenKind::EOF
-        | TokenKind::Semicolon
-        | TokenKind::RightBrace
-        | TokenKind::NewLine => break,
-        _ => {},
+        TokenKind::EOF | TokenKind::Semicolon | TokenKind::RightBrace | TokenKind::NewLine => break,
+        _ => {}
       }
     }
   }
@@ -109,9 +93,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
   }
 
   fn peek_not_newline(&mut self) -> Token {
-    while self.look(0, TokenKind::NewLine).is_some()
-      && self.look(1, TokenKind::NewLine).is_some()
-    {
+    while self.look(0, TokenKind::NewLine).is_some() && self.look(1, TokenKind::NewLine).is_some() {
       self.skip(1);
     }
     if self.look(0, TokenKind::NewLine).is_none() {
@@ -136,16 +118,14 @@ impl<I: Iterator<Item = Token>> Parser<I> {
     if next.0 == expect { Some(next) } else { None }
   }
 
-  fn body(
-    &mut self,
-    lint_context: impl Into<String>,
-  ) -> Result<(Vec<Statement>, Span)> {
+  fn body(&mut self, lint_context: impl Into<String>) -> Result<(Vec<Statement>, Span)> {
     use TokenKind as t;
     let mut span = self
       .eat(t::LeftBrace)
-      .lint(ParseLint::MissingBody as LintKind)
+      .lint(ParseLint::MissingBody)
       .context(lint_context)?
       .1;
+    self.eat_newlines();
     let mut statements = vec![];
     loop {
       span = span + self.peek(0).1;
@@ -154,19 +134,15 @@ impl<I: Iterator<Item = Token>> Parser<I> {
           span += s;
           self.skip(1);
           break;
-        },
+        }
         Token(t::EOF, _) => {
-          return Err(lint(
-            TokenLint::MissingDelimeter as LintKind,
-            span,
-            &["}".to_string()],
-          ));
-        },
+          return Err(lint(TokenLint::MissingDelimeter, span, &["}".to_string()]));
+        }
         _ => {
           let statement = self.statement()?;
           span = span + statement.span;
           statements.push(statement);
-        },
+        }
       }
     }
     Ok((statements, span))

@@ -1,26 +1,12 @@
-pub mod consteval;
-pub mod interpret;
+mod consteval;
+mod interpret;
 pub mod solver;
-pub mod types;
 
 use std::collections::HashMap;
 
-use types::Type;
+use crate::{Span, graph::Graph, hlir::*, operator::*, parse::*};
 
-use crate::{
-  Span,
-  graph::Graph,
-  naming::Mangle,
-  parse::{BinaryOp, UnaryOp},
-};
-
-#[repr(usize)]
-pub enum EvalLint {
-  RecursionLimit = 5000,
-  Unreachable = 5001,
-  Circular = 5002,
-  GlyphOutOfRange = 5003,
-}
+pub use solver::*;
 
 /// Reference to another IR node
 pub type IrPtr = usize;
@@ -30,7 +16,7 @@ pub enum Block {
   Terminal,
   Unreachable,
   Basic {
-    body: Vec<Ir>,
+    body: Vec<MlIrNode>,
     next: IrPtr,
   },
   Branch {
@@ -48,15 +34,7 @@ impl Block {
     }
   }
 
-  pub fn into_body(self) -> Vec<Ir> {
-    if let Block::Basic { body, .. } = self {
-      body
-    } else {
-      panic!("Tried to access body of {self:?}")
-    }
-  }
-
-  pub fn push(&mut self, ir: Ir) {
+  pub fn push(&mut self, ir: MlIrNode) {
     if let Block::Basic { body, .. } = self {
       body.push(ir)
     }
@@ -101,10 +79,10 @@ impl Module {
       match b {
         Block::Terminal => {
           graph.new_node(i.to_string(), "TERMINAL".to_string());
-        },
+        }
         Block::Unreachable => {
           graph.new_node(i.to_string(), "UNREACHABLE".to_string());
-        },
+        }
         Block::Basic { body, next } => {
           let mut body = body
             .into_iter()
@@ -116,7 +94,7 @@ impl Module {
           }
           graph.new_node(i.to_string(), format!("{body}"));
           graph.new_edge(i.to_string(), next.to_string());
-        },
+        }
         Block::Branch {
           when_true,
           when_false,
@@ -125,7 +103,7 @@ impl Module {
           graph.new_node(i.to_string(), "BRANCH".into());
           graph.new_edge(i.to_string(), when_true.to_string());
           graph.new_edge(i.to_string(), when_false.to_string());
-        },
+        }
       };
     }
     graph.edges = graph
@@ -148,19 +126,19 @@ pub struct FunctionInfo {
 }
 
 #[derive(Clone)]
-pub struct Ir {
+pub struct MlIrNode {
   pub span: Span,
-  pub kind: IrKind,
+  pub kind: MlIrKind,
 }
 
-impl std::fmt::Debug for Ir {
+impl std::fmt::Debug for MlIrNode {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     write!(f, "{:#?}", self.kind,)
   }
 }
 
 #[derive(Clone)]
-pub enum IrKind {
+pub enum MlIrKind {
   /// Push a constant value
   Const(ConstValue),
   /// Pop 1 value, assign the value to a name
@@ -193,24 +171,24 @@ pub enum IrKind {
   EndScope,
 }
 
-impl std::fmt::Debug for IrKind {
+impl std::fmt::Debug for MlIrKind {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
-      IrKind::Const(const_value) => write!(f, "push {const_value}"),
-      IrKind::Set(mangle) => write!(f, "set {mangle}"),
-      IrKind::Get(mangle) => write!(f, "get {mangle}"),
-      IrKind::BinaryOp { kind } => write!(f, "binary {kind}"),
-      IrKind::UnaryOp { kind } => write!(f, "unary {kind}"),
-      IrKind::Field(name) => write!(f, "field {name}"),
-      IrKind::StructLiteral { param_names } => {
+      MlIrKind::Const(const_value) => write!(f, "push {const_value}"),
+      MlIrKind::Set(mangle) => write!(f, "set {mangle}"),
+      MlIrKind::Get(mangle) => write!(f, "get {mangle}"),
+      MlIrKind::BinaryOp { kind } => write!(f, "binary {kind}"),
+      MlIrKind::UnaryOp { kind } => write!(f, "unary {kind}"),
+      MlIrKind::Field(name) => write!(f, "field {name}"),
+      MlIrKind::StructLiteral { param_names } => {
         write!(f, "struct literal {}", param_names.len())
-      },
-      IrKind::StructDef {
+      }
+      MlIrKind::StructDef {
         fields: param_names,
       } => {
         write!(f, "struct definition {}", param_names.len())
-      },
-      IrKind::TypeAssert(mangle) => write!(
+      }
+      MlIrKind::TypeAssert(mangle) => write!(
         f,
         "type assert{}",
         if let Some(mangle) = mangle {
@@ -219,47 +197,10 @@ impl std::fmt::Debug for IrKind {
           format!("")
         }
       ),
-      IrKind::Call { arity } => write!(f, "call {arity}"),
-      IrKind::Drop => write!(f, "drop"),
-      IrKind::StartScope => write!(f, "start scope"),
-      IrKind::EndScope => write!(f, "end scope"),
-    }
-  }
-}
-
-#[derive(Clone, Debug)]
-pub enum ConstValue {
-  Nothing,
-  Never,
-  Integer(i64),
-  Real(f64),
-  Boolean(bool),
-  String {
-    virtual_address: usize,
-    length: usize,
-  },
-  Glyph(char),
-  Function(Mangle),
-  StructLiteral {
-    member_names: Vec<String>,
-    member_values: Vec<ConstValue>,
-  },
-  Type(Type),
-}
-
-impl std::fmt::Display for ConstValue {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    match self {
-      ConstValue::Nothing => write!(f, "()"),
-      ConstValue::Never => write!(f, "!"),
-      ConstValue::String { .. } => write!(f, "<string>"),
-      ConstValue::Function(_) => write!(f, "<function>"),
-      ConstValue::StructLiteral { .. } => write!(f, "<struct>"),
-      ConstValue::Type(val) => write!(f, "{val}"),
-      ConstValue::Integer(val) => write!(f, "{val}"),
-      ConstValue::Real(val) => write!(f, "{val}"),
-      ConstValue::Glyph(val) => write!(f, "{val}"),
-      ConstValue::Boolean(val) => write!(f, "{val}"),
+      MlIrKind::Call { arity } => write!(f, "call {arity}"),
+      MlIrKind::Drop => write!(f, "drop"),
+      MlIrKind::StartScope => write!(f, "start scope"),
+      MlIrKind::EndScope => write!(f, "end scope"),
     }
   }
 }

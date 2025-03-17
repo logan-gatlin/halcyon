@@ -1,4 +1,8 @@
-use super::*;
+pub mod assembly;
+use crate::token::*;
+
+pub use assembly::*;
+
 pub type Precedence = usize;
 
 macro_rules! op {
@@ -73,8 +77,4 @@ op! {
   Tilda, 11, RIGHT_ASSOC;
   Minus, 11, LEFT_ASSOC;
   Not, 11, LEFT_ASSOC;
-}
-
-pub fn is_mixed_op(t: &TokenKind) -> bool {
-  BinaryOp::try_from(t).is_ok() && UnaryOp::try_from(t).is_ok()
 }

@@ -1,33 +1,20 @@
 pub mod builtins;
-pub mod canon;
-pub mod control_flow;
+mod canon;
+pub mod constant;
+mod control_flow;
+pub mod types;
 
 use std::collections::HashMap;
 
-use builtins::Builtin;
+use crate::{lint::*, mlir::*, operator::*, parse::*};
 
-use crate::assembly::operators::OpDef;
-use crate::ir::ConstValue;
-use crate::ir::IrPtr;
-use crate::ir::types::Primitive;
-use crate::ir::types::Type;
-use crate::lint::*;
-use crate::parse::BinaryOp;
-use crate::parse::Statement;
-use crate::parse::UnaryOp;
+pub use builtins::*;
+pub use canon::*;
+pub use constant::*;
+pub use control_flow::*;
+pub use types::*;
 
 pub type Mangle = String;
-
-#[repr(usize)]
-pub enum NameLint {
-  UndefinedName = 3000,
-  ConstRedefinition = 3001,
-  ParamRedefinition = 3002,
-  InvalidMain = 3003,
-  FieldNotIdent = 3004,
-  MultipleLoopParams = 3005,
-  NoBreakTarget = 3006,
-}
 
 /// Name mangle syntax:
 /// mangle ::= "$" path salt
@@ -54,14 +41,14 @@ pub fn mangle_builtin(name: impl std::fmt::Display) -> Mangle {
 }
 
 #[derive(Debug, Clone)]
-pub struct Symbol {
+pub(super) struct Symbol {
   pub mangle: Mangle,
   pub scope_depth: usize,
   pub is_constant: bool,
 }
 
 #[derive(Debug, Clone)]
-pub enum Event {
+pub(super) enum Event {
   ScopeStart,
   Modify {
     name: String,
@@ -69,14 +56,14 @@ pub enum Event {
   },
 }
 #[derive(Debug, Clone)]
-pub struct CanonNode {
-  pub kind: CanonKind,
+pub struct HlIrNode {
+  pub kind: HlIrKind,
   pub span: Span,
   pub type_: Type,
 }
 
 #[derive(Debug, Clone)]
-pub enum CanonKind {
+pub enum HlIrKind {
   Declaration {
     assignee: Mangle,
     is_constant: bool,
@@ -137,7 +124,7 @@ pub enum CanonKind {
 
 #[derive(Debug, Clone)]
 pub struct CanonizedModule {
-  pub nodes: Vec<CanonNode>,
+  pub nodes: Vec<HlIrNode>,
   pub functions: HashMap<Mangle, IrPtr>,
   pub heap: Vec<Vec<u8>>,
   pub main: Option<Mangle>,
@@ -155,13 +142,13 @@ impl CanonizedModule {
 
 #[derive(Debug, Clone)]
 pub struct Canonizer {
-  pub nodes: Vec<Option<CanonNode>>,
+  pub nodes: Vec<Option<HlIrNode>>,
   pub functions: HashMap<Mangle, IrPtr>,
   pub scope_depth: usize,
   pub salt: usize,
   pub path: Vec<String>,
   pub event_stack: Vec<Event>,
-  pub heap: Vec<Vec<u8>>,
+  pub virtual_memory: Vec<Vec<u8>>,
   pub main: Option<Mangle>,
   _name_to_symbol: HashMap<String, Symbol>,
 }
@@ -173,7 +160,7 @@ impl Canonizer {
       functions: HashMap::new(),
       path: vec![],
       event_stack: vec![],
-      heap: vec![],
+      virtual_memory: vec![],
       scope_depth: 0,
       salt: 0,
       main: None,
@@ -192,14 +179,11 @@ impl Canonizer {
     let mut this = Self::new();
     let top_node = this.new_node();
     let top_nodes = this.canon_block(stmts)?;
-    this.set_node(
-      top_node,
-      CanonNode {
-        kind: CanonKind::Block(top_nodes),
-        span: Span::default(),
-        type_: Type::default(),
-      },
-    );
+    this.set_node(top_node, HlIrNode {
+      kind: HlIrKind::Block(top_nodes),
+      span: Span::default(),
+      type_: Type::default(),
+    });
     let nodes = this
       .nodes
       .clone()
@@ -209,7 +193,7 @@ impl Canonizer {
     Ok(CanonizedModule {
       nodes,
       functions: this.functions,
-      heap: this.heap,
+      heap: this.virtual_memory,
       main: this.main,
     })
   }
@@ -219,7 +203,7 @@ impl Canonizer {
     self.nodes.len() - 1
   }
 
-  pub(crate) fn set_node(&mut self, position: IrPtr, node: CanonNode) {
+  pub(crate) fn set_node(&mut self, position: IrPtr, node: HlIrNode) {
     assert!(self.nodes[position].is_none());
     self.nodes[position] = Some(node);
   }
@@ -228,7 +212,7 @@ impl Canonizer {
     self
       ._name_to_symbol
       .get(name)
-      .ok_or(lint_nospan(NameLint::UndefinedName as LintKind))
+      .ok_or(lint_nospan(NameLint::UndefinedName))
       .context(name)
   }
 
@@ -239,8 +223,8 @@ impl Canonizer {
   }
 
   pub(crate) fn allocate(&mut self, bytes: &[u8]) -> usize {
-    self.heap.push(bytes.into());
-    self.heap.len() - 1
+    self.virtual_memory.push(bytes.into());
+    self.virtual_memory.len() - 1
   }
 
   pub(crate) fn define_unique(&mut self, hint: &str) -> Mangle {
@@ -258,14 +242,11 @@ impl Canonizer {
     assert!(
       self
         ._name_to_symbol
-        .insert(
-          name.clone(),
-          Symbol {
-            mangle,
-            scope_depth: 0,
-            is_constant: true,
-          },
-        )
+        .insert(name.clone(), Symbol {
+          mangle,
+          scope_depth: 0,
+          is_constant: true,
+        },)
         .is_none(),
       "Multiple definitions of builtin {name}"
     );
@@ -284,8 +265,7 @@ impl Canonizer {
     let old_value = self.name_to_symbol(&name).ok().cloned();
     if let Some(old) = &old_value {
       if old.scope_depth == self.scope_depth && is_constant && old.is_constant {
-        return Err(lint_nospan(NameLint::ConstRedefinition as LintKind))
-          .context(name);
+        return Err(lint_nospan(NameLint::ConstRedefinition)).context(name);
       }
     }
     let event = Event::Modify {
@@ -293,14 +273,11 @@ impl Canonizer {
       name: name.clone(),
     };
     self.event_stack.push(event);
-    self._name_to_symbol.insert(
-      name.clone(),
-      Symbol {
-        mangle: mangle.clone(),
-        scope_depth: self.scope_depth,
-        is_constant,
-      },
-    );
+    self._name_to_symbol.insert(name.clone(), Symbol {
+      mangle: mangle.clone(),
+      scope_depth: self.scope_depth,
+      is_constant,
+    });
     Ok(mangle)
   }
 
@@ -315,14 +292,14 @@ impl Canonizer {
         Event::ScopeStart => {
           self.scope_depth -= 1;
           break;
-        },
+        }
         Event::Modify { name, old_value } => {
           if let Some(old) = old_value {
             self._name_to_symbol.insert(name, old);
           } else {
             self._name_to_symbol.remove(&name);
           }
-        },
+        }
       }
     }
   }
