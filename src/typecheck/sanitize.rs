@@ -63,9 +63,6 @@ impl TypeChecker {
       return err.span(span);
     }
     match &self.module.nodes[node].kind {
-      Remainder(node) => {
-        sanitize(*node)?;
-      },
       Declaration {
         is_constant, value, ..
       } => {

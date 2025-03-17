@@ -36,7 +36,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
       },
       t::Break => {
         self.skip(1);
-        let expr = if let Token(t::Semicolon, _) = self.peek(0) {
+        let expr = if let Token(t::NewLine, _) = self.peek(0) {
           None
         } else {
           Some(Box::new(self.expression(0)?))
@@ -75,10 +75,11 @@ impl<I: Iterator<Item = Token>> Parser<I> {
         span = span + span2;
         if returns.is_none()
           && params.arity == 0
-          && self.peek(0).0 != t::LeftBrace
+          && self.peek_not_newline().0 != t::LeftBrace
         {
           e::Immediate(Immediate::Unit)
         } else {
+          self.eat_newlines();
           let (body, span2) = self.body("function").span(span)?;
           let body = Box::new(Expression {
             kind: e::Block(body),

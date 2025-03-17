@@ -178,9 +178,6 @@ impl Compiler {
           .map(|n| self.lower(n, regs, instrs))
           .try_collect::<Vec<_>>()?;
       },
-      Remainder(node) => {
-        self.lower(node, regs, instrs)?;
-      },
       If {
         predicate,
         then,

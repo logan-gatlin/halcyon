@@ -255,6 +255,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
     let mut types = vec![];
     let mut spans = vec![];
     loop {
+      self.eat_newlines();
       // Name
       let name_token = self.peek(0);
       let name = match name_token.0 {
@@ -301,6 +302,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
         }
         break;
       }
+      self.eat_newlines();
     }
     Ok(Parameters {
       arity,

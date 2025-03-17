@@ -70,7 +70,10 @@ impl<I: Iterator<Item = Token>> Parser<I> {
       let next = self.next_tok();
       self.last_span = next.1;
       match next.0 {
-        TokenKind::EOF | TokenKind::Semicolon | TokenKind::RightBrace => break,
+        TokenKind::EOF
+        | TokenKind::Semicolon
+        | TokenKind::RightBrace
+        | TokenKind::NewLine => break,
         _ => {},
       }
     }
@@ -103,6 +106,23 @@ impl<I: Iterator<Item = Token>> Parser<I> {
       .peek_nth(n)
       .cloned()
       .unwrap_or(Token(TokenKind::EOF, self.last_span))
+  }
+
+  fn peek_not_newline(&mut self) -> Token {
+    while self.look(0, TokenKind::NewLine).is_some()
+      && self.look(1, TokenKind::NewLine).is_some()
+    {
+      self.skip(1);
+    }
+    if self.look(0, TokenKind::NewLine).is_none() {
+      self.peek(0)
+    } else {
+      self.peek(1)
+    }
+  }
+
+  fn eat_newlines(&mut self) {
+    while let Some(_) = self.eat(TokenKind::NewLine) {}
   }
 
   fn eat(&mut self, expect: TokenKind) -> Option<Token> {

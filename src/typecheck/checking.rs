@@ -53,7 +53,6 @@ impl TypeChecker {
   fn consteval(&mut self, node: IrPtr) -> Result<Option<ConstValue>> {
     let span = self.module.nodes[node].span;
     Ok(match self.module.nodes[node].kind.clone() {
-      Remainder(n) => self.consteval(n)?,
       Declaration {
         assignee,
         is_constant,
@@ -129,7 +128,6 @@ impl TypeChecker {
   pub(super) fn check(&mut self, node: IrPtr) -> Result<Type> {
     let span = self.module.nodes[node].span;
     let type_ = match self.module.nodes[node].kind.clone() {
-      Remainder(n) => self.check(n)?,
       Declaration {
         assignee,
         is_constant,
@@ -161,9 +159,7 @@ impl TypeChecker {
           if produces == p::unreachable.promote() {
             never = true;
           }
-          if let Remainder(_) = &self.module.nodes[item].kind
-            && id == length - 1
-          {
+          if id == length - 1 {
             type_ = Some(produces);
           }
         }
@@ -345,6 +341,13 @@ impl TypeChecker {
         else_,
       } => {
         let predicate_t = self.check(predicate)?;
+        if predicate_t != p::boolean.promote() {
+          return Err(lint(
+            TypeLint::TypeMismatch as LintKind,
+            span,
+            &[format!("{}", Primitive::boolean), format!("{predicate_t}")],
+          ));
+        }
         let then_t = self.check(then)?;
         let else_t = if let Some(else_) = else_ {
           self.check(else_)?
@@ -353,13 +356,6 @@ impl TypeChecker {
         };
         if predicate_t.ambiguous() || then_t.ambiguous() || else_t.ambiguous() {
           return Ok(Type::Ambiguous);
-        }
-        if predicate_t != p::boolean.promote() {
-          return Err(lint(
-            TypeLint::TypeMismatch as LintKind,
-            span,
-            &[format!("{}", Primitive::boolean), format!("{predicate_t}")],
-          ));
         }
         use Type::Primitive as P;
         let result_t = match (then_t, else_t) {

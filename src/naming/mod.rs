@@ -77,7 +77,6 @@ pub struct CanonNode {
 
 #[derive(Debug, Clone)]
 pub enum CanonKind {
-  Remainder(IrPtr),
   Declaration {
     assignee: Mangle,
     is_constant: bool,

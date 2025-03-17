@@ -258,7 +258,7 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
       },
     };
     // Parse whitespace
-    if current.is_whitespace() {
+    if current.is_whitespace() && current != '\n' {
       let mut buffer = String::from(current);
       while let Some(c) = self.peek(0) {
         if !c.is_whitespace() {
@@ -318,6 +318,7 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
     {
       let not_next = move |c| Some(c) != next;
       let kind = match current {
+        '\n' => NewLine,
         '(' => LeftParen,
         ')' => RightParen,
         '{' => LeftBrace,

@@ -112,9 +112,6 @@ impl Analyzer {
       span: node.span,
     };
     match node.kind {
-      k::Remainder(node) => {
-        block = self.analyze_node(node, block)?;
-      },
       k::Declaration {
         assignee,
         is_constant,
@@ -159,17 +156,14 @@ impl Analyzer {
       },
       k::Block(items) => {
         self.push(block, ir(i::StartScope));
-        block = items.into_iter().try_fold(block, |block, node| {
-          let new_block = self.analyze_node(node, block);
-          if let Ok(new_block) = new_block {
-            if let k::Remainder(_) = &self.nodes[node].kind {
-            } else {
-              // Drop excess values if this statement is not a remainder
-              self.push(new_block, ir(i::Drop));
-            };
+        let length = items.len();
+        for (id, node) in items.into_iter().enumerate() {
+          let new_block = self.analyze_node(node, block)?;
+          if id != length - 1 {
+            self.push(new_block, ir(i::Drop));
           }
-          new_block
-        })?;
+          block = new_block;
+        }
         self.push(block, ir(i::EndScope));
       },
       k::Identifier(mangle) => {

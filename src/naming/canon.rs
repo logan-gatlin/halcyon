@@ -116,9 +116,6 @@ impl Canonizer {
         self.nodes.pop();
         return self.canon_expr(expression);
       },
-      StatementKind::Remainder(expression) => {
-        k::Remainder(self.canon_expr(expression)?)
-      },
       StatementKind::Error(diagnostic) => return Err(diagnostic),
     };
     self.set_node(

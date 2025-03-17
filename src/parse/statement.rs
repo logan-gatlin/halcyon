@@ -9,7 +9,6 @@ pub enum StatementKind {
     is_constant: bool,
   },
   Expression(Expression),
-  Remainder(Expression),
   Error(Lint),
 }
 
@@ -23,7 +22,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
   pub fn statement(&mut self) -> Result<Statement> {
     use StatementKind as s;
     use TokenKind as t;
-    while let Some(_) = self.eat(t::Semicolon) {}
+    self.eat_newlines();
     let next = self.peek(0);
     let next2 = self.peek(1);
     let mut span = next.1;
@@ -52,14 +51,6 @@ impl<I: Iterator<Item = Token>> Parser<I> {
         };
         let value = self.expression(0).span(span)?;
         span = span + value.span;
-        let no_semicolon =
-          if let ExpressionKind::FunctionDef { .. } = value.kind {
-            true
-          } else if let ExpressionKind::StructDef(_) = value.kind {
-            true
-          } else {
-            false
-          };
         let s = Statement {
           kind: s::Declaration {
             name,
@@ -69,9 +60,6 @@ impl<I: Iterator<Item = Token>> Parser<I> {
           },
           span,
         };
-        if no_semicolon {
-          return Ok(s);
-        }
         s
       },
       // Assignment
@@ -94,22 +82,15 @@ impl<I: Iterator<Item = Token>> Parser<I> {
         span = span + span2;
         let expr = self.expression(0)?;
         span = span + expr.span;
-        if self.look(0, t::RightBrace).is_some() {
-          return Ok(Statement {
-            span,
-            kind: s::Remainder(expr),
-          });
-        } else {
-          use ExpressionKind as e;
-          Statement {
-            span,
-            kind: s::Expression(expr),
-          }
+        Statement {
+          span,
+          kind: s::Expression(expr),
         }
       },
     };
     // Check for semicolon
-    if self.eat(t::Semicolon).is_some() {
+    if self.eat(t::NewLine).is_some() || self.eat(t::EOF).is_some() {
+      self.eat_newlines();
       Ok(statement)
     } else {
       return Err(lint(ParseLint::MissingSemicolon as LintKind, span, &[]));

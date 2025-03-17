@@ -46,7 +46,7 @@ fn main() {
   let (module, clean_nodes) =
     TypeChecker::typecheck(canon_module, solution).unwrap_lint(&linter);
   let assembly = Compiler::compile(module, clean_nodes.into_iter().collect());
-  println!("{assembly}");
+  //println!("{assembly}");
   compiler_print(format!(
     "Compiled successfully in {}ms",
     Instant::now().duration_since(start_time).as_millis(),
