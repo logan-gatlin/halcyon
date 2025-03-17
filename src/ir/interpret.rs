@@ -1,15 +1,15 @@
 use crate::{
   assembly::{operators::OpTable, vm::VirtualMachine},
   compiler_print,
-  err::*,
-  error,
   ir::{Block, ConstValue, IrKind, solver::RECURSION_LIMIT, types::Type},
+  lint::*,
   naming::builtins::Builtin,
 };
 
 use super::{
-  IrPtr,
+  EvalLint, IrPtr,
   solver::{ReturnAddress, Solver},
+  types::TypeLint,
 };
 
 impl Solver {
@@ -24,16 +24,8 @@ impl Solver {
     self.ip = 0;
     let optable = OpTable::new();
     loop {
-      /*
-      println!("");
-      println!("block: {block}, ip: {ip}");
-      println!("{:?}", self.stack);
-      */
       if self.control_stack.len() > RECURSION_LIMIT {
-        return error!(
-          "Reached recursion limit ({RECURSION_LIMIT}) during constant \
-           evaluation"
-        );
+        return Err(lint_nospan(EvalLint::RecursionLimit as LintKind));
       }
       self.block = match self.module.blocks[self.block].clone() {
         Block::Terminal => {
@@ -46,10 +38,9 @@ impl Solver {
             let return_value = self.pop();
             let return_type = self.type_of_const(&return_value);
             if expected_type != return_type {
-              return error!(
-                "Function returned '{return_type}' when '{expected_type}' was \
-                 expected"
-              );
+              return Err(lint_nospan(TypeLint::TypeMismatch as LintKind))
+                .context(format!("{expected_type}"))
+                .context(format!("{return_type}"));
             }
             self.retrieve_state();
             self.block = new_block;
@@ -61,7 +52,7 @@ impl Solver {
           }
         },
         Block::Unreachable => {
-          return error!("Encountered unreachable during constant evaluation");
+          return Err(lint_nospan(EvalLint::Unreachable as LintKind));
         },
         Block::Branch {
           span,
@@ -74,11 +65,11 @@ impl Solver {
           match val {
             ConstValue::Boolean(true) => Ok(when_true),
             ConstValue::Boolean(false) => Ok(when_false),
-            v => error!(
-              "The predicate of an 'if' expression must be a boolean, found \
-               '{v}'"
-            )
-            .span(&span),
+            v => Err(lint(
+              TypeLint::TypeMismatch as LintKind,
+              span,
+              &["boolean".to_string(), format!("{v}")],
+            )),
           }
         },
         Block::Basic { body, next } => {
@@ -111,11 +102,11 @@ impl Solver {
                   if let Some(old_type) = old_type
                     && set_type != old_type
                   {
-                    return error!(
-                      "This binding expects type '{old_type}', but recieved \
-                       '{set_type}'"
-                    )
-                    .span(&instr.span);
+                    return Err(lint(
+                      TypeLint::TypeMismatch as LintKind,
+                      instr.span,
+                      &[format!("{old_type}"), format!("{set_type}")],
+                    ));
                   }
                   self.const_value_map.insert(mangle.clone(), value);
                 } else {
@@ -129,10 +120,11 @@ impl Solver {
                   &mut self.rt_value_map
                 };
                 let Some(value) = map.get(mangle).cloned() else {
-                  return error!(
-                    "This term seems to have a circular definition"
-                  )
-                  .span(&instr.span);
+                  return Err(lint(
+                    EvalLint::Circular as LintKind,
+                    instr.span,
+                    &[],
+                  ));
                 };
                 self.push(value.clone());
               },
@@ -143,39 +135,43 @@ impl Solver {
                 let left_t = self.type_of_const(&left);
                 let opdef = optable
                   .try_binary(*kind, &left_t, &right_t)
-                  .span(&instr.span)?;
+                  .span(instr.span)?;
                 let result = VirtualMachine::run(
                   vec![left, right],
                   opdef.asm,
                   opdef.produces,
                 )
-                .span(&instr.span)?;
+                .span(instr.span)?;
                 self.push(result);
               },
               IrKind::UnaryOp { kind } => {
                 let on = self.pop();
                 let on_t = self.type_of_const(&on);
-                let opdef =
-                  optable.try_unary(*kind, &on_t).span(&instr.span)?;
+                let opdef = optable.try_unary(*kind, &on_t).span(instr.span)?;
                 let result =
                   VirtualMachine::run(vec![on], opdef.asm, opdef.produces)
-                    .span(&instr.span)?;
+                    .span(instr.span)?;
                 self.push(result);
               },
               IrKind::Field(field_name) => {
+                let top = self.pop();
                 let ConstValue::StructLiteral {
                   member_names,
                   member_values,
-                } = self.pop()
+                } = top
                 else {
-                  return error!("Only struct literals can have fields")
-                    .span(&instr.span);
+                  return Err(lint(
+                    TypeLint::NoFieldOnType as LintKind,
+                    instr.span,
+                    &[format!("{}", self.type_of_const(&top))],
+                  ));
                 };
                 let pos = member_names
                   .iter()
                   .position(|n| n == field_name)
-                  .reason("Struct does not contain field '{field}'")
-                  .span(&instr.span)?;
+                  .lint(TypeLint::FieldMissing as LintKind)
+                  .context(format!("{field_name}"))
+                  .span(instr.span)?;
                 self.push(member_values[pos].clone());
               },
               IrKind::StructLiteral { param_names } => {
@@ -192,15 +188,18 @@ impl Solver {
                 let mut member_types: Vec<_> = (0..param_names.len())
                   .rev()
                   .map(|i| {
-                    if let ConstValue::Type(t) = self.pop() {
+                    let top = self.pop();
+                    if let ConstValue::Type(t) = top {
                       Ok(t)
                     } else {
-                      error!(
-                        "Structure definition must contain only type names, \
-                         found that field {} contains a term",
-                        param_names[i]
-                      )
-                      .span(&instr.span)
+                      Err(lint(
+                        TypeLint::TypeMismatch as LintKind,
+                        instr.span,
+                        &[
+                          "type".to_string(),
+                          format!("{}", self.type_of_const(&top)),
+                        ],
+                      ))
                     }
                   })
                   .try_collect()?;
@@ -213,20 +212,20 @@ impl Solver {
               IrKind::TypeAssert(mangle) => {
                 let assert_type = self.pop();
                 let ConstValue::Type(assert) = assert_type else {
-                  return error!(
-                    "Type assertion expects a type, but recieved the value \
-                     '{assert_type}'"
-                  )
-                  .span(&instr.span);
+                  return Err(lint(
+                    TypeLint::TypeMismatch as LintKind,
+                    instr.span,
+                    &["type".to_string(), format!("{assert_type}")],
+                  ));
                 };
                 let actual_val = self.pop();
                 let actual_t = self.type_of_const(&actual_val);
                 if actual_t != assert {
-                  return error!(
-                    "The asserted type is '{assert}', but expression has type \
-                     '{actual_t}'"
-                  )
-                  .span(&instr.span);
+                  return Err(lint(
+                    TypeLint::TypeMismatch as LintKind,
+                    instr.span,
+                    &[format!("{assert}"), format!("{actual_t}")],
+                  ));
                 }
                 self.push(actual_val);
                 if let Some(mangle) = mangle {
@@ -241,15 +240,22 @@ impl Solver {
                   return_type,
                 } = func_type
                 else {
-                  return error!("Cannot call type '{func_type}'")
-                    .span(&instr.span);
+                  return Err(lint(
+                    TypeLint::NonFunctionCall as LintKind,
+                    instr.span,
+                    &[format!("{func_type}")],
+                  ));
                 };
                 if param_types.len() != *arity {
-                  return error!(
-                    "Function expects {} arguments, but recieved {arity}",
-                    param_types.len()
-                  )
-                  .span(&instr.span);
+                  return Err(lint(
+                    if param_types.len() > *arity {
+                      TypeLint::TooManyArgs
+                    } else {
+                      TypeLint::TooFewArgs
+                    } as LintKind,
+                    instr.span,
+                    &[format!("{}", param_types.len())],
+                  ));
                 }
                 let values: Vec<_> = param_types
                   .into_iter()
@@ -259,12 +265,11 @@ impl Solver {
                     let param = self.pop();
                     let param_t = self.type_of_const(&param);
                     if param_t != expected {
-                      error!(
-                        "Function expected type '{expected}' for argument {} \
-                         but recieved type '{param_t}'",
-                        id + 1
-                      )
-                      .span(&instr.span)
+                      Err(lint(
+                        TypeLint::TypeMismatch as LintKind,
+                        instr.span,
+                        &[format!("{expected}"), format!("{param_t}")],
+                      ))
                     } else {
                       Ok(param)
                     }
@@ -275,7 +280,7 @@ impl Solver {
                 };
                 if let Some(builtin) = Builtin::from_mangle(&mangle) {
                   values.into_iter().rev().for_each(|v| self.push(v));
-                  self.execute_builtin(builtin).span(&instr.span)?;
+                  self.execute_builtin(builtin).span(instr.span)?;
                 } else {
                   self.save_state();
                   self.control_stack.push(ReturnAddress {
@@ -297,15 +302,7 @@ impl Solver {
                 }
               },
               IrKind::Drop => {
-                let dropped = self.pop();
-                // Linear type logic
-                /*
-                if let ConstValue::Nothing = &dropped {
-                } else {
-                  return error!("Value {dropped} failed to be consumed")
-                    .span(&instr.span);
-                }
-                */
+                self.pop();
               },
               IrKind::StartScope => self.start_scope_v(),
               IrKind::EndScope => self.end_scope_v(),
@@ -331,6 +328,12 @@ impl Solver {
         };
         let s = String::from_utf8_lossy(&self.module.heap[virtual_address]);
         compiler_print(s);
+      },
+      Builtin::PrintReal => {
+        let ConstValue::Real(r) = self.pop() else {
+          panic!();
+        };
+        compiler_print(r.to_string());
       },
       Builtin::PrintGlyph => {
         let ConstValue::Glyph(g) = self.pop() else {

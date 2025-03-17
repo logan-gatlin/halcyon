@@ -1,15 +1,15 @@
+use std::collections::HashMap;
+
 use crate::{
-  assembly::WasmType,
+  assembly::{Wasm, WasmType},
   ir::{
-    IrPtr,
+    ConstValue, IrPtr,
     types::{Primitive, Type},
   },
-  naming::CanonizedModule,
+  naming::{CanonKind, CanonizedModule},
 };
 
 mod lower;
-
-pub const PAGE_SIZE: usize = 64_000;
 
 #[derive(Debug, Clone)]
 struct BreakTarget {
@@ -39,22 +39,86 @@ impl Compiler {
     }
   }
 
-  pub fn compile(module: CanonizedModule, to_compile: Vec<IrPtr>) {
+  fn build_data(&mut self) -> Vec<u8> {
+    let mut value_map = HashMap::new();
+    self
+      .module
+      .heap
+      .iter()
+      .fold((0_usize, 0_usize), |(index, item), val| {
+        value_map.insert(item, index);
+        (index + val.len(), item + 1)
+      });
+    for n in &mut self.module.nodes {
+      if let CanonKind::Immediate(ConstValue::String {
+        ref mut virtual_address,
+        ..
+      }) = n.kind
+      {
+        *virtual_address = *value_map.get(virtual_address).unwrap();
+      }
+    }
+    self.module.heap.clone().into_iter().flatten().collect()
+  }
+
+  pub fn compile(module: CanonizedModule, to_compile: Vec<IrPtr>) -> String {
     let mut this = Self::new(module);
-    let mut regs = vec![];
+    let heap = this.build_data();
+    let mut regs = vec![
+      Wasm::Import {
+        ns1: "js".to_string(),
+        ns2: "memory".to_string(),
+        object: Wasm::Memory { min: 10, max: 100 }.into(),
+      },
+      Wasm::Import {
+        ns1: "js".to_string(),
+        ns2: "print_string".to_string(),
+        object: Wasm::Function {
+          ident: "_print_string".into(),
+          params: vec![("".into(), WasmType::I32), ("".into(), WasmType::I32)],
+          body: vec![],
+          results: vec![],
+        }
+        .into(),
+      },
+      Wasm::Import {
+        ns1: "js".to_string(),
+        ns2: "print_integer".to_string(),
+        object: Wasm::Function {
+          ident: "_print_integer".into(),
+          params: vec![("".into(), WasmType::I64)],
+          body: vec![],
+          results: vec![],
+        }
+        .into(),
+      },
+      Wasm::Import {
+        ns1: "js".to_string(),
+        ns2: "print_real".to_string(),
+        object: Wasm::Function {
+          ident: "_print_real".into(),
+          params: vec![("".into(), WasmType::I64)],
+          body: vec![],
+          results: vec![],
+        }
+        .into(),
+      },
+      Wasm::Data {
+        offset: 0,
+        content: heap,
+      },
+    ];
     let mut instrs = vec![];
     for func in to_compile {
       this.lower(func, &mut regs, &mut instrs).unwrap();
     }
+    instrs.push(Wasm::Start(this.module.main.clone().unwrap()));
     regs.extend_from_slice(&instrs);
     let mut wasm = String::new();
     for r in regs {
       wasm.push_str(&format!("{}\n", r.to_wat()));
     }
-    println!("{wasm}");
-    std::fs::write("test.wat", wasm.clone()).unwrap();
-    let binary = wat::parse_str(wasm).unwrap();
-    std::fs::write("test.wasm", binary.clone()).unwrap();
+    format!("(module\n{wasm})")
   }
 }
 

@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 
 use crate::{
-  err::*,
   ir::{IrPtr, solver::Solution, types::Type},
+  lint::*,
   naming::CanonizedModule,
 };
 

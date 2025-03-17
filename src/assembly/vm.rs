@@ -1,12 +1,11 @@
 use super::{Wasm, WasmValue};
 use crate::{
   assembly::WasmType,
-  err::*,
-  error,
   ir::{
-    ConstValue,
+    ConstValue, EvalLint,
     types::{Primitive, Type},
   },
+  lint::*,
 };
 
 pub struct VirtualMachine {
@@ -14,28 +13,6 @@ pub struct VirtualMachine {
 }
 
 impl ConstValue {
-  pub fn to_wasm_type(self) -> Vec<WasmType> {
-    use WasmType as w;
-    match self {
-      ConstValue::Nothing => vec![],
-      ConstValue::Never => vec![],
-      ConstValue::Integer(_) => vec![w::I64],
-      ConstValue::Real(_) => vec![w::F64],
-      ConstValue::Boolean(_) => vec![w::I32],
-      ConstValue::String { .. } => {
-        vec![w::I32, w::I32]
-      },
-      ConstValue::Glyph(_) => vec![w::I32],
-      ConstValue::Function(_) => vec![w::FuncRef],
-      ConstValue::StructLiteral { member_values, .. } => member_values
-        .into_iter()
-        .rev()
-        .flat_map(|c| c.to_wasm_type())
-        .collect(),
-      ConstValue::Type(_) => panic!("Type 'Type' has no WASM representation"),
-    }
-  }
-
   pub fn to_wasm_value(self) -> Vec<WasmValue> {
     use WasmValue as w;
     match self {
@@ -79,7 +56,7 @@ impl VirtualMachine {
     for op in ops {
       this.exec(op)?;
     }
-    let err = error!("Could not construct value from wasm");
+    let err = Err(lint_nospan(0));
     match expects {
       Type::Primitive(primitive) => match primitive {
         Primitive::nothing => Ok(ConstValue::Nothing),
@@ -122,7 +99,7 @@ impl VirtualMachine {
           };
           Ok(ConstValue::Glyph(
             char::from_u32(val as u32)
-              .reason("Could not convert result to glyph")?,
+              .lint(EvalLint::GlyphOutOfRange as LintKind)?,
           ))
         },
       },
@@ -138,228 +115,230 @@ impl VirtualMachine {
   pub fn exec(&mut self, instr: Wasm) -> Result<()> {
     use WasmType as t;
     use WasmValue as v;
-    let mut pop = || self.stack.pop().reason("Popped an empty stack");
+    let mut pop = || self.stack.pop().expect("Popped an empty stack");
     // TODO fix ignored op type
     match instr {
       Wasm::Constant(wasm_value) => self.stack.push(wasm_value),
       Wasm::Add(wasm_type) => {
-        let right = pop()?;
-        let left = pop()?;
+        let right = pop();
+        let left = pop();
         let result = match (&left, &right, wasm_type) {
           (v::I32(l), v::I32(r), t::I32) => v::I32(l + r),
           (v::I64(l), v::I64(r), t::I64) => v::I64(l + r),
           (v::F32(l), v::F32(r), t::F32) => v::F32(l + r),
           (v::F64(l), v::F64(r), t::F64) => v::F64(l + r),
-          _ => return error!("Invalid add operands: {left:?}, {right:?}"),
+          _ => unreachable!(),
         };
         self.stack.push(result);
       },
       Wasm::Subtract(wasm_type) => {
-        let right = pop()?;
-        let left = pop()?;
+        let right = pop();
+        let left = pop();
         let result = match (&left, &right) {
           (v::I32(l), v::I32(r)) => v::I32(l - r),
           (v::I64(l), v::I64(r)) => v::I64(l - r),
           (v::F32(l), v::F32(r)) => v::F32(l - r),
           (v::F64(l), v::F64(r)) => v::F64(l - r),
-          _ => return error!("Invalid sub operands: {left:?}, {right:?}"),
+          _ => unreachable!(),
         };
         self.stack.push(result);
       },
       Wasm::Multiply(wasm_type) => {
-        let right = pop()?;
-        let left = pop()?;
+        let right = pop();
+        let left = pop();
         let result = match (&left, &right) {
           (v::I32(l), v::I32(r)) => v::I32(l * r),
           (v::I64(l), v::I64(r)) => v::I64(l * r),
           (v::F32(l), v::F32(r)) => v::F32(l * r),
           (v::F64(l), v::F64(r)) => v::F64(l * r),
-          _ => return error!("Invalid mul operands: {left:?}, {right:?}"),
+          _ => unreachable!(),
         };
         self.stack.push(result);
       },
       Wasm::Divide(wasm_type) => {
-        let right = pop()?;
-        let left = pop()?;
+        let right = pop();
+        let left = pop();
         let result = match (&left, &right) {
           (v::I32(l), v::I32(r)) => v::I32(l / r),
           (v::I64(l), v::I64(r)) => v::I64(l / r),
           (v::F32(l), v::F32(r)) => v::F32(l / r),
           (v::F64(l), v::F64(r)) => v::F64(l / r),
-          _ => return error!("Invalid div operands: {left:?}, {right:?}"),
+          _ => unreachable!(),
         };
         self.stack.push(result);
       },
       Wasm::Remainder(wasm_type) => {
-        let right = pop()?;
-        let left = pop()?;
+        let right = pop();
+        let left = pop();
         let result = match (&left, &right) {
           (v::I32(l), v::I32(r)) => v::I32(l % r),
           (v::I64(l), v::I64(r)) => v::I64(l % r),
           (v::F32(l), v::F32(r)) => v::F32(l % r),
           (v::F64(l), v::F64(r)) => v::F64(l % r),
-          _ => return error!("Invalid rem operands: {left:?}, {right:?}"),
+          _ => unreachable!(),
         };
         self.stack.push(result);
       },
       Wasm::And(wasm_type) => {
-        let right = pop()?;
-        let left = pop()?;
+        let right = pop();
+        let left = pop();
         let result = match (&left, &right) {
           (v::I32(l), v::I32(r)) => v::I32(l & r),
           (v::I64(l), v::I64(r)) => v::I64(l & r),
-          _ => return error!("Invalid and operands: {left:?}, {right:?}"),
+          _ => unreachable!(),
         };
         self.stack.push(result);
       },
       Wasm::Or(wasm_type) => {
-        let right = pop()?;
-        let left = pop()?;
+        let right = pop();
+        let left = pop();
         let result = match (&left, &right) {
           (v::I32(l), v::I32(r)) => v::I32(l | r),
           (v::I64(l), v::I64(r)) => v::I64(l | r),
-          _ => return error!("Invalid or operands: {left:?}, {right:?}"),
+          _ => unreachable!(),
         };
         self.stack.push(result);
       },
       Wasm::Xor(wasm_type) => {
-        let right = pop()?;
-        let left = pop()?;
+        let right = pop();
+        let left = pop();
         let result = match (&left, &right) {
           (v::I32(l), v::I32(r)) => v::I32(l ^ r),
           (v::I64(l), v::I64(r)) => v::I64(l ^ r),
-          _ => return error!("Invalid xor operands: {left:?}, {right:?}"),
+          _ => unreachable!(),
         };
         self.stack.push(result);
       },
       Wasm::Equal(wasm_type) => {
-        let right = pop()?;
-        let left = pop()?;
+        let right = pop();
+        let left = pop();
         let result = match (&left, &right) {
           (v::I32(l), v::I32(r)) => v::I32((l == r) as i32),
           (v::I64(l), v::I64(r)) => v::I32((l == r) as i32),
           (v::F32(l), v::F32(r)) => v::I32((l == r) as i32),
           (v::F64(l), v::F64(r)) => v::I32((l == r) as i32),
-          _ => return error!("Invalid eq operands: {left:?}, {right:?}"),
+          _ => unreachable!(),
         };
         self.stack.push(result);
       },
       Wasm::Unequal(wasm_type) => {
-        let right = pop()?;
-        let left = pop()?;
+        let right = pop();
+        let left = pop();
         let result = match (&left, &right) {
           (v::I32(l), v::I32(r)) => v::I32((l != r) as i32),
           (v::I64(l), v::I64(r)) => v::I32((l != r) as i32),
           (v::F32(l), v::F32(r)) => v::I32((l != r) as i32),
           (v::F64(l), v::F64(r)) => v::I32((l != r) as i32),
-          _ => return error!("Invalid neq operands: {left:?}, {right:?}"),
+          _ => unreachable!(),
         };
         self.stack.push(result);
       },
       Wasm::GreaterSigned(wasm_type) => {
-        let right = pop()?;
-        let left = pop()?;
+        let right = pop();
+        let left = pop();
         let result = match (&left, &right) {
           (v::I32(l), v::I32(r)) => v::I32((l > r) as i32),
           (v::I64(l), v::I64(r)) => v::I32((l > r) as i32),
           (v::F32(l), v::F32(r)) => v::I32((l > r) as i32),
           (v::F64(l), v::F64(r)) => v::I32((l > r) as i32),
-          _ => return error!("Invalid gt_s operands: {left:?}, {right:?}"),
+          _ => unreachable!(),
         };
         self.stack.push(result);
       },
       Wasm::GreaterUnsigned(wasm_type) => {
-        let right = pop()?;
-        let left = pop()?;
+        let right = pop();
+        let left = pop();
         let result = match (&left, &right) {
           (v::I32(l), v::I32(r)) => v::I32((*l as u32 > *r as u32) as i32),
           (v::I64(l), v::I64(r)) => v::I32((*l as u32 > *r as u32) as i32),
-          _ => return error!("Invalid gt_u operands: {left:?}, {right:?}"),
+          _ => unreachable!(),
         };
         self.stack.push(result);
       },
       Wasm::LesserSigned(wasm_type) => {
-        let right = pop()?;
-        let left = pop()?;
+        let right = pop();
+        let left = pop();
         let result = match (&left, &right) {
           (v::I32(l), v::I32(r)) => v::I32((l < r) as i32),
           (v::I64(l), v::I64(r)) => v::I32((l < r) as i32),
           (v::F32(l), v::F32(r)) => v::I32((l < r) as i32),
           (v::F64(l), v::F64(r)) => v::I32((l < r) as i32),
-          _ => return error!("Invalid lt_s operands: {left:?}, {right:?}"),
+          _ => unreachable!(),
         };
         self.stack.push(result);
       },
       Wasm::LesserUnsigned(wasm_type) => {
-        let right = pop()?;
-        let left = pop()?;
+        let right = pop();
+        let left = pop();
         let result = match (&left, &right) {
           (v::I32(l), v::I32(r)) => v::I32(((*l as u32) < (*r as u32)) as i32),
           (v::I64(l), v::I64(r)) => v::I32(((*l as u32) < (*r as u32)) as i32),
-          _ => return error!("Invalid lt_u operands: {left:?}, {right:?}"),
+          _ => unreachable!(),
         };
         self.stack.push(result);
       },
       Wasm::GreaterEqualSigned(wasm_type) => {
-        let right = pop()?;
-        let left = pop()?;
+        let right = pop();
+        let left = pop();
         let result = match (&left, &right) {
           (v::I32(l), v::I32(r)) => v::I32((l >= r) as i32),
           (v::I64(l), v::I64(r)) => v::I32((l >= r) as i32),
           (v::F32(l), v::F32(r)) => v::I32((l >= r) as i32),
           (v::F64(l), v::F64(r)) => v::I32((l >= r) as i32),
-          _ => return error!("Invalid ge_s operands: {left:?}, {right:?}"),
+          _ => unreachable!(),
         };
         self.stack.push(result);
       },
       Wasm::GreaterEqualUnsigned(wasm_type) => {
-        let right = pop()?;
-        let left = pop()?;
+        let right = pop();
+        let left = pop();
         let result = match (&left, &right) {
           (v::I32(l), v::I32(r)) => v::I32((*l as u32 >= *r as u32) as i32),
           (v::I64(l), v::I64(r)) => v::I32((*l as u32 >= *r as u32) as i32),
-          _ => return error!("Invalid ge_u operands: {left:?}, {right:?}"),
+          _ => unreachable!(),
         };
         self.stack.push(result);
       },
       Wasm::LesserEqualSigned(wasm_type) => {
-        let right = pop()?;
-        let left = pop()?;
+        let right = pop();
+        let left = pop();
         let result = match (&left, &right) {
           (v::I32(l), v::I32(r)) => v::I32((l <= r) as i32),
           (v::I64(l), v::I64(r)) => v::I32((l <= r) as i32),
           (v::F32(l), v::F32(r)) => v::I32((l <= r) as i32),
           (v::F64(l), v::F64(r)) => v::I32((l <= r) as i32),
-          _ => return error!("Invalid le_s operands: {left:?}, {right:?}"),
+          _ => unreachable!(),
         };
         self.stack.push(result);
       },
       Wasm::LesserEqualUnsigned(wasm_type) => {
-        let right = pop()?;
-        let left = pop()?;
+        let right = pop();
+        let left = pop();
         let result = match (&left, &right) {
           (v::I32(l), v::I32(r)) => v::I32((*l as u32 <= *r as u32) as i32),
           (v::I64(l), v::I64(r)) => v::I32((*l as u32 <= *r as u32) as i32),
-          _ => return error!("Invalid le_u operands: {left:?}, {right:?}"),
+          _ => unreachable!(),
         };
         self.stack.push(result);
       },
       Wasm::Negate(wasm_type) => {
-        let left = pop()?;
+        let left = pop();
         let result = match &left {
           v::I32(l) => v::I32(-l),
           v::I64(l) => v::I64(-l),
           v::F32(l) => v::F32(-l),
           v::F64(l) => v::F64(-l),
-          _ => return error!("Invalid neg operand: {left:?}"),
+          _ => unreachable!(),
         };
         self.stack.push(result);
       },
       Wasm::Drop => {
-        pop()?;
+        pop();
       },
       Wasm::Comment(_) | Wasm::Nop => {},
-      Wasm::Unreachable => return error!("Encountered unreachable"),
+      Wasm::Unreachable => {
+        return Err(lint_nospan(EvalLint::Unreachable as LintKind));
+      },
       Wasm::Import { .. }
       | Wasm::Local(_, _)
       | Wasm::LocalSet(_)

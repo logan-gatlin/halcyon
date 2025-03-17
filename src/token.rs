@@ -1,5 +1,7 @@
 use crate::Span;
 use crate::lint::*;
+use multipeek::MultiPeek;
+use multipeek::multipeek;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Base {
@@ -22,6 +24,7 @@ pub enum TokenKind {
   Comma,
   Colon,
   Semicolon,
+  NewLine,
 
   Dot,
   DotDot,
@@ -77,18 +80,19 @@ pub enum TokenKind {
   SmallComment(String),
   BigComment(String),
 
-  Error(Lint),
   Idk,
   EOF,
 }
 
-impl TokenKind {
-  pub fn is_meaningful(&self) -> bool {
-    match self {
-      Self::Whitespace(_) | Self::SmallComment(_) | Self::BigComment(_) | Self::Idk => false,
-      _ => true,
-    }
-  }
+#[repr(usize)]
+pub enum TokenLint {
+  InvalidInput = 1000,
+  UnrecognizedEscape = 1001,
+  MissingDelimeter = 1002,
+  ExtraDelimeter = 1003,
+  WrongGlyphSize = 1004,
+  InvalidInteger = 1005,
+  InvalidReal = 1006,
 }
 
 impl PartialEq for TokenKind {
@@ -97,111 +101,112 @@ impl PartialEq for TokenKind {
   }
 }
 
-impl Eq for TokenKind {}
+impl Eq for TokenKind {
+}
 
 impl std::fmt::Display for TokenKind {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     use TokenKind::*;
-    write!(f, "{}", match self {
-      LeftParen => "(",
-      RightParen => ")",
-      LeftBrace => "{",
-      RightBrace => "}",
-      LeftSquare => "[",
-      RightSquare => "]",
-      Comma => ",",
-      Colon => ":",
-      Semicolon => ";",
-      Dot => ".",
-      DotDot => "..",
-      Plus => "+",
-      Minus => "-",
-      Slash => "/",
-      Star => "*",
-      Percent => "%",
-      Tilda => "~",
-      Arrow => "->",
-      FatArrow => "=>",
-      Bang => "!",
-      BangEqual => "!=",
-      Question => "?",
-      QuestionEqual => "?=",
-      Equal => "=",
-      DoubleEqual => "==",
-      Greater => ">",
-      GreaterEqual => ">=",
-      Less => "<",
-      LessEqual => "<=",
-      Pipe => "|",
-      Ampersand => "&",
-      Carrot => "^",
-      Hash => "#",
-      DotDotEqual => "..=",
-      Identifier(_) => "identifier",
-      StringLiteral(_) => "string literal",
-      GlyphLiteral(_) => "glyph literal",
-      IntegerLiteral(_, _) => "integer literal",
-      FloatLiteral(_) => "float literal",
-      Loop => "loop",
-      If => "if",
-      Else => "else",
-      And => "and",
-      Or => "or",
-      Xor => "xor",
-      Not => "not",
-      Nand => "nand",
-      Nor => "nor",
-      Xnor => "xnor",
-      Break => "break",
-      True => "true",
-      False => "false",
-      Struct => "struct",
-      Whitespace(_) => "whitespace",
-      BigComment(_) | SmallComment(_) => "comment",
-      Error(_) => "error",
-      Idk => "idk",
-      EOF => "EOF",
-    })
+    write!(
+      f,
+      "{}",
+      match self {
+        LeftParen => "(",
+        RightParen => ")",
+        LeftBrace => "{",
+        RightBrace => "}",
+        LeftSquare => "[",
+        RightSquare => "]",
+        Comma => ",",
+        Colon => ":",
+        Semicolon => ";",
+        NewLine => "end of line",
+        Dot => ".",
+        DotDot => "..",
+        Plus => "+",
+        Minus => "-",
+        Slash => "/",
+        Star => "*",
+        Percent => "%",
+        Tilda => "~",
+        Arrow => "->",
+        FatArrow => "=>",
+        Bang => "!",
+        BangEqual => "!=",
+        Question => "?",
+        QuestionEqual => "?=",
+        Equal => "=",
+        DoubleEqual => "==",
+        Greater => ">",
+        GreaterEqual => ">=",
+        Less => "<",
+        LessEqual => "<=",
+        Pipe => "|",
+        Ampersand => "&",
+        Carrot => "^",
+        Hash => "#",
+        DotDotEqual => "..=",
+        Identifier(_) => "identifier",
+        StringLiteral(_) => "string literal",
+        GlyphLiteral(_) => "glyph literal",
+        IntegerLiteral(_, _) => "integer literal",
+        FloatLiteral(_) => "float literal",
+        Loop => "loop",
+        If => "if",
+        Else => "else",
+        And => "and",
+        Or => "or",
+        Xor => "xor",
+        Not => "not",
+        Nand => "nand",
+        Nor => "nor",
+        Xnor => "xnor",
+        Break => "break",
+        True => "true",
+        False => "false",
+        Struct => "struct",
+        Whitespace(_) => "whitespace",
+        BigComment(_) | SmallComment(_) => "comment",
+        Idk => "idk",
+        EOF => "EOF",
+      }
+    )
   }
 }
 
 #[derive(Clone, Debug)]
 pub struct Token(pub TokenKind, pub Span);
 
-fn t(tk: TokenKind, sp: Span) -> Result<Token, Lint> {
+fn t(tk: TokenKind, sp: Span) -> Result<Token> {
   Ok(Token(tk, sp))
 }
 
-const TOKENIZER_LOOKAHEAD: usize = 2;
-
-type CharIter<'a, I> = crate::Window<'a, TOKENIZER_LOOKAHEAD, char, I>;
-
-pub struct Tokenizer<'a, I: Iterator<Item = char>> {
-  iter: CharIter<'a, I>,
-  column: usize,
-  row: usize,
+pub fn tokenize(chars: impl IntoIterator<Item = char>) -> Result<Vec<Token>> {
+  let c = chars.into_iter();
+  Tokenizer::new(c).try_collect()
 }
 
-impl<'a, I: Iterator<Item = char>> Tokenizer<'a, I> {
+struct Tokenizer<I: Iterator<Item = char>> {
+  iter: MultiPeek<I>,
+  index: usize,
+  ended: bool,
+}
+
+impl<I: Iterator<Item = char>> Tokenizer<I> {
   pub fn new(iter: I) -> Self {
     Self {
-      iter: CharIter::new(iter),
-      column: 1,
-      row: 1,
+      iter: multipeek(iter),
+      index: 0,
+      ended: false,
     }
   }
 
   fn next_char(&mut self) -> Option<char> {
     match self.iter.next() {
-      Some(c) if c == '\n' => {
-        self.row += 1;
-        self.column = 1;
-        Some(c)
-      }
       Some(c) => {
-        self.column += 1;
+        self.index += 1;
         Some(c)
-      }
+      },
       _ => None,
     }
   }
@@ -213,7 +218,7 @@ impl<'a, I: Iterator<Item = char>> Tokenizer<'a, I> {
       let c = match self.next_char() {
         Some(c) if c == terminator && !escape => {
           break;
-        }
+        },
         Some(c) => {
           if c == '\\' {
             escape = !escape;
@@ -221,7 +226,7 @@ impl<'a, I: Iterator<Item = char>> Tokenizer<'a, I> {
             escape = false;
           }
           c
-        }
+        },
         None => return None,
       };
       buffer.push(c)
@@ -230,29 +235,27 @@ impl<'a, I: Iterator<Item = char>> Tokenizer<'a, I> {
   }
 
   fn peek(&mut self, n: usize) -> Option<char> {
-    self.iter.peek(n).clone()
+    self.iter.peek_nth(n).cloned()
   }
 
-  fn lint(&self, lint: TokenLint, span: Span) -> Lint {
-    Lint {
-      kind: Box::new(lint),
-      span: Some(span),
-      file: None,
-    }
-  }
-
-  fn _next(&mut self) -> Result<Token, Lint> {
+  fn _next(&mut self) -> Result<Token> {
     use TokenKind::*;
-    let position = Span {
-      row: self.row,
-      column: self.column,
+    let mut position = Span {
+      start: self.index,
+      width: 0,
     };
+    if self.ended == true {
+      return t(EOF, position);
+    }
     let current = match self.next_char() {
       Some(std::char::REPLACEMENT_CHARACTER) => {
-        return Err(self.lint(TokenLint::InvalidGlyph, position));
-      }
+        return Err(lint(TokenLint::InvalidInput as LintKind, position, &[]));
+      },
       Some(c) => c,
-      None => return t(EOF, position),
+      None => {
+        self.ended = true;
+        return t(EOF, position);
+      },
     };
     // Parse whitespace
     if current.is_whitespace() {
@@ -264,6 +267,7 @@ impl<'a, I: Iterator<Item = char>> Tokenizer<'a, I> {
         _ = self.next_char();
         buffer.push(c.clone());
       }
+      position.width = buffer.chars().count();
       return t(Whitespace(buffer), position);
     }
     // Parse multiline comments
@@ -292,6 +296,7 @@ impl<'a, I: Iterator<Item = char>> Tokenizer<'a, I> {
         }
         buffer.push(current);
       }
+      position.width = buffer.chars().count();
       return t(BigComment(buffer), position);
     }
     // Parse single line comments
@@ -304,6 +309,7 @@ impl<'a, I: Iterator<Item = char>> Tokenizer<'a, I> {
         }
         buffer.push(c);
       }
+      position.width = buffer.chars().count();
       return t(SmallComment(buffer), position);
     }
     let next = self.peek(0);
@@ -340,6 +346,7 @@ impl<'a, I: Iterator<Item = char>> Tokenizer<'a, I> {
         _ => Idk,
       };
       if kind != Idk {
+        position.width = 1;
         return t(kind, position);
       };
     }
@@ -359,6 +366,7 @@ impl<'a, I: Iterator<Item = char>> Tokenizer<'a, I> {
       };
       if kind != Idk {
         let _ = self.next();
+        position.width = 2;
         return t(kind, position);
       }
     }
@@ -371,6 +379,7 @@ impl<'a, I: Iterator<Item = char>> Tokenizer<'a, I> {
       if kind != Idk {
         let _ = self.next();
         let _ = self.next();
+        position.width = 3;
         return t(kind, position);
       }
     }
@@ -379,17 +388,19 @@ impl<'a, I: Iterator<Item = char>> Tokenizer<'a, I> {
     if current == '\'' {
       let buffer = self
         .delimited('\'')
-        .lint(TokenLint::UnclosedDelimeter('\''))
+        .lint(TokenLint::MissingDelimeter as LintKind)
+        .context("'")
         .span(position)?;
-      let baked = bake_string(&buffer)?;
+      position.width = buffer.chars().count() + 2;
+      let baked = bake_string(&buffer, position)?;
       if baked.len() != 1 {
-        return lint(TokenLint::GlyphTooLong).span(position);
+        return Err(lint(TokenLint::WrongGlyphSize as LintKind, position, &[]));
       }
       let kind = GlyphLiteral(
         baked
           .chars()
           .next()
-          .lint(TokenLint::GlyphTooLong)
+          .lint(TokenLint::WrongGlyphSize as LintKind)
           .span(position)?,
       );
       return t(kind, position);
@@ -398,9 +409,11 @@ impl<'a, I: Iterator<Item = char>> Tokenizer<'a, I> {
     if current == '"' {
       let buffer = self
         .delimited('\"')
-        .lint(TokenLint::UnclosedDelimeter('\"'))
+        .lint(TokenLint::MissingDelimeter as LintKind)
+        .context("\"")
         .span(position)?;
-      let kind = StringLiteral(bake_string(&buffer)?);
+      position.width = buffer.chars().count() + 2;
+      let kind = StringLiteral(bake_string(&buffer, position)?);
       return t(kind, position);
     }
     buffer.push(current);
@@ -425,6 +438,7 @@ impl<'a, I: Iterator<Item = char>> Tokenizer<'a, I> {
         let _ = self.next_char();
       }
       buffer = buffer.to_lowercase();
+      position.width += buffer.chars().count();
       // Determine base
       let (buffer, base) = if let Some(buffer) = buffer.strip_prefix("0b") {
         (buffer.to_string(), Base::Binary)
@@ -451,6 +465,7 @@ impl<'a, I: Iterator<Item = char>> Tokenizer<'a, I> {
       }
       buffer.push(c);
     }
+    position.width = buffer.chars().count();
     // Match keywords
     {
       let kind = match buffer.as_str() {
@@ -475,64 +490,120 @@ impl<'a, I: Iterator<Item = char>> Tokenizer<'a, I> {
   }
 }
 
-impl<'a, I: Iterator<Item = char>> Iterator for Tokenizer<'a, I> {
-  type Item = Token;
+impl<'a, I: Iterator<Item = char>> Iterator for Tokenizer<I> {
+  type Item = Result<Token>;
 
   fn next(&mut self) -> Option<Self::Item> {
-    match self._next() {
-      Ok(s) => Some(s),
-      Err(e) => Some(Token(
-        TokenKind::Error(e.clone()),
-        e.span.expect("error without span in tokenizer"),
-      )),
+    loop {
+      use TokenKind::*;
+      if self.ended {
+        return None;
+      }
+      match self._next() {
+        Ok(Token(SmallComment(_) | BigComment(_) | Idk | Whitespace(_), _)) => {
+          continue;
+        },
+        Ok(s) => return Some(Ok(s)),
+        Err(e) => return Some(Err(e)),
+      }
     }
   }
 }
 
-fn bake_string(s: &str) -> Result<String, Lint> {
+fn bake_string(s: &str, mut span: Span) -> Result<String> {
   let mut baked = String::with_capacity(s.len());
-  let mut it = s.chars();
+  let mut iter = s.chars();
   loop {
-    match it.next() {
-      Some('\\') => baked.push(match it.next() {
-        Some('n') => '\n',   // New line
-        Some('r') => '\r',   // Carriage return
-        Some('t') => '\t',   // Tab
-        Some('b') => '\x08', // Backspace
-        Some('\\') => '\\',  // Backslash
-        Some('\0') => '\0',  // Null
-        Some('"') => '\"',   // Double quote
-        Some('\'') => '\'',  // Single quote
-        Some('a') => {
-          // Ascii escapes
-          let mut a = || {
-            let a = u32::from_str_radix(&it.next()?.to_string(), 16).ok()?;
-            let b = u32::from_str_radix(&it.next()?.to_string(), 16).ok()?;
-            let num = (a << 4) | b;
-            char::from_u32(num)
-          };
-          a().lint(TokenLint::InvalidAsciiEscape)?
-        }
-        Some('u') => {
-          // Unicode escapes
-          let mut a = || {
-            let a = u32::from_str_radix(&it.next()?.to_string(), 16).ok()?;
-            let b = u32::from_str_radix(&it.next()?.to_string(), 16).ok()?;
-            let c = u32::from_str_radix(&it.next()?.to_string(), 16).ok()?;
-            let d = u32::from_str_radix(&it.next()?.to_string(), 16).ok()?;
-            let num = (a << 12) | (b << 8) | (c << 4) | d;
-            char::from_u32(num)
-          };
-          a().lint(TokenLint::InvalidUnicodeEscape)?
-        }
-        c => {
-          return lint(TokenLint::UnknownEscape(c.unwrap_or(' ')));
-        }
-      }),
-      // Unremarkable character
-      Some(c) => baked.push(c),
+    let c = match iter.next() {
+      Some(c) => c,
       None => break,
+    };
+    if c == '\\' {
+      let (escape, length) = parse_single_escape(&mut iter, span)?;
+      span.start += length;
+      baked.push(escape);
+    } else {
+      span.start += c.len_utf8();
+      baked.push(c);
     }
   }
   Ok(baked)
+}
+
+fn parse_single_escape(
+  iter: &mut impl Iterator<Item = char>,
+  mut span: Span,
+) -> Result<(char, usize)> {
+  span.start += 1;
+  span.width = 2;
+  Ok(match iter.next() {
+    Some('n') => ('\n', 1),   // New line
+    Some('r') => ('\r', 1),   // Carriage return
+    Some('t') => ('\t', 1),   // Tab
+    Some('b') => ('\x08', 1), // Backspace
+    Some('\\') => ('\\', 1),  // Backslash
+    Some('\0') => ('\0', 1),  // Null
+    Some('"') => ('\"', 1),   // Double quote
+    Some('\'') => ('\'', 1),  // Single quote
+    Some('x') => (parse_byte_escape(iter, span)?, 2), // Byte escape
+    Some('w') => (parse_wide_escape(iter, span)?, 4), // Wide escape
+    _ => {
+      return Err(lint(TokenLint::UnrecognizedEscape as LintKind, span, &[]));
+    },
+  })
+}
+
+fn hex_digit(c: char) -> Option<u32> {
+  if ('0'..='9').contains(&c) {
+    Some(c as u32 - '0' as u32)
+  } else if ('a'..='f').contains(&c) {
+    Some(c as u32 - 'a' as u32 + 10)
+  } else {
+    None
+  }
+}
+
+fn parse_byte_escape(
+  iter: &mut impl Iterator<Item = char>,
+  span: Span,
+) -> Result<char> {
+  let lint = lint(TokenLint::UnrecognizedEscape as LintKind, span, &[]);
+  let (b1, b2) = match (iter.next(), iter.next()) {
+    (Some(b1), Some(b2)) => (b1.to_ascii_lowercase(), b2.to_ascii_lowercase()),
+    _ => {
+      return Err(lint);
+    },
+  };
+  let byte = match (hex_digit(b1), hex_digit(b2)) {
+    (Some(b1), Some(b2)) => b1 << 8 | b2,
+    _ => return Err(lint),
+  };
+  char::from_u32(byte).ok_or(lint)
+}
+
+fn parse_wide_escape(
+  iter: &mut impl Iterator<Item = char>,
+  span: Span,
+) -> Result<char> {
+  let lint = lint(TokenLint::UnrecognizedEscape as LintKind, span, &[]);
+  let (b1, b2, b3, b4) =
+    match (iter.next(), iter.next(), iter.next(), iter.next()) {
+      (Some(b1), Some(b2), Some(b3), Some(b4)) => (
+        b1.to_ascii_lowercase(),
+        b2.to_ascii_lowercase(),
+        b3.to_ascii_lowercase(),
+        b4.to_ascii_lowercase(),
+      ),
+      _ => {
+        return Err(lint);
+      },
+    };
+  let byte = match (hex_digit(b1), hex_digit(b2), hex_digit(b3), hex_digit(b4))
+  {
+    (Some(b1), Some(b2), Some(b3), Some(b4)) => {
+      b1 << 24 | b2 << 16 | b3 << 8 | b4
+    },
+    _ => return Err(lint),
+  };
+  char::from_u32(byte).ok_or(lint)
 }

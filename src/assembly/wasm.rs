@@ -25,7 +25,7 @@ impl Display for WasmType {
   }
 }
 
-#[allow(non_camel_case_types)]
+#[allow(non_camel_case_types, dead_code)]
 #[derive(Debug, Clone)]
 pub enum WasmValue {
   FuncRef(Mangle),
@@ -60,6 +60,7 @@ impl Display for WasmValue {
   }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum Wasm {
   Import {

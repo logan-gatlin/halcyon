@@ -2,10 +2,12 @@ use std::collections::HashSet;
 
 use crate::{
   Span,
-  err::*,
-  error,
-  ir::{ConstValue, IrPtr, types::Type},
-  naming::{CanonKind, Mangle, builtins::Builtin},
+  ir::{
+    ConstValue, IrPtr,
+    types::{Type, TypeLint},
+  },
+  lint::*,
+  naming::{CanonKind, Mangle, NameLint, builtins::Builtin},
 };
 
 use super::TypeChecker;
@@ -14,7 +16,7 @@ use CanonKind::*;
 impl TypeChecker {
   pub(super) fn sanitize_main(&self) -> Result<HashSet<IrPtr>> {
     let Some(main) = self.module.main.clone() else {
-      return error!("Program does not contain a 'main' function");
+      return Err(lint_nospan(NameLint::InvalidMain as LintKind));
     };
     let mut visited = HashSet::new();
     let mut to_visit = vec![];
@@ -41,10 +43,7 @@ impl TypeChecker {
     node: IrPtr,
     to_visit: &mut Vec<IrPtr>,
   ) -> Result<()> {
-    let err = error!(
-      "This expression may only be evaluated at compile-time, but it touches \
-       execution-time code"
-    );
+    let err = Err(lint_nospan(TypeLint::Sanitization as LintKind));
     let span = self.module.nodes[node].span;
     if let Immediate(ConstValue::Function(mangle)) =
       &self.module.nodes[node].kind
@@ -56,12 +55,12 @@ impl TypeChecker {
       if let Some(bt) = Builtin::from_mangle(mangle)
         && !bt.sanitary()
       {
-        return err.span(&span);
+        return err.span(span);
       }
     }
     let mut sanitize = move |ptr| self.sanitize_node(ptr, to_visit);
     if self.module.type_of(node).ambiguous() {
-      return err.span(&span);
+      return err.span(span);
     }
     match &self.module.nodes[node].kind {
       Remainder(node) => {
@@ -72,7 +71,7 @@ impl TypeChecker {
       } => {
         let type_ = self.module.type_of(*value);
         if (type_.ambiguous() || type_ == Type::Type) && !is_constant {
-          return err.span(&self.module.span_of(*value));
+          return err.span(self.module.span_of(*value));
         }
         if !is_constant {
           sanitize(*value)?;

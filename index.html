@@ -11,9 +11,15 @@
     const string = new TextDecoder("utf8").decode(bytes);
     console.log(string);
   }
+  function print_integer(num) {
+    console.log(`${num}`);
+  }
   const imports = {
     js: {
-      memory: memory, print_string: print_string
+      memory: memory,
+      print_string: print_string,
+      print_integer: print_integer,
+      print_real: print_integer,
     }
   };
   WebAssembly.instantiateStreaming(fetch(url), imports);

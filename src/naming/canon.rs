@@ -1,11 +1,10 @@
+use crate::{lint::*, token::TokenLint};
 use std::collections::HashSet;
 
-use super::Canonizer;
+use super::{Canonizer, NameLint};
 use crate::{
   Span,
   assembly::operators::OpDef,
-  err::*,
-  error,
   ir::{ConstValue, IrPtr, types::Type},
   naming::{CanonKind, CanonNode, Symbol},
   parse::{
@@ -14,15 +13,11 @@ use crate::{
 };
 
 pub fn parse_int_literal(value: &str, base: u32) -> Result<i64> {
-  i64::from_str_radix(value, base)
-    .reason(format!("Failed to parse integer literal '{value}'"))
+  i64::from_str_radix(value, base).lint(TokenLint::InvalidInteger as LintKind)
 }
 
 pub fn parse_real_literal(value: &str) -> Result<f64> {
-  value
-    .parse()
-    .ok()
-    .reason(format!("Failed to parse real literal '{value}'"))
+  value.parse().lint(TokenLint::InvalidReal as LintKind)
 }
 
 impl Canonizer {
@@ -38,11 +33,11 @@ impl Canonizer {
       let mut set = names.iter();
       set.position(move |x| !unique.insert(x))
     } {
-      return error!(
-        "{error_hint} parameter {} must have a unique name",
-        pos + 1
-      )
-      .span(&spans[pos]);
+      return Err(lint(
+        NameLint::ParamRedefinition as LintKind,
+        spans[pos],
+        &[error_hint.to_string(), names[pos].clone()],
+      ));
     }
     Ok(())
   }
@@ -84,11 +79,11 @@ impl Canonizer {
         is_constant,
       } => {
         let assignee = if is_constant {
-          self.name_to_symbol(&name).span(&stmt.span)?.mangle.clone()
+          self.name_to_symbol(&name).span(stmt.span)?.mangle.clone()
         } else {
           self
             .define_name(name.clone(), is_constant)
-            .span(&stmt.span)?
+            .span(stmt.span)?
         };
         let type_assert = if let Some(type_) = type_ {
           Some(self.canon_expr(type_)?)
@@ -103,10 +98,11 @@ impl Canonizer {
           {
             self.main = Some(name.clone());
           } else {
-            return error!(
-              "Identifier 'main' in this context must be a function"
-            )
-            .span(&stmt.span);
+            return Err(lint(
+              NameLint::InvalidMain as LintKind,
+              stmt.span,
+              &[],
+            ));
           }
         }
         k::Declaration {
@@ -162,7 +158,7 @@ impl Canonizer {
       },
       e::Identifier { name } => {
         let Symbol { mangle, .. } =
-          self.name_to_symbol(&name).span(&expr.span)?.clone();
+          self.name_to_symbol(&name).span(expr.span)?.clone();
         k::Identifier(mangle)
       },
       e::Binary { op, left, right } => {
@@ -197,7 +193,11 @@ impl Canonizer {
         self.functions.insert(function_mangle.clone(), node);
         self.enscope();
         self.validate_parameters("Function", &parameters)?;
-        let parameter_names = parameters.names.clone();
+        let parameter_names = parameters
+          .names
+          .iter()
+          .map(|n| self.define_name(n, false))
+          .try_collect::<Vec<_>>()?;
         let parameter_types = parameters
           .types
           .into_iter()
@@ -269,7 +269,11 @@ impl Canonizer {
       e::Field { namespace, field } => {
         let of = self.canon_expr(*namespace)?;
         let e::Identifier { name: index } = field.kind else {
-          return error!("Field must be an identifier").span(&field.span);
+          return Err(lint(
+            NameLint::FieldNotIdent as LintKind,
+            field.span,
+            &[],
+          ));
         };
         k::Field { of, index }
       },
@@ -300,7 +304,11 @@ impl Canonizer {
       e::Loop { parameters, body } => {
         self.enscope();
         self.validate_parameters("Loop", &parameters)?;
-        let parameter_names = parameters.names.clone();
+        let parameter_names = parameters
+          .names
+          .iter()
+          .map(|n| self.define_name(n, false))
+          .try_collect::<Vec<_>>()?;
         let parameter_values = parameters
           .types
           .into_iter()

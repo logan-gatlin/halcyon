@@ -9,6 +9,7 @@ use super::{Mangle, mangle_builtin};
 pub enum Builtin {
   Type,
   PrintString,
+  PrintReal,
   PrintGlyph,
   PrintInteger,
   PrintBoolean,
@@ -16,9 +17,10 @@ pub enum Builtin {
 }
 
 impl Builtin {
-  pub const ALL: [Builtin; 6] = [
+  pub const ALL: [Builtin; 7] = [
     Self::Type,
     Self::PrintString,
+    Self::PrintReal,
     Self::PrintGlyph,
     Self::PrintInteger,
     Self::PrintBoolean,
@@ -29,6 +31,7 @@ impl Builtin {
     match self {
       Builtin::Type => "type",
       Builtin::PrintString => "print_string",
+      Builtin::PrintReal => "print_real",
       Builtin::PrintGlyph => "pring_glyph",
       Builtin::PrintInteger => "print_integer",
       Builtin::PrintBoolean => "print_boolean",
@@ -49,6 +52,7 @@ impl Builtin {
     match self {
       Builtin::PrintString
       | Builtin::PrintGlyph
+      | Builtin::PrintReal
       | Builtin::PrintInteger
       | Builtin::PrintBoolean
       | Builtin::PrintType => {
@@ -62,6 +66,7 @@ impl Builtin {
     use Primitive as p;
     let param = match self {
       Builtin::PrintString => p::string.promote(),
+      Builtin::PrintReal => p::real.promote(),
       Builtin::PrintGlyph => p::glyph.promote(),
       Builtin::PrintInteger => p::integer.promote(),
       Builtin::PrintBoolean => p::boolean.promote(),

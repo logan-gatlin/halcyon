@@ -5,7 +5,6 @@ impl Wasm {
   const INDENT: &str = "  ";
 
   pub fn to_wat(&self) -> String {
-    let kind = |g: &bool| if *g { "global" } else { "local" };
     let isfloat = |t: &AsmType| match t {
       AsmType::F32 | AsmType::F64 => "",
       _ => "_s",
@@ -45,13 +44,19 @@ impl Wasm {
       } => {
         let params: String = params
           .into_iter()
-          .map(|(name, ty)| format!("\n{}(param ${name} {ty})", Self::INDENT))
+          .map(|(name, ty)| {
+            if name.len() > 0 {
+              format!("\n{}(param ${name} {ty})", Self::INDENT)
+            } else {
+              format!("\n{}(param {ty})", Self::INDENT)
+            }
+          })
           .collect();
         let results: String = results
           .into_iter()
           .map(|r| format!("\n{}(result {r})", Self::INDENT))
           .collect();
-        format!("(func {ident}{params}{results}\n{})", block(body))
+        format!("(func ${ident}{params}{results}\n{})", block(body))
       },
       Wasm::End => format!("end"),
       Wasm::Branch(lp) => format!("br ${lp}"),

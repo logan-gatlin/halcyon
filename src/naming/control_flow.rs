@@ -1,18 +1,12 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-  diagnostic,
-  err::*,
-  error,
   ir::{Block, ConstValue, FunctionInfo, Ir, IrKind, IrPtr, Module},
-  naming::CanonKind,
+  lint::*,
+  naming::{CanonKind, NameLint},
 };
 
 use super::{CanonNode, CanonizedModule, Mangle};
-
-fn unreachable_error() -> Diagnostic {
-  diagnostic!("This expression is unreachable")
-}
 
 pub struct Analyzer {
   nodes: Vec<CanonNode>,
@@ -345,8 +339,11 @@ impl Analyzer {
       } => {
         let arity = parameter_names.len();
         if arity > 1 {
-          return error!("Only one loop parameter allowed for now")
-            .span(&node.span);
+          return Err(lint(
+            NameLint::MultipleLoopParams as LintKind,
+            node.span,
+            &[],
+          ));
         }
         for p in 0..arity {
           block = self.analyze_node(parameter_values[p], block)?;
@@ -394,7 +391,7 @@ impl Analyzer {
         if let Some(expr) = value {
           block = self.analyze_node(expr, block)?;
           if self.blocks[block].is_terminal() {
-            return Err(unreachable_error()).span(&span);
+            return Ok(block);
           }
         }
         self.push(block, ir(i::Const(ConstValue::Never)));
@@ -403,7 +400,7 @@ impl Analyzer {
           self.blocks[block].set_next(*target);
           *target
         } else {
-          return error!("A 'break' must be inside of a loop").span(&span);
+          return Err(lint(NameLint::NoBreakTarget as LintKind, span, &[]));
         };
       },
     };

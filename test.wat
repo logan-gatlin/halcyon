@@ -1,35 +1,30 @@
-(func $9function-1
-  (local $2a-2$0 i64)
-  (local $2a-2$1 i64)
-  (local $_0$0 i64)
-  (local $_0$1 i64)
-  (local $i$0 i64)
-  i64.const 0
-  block $_1
-  loop $_2
-  i32.const 1
-  if
+(module
+(import "js" "memory" (memory 10 100))
+(import "js" "print_string" (func $_print_string
+  (param i32)
+  (param i32)
+))
+(import "js" "print_integer" (func $_print_integer
+  (param i64)
+))
+(import "js" "print_real" (func $_print_real
+  (param i64)
+))
+(data (i32.const 0) "")
+(func $9function-2
+  (local $2b-3$0 i64)
+  (local $2b-3$1 f64)
+  (local $2b-3$2 i64)
+  (local $2b-3$3 f64)
   i64.const 1
-  i64.const 2
-  (local.set $_0$0)
-  (local.set $_0$1)
-  br $_1
-  else
-  i64.const 2
+  f64.const 2
   i64.const 3
-  (local.set $_0$0)
-  (local.set $_0$1)
-  br $_1
-  end
-  i32.const 4
-  i32.const 0
-  (local.set $i$0)
-  br $_2
-  end
-  end
-  (local.get $_0$1)
-  (local.get $_0$0)
-  (local.set $2a-2$0)
-  (local.set $2a-2$1)
+  f64.const 4
+  (local.set $2b-3$3)
+  (local.set $2b-3$2)
+  (local.set $2b-3$1)
+  (local.set $2b-3$0)
   return
+)
+(start $9function-2)
 )

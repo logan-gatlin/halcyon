@@ -1,10 +1,13 @@
+use crate::token::TokenLint;
+
 use super::*;
-impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
+
+impl<I: Iterator<Item = Token>> Parser<I> {
   pub fn primary(&mut self) -> Result<Expression> {
     use ExpressionKind as e;
     use Immediate as im;
     use TokenKind as t;
-    let next = self.peek(0)?;
+    let next = self.peek(0);
     let mut span = next.1;
     let kind = match next.0 {
       t::IntegerLiteral(i, b) => {
@@ -33,42 +36,38 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
       },
       t::Break => {
         self.skip(1);
-        let expr = if let Ok(Token(t::Semicolon, _)) = self.peek(0) {
+        let expr = if let Token(t::Semicolon, _) = self.peek(0) {
           None
         } else {
-          Some(Box::new(
-            self
-              .expression(0)
-              .trace_span(span, "While parsing break expression")?,
-          ))
+          Some(Box::new(self.expression(0)?))
         };
         e::Break { expr: expr.into() }
       },
       t::If => return self.if_else(),
       t::LeftBrace => {
-        let (block, span1) = self.block()?;
+        let (block, span1) = self.body("block").span(span)?;
         span = span + span1;
         e::Block(block)
       },
       // Function definition
       t::LeftParen
-        if (self.look(1, t::Identifier("".into())).is_ok()
-          && (self.look(2, t::Colon).is_ok()
-            || self.look(2, t::Comma).is_ok()))
-          || self.look(1, t::RightParen).is_ok() =>
+        if (self.look(1, t::Identifier("".into())).is_some()
+          && (self.look(2, t::Colon).is_some()
+            || self.look(2, t::Comma).is_some()))
+          || self.look(1, t::RightParen).is_some() =>
       {
         self.skip(1);
         let params = self.parameters(span)?;
         let Token(_, span2) = self
           .eat(t::RightParen)
-          .span(&span)
-          .trace_span(span, "while parsing function definition")?;
-        let returns = if let Ok(Token(_, span2)) = self.eat(t::Arrow) {
+          .lint(TokenLint::MissingDelimeter as LintKind)
+          .context(")")
+          .span(span)?;
+        span += span2;
+        let returns = if let Some(Token(_, span2)) = self.eat(t::Arrow) {
           span = span + span2;
-          let expr = self
-            .expression(0)
-            .trace_span(span, "while parsing function return type")?;
-          span = span + span2;
+          let expr = self.expression(0).span(span)?;
+          span += span2;
           Some(expr.into())
         } else {
           None
@@ -76,13 +75,11 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
         span = span + span2;
         if returns.is_none()
           && params.arity == 0
-          && self.peek(0).is_ok_and(|t| t.0 != t::LeftBrace)
+          && self.peek(0).0 != t::LeftBrace
         {
           e::Immediate(Immediate::Unit)
         } else {
-          let (body, span2) = self
-            .block()
-            .trace_span(span, "while parsing function body")?;
+          let (body, span2) = self.body("function").span(span)?;
           let body = Box::new(Expression {
             kind: e::Block(body),
             span: span2,
@@ -98,16 +95,30 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
       // Struct definition
       t::Struct => {
         self.skip(1);
-        self.eat(t::LeftBrace)?;
+        self
+          .eat(t::LeftBrace)
+          .lint(TokenLint::MissingDelimeter as LintKind)
+          .context("{")
+          .span(span)?;
         let params = self.parameters(span)?;
-        self.eat(t::RightBrace)?;
+        for s in &params.spans {
+          span += *s;
+        }
+        self
+          .eat(t::RightBrace)
+          .lint(TokenLint::MissingDelimeter as LintKind)
+          .context("}")
+          .span(span)?;
         e::StructDef(params)
       },
       // Anonymous struct initialization
-      t::Dot if matches!(self.peek(1), Ok(Token(t::LeftBrace, _))) => {
+      t::Dot if matches!(self.peek(1), Token(t::LeftBrace, _)) => {
         self.skip(2);
         let params = self.parameters(span)?;
-        self.eat(t::RightBrace)?;
+        self
+          .eat(t::RightBrace)
+          .lint(TokenLint::MissingDelimeter as LintKind)
+          .context("}")?;
         e::StructLiteral {
           struct_t: None,
           parameters: params,
@@ -120,13 +131,12 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
       // Loop
       t::Loop => {
         self.skip(1);
-        let params = if let Ok(Token(t::LeftBrace, _)) = self.peek(0) {
+        let params = if let Token(t::LeftBrace, _) = self.peek(0) {
           Parameters::default()
         } else {
           self.parameters(span)?
         };
-        let (body, span2) =
-          self.block().trace_span(span, "while parsing loop body")?;
+        let (body, span2) = self.body("loop").span(span)?;
         let body = Box::new(Expression {
           kind: ExpressionKind::Block(body),
           span: span2,
@@ -140,17 +150,20 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
       // Parenthetical
       t::LeftParen => {
         self.skip(1);
-        let expr = self
-          .expression(0)
-          .trace("while parsing parenthesized expression")?;
+        let expr = self.expression(0).span(span)?;
         self
           .eat(t::RightParen)
-          .reason("Unclosed '('")
-          .span(&expr.span)?;
+          .lint(TokenLint::MissingDelimeter as LintKind)
+          .context(")")
+          .span(expr.span)?;
         e::Parenthesis(expr.into())
       },
       _ => {
-        return error!("Expected expression, found {}", next.0).span(&span);
+        return Err(lint(
+          ParseLint::UnexpectedToken as LintKind,
+          self.last_span,
+          &[],
+        ));
       },
     };
     Ok(Expression::new(kind, span))

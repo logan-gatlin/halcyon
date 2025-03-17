@@ -7,11 +7,11 @@ edition = "2024"
 wat = "1.219"
 punycode = "0.4"
 wasm-bindgen = "0.2"
-dyn-clone = "1.0"
+multipeek = "0.1"
+toml = "0.8"
 
 [profile.release]
 strip = true
 opt-level = "z"
 lto = true
 codegen-units = 1
-

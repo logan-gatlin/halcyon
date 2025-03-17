@@ -1,11 +1,11 @@
 use crate::{
   assembly::{Wasm, WasmType},
   compile::BreakTarget,
-  err::*,
   ir::{
     ConstValue, IrPtr,
     types::{Primitive, Type},
   },
+  lint::*,
   naming::{CanonKind, Mangle},
 };
 
@@ -33,7 +33,6 @@ impl Compiler {
       .register_types()
       .into_iter()
       .enumerate()
-      .rev()
       .for_each(|(id, _)| instrs.push(asm::LocalGet(format!("{mangle}${id}"))));
   }
 
@@ -42,6 +41,7 @@ impl Compiler {
       .register_types()
       .into_iter()
       .enumerate()
+      .rev()
       .for_each(|(id, _)| instrs.push(asm::LocalSet(format!("{mangle}${id}"))));
   }
 
@@ -74,12 +74,9 @@ impl Compiler {
           );
         }
       },
-      Immediate(im) => instrs.extend(
-        im.to_wasm_value()
-          .into_iter()
-          .rev()
-          .map(|v| asm::Constant(v)),
-      ),
+      Immediate(im) => {
+        instrs.extend(im.to_wasm_value().into_iter().map(|v| asm::Constant(v)))
+      },
       Identifier(mangle) => {
         if let Type::Function { .. } = type_ {
         } else {
@@ -133,7 +130,6 @@ impl Compiler {
         };
         arguments
           .into_iter()
-          .rev()
           .map(|p| self.lower(p, regs, instrs))
           .try_collect::<Vec<_>>()?;
         instrs.push(asm::Call(name.clone()))
@@ -159,7 +155,7 @@ impl Compiler {
             types
               .into_iter()
               .enumerate()
-              .map(|(id, t)| (format!("${mangle}${id}"), t))
+              .map(|(id, t)| (format!("{mangle}${id}"), t))
               .collect::<Vec<_>>()
           })
           .collect::<Vec<_>>();
@@ -170,7 +166,7 @@ impl Compiler {
         regs_local.extend(instrs_local);
         let body = regs_local;
         instrs.push(asm::Function {
-          ident: format!("${name}"),
+          ident: format!("{name}"),
           params,
           results: return_type.register_types(),
           body,
@@ -232,6 +228,9 @@ impl Compiler {
           .rev()
           .map(|i| self.lower(i, regs, instrs))
           .try_collect::<Vec<_>>()?;
+        loop_registers
+          .iter()
+          .for_each(|reg| Self::set_register(reg.0.clone(), &reg.1, instrs));
         let block_name = self.new_name();
         instrs.push(asm::Block(block_name.clone()));
         self.break_stack.push(BreakTarget {

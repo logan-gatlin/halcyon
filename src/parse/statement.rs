@@ -10,7 +10,7 @@ pub enum StatementKind {
   },
   Expression(Expression),
   Remainder(Expression),
-  Error(Diagnostic),
+  Error(Lint),
 }
 
 #[derive(Debug, Clone)]
@@ -19,41 +19,38 @@ pub struct Statement {
   pub span: Span,
 }
 
-impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
+impl<I: Iterator<Item = Token>> Parser<I> {
   pub fn statement(&mut self) -> Result<Statement> {
     use StatementKind as s;
     use TokenKind as t;
-    while let Ok(_) = self.eat(t::Semicolon) {}
-    let next = self.peek(0)?;
+    while let Some(_) = self.eat(t::Semicolon) {}
+    let next = self.peek(0);
     let next2 = self.peek(1);
     let mut span = next.1;
     let statement = match (next, next2) {
       // (im)mutable declaration
-      (Token(t::Identifier(name), span2), Ok(Token(t::Colon, span3))) => {
+      (Token(t::Identifier(name), span2), Token(t::Colon, span3)) => {
         self.skip(2);
         span = span + span2 + span3;
-        let type_ = if let Ok(_) = self.look(0, t::Equal) {
+        let type_ = if let Some(_) = self.look(0, t::Equal) {
           None
-        } else if let Ok(_) = self.look(0, t::Colon) {
+        } else if let Some(_) = self.look(0, t::Colon) {
           None
         } else {
-          Some(
-            self
-              .expression(0)
-              .trace_span(span, "While parsing type assertion")?,
-          )
+          Some(self.expression(0)?)
         };
-        let is_constant = if self.eat(t::Equal).is_ok() {
+        let is_constant = if self.eat(t::Equal).is_some() {
           false
-        } else if self.eat(t::Colon).is_ok() {
+        } else if self.eat(t::Colon).is_some() {
           true
         } else {
-          return error!("Declaration of '{name}' must be initialized")
-            .span(&span);
+          return Err(lint(
+            ParseLint::MissingAssignee as LintKind,
+            span,
+            &[name.clone()],
+          ));
         };
-        let value = self
-          .expression(0)
-          .trace_span(span, "while parsing declaration")?;
+        let value = self.expression(0).span(span)?;
         span = span + value.span;
         let no_semicolon =
           if let ExpressionKind::FunctionDef { .. } = value.kind {
@@ -78,12 +75,10 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
         s
       },
       // Assignment
-      (Token(t::Identifier(name), span2), Ok(Token(t::Equal, span3))) => {
+      (Token(t::Identifier(name), span2), Token(t::Equal, span3)) => {
         self.skip(2);
         span = span + span2 + span3;
-        let value = self
-          .expression(0)
-          .trace_span(span, "while parsing declaration")?;
+        let value = self.expression(0)?;
         Statement {
           span,
           kind: s::Declaration {
@@ -99,34 +94,25 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
         span = span + span2;
         let expr = self.expression(0)?;
         span = span + expr.span;
-        if self.look(0, t::RightBrace).is_ok() {
+        if self.look(0, t::RightBrace).is_some() {
           return Ok(Statement {
             span,
             kind: s::Remainder(expr),
           });
         } else {
           use ExpressionKind as e;
-          // Optional semicolon for some expressions
-          match expr.kind {
-            e::Block(..) | e::If { .. } => {
-              return Ok(Statement {
-                span,
-                kind: s::Expression(expr),
-              });
-            },
-            _ => Statement {
-              span,
-              kind: s::Expression(expr),
-            },
+          Statement {
+            span,
+            kind: s::Expression(expr),
           }
         }
       },
     };
     // Check for semicolon
-    if self.eat(t::Semicolon).is_ok() {
+    if self.eat(t::Semicolon).is_some() {
       Ok(statement)
     } else {
-      error!("Expected ;").span(&span)
+      return Err(lint(ParseLint::MissingSemicolon as LintKind, span, &[]));
     }
   }
 }

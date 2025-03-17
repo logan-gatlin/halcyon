@@ -6,20 +6,28 @@ use std::collections::HashMap;
 
 use builtins::Builtin;
 
-use crate::Span;
 use crate::assembly::operators::OpDef;
-use crate::diagnostic;
-use crate::err::*;
-use crate::error;
 use crate::ir::ConstValue;
 use crate::ir::IrPtr;
 use crate::ir::types::Primitive;
 use crate::ir::types::Type;
+use crate::lint::*;
 use crate::parse::BinaryOp;
 use crate::parse::Statement;
 use crate::parse::UnaryOp;
 
 pub type Mangle = String;
+
+#[repr(usize)]
+pub enum NameLint {
+  UndefinedName = 3000,
+  ConstRedefinition = 3001,
+  ParamRedefinition = 3002,
+  InvalidMain = 3003,
+  FieldNotIdent = 3004,
+  MultipleLoopParams = 3005,
+  NoBreakTarget = 3006,
+}
 
 /// Name mangle syntax:
 /// mangle ::= "$" path salt
@@ -189,22 +197,22 @@ impl Canonizer {
       top_node,
       CanonNode {
         kind: CanonKind::Block(top_nodes),
-        span: Span { row: 0, column: 0 },
+        span: Span::default(),
         type_: Type::default(),
       },
     );
-    this
+    let nodes = this
       .nodes
       .clone()
       .into_iter()
-      .map(|ir| ir.ok_or(diagnostic!("Empty node in IR array")))
-      .try_collect::<Vec<_>>()
-      .map(|m| CanonizedModule {
-        nodes: m,
-        functions: this.functions,
-        heap: this.heap,
-        main: this.main,
-      })
+      .map(|ir| ir.unwrap())
+      .collect::<Vec<_>>();
+    Ok(CanonizedModule {
+      nodes,
+      functions: this.functions,
+      heap: this.heap,
+      main: this.main,
+    })
   }
 
   pub(crate) fn new_node(&mut self) -> IrPtr {
@@ -221,7 +229,8 @@ impl Canonizer {
     self
       ._name_to_symbol
       .get(name)
-      .ok_or(diagnostic!("The symbol '{name}' is undefined"))
+      .ok_or(lint_nospan(NameLint::UndefinedName as LintKind))
+      .context(name)
   }
 
   pub(crate) fn next_salt(&mut self) -> String {
@@ -276,7 +285,8 @@ impl Canonizer {
     let old_value = self.name_to_symbol(&name).ok().cloned();
     if let Some(old) = &old_value {
       if old.scope_depth == self.scope_depth && is_constant && old.is_constant {
-        return error!("Conflicting definitions of '{name}' in the same scope");
+        return Err(lint_nospan(NameLint::ConstRedefinition as LintKind))
+          .context(name);
       }
     }
     let event = Event::Modify {

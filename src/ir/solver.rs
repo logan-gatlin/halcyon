@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::err::*;
+use crate::lint::*;
 use crate::naming::builtins::Builtin;
 use crate::naming::{Mangle, mangle_builtin};
 

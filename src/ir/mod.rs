@@ -14,6 +14,14 @@ use crate::{
   parse::{BinaryOp, UnaryOp},
 };
 
+#[repr(usize)]
+pub enum EvalLint {
+  RecursionLimit = 5000,
+  Unreachable = 5001,
+  Circular = 5002,
+  GlyphOutOfRange = 5003,
+}
+
 /// Reference to another IR node
 pub type IrPtr = usize;
 

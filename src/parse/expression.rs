@@ -1,4 +1,4 @@
-use crate::{Base, error};
+use crate::{Base, token::TokenLint};
 
 use super::*;
 
@@ -105,23 +105,23 @@ impl Expression {
   }
 }
 
-impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
+impl<I: Iterator<Item = Token>> Parser<I> {
   pub fn expression(&mut self, precedence: Precedence) -> Result<Expression> {
     use ExpressionKind as e;
     use TokenKind as t;
-    let next = self.peek(0)?;
+    let next = self.peek(0);
     // Unary prefix expression
     let mut current = if let Ok(operator) = UnaryOp::try_from(&next.0) {
       let span = next.1;
       if operator.assoc() == RIGHT_ASSOC {
-        return error!("The {operator} operator must come after a value")
-          .span(&span);
+        return Err(lint(
+          ParseLint::MissingPostfixUnaryOperand as LintKind,
+          span,
+          &[format!("{operator}")],
+        ));
       }
       self.skip(1);
-      let child = self
-        .expression(operator.precedence())
-        .trace_span(span, format!("while parsing unary {}", operator))
-        .span(&span)?;
+      let child = self.expression(operator.precedence()).span(span)?;
       let span = span + child.span;
       Expression::new(
         e::Unary {
@@ -133,10 +133,12 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
     }
     // Primary
     else {
-      self.primary().reason("Expected expression")?
+      self.primary().span(next.1)?
     };
     // Precedence climbing loop
-    while let Ok(next) = self.peek(0) {
+    while let next = self.peek(0)
+      && next.0 != t::EOF
+    {
       // Binary or mixed
       if let Ok(operator) = BinaryOp::try_from(&next.0) {
         {
@@ -148,10 +150,7 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
           }
           self.skip(1);
           let span = next.1;
-          let rhs = self
-            .expression(new_precedence)
-            .trace_span(span, format!("while parsing binary {}", operator))
-            .span(&span)?;
+          let rhs = self.expression(new_precedence).span(span)?;
           let span = next.1 + rhs.span;
           current = Expression::new(
             e::Binary {
@@ -169,11 +168,13 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
           return Ok(current);
         }
         self.skip(1);
-        if self.eat(t::LeftBrace).is_ok() {
+        if self.eat(t::LeftBrace).is_some() {
           let params = self.parameters(span)?;
           self
             .eat(t::RightBrace)
-            .trace_span(span, "while parsing struct declaration")?;
+            .lint(TokenLint::MissingDelimeter as LintKind)
+            .context("}")
+            .span(span)?;
           current = Expression::new(
             e::StructLiteral {
               struct_t: Some(current.into()),
@@ -182,9 +183,7 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
             span,
           )
         } else {
-          let field = self
-            .expression(FIELD_PREC)
-            .trace_span(span, "in field expression")?;
+          let field = self.expression(FIELD_PREC).span(span)?;
           current = Expression::new(
             e::Field {
               namespace: current.into(),
@@ -202,19 +201,17 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
         self.skip(1);
         let mut args = vec![];
         loop {
-          if self.eat(t::RightParen).is_ok() {
+          if self.eat(t::RightParen).is_some() {
             break;
           }
-          let arg = self
-            .expression(0)
-            .trace_span(span, "while parsing function call")?;
+          let arg = self.expression(0).span(span)?;
           span = span + arg.span;
           args.push(arg);
-          if !self.eat(t::Comma).is_ok() {
-            if self.eat(t::RightParen).is_ok() {
+          if !self.eat(t::Comma).is_some() {
+            if self.eat(t::RightParen).is_some() {
               break;
             } else {
-              return error!("Missing comma after this argument").span(&span);
+              return Err(lint(ParseLint::MissingComma as LintKind, span, &[]));
             }
           }
         }
@@ -231,8 +228,11 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
         self.skip(1);
         let span = next.1;
         if operator.assoc() == LEFT_ASSOC {
-          return error!("The {operator} operator must come before a value")
-            .span(&span);
+          return Err(lint(
+            ParseLint::MissingPrefixUnaryOperand as LintKind,
+            span,
+            &[format!("{operator}")],
+          ));
         }
         current = Expression::new(
           e::Unary {
@@ -248,7 +248,7 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
     Ok(current)
   }
 
-  pub fn parameters(&mut self, span: Span) -> Result<Parameters> {
+  pub fn parameters(&mut self, mut span: Span) -> Result<Parameters> {
     use TokenKind as t;
     let mut arity = 0;
     let mut names = vec![];
@@ -256,27 +256,48 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
     let mut spans = vec![];
     loop {
       // Name
-      let (name, span_name) = if let Ok(name) = self.identifier() {
-        name
-      } else {
-        break;
+      let name_token = self.peek(0);
+      let name = match name_token.0 {
+        t::Identifier(s) => s,
+        t::RightBrace | t::RightParen | t::RightSquare => break,
+        _ => {
+          return Err(lint(
+            TokenLint::MissingDelimeter as LintKind,
+            span,
+            &["}".to_string()],
+          ));
+        },
       };
-      names.push(name);
+      self.skip(1);
+      let name_span = name_token.1;
+      span += name_span;
+      names.push(name.clone());
       // Colon
-      self.eat(t::Colon)?;
+      let colon_span = self
+        .eat(t::Colon)
+        .lint(ParseLint::MissingFunctionParameterType as LintKind)
+        .span(name_span)?
+        .1;
+      span += colon_span;
       // Type
-      let type_ = if let Ok(type_) = self.expression(0) {
-        type_
-      } else {
-        return error!("Expected expression after ':'").span(&span);
+      let type_ = match self.expression(0).span(span) {
+        Ok(t) => t,
+        Err(_) => {
+          return Err(lint(
+            ParseLint::MissingFunctionParameterType as LintKind,
+            name_span + colon_span,
+            &[name],
+          ));
+        },
       };
-      spans.push(span_name + type_.span);
+      span += type_.span;
+      spans.push(name_span + type_.span);
       types.push(type_);
       arity += 1;
       // Comma
-      if !self.eat(t::Comma).is_ok() {
-        if self.look(0, t::Identifier("".into())).is_ok() {
-          return error!("Expected comma (,) here").span(&span);
+      if !self.eat(t::Comma).is_some() {
+        if self.look(0, t::Identifier("".into())).is_some() {
+          return Err(lint(ParseLint::MissingComma as LintKind, span, &[]));
         }
         break;
       }
@@ -291,20 +312,16 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
 
   pub fn if_else(&mut self) -> Result<Expression> {
     use TokenKind as t;
-    if let Ok(Token(_, span)) = self.eat(t::If) {
-      let predicate = self
-        .expression(0)
-        .trace_span(span, "in predicate of 'if' statement")?;
+    if let Some(Token(_, span)) = self.eat(t::If) {
+      let predicate = self.expression(0).span(span)?;
       let span = span + predicate.span;
-      let (block, span2) = self
-        .block()
-        .trace_span(span, "in block of 'if' statement")?;
+      let (block, span2) = self.body("if").span(span)?;
       let then = Box::new(Expression {
         kind: ExpressionKind::Block(block),
         span: span2,
       });
       let span = span + span2;
-      let else_ = if self.eat(t::Else).is_ok() {
+      let else_ = if self.eat(t::Else).is_some() {
         Some(Box::new(self.if_else()?))
       } else {
         None
@@ -318,7 +335,7 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
         span,
       ))
     } else {
-      let (block, span) = self.block()?;
+      let (block, span) = self.body("else")?;
       Ok(Expression::new(ExpressionKind::Block(block), span))
     }
   }
@@ -326,12 +343,15 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
   pub fn identifier(&mut self) -> Result<(String, Span)> {
     use TokenKind as t;
     match self.peek(0) {
-      Ok(Token(t::Identifier(i), span)) => {
+      Token(t::Identifier(i), span) => {
         self.skip(1);
         Ok((i, span))
       },
-      Ok(t) => error!("Expected identifier, found {}", t.0).span(&t.1),
-      Err(e) => Err(e),
+      _ => Err(lint(
+        ParseLint::ExpectedIdentifier as LintKind,
+        self.last_span,
+        &[],
+      )),
     }
   }
 }

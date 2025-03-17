@@ -3,60 +3,76 @@ pub mod operators;
 pub mod primary;
 pub(crate) mod statement;
 pub use expression::*;
+use multipeek::{MultiPeek, multipeek};
 pub use operators::*;
 pub use statement::*;
 
-use crate::{Span, Token, TokenKind};
-use crate::{err::*, error};
+pub use crate::lint::*;
+use crate::{Span, Token, TokenKind, token::TokenLint};
 
-const PARSER_LOOKAHEAD: usize = 3;
-
-type TokenIter<'a, I> = crate::Window<'a, PARSER_LOOKAHEAD, Token, I>;
-
-pub struct Parser<'a, I: Iterator<Item = Token>>
-where
-  I: Iterator<Item = Token>,
-  I: 'a,
-{
-  iter: TokenIter<'a, I>,
+pub enum ParseLint {
+  UnexpectedToken = 2000,
+  MissingBody = 2001,
+  MissingBinaryOperand = 2002,
+  MissingPrefixUnaryOperand = 2003,
+  MissingPostfixUnaryOperand = 2004,
+  MissingComma = 2005,
+  MissingFunctionParameterType = 2006,
+  ExpectedIdentifier = 2007,
+  MissingAssignee = 2008,
+  MissingSemicolon = 2009,
 }
 
-impl<'a, I: Iterator<Item = Token>> Iterator for Parser<'a, I> {
+pub fn parse(iter: impl IntoIterator<Item = Token>) -> Vec<Statement> {
+  Parser::new(iter.into_iter()).collect()
+}
+
+pub struct Parser<I>
+where
+  I: Iterator<Item = Token>,
+{
+  iter: MultiPeek<I>,
+  last_span: Span,
+  finished: bool,
+}
+
+impl<I: Iterator<Item = Token>> Iterator for Parser<I> {
   type Item = Statement;
 
   fn next(&mut self) -> Option<Self::Item> {
-    use StatementKind as s;
-    use TokenKind as t;
-    // Trim extra ;
-    while self.eat(t::Semicolon).is_ok() {}
-    loop {
-      if self.eat(t::EOF).is_ok() || self.iter.finished {
-        return None;
-      }
-      match self.statement() {
-        Ok(s) => return Some(s),
-        Err(e) => {
-          loop {
-            let next = self.next_tok();
-            match next {
-              Ok(Token(t::Semicolon | t::RightBrace | t::EOF, _)) => break,
-              _ => {}
-            }
-          }
-          return Some(Statement {
-            span: e.span.unwrap_or(Span { row: 0, column: 0 }),
-            kind: s::Error(e),
-          });
-        }
-      }
+    if self.finished || self.look(0, TokenKind::EOF).is_some() {
+      return None;
+    }
+    match self.statement() {
+      Ok(s) => Some(s),
+      Err(e) => {
+        self.error_correct();
+        Some(Statement {
+          span: e.span.expect("No span for tokenizer error"),
+          kind: StatementKind::Error(e),
+        })
+      },
     }
   }
 }
 
-impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
+impl<I: Iterator<Item = Token>> Parser<I> {
   pub fn new(iter: I) -> Self {
     Self {
-      iter: TokenIter::new(iter),
+      iter: multipeek(iter),
+      last_span: Span { start: 0, width: 0 },
+      finished: false,
+    }
+  }
+
+  fn error_correct(&mut self) {
+    loop {
+      let next = self.next_tok();
+      self.last_span = next.1;
+      match next.0 {
+        TokenKind::EOF | TokenKind::Semicolon | TokenKind::RightBrace => break,
+        _ => {},
+      }
     }
   }
 
@@ -66,56 +82,72 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
     }
   }
 
-  fn next_tok(&mut self) -> Result<Token> {
-    match self.iter.next() {
-      Some(Token(TokenKind::Error(e), span)) => Err(e).span(&span),
-      r => r.reason("Unexpected end of file"),
+  fn next_tok(&mut self) -> Token {
+    if self.finished {
+      return Token(TokenKind::EOF, self.last_span);
     }
+    let token = self
+      .iter
+      .next()
+      .unwrap_or(Token(TokenKind::EOF, self.last_span));
+    self.last_span = token.1;
+    if token.0 == TokenKind::EOF {
+      self.finished = true;
+    }
+    token
   }
 
-  fn peek(&self, n: usize) -> Result<Token> {
-    match self.iter.peek(n).clone() {
-      Some(Token(TokenKind::Error(e), span)) => Err(e).span(&span),
-      r => r.reason("Unexpected end of file"),
-    }
+  fn peek(&mut self, n: usize) -> Token {
+    self
+      .iter
+      .peek_nth(n)
+      .cloned()
+      .unwrap_or(Token(TokenKind::EOF, self.last_span))
   }
 
-  fn eat(&mut self, expect: TokenKind) -> Result<Token> {
-    match self.look(0, expect) {
-      Ok(t) => {
-        self.skip(1);
-        Ok(t)
-      }
-      Err(e) => Err(e),
-    }
+  fn eat(&mut self, expect: TokenKind) -> Option<Token> {
+    self.look(0, expect)?;
+    let next = self.next_tok();
+    Some(next)
   }
 
-  fn look(&mut self, n: usize, expect: TokenKind) -> Result<Token> {
-    let next = self.peek(n)?;
-    if next.0 == expect {
-      Ok(next)
-    } else {
-      error!("Expected {expect}, found {}", next.0).span(&next.1)
-    }
+  fn look(&mut self, n: usize, expect: TokenKind) -> Option<Token> {
+    let next = self.peek(n);
+    if next.0 == expect { Some(next) } else { None }
   }
 
-  fn block(&mut self) -> Result<(Vec<Statement>, Span)> {
+  fn body(
+    &mut self,
+    lint_context: impl Into<String>,
+  ) -> Result<(Vec<Statement>, Span)> {
     use TokenKind as t;
-    let mut span = self.eat(t::LeftBrace).reason("Expected block")?.1;
+    let mut span = self
+      .eat(t::LeftBrace)
+      .lint(ParseLint::MissingBody as LintKind)
+      .context(lint_context)?
+      .1;
     let mut statements = vec![];
     loop {
-      span = span + self.peek(0)?.1;
-      match self.eat(t::RightBrace) {
-        Ok(t) => {
-          span = span + t.1;
+      span = span + self.peek(0).1;
+      match self.peek(0) {
+        Token(t::RightBrace, s) => {
+          span += s;
+          self.skip(1);
           break;
-        }
+        },
+        Token(t::EOF, _) => {
+          return Err(lint(
+            TokenLint::MissingDelimeter as LintKind,
+            span,
+            &["}".to_string()],
+          ));
+        },
         _ => {
           let statement = self.statement()?;
           span = span + statement.span;
           statements.push(statement);
-        }
-      };
+        },
+      }
     }
     Ok((statements, span))
   }

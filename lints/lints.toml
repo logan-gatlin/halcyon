@@ -1,0 +1,196 @@
+# Tokenizer errors
+[1000]
+reason = "Input is not valid UTF-8"
+help = "The input contains bytes which are not valid UTF-8 text. It may be corrupted or have an unexpected encoding"
+
+[1001]
+reason = "Unrecognized escape sequence"
+help = """The recognized escape sequences are:
+  * \\n - new line
+  * \\r - carriage return
+  * \\t - tab
+  * \\b - back space
+  * \\ - backslash
+  * \\\" - double quote
+  * \\' - single quote
+  * \\x7F - Byte character code (2 hex digits)
+  * \\w7FFF - Word character code (4 hex digits)"""
+
+[1002]
+reason = "Missing delimeter"
+help = "Try adding % here"
+
+[1003]
+reason = "Unexpected delimeter"
+help = "Try removing % here"
+
+[1004]
+reason = "Invalid glyph literal"
+help = "A glyph must contain only a single character or escape sequence. Try using a string instead, replace ' with \""
+
+[1005]
+reason = "Invalid integer literal"
+help = """There are a few ways to write an integer:
+  * 9_999 - Decimal number
+  * 0b1111 - Binary number (prefixed with 0b)
+  * 0o777 - Octal number (prefixed with 0o)
+  * 0xFF - Hexadecimal number (prefixed with 0x)
+Base prefixes and hexadecimal digits are case insensitive. Integers may have an underscore '_' characters in any position"""
+
+[1006]
+reason = "Invalid real literal"
+help = """Real numbers may only be written in decimal. A real number must contain a decimal (otherwise it is assumed to be an integer), or be in scientific notation. A few examples of reals are:
+* 1.0
+* 2.71828
+* 3e8 (3000000.0)
+"""
+
+
+# Parsing errors
+[2000]
+reason = "Unexpected token"
+help = ""
+
+[2001]
+reason = "Missing body"
+help = "This % expression is missing a body. A body is a series of expressions surrounded with curly brackets { ... }"
+
+[2002]
+reason = "Missing binary operand"
+help = "The % operator goes in-between the two values that it acts on"
+
+[2003]
+reason = "Missing prefix unary operand"
+help = "The % operator goes before the value it acts on"
+
+[2004]
+reason = "Missing postfix unary operand"
+help = "The % operator goes after the value it acts on"
+
+[2005]
+reason = "Missing comma"
+help = "Try adding a comma (,) after this expression"
+
+[2006]
+reason = "Missing function parameter type"
+help = "Function parameters require a type. Try changing this to `%: <type>`"
+
+[2007]
+reason = "Expected identifier"
+help = "An identifier is required here"
+
+[2008]
+reason = "Missing assignee"
+help = "The declaration % must be assigned a value. Try adding an equals (=) after this expression"
+
+[2009]
+reason = "Missing semicolon"
+help = "Try adding a semicolon (;) after this expression"
+
+# Name errors
+[3000]
+reason = "Undefined name"
+help = "The name '%' cannot be found. Names defined using '=' may only be used after they are defined, while names defined using '::' may be used anywhere within the block they are defined"
+
+[3001]
+reason = "Redefinition of name"
+help = "The constant '%' is defined more than once in the same scope"
+
+[3002]
+reason = "Redefinition of field"
+help = "This % contains more than one parameter with the same name '%'. Try choosing a different name, or removing this parameter"
+
+[3003]
+reason = "Invalid main"
+help = "The name 'main' in the global scope must refer to a function with no parameters and no return type, like: `main :: () {...}`"
+
+[3004]
+reason = "Invalid field"
+help = "The field of a value must be an identifier"
+
+[3005]
+reason = "Multiplie loop parameters"
+help = "A loop may only have a single parameter. Try removing any parameters after the first"
+
+[3006]
+reason = "No target for break"
+help = "'break' expression is used to exit a loop, it may not occur outside of a loop. Try removing 'break'"
+
+# Type errors
+[4000]
+reason = "Type mismatch"
+help = "Expected '%' here, but found '%'"
+
+[4001]
+reason = "Type mismatch"
+help = "The predicate of an if expression must be a boolean, but this expression has the type '%'"
+
+[4002]
+reason = "Type mismatch"
+help = "The return type of this function is declared to be '%', but is actually '%'"
+
+[4003]
+reason = "Type mismatch"
+help = "The parameter for this loop is '%', but this expression is '%'"
+
+[4004]
+reason = "Type mismatch"
+help = "A previous break expression in this loop produced '%', but this break produces '%'"
+
+[4005]
+reason = "Type mismatch"
+help = "This function parameter is '%', but this expression is '%'"
+
+[4006]
+reason = "Type mismatch"
+help = "The field '%' of this struct is '%', but this expression is '%'"
+
+[4007]
+reason = "No fields on type"
+help = "The type '%' has no fields which can be accessed using the '.' operator"
+
+[4008]
+reason = "Structure field missing"
+help = "This structure does not have a field '%''"
+
+[4009]
+reason = "Call of non-function"
+help = "This expression cannot be called because it is '%'. Only functions may be called"
+
+[4010]
+reason = "Too many arguments"
+help = "This function accepts only % arguments. Try removing the extra arguments"
+
+[4011]
+reason = "Too few arguments"
+help = "This function accepts % arguments. Try providing the missing arguments"
+
+[4012]
+reason = "Binary operator undefined"
+help = "The operator % is not defined for the types '%' and '%'"
+
+[4013]
+reason = "Unary operator undefined"
+help = "The operator % is not defined for the type '%'"
+
+[4014]
+reason = "Type modification in compiled artifact"
+help = "Types only exist in the interpreter and the compiler. A compiled program may not interact with types in any way"
+
+# Evaluation errors
+[5000]
+reason = "Recursion limit reached"
+help = "The maximum recursion limit (%) was reached during constant evaluation"
+
+[5001]
+reason = "Encountered unreachable"
+help = ""
+
+[5002]
+reason = "Circular reasoning"
+help = "The definition of this term is unsolvable. Try adding a layer of indirection, or replace some terms with literal values"
+
+[5003]
+reason = "Glyph out of range"
+help = "This expression created an invalid glyph. A glyph must be valid UTF-8"
+

@@ -29,15 +29,11 @@ macro_rules! op {
     }
 
     impl TryFrom<&TokenKind> for $name {
-      type Error = Diagnostic;
-      fn try_from(value: &TokenKind) -> Result<Self> {
+      type Error = ();
+      fn try_from(value: &TokenKind) -> std::result::Result<Self, ()> {
         match value {
           $(TokenKind::$op => Ok(Self::$op),)*
-          _ => Err(Diagnostic {
-            reason: format!("Invalid operator {value}"),
-            span: None,
-            backtrace: Vec::new(),
-          }),
+          _ => Err(()),
         }
       }
     }

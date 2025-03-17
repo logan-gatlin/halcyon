@@ -1,8 +1,9 @@
 use std::collections::HashSet;
 
-use crate::{err::*, error, ir::types::Primitive};
+use crate::{ir::types::Primitive, lint::*};
 
 use super::solver::{Solver, StackValue};
+use super::types::TypeLint;
 use super::{ConstValue, types::Type};
 
 impl Solver {
@@ -80,25 +81,25 @@ impl Solver {
       // If constant is a function, type it
       if let Some(func) = self.module.functions.get(&mangle).cloned() {
         let mut param_types = vec![];
-        for (id, m) in func.parameter_mangles.into_iter().enumerate() {
+        for m in func.parameter_mangles.into_iter() {
           let block = self.module.type_assertions.get(&m).unwrap();
           self.evaluate_block(*block)?;
-          let ConstValue::Type(t) = self.pop().clone() else {
-            return error!(
-              "The type assertion for parameter {} is a term, not a type",
-              id + 1
-            );
+          let top = self.pop().clone();
+          let ConstValue::Type(t) = top else {
+            return Err(lint_nospan(TypeLint::TypeMismatch as LintKind))
+              .context("type")
+              .context(format!("{}", self.type_of_const(&top)));
           };
           param_types.push(t);
         }
         let return_type = if let Some(r) = func.returns_mangle {
           let block = self.module.type_assertions.get(&r).unwrap();
           self.evaluate_block(*block)?;
-          let ConstValue::Type(t) = self.pop().clone() else {
-            return error!(
-              "The type assertion for this function's return type is a term, \
-               not a type",
-            );
+          let top = self.pop().clone();
+          let ConstValue::Type(t) = top else {
+            return Err(lint_nospan(TypeLint::TypeMismatch as LintKind))
+              .context("type")
+              .context(format!("{}", self.type_of_const(&top)));
           };
           t
         } else {
@@ -127,16 +128,15 @@ impl Solver {
         self.evaluate_block(assert_block)?;
         let top = self.pop();
         let ConstValue::Type(assert) = top else {
-          return error!(
-            "Type assertion expects type, found value '{top}' instead"
-          );
+          return Err(lint_nospan(TypeLint::TypeMismatch as LintKind))
+            .context("type")
+            .context(format!("{}", self.type_of_const(&top)));
         };
         if let Some(existing_type) = self.type_map.get(&mangle) {
           if existing_type != &assert {
-            return error!(
-              "Asserted type is '{assert}', but declaration was assigned \
-               '{existing_type}'"
-            );
+            return Err(lint_nospan(TypeLint::TypeMismatch as LintKind))
+              .context(format!("{assert}"))
+              .context(format!("{existing_type}"));
           }
         }
         self.assert_map.insert(mangle, assert);

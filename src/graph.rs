@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 pub struct Graph {
   pub nodes: Vec<Node>,
   pub edges: Vec<Edge>,

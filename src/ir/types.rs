@@ -206,3 +206,16 @@ impl std::fmt::Display for Type {
     }
   }
 }
+
+#[repr(usize)]
+pub enum TypeLint {
+  TypeMismatch = 4000,
+  NoFieldOnType = 4007,
+  FieldMissing = 4008,
+  NonFunctionCall = 4009,
+  TooManyArgs = 4010,
+  TooFewArgs = 4011,
+  BinaryOpUndefined = 4012,
+  UnaryOpUndefined = 4013,
+  Sanitization = 4014,
+}
