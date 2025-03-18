@@ -1,25 +1,18 @@
 use std::collections::HashSet;
 
-use crate::{
-  hlir::{CanonizedModule, types::Type},
-  lint::*,
-  mlir::{IrPtr, solver::Solution},
-};
+use crate::{hlir::*, lint::*, mlir::*};
 
 mod checking;
 mod sanitize;
 
 pub struct TypeChecker {
-  pub module: CanonizedModule,
+  pub module: HlIrModule,
   pub solution: Solution,
   pub break_stack: Vec<Type>,
 }
 
 impl TypeChecker {
-  pub fn typecheck(
-    module: CanonizedModule,
-    solution: Solution,
-  ) -> Result<(CanonizedModule, HashSet<IrPtr>)> {
+  pub fn typecheck(module: HlIrModule, solution: Solution) -> Result<(HlIrModule, HashSet<IrPtr>)> {
     let mut this = Self::new(module, solution);
     this.check(0)?;
     let functions = this.sanitize_main()?;

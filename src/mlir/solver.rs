@@ -24,7 +24,7 @@ pub(super) struct ReturnAddress {
 
 #[derive(Debug, Clone)]
 pub struct Solver {
-  pub module: Module,
+  pub module: MlIrModule,
   pub dependency_graph: HashMap<Mangle, HashSet<Mangle>>,
   pub type_map: HashMap<Mangle, Type>,
   pub assert_map: HashMap<Mangle, Type>,
@@ -43,7 +43,7 @@ pub struct Solution {
 }
 
 impl Solver {
-  pub fn solve(module: Module) -> Result<Solution> {
+  pub fn solve(module: MlIrModule) -> Result<Solution> {
     let mut this = Self::new(module);
     this.consteval_module()?;
     // Account for implicit function type assertions
@@ -64,7 +64,7 @@ impl Solver {
     })
   }
 
-  fn new(module: Module) -> Self {
+  fn new(module: MlIrModule) -> Self {
     let assertion_dependencies = module.type_assertions.iter().map(|(mangle, assert)| {
       let mut deps = module.find_type_dependencies(*assert);
       deps.remove(mangle);
@@ -125,7 +125,7 @@ impl Solver {
   }
 }
 
-impl Module {
+impl MlIrModule {
   /// Depth first search that finds all direct and
   /// indirect dependencies needed to determine the
   /// type of every expression in the block,

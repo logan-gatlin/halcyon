@@ -40,7 +40,7 @@ fn main() {
   let linter = Linter::new(input.clone());
   let tokens = tokenize(input.chars()).unwrap_lint(&linter);
   let parse_tree = parse(tokens);
-  let canon_module = Canonizer::canonize_ast(parse_tree).unwrap_lint(&linter);
+  let canon_module = build_hlir(parse_tree).unwrap_lint(&linter);
   let cflow = Analyzer::analyze(&canon_module).unwrap_lint(&linter);
   let solution = Solver::solve(cflow).unwrap_lint(&linter);
   let (module, clean_nodes) = TypeChecker::typecheck(canon_module, solution).unwrap_lint(&linter);

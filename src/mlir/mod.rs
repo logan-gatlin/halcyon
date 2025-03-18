@@ -1,4 +1,5 @@
 mod consteval;
+pub mod generate;
 mod interpret;
 pub mod solver;
 
@@ -6,10 +7,8 @@ use std::collections::HashMap;
 
 use crate::{Span, graph::Graph, hlir::*, operator::*, parse::*};
 
+pub use generate::*;
 pub use solver::*;
-
-/// Reference to another IR node
-pub type IrPtr = usize;
 
 #[derive(Debug, Clone)]
 pub enum Block {
@@ -64,7 +63,7 @@ impl Default for Block {
 }
 
 #[derive(Debug, Clone)]
-pub struct Module {
+pub struct MlIrModule {
   pub heap: Vec<Vec<u8>>,
   pub constants: HashMap<Mangle, IrPtr>,
   pub functions: HashMap<Mangle, FunctionInfo>,
@@ -72,7 +71,7 @@ pub struct Module {
   pub blocks: Vec<Block>,
 }
 
-impl Module {
+impl MlIrModule {
   pub fn to_json(&self) -> String {
     let mut graph = Graph::new();
     for (i, b) in self.blocks.iter().enumerate() {
@@ -163,6 +162,15 @@ pub enum MlIrKind {
   Call { arity: usize },
   /// Clear the stack of any values up to the last enscope
   Drop,
+  /*
+  // Pop 1 boolean, branch to `then_ptr` if it is true, `else_ptr` otherwise
+  Branch {
+    then_ptr: IrPtr,
+    else_ptr: IrPtr,
+  },
+  // Jump to relative position
+  Jump(i64),
+  */
   /// Inserts a scope guard, prevents popping values pushed
   /// before this point
   StartScope,

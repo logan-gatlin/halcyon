@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::{hlir::*, lint::*, mlir::*};
+use crate::{hlir::*, lint::*};
 
-use super::{CanonizedModule, HlIrNode, Mangle};
+use super::*;
 
 pub struct Analyzer {
   nodes: Vec<HlIrNode>,
@@ -16,7 +16,7 @@ pub struct Analyzer {
 impl Analyzer {
   const TERMINUS: IrPtr = 0;
 
-  pub fn analyze(canon_mod: &CanonizedModule) -> Result<Module> {
+  pub fn analyze(canon_mod: &HlIrModule) -> Result<MlIrModule> {
     let mut this = Self::new(canon_mod.nodes.clone());
     let block = this.new_block();
     this.analyze_node(0, block)?;
@@ -27,7 +27,7 @@ impl Analyzer {
       type_assertions,
       ..
     } = this;
-    Ok(Module {
+    Ok(MlIrModule {
       heap: canon_mod.heap.clone(),
       constants,
       functions,

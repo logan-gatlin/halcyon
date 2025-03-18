@@ -1,20 +1,23 @@
 pub mod builtins;
 mod canon;
 pub mod constant;
-mod control_flow;
 pub mod types;
 
 use std::collections::HashMap;
 
-use crate::{lint::*, mlir::*, operator::*, parse::*};
+use crate::{lint::*, operator::*, parse::*};
 
 pub use builtins::*;
 pub use canon::*;
 pub use constant::*;
-pub use control_flow::*;
 pub use types::*;
 
+pub type IrPtr = usize;
 pub type Mangle = String;
+
+pub fn build_hlir(stmts: Vec<Statement>) -> Result<HlIrModule> {
+  Canonizer::canonize_ast(stmts)
+}
 
 /// Name mangle syntax:
 /// mangle ::= "$" path salt
@@ -123,14 +126,14 @@ pub enum HlIrKind {
 }
 
 #[derive(Debug, Clone)]
-pub struct CanonizedModule {
+pub struct HlIrModule {
   pub nodes: Vec<HlIrNode>,
   pub functions: HashMap<Mangle, IrPtr>,
   pub heap: Vec<Vec<u8>>,
   pub main: Option<Mangle>,
 }
 
-impl CanonizedModule {
+impl HlIrModule {
   pub fn type_of(&self, node: IrPtr) -> Type {
     self.nodes[node].type_.clone()
   }
@@ -175,7 +178,7 @@ impl Canonizer {
     this
   }
 
-  pub fn canonize_ast(stmts: Vec<Statement>) -> Result<CanonizedModule> {
+  pub fn canonize_ast(stmts: Vec<Statement>) -> Result<HlIrModule> {
     let mut this = Self::new();
     let top_node = this.new_node();
     let top_nodes = this.canon_block(stmts)?;
@@ -190,7 +193,7 @@ impl Canonizer {
       .into_iter()
       .map(|ir| ir.unwrap())
       .collect::<Vec<_>>();
-    Ok(CanonizedModule {
+    Ok(HlIrModule {
       nodes,
       functions: this.functions,
       heap: this.virtual_memory,

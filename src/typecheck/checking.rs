@@ -6,7 +6,7 @@ use Primitive as p;
 use super::TypeChecker;
 
 impl TypeChecker {
-  pub(super) fn new(module: CanonizedModule, solution: Solution) -> Self {
+  pub(super) fn new(module: HlIrModule, solution: Solution) -> Self {
     Self {
       module,
       solution,

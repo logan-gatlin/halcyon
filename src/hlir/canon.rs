@@ -1,5 +1,5 @@
 use super::*;
-use crate::{Span, lint::*, mlir::*, operator::*, parse::*, token::*};
+use crate::{Span, lint::*, operator::*, parse::*, token::*};
 use std::collections::HashSet;
 
 pub fn parse_int_literal(value: &str, base: u32) -> Result<i64> {

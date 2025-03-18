@@ -26,11 +26,11 @@ pub struct Compiler {
   /// to refer to
   break_stack: Vec<BreakTarget>,
 
-  module: CanonizedModule,
+  module: HlIrModule,
 }
 
 impl Compiler {
-  pub fn new(module: CanonizedModule) -> Self {
+  pub fn new(module: HlIrModule) -> Self {
     Self {
       unique_salt: 0,
       break_stack: vec![],
@@ -60,7 +60,7 @@ impl Compiler {
     self.module.heap.clone().into_iter().flatten().collect()
   }
 
-  pub fn compile(module: CanonizedModule, to_compile: Vec<IrPtr>) -> String {
+  pub fn compile(module: HlIrModule, to_compile: Vec<IrPtr>) -> String {
     let mut this = Self::new(module);
     let heap = this.build_data();
     let mut regs: Vec<Wasm> = Builtin::ALL.into_iter().flat_map(|b| b.import()).collect();
