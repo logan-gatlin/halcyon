@@ -33,6 +33,7 @@ pub enum ParseLint {
   ExpectedIdentifier = 2007,
   MissingAssignee = 2008,
   MissingSemicolon = 2009,
+  MissingLoopParameter = 2010,
 }
 
 #[repr(usize)]

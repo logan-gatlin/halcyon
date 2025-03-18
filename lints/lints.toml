@@ -87,6 +87,10 @@ help = "The declaration % must be assigned a value. Try adding an equals (=) aft
 reason = "Missing semicolon"
 help = "Try adding a semicolon (;) after this expression"
 
+[2010]
+reason = "Missing loop parameter"
+help = "A loop requires a parameter to iterate over. A parameter consists of a name and an initial value, for example: `loop i: 0 { i + 1 }`"
+
 # Name errors
 [3000]
 reason = "Undefined name"

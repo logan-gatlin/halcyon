@@ -23,7 +23,9 @@ impl TypeChecker {
       ConstValue::Boolean(_) => p::boolean.promote(),
       ConstValue::String { .. } => p::string.promote(),
       ConstValue::Glyph(_) => p::glyph.promote(),
-      ConstValue::Function(mangle) => self.solution.assertions.get(mangle).unwrap().clone(),
+      ConstValue::Function(mangle) => {
+        self.solution.assertions.get(mangle).unwrap().clone()
+      },
       ConstValue::StructLiteral {
         member_names,
         member_values,
@@ -56,10 +58,11 @@ impl TypeChecker {
           .into_iter()
           .map(|t| match self.consteval(t) {
             Ok(Some(ConstValue::Type(t))) => Ok(Some(t)),
-            Ok(Some(c)) => Err(lint(TypeLint::TypeMismatch, span, &[
-              "type".to_string(),
-              format!("{}", self.const_type(&c)),
-            ])),
+            Ok(Some(c)) => Err(lint(
+              TypeLint::TypeMismatch,
+              span,
+              &["type".to_string(), format!("{}", self.const_type(&c))],
+            )),
             Ok(None) => Ok(None),
             Err(e) => Err(e),
           })
@@ -73,7 +76,7 @@ impl TypeChecker {
           member_names: fields,
           member_types: types,
         }))
-      }
+      },
       StructLiteral {
         struct_t,
         field_names,
@@ -125,17 +128,18 @@ impl TypeChecker {
         let value_t = self.check(value)?;
         if let Some(assert) = self.solution.assertions.get(&assignee) {
           if !value_t.ambiguous() && !is_constant && &value_t != assert {
-            return Err(lint(TypeLint::TypeMismatch, span, &[
-              format!("{assert}"),
-              format!("{value_t}"),
-            ]));
+            return Err(lint(
+              TypeLint::TypeMismatch,
+              span,
+              &[format!("{assert}"), format!("{value_t}")],
+            ));
           }
         }
         if !is_constant {
           self.solution.assertions.insert(assignee, value_t);
         }
         p::nothing.promote()
-      }
+      },
       Immediate(const_value) => self.const_type(&const_value),
       Block(items) => {
         let mut never = false;
@@ -155,7 +159,7 @@ impl TypeChecker {
         } else {
           type_.unwrap_or(p::nothing.promote())
         }
-      }
+      },
       Identifier(name) => {
         if let Some(c) = self.solution.constants.get(&name).cloned() {
           let type_ = self.const_type(&c);
@@ -164,7 +168,7 @@ impl TypeChecker {
         } else {
           self.solution.assertions.get(&name).unwrap().clone()
         }
-      }
+      },
       StructDef { .. } => Type::Type,
       StructLiteral {
         struct_t,
@@ -195,17 +199,22 @@ impl TypeChecker {
         };
         if let Some(value) = value {
           let ConstValue::Type(expected @ Type::Struct { .. }) = value else {
-            return Err(lint(TypeLint::NoFieldOnType, span, &[format!("{value}")]));
+            return Err(lint(
+              TypeLint::NoFieldOnType,
+              span,
+              &[format!("{value}")],
+            ));
           };
           if expected != node_type {
-            return Err(lint(TypeLint::TypeMismatch, span, &[
-              format!("{expected}"),
-              format!("{node_type}"),
-            ]));
+            return Err(lint(
+              TypeLint::TypeMismatch,
+              span,
+              &[format!("{expected}"), format!("{node_type}")],
+            ));
           }
         }
         node_type
-      }
+      },
       Field { of, index } => {
         let struct_t = self.check(of)?;
         if struct_t.ambiguous() {
@@ -216,9 +225,11 @@ impl TypeChecker {
           member_types,
         } = struct_t
         else {
-          return Err(lint(TypeLint::NoFieldOnType, span, &[format!(
-            "{struct_t}"
-          )]));
+          return Err(lint(
+            TypeLint::NoFieldOnType,
+            span,
+            &[format!("{struct_t}")],
+          ));
         };
         let pos = member_names
           .iter()
@@ -227,7 +238,7 @@ impl TypeChecker {
           .context(format!("{index}"))
           .span(span)?;
         member_types[pos].clone()
-      }
+      },
       Binary {
         op, left, right, ..
       } => {
@@ -246,7 +257,7 @@ impl TypeChecker {
           right,
         };
         opdef.produces
-      }
+      },
       Unary { op, child, .. } => {
         let child_t = self.check(child)?;
         let opdef = OpTable::new().try_unary(op, &child_t).span(span)?;
@@ -256,7 +267,7 @@ impl TypeChecker {
           child,
         };
         opdef.produces
-      }
+      },
       FunctionDef { name, body, .. } => {
         let func_type = self.solution.assertions.get(&name).cloned().unwrap();
         let Type::Function { return_type, .. } = &func_type else {
@@ -269,15 +280,16 @@ impl TypeChecker {
           };
           let span = body_nodes
             .last()
-            .map(|l| self.module.span_of(*l))
+            .map(|l| self.module.value_span(*l))
             .unwrap_or(span);
-          return Err(lint(TypeLint::TypeMismatch, span, &[
-            format!("{return_type}"),
-            format!("{body_t}"),
-          ]));
+          return Err(lint(
+            TypeLint::TypeMismatch,
+            span,
+            &[format!("{return_type}"), format!("{body_t}")],
+          ));
         }
         func_type
-      }
+      },
       FunctionCall {
         callee, arguments, ..
       } => {
@@ -301,16 +313,19 @@ impl TypeChecker {
         else {
           panic!()
         };
-        for ((found, span), expects) in argument_types.into_iter().zip(param_types) {
+        for ((found, span), expects) in
+          argument_types.into_iter().zip(param_types)
+        {
           if found != expects {
-            return Err(lint(TypeLint::TypeMismatch, span, &[
-              format!("{expects}"),
-              format!("{found}"),
-            ]));
+            return Err(lint(
+              TypeLint::TypeMismatch,
+              span,
+              &[format!("{expects}"), format!("{found}")],
+            ));
           }
         }
         *return_type
-      }
+      },
       If {
         predicate,
         then,
@@ -318,10 +333,11 @@ impl TypeChecker {
       } => {
         let predicate_t = self.check(predicate)?;
         if predicate_t != p::boolean.promote() {
-          return Err(lint(TypeLint::TypeMismatch, span, &[
-            format!("{}", Primitive::boolean),
-            format!("{predicate_t}"),
-          ]));
+          return Err(lint(
+            TypeLint::TypeMismatch,
+            span,
+            &[format!("{}", Primitive::boolean), format!("{predicate_t}")],
+          ));
         }
         let then_t = self.check(then)?;
         let else_t = if let Some(else_) = else_ {
@@ -337,15 +353,16 @@ impl TypeChecker {
           (P(p::unreachable), P(p::unreachable)) => P(p::unreachable),
           (P(p::unreachable), P(t)) | (P(t), P(p::unreachable)) => P(t),
           (then_t, else_t) if then_t != else_t => {
-            return Err(lint(TypeLint::TypeMismatch, span, &[
-              format!("{then_t}"),
-              format!("{else_t}"),
-            ]));
-          }
+            return Err(lint(
+              TypeLint::TypeMismatch,
+              span,
+              &[format!("{then_t}"), format!("{else_t}")],
+            ));
+          },
           (then_t, _) => then_t,
         };
         result_t
-      }
+      },
       Loop {
         parameter_names,
         parameter_values,
@@ -364,28 +381,34 @@ impl TypeChecker {
         let body_t = self.check(body)?;
         let break_t = self.break_stack.pop().unwrap();
         let actual_types = vec![body_t];
-        if param_types != actual_types {
-          return Err(lint(TypeLint::TypeMismatch, span, &[
-            format!(
-              "{}",
-              param_types
-                .iter()
-                .map(|p| p.to_string())
-                .collect::<Vec<_>>()
-                .join(", ")
-            ),
-            format!(
-              "{}",
-              actual_types
-                .iter()
-                .map(|p| p.to_string())
-                .collect::<Vec<_>>()
-                .join(", ")
-            ),
-          ]));
+        if param_types != actual_types
+          && !actual_types.contains(&Primitive::unreachable.promote())
+        {
+          return Err(lint(
+            TypeLint::TypeMismatch,
+            self.module.value_span(body),
+            &[
+              format!(
+                "{}",
+                param_types
+                  .iter()
+                  .map(|p| p.to_string())
+                  .collect::<Vec<_>>()
+                  .join(", ")
+              ),
+              format!(
+                "{}",
+                actual_types
+                  .iter()
+                  .map(|p| p.to_string())
+                  .collect::<Vec<_>>()
+                  .join(", ")
+              ),
+            ],
+          ));
         }
         break_t
-      }
+      },
       Break(maybe_node) => {
         let type_ = if let Some(break_node) = maybe_node {
           self.check(break_node)?
@@ -394,14 +417,15 @@ impl TypeChecker {
         };
         let break_t = self.break_stack.last_mut().unwrap();
         if break_t != &p::unreachable.promote() && &type_ != break_t {
-          return Err(lint(TypeLint::TypeMismatch, span, &[
-            format!("{break_t}"),
-            format!("{type_}"),
-          ]));
+          return Err(lint(
+            TypeLint::TypeMismatch,
+            span,
+            &[format!("{break_t}"), format!("{type_}")],
+          ));
         }
         *self.break_stack.last_mut().unwrap() = type_;
         p::unreachable.promote()
-      }
+      },
     };
     self.module.nodes[node].type_ = type_.clone();
     Ok(type_)

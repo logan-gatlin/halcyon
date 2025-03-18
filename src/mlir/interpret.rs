@@ -1,4 +1,6 @@
-use crate::{compile::*, compiler_print, hlir::*, lint::*, mlir::*, operator::*};
+use crate::{
+  compile::*, compiler_print, hlir::*, lint::*, mlir::*, operator::*,
+};
 
 impl Solver {
   pub fn evaluate_block(&mut self, block: IrPtr) -> Result<()> {
@@ -38,10 +40,10 @@ impl Solver {
           } else {
             break;
           }
-        }
+        },
         Block::Unreachable => {
           return Err(lint_nospan(EvalLint::Unreachable));
-        }
+        },
         Block::Branch {
           span,
           when_true,
@@ -53,12 +55,13 @@ impl Solver {
           match val {
             ConstValue::Boolean(true) => Ok(when_true),
             ConstValue::Boolean(false) => Ok(when_false),
-            v => Err(lint(TypeLint::TypeMismatch, span, &[
-              "boolean".to_string(),
-              format!("{v}"),
-            ])),
+            v => Err(lint(
+              TypeLint::TypeMismatch,
+              span,
+              &["boolean".to_string(), format!("{v}")],
+            )),
           }
-        }
+        },
         Block::Basic { body, next } => {
           if self.ip == body.len() {
             self.ip = 0;
@@ -79,23 +82,27 @@ impl Solver {
                 let value = self.pop();
                 if self.module.constants.contains_key(mangle) {
                   if self.const_value_map.contains_key(mangle) {
-                    panic!("Duplicate initializations of {mangle} during const-eval")
+                    panic!(
+                      "Duplicate initializations of {mangle} during const-eval"
+                    )
                   }
                   let set_type = self.type_of_const(&value);
-                  let old_type = self.type_map.insert(mangle.clone(), set_type.clone());
+                  let old_type =
+                    self.type_map.insert(mangle.clone(), set_type.clone());
                   if let Some(old_type) = old_type
                     && set_type != old_type
                   {
-                    return Err(lint(TypeLint::TypeMismatch, instr.span, &[
-                      format!("{old_type}"),
-                      format!("{set_type}"),
-                    ]));
+                    return Err(lint(
+                      TypeLint::TypeMismatch,
+                      instr.span,
+                      &[format!("{old_type}"), format!("{set_type}")],
+                    ));
                   }
                   self.const_value_map.insert(mangle.clone(), value);
                 } else {
                   self.rt_value_map.insert(mangle.clone(), value);
                 };
-              }
+              },
               MlIrKind::Get(mangle) => {
                 let map = if self.const_value_map.contains_key(mangle) {
                   &mut self.const_value_map
@@ -106,7 +113,7 @@ impl Solver {
                   return Err(lint(EvalLint::Circular, instr.span, &[]));
                 };
                 self.push(value.clone());
-              }
+              },
               MlIrKind::BinaryOp { kind } => {
                 let right = self.pop();
                 let right_t = self.type_of_const(&right);
@@ -115,18 +122,23 @@ impl Solver {
                 let opdef = optable
                   .try_binary(*kind, &left_t, &right_t)
                   .span(instr.span)?;
-                let result = VirtualMachine::run(vec![left, right], opdef.asm, opdef.produces)
-                  .span(instr.span)?;
+                let result = VirtualMachine::run(
+                  vec![left, right],
+                  opdef.asm,
+                  opdef.produces,
+                )
+                .span(instr.span)?;
                 self.push(result);
-              }
+              },
               MlIrKind::UnaryOp { kind } => {
                 let on = self.pop();
                 let on_t = self.type_of_const(&on);
                 let opdef = optable.try_unary(*kind, &on_t).span(instr.span)?;
                 let result =
-                  VirtualMachine::run(vec![on], opdef.asm, opdef.produces).span(instr.span)?;
+                  VirtualMachine::run(vec![on], opdef.asm, opdef.produces)
+                    .span(instr.span)?;
                 self.push(result);
-              }
+              },
               MlIrKind::Field(field_name) => {
                 let top = self.pop();
                 let ConstValue::StructLiteral {
@@ -134,10 +146,11 @@ impl Solver {
                   member_values,
                 } = top
                 else {
-                  return Err(lint(TypeLint::NoFieldOnType, instr.span, &[format!(
-                    "{}",
-                    self.type_of_const(&top)
-                  )]));
+                  return Err(lint(
+                    TypeLint::NoFieldOnType,
+                    instr.span,
+                    &[format!("{}", self.type_of_const(&top))],
+                  ));
                 };
                 let pos = member_names
                   .iter()
@@ -146,7 +159,7 @@ impl Solver {
                   .context(format!("{field_name}"))
                   .span(instr.span)?;
                 self.push(member_values[pos].clone());
-              }
+              },
               MlIrKind::StructLiteral { param_names } => {
                 let member_values: Vec<_> =
                   (0..param_names.len()).map(|_| self.pop()).rev().collect();
@@ -154,7 +167,7 @@ impl Solver {
                   member_names: param_names.clone(),
                   member_values,
                 })
-              }
+              },
               MlIrKind::StructDef {
                 fields: param_names,
               } => {
@@ -165,10 +178,14 @@ impl Solver {
                     if let ConstValue::Type(t) = top {
                       Ok(t)
                     } else {
-                      Err(lint(TypeLint::TypeMismatch, instr.span, &[
-                        "type".to_string(),
-                        format!("{}", self.type_of_const(&top)),
-                      ]))
+                      Err(lint(
+                        TypeLint::TypeMismatch,
+                        instr.span,
+                        &[
+                          "type".to_string(),
+                          format!("{}", self.type_of_const(&top)),
+                        ],
+                      ))
                     }
                   })
                   .try_collect()?;
@@ -177,28 +194,30 @@ impl Solver {
                   member_names: param_names.clone(),
                   member_types,
                 }))
-              }
+              },
               MlIrKind::TypeAssert(mangle) => {
                 let assert_type = self.pop();
                 let ConstValue::Type(assert) = assert_type else {
-                  return Err(lint(TypeLint::TypeMismatch, instr.span, &[
-                    "type".to_string(),
-                    format!("{assert_type}"),
-                  ]));
+                  return Err(lint(
+                    TypeLint::TypeMismatch,
+                    instr.span,
+                    &["type".to_string(), format!("{assert_type}")],
+                  ));
                 };
                 let actual_val = self.pop();
                 let actual_t = self.type_of_const(&actual_val);
                 if actual_t != assert {
-                  return Err(lint(TypeLint::TypeMismatch, instr.span, &[
-                    format!("{assert}"),
-                    format!("{actual_t}"),
-                  ]));
+                  return Err(lint(
+                    TypeLint::TypeMismatch,
+                    instr.span,
+                    &[format!("{assert}"), format!("{actual_t}")],
+                  ));
                 }
                 self.push(actual_val);
                 if let Some(mangle) = mangle {
                   self.type_map.insert(mangle.clone(), assert);
                 }
-              }
+              },
               MlIrKind::Call { arity } => {
                 let func = self.pop();
                 let func_type = self.type_of_const(&func);
@@ -207,9 +226,11 @@ impl Solver {
                   return_type,
                 } = func_type
                 else {
-                  return Err(lint(TypeLint::NonFunctionCall, instr.span, &[format!(
-                    "{func_type}"
-                  )]));
+                  return Err(lint(
+                    TypeLint::NonFunctionCall,
+                    instr.span,
+                    &[format!("{func_type}")],
+                  ));
                 };
                 if param_types.len() != *arity {
                   return Err(lint(
@@ -230,10 +251,11 @@ impl Solver {
                     let param = self.pop();
                     let param_t = self.type_of_const(&param);
                     if param_t != expected {
-                      Err(lint(TypeLint::TypeMismatch, instr.span, &[
-                        format!("{expected}"),
-                        format!("{param_t}"),
-                      ]))
+                      Err(lint(
+                        TypeLint::TypeMismatch,
+                        instr.span,
+                        &[format!("{expected}"), format!("{param_t}")],
+                      ))
                     } else {
                       Ok(param)
                     }
@@ -264,17 +286,18 @@ impl Solver {
                   self.ip = 0;
                   continue; // Prevent IP from incrementing
                 }
-              }
+              },
               MlIrKind::Drop => {
                 self.pop();
-              }
+              },
               MlIrKind::StartScope => self.start_scope_v(),
               MlIrKind::EndScope => self.end_scope_v(),
+              _ => panic!(),
             }
             self.ip += 1;
             Ok(self.block)
           }
-        }
+        },
       }?;
     }
     Ok(())
@@ -292,37 +315,37 @@ impl Solver {
         };
         let s = String::from_utf8_lossy(&self.module.heap[virtual_address]);
         compiler_print(s);
-      }
+      },
       Builtin::PrintReal => {
         let ConstValue::Real(r) = self.pop() else {
           panic!();
         };
         compiler_print(r.to_string());
-      }
+      },
       Builtin::PrintGlyph => {
         let ConstValue::Glyph(g) = self.pop() else {
           panic!();
         };
         compiler_print(g);
-      }
+      },
       Builtin::PrintInteger => {
         let ConstValue::Integer(i) = self.pop() else {
           panic!();
         };
         compiler_print(i.to_string());
-      }
+      },
       Builtin::PrintBoolean => {
         let ConstValue::Boolean(b) = self.pop() else {
           panic!();
         };
         compiler_print(b.to_string());
-      }
+      },
       Builtin::PrintType => {
         let ConstValue::Type(t) = self.pop() else {
           panic!();
         };
         compiler_print(format!("{t}"));
-      }
+      },
     };
     Ok(())
   }

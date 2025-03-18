@@ -30,10 +30,16 @@ impl TypeChecker {
     Ok(visited)
   }
 
-  fn sanitize_node(&self, node: IrPtr, to_visit: &mut Vec<IrPtr>) -> Result<()> {
+  fn sanitize_node(
+    &self,
+    node: IrPtr,
+    to_visit: &mut Vec<IrPtr>,
+  ) -> Result<()> {
     let err = Err(lint_nospan(TypeLint::Sanitization));
     let span = self.module.nodes[node].span;
-    if let Immediate(ConstValue::Function(mangle)) = &self.module.nodes[node].kind {
+    if let Immediate(ConstValue::Function(mangle)) =
+      &self.module.nodes[node].kind
+    {
       // Only push non-builtin functions
       if let Some(mangle) = self.module.functions.get(mangle) {
         to_visit.push(mangle.clone());
@@ -54,24 +60,24 @@ impl TypeChecker {
       } => {
         let type_ = self.module.type_of(*value);
         if (type_.ambiguous() || type_ == Type::Type) && !is_constant {
-          return err.span(self.module.span_of(*value));
+          return err.span(self.module.value_span(*value));
         }
         if !is_constant {
           sanitize(*value)?;
         }
-      }
-      Immediate(_) => {}
+      },
+      Immediate(_) => {},
       Block(items) => {
         for item in items {
           sanitize(*item)?;
         }
-      }
-      Identifier(_) => {}
+      },
+      Identifier(_) => {},
       StructDef { types, .. } => {
         for type_ in types {
           sanitize(*type_)?;
         }
-      }
+      },
       StructLiteral {
         struct_t,
         field_values,
@@ -83,20 +89,20 @@ impl TypeChecker {
         for value in field_values {
           sanitize(*value)?;
         }
-      }
+      },
       Field { of, .. } => {
         sanitize(*of)?;
-      }
+      },
       Binary { left, right, .. } => {
         sanitize(*left)?;
         sanitize(*right)?;
-      }
+      },
       Unary { child, .. } => {
         sanitize(*child)?;
-      }
+      },
       FunctionDef { body, .. } => {
         sanitize(*body)?;
-      }
+      },
       FunctionCall {
         callee, arguments, ..
       } => {
@@ -104,7 +110,7 @@ impl TypeChecker {
         for arg in arguments {
           sanitize(*arg)?;
         }
-      }
+      },
       If {
         predicate,
         then,
@@ -115,7 +121,7 @@ impl TypeChecker {
         if let Some(else_) = else_ {
           sanitize(*else_)?;
         }
-      }
+      },
       Loop {
         parameter_values,
         body,
@@ -125,12 +131,12 @@ impl TypeChecker {
           sanitize(*val)?;
         }
         sanitize(*body)?;
-      }
+      },
       Break(node) => {
         if let Some(node) = node {
           sanitize(*node)?;
         }
-      }
+      },
     };
     Ok(())
   }
