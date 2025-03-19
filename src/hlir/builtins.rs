@@ -52,7 +52,21 @@ impl Builtin {
       | Builtin::PrintReal
       | Builtin::PrintInteger
       | Builtin::PrintBoolean
-      | Builtin::PrintType => ConstValue::Function(mangle_builtin(self.to_string())),
+      | Builtin::PrintType => {
+        let Type::Function {
+          param_types,
+          return_type,
+        } = self.type_()
+        else {
+          panic!()
+        };
+        ConstValue::Function {
+          name: mangle_builtin(self.to_string()),
+          parameters: param_types,
+          returns: *return_type,
+        }
+      }
+      //ConstValue::Function(mangle_builtin(self.to_string())),
       Builtin::Type => ConstValue::Type(Type::Type),
     }
   }

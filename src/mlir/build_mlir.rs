@@ -3,14 +3,15 @@ use super::*;
 pub fn build_mlir(hlir: &HlIrModule) -> MlIrModule {
   let mut this = Analyzer::new(hlir);
   this.new_block("global".into(), BlockKind::GlobalScope);
-  todo!()
+  this.lower(&"global".to_string(), 0);
+  MlIrModule {
+    blocks: this.blocks,
+  }
 }
 
 struct Analyzer<'a> {
   blocks: HashMap<Mangle, Block>,
   hl: &'a HlIrModule,
-  label_count: usize,
-  break_labels: Vec<usize>,
 }
 
 impl<'a> Analyzer<'a> {
@@ -18,8 +19,6 @@ impl<'a> Analyzer<'a> {
     Self {
       blocks: HashMap::new(),
       hl,
-      label_count: 0,
-      break_labels: vec![],
     }
   }
 
@@ -31,27 +30,6 @@ impl<'a> Analyzer<'a> {
 
   fn new_block(&mut self, name: Mangle, kind: BlockKind) {
     self.blocks.insert(name.clone(), Block::new(kind));
-  }
-
-  fn new_constant(&mut self, name: &Mangle, start: IrPtr) {
-    self.new_block(name.clone(), BlockKind::Constant { evaluation: None });
-    todo!()
-  }
-
-  fn new_parameter(&mut self, name: &Mangle, start: IrPtr) {
-    self.new_block(name.clone(), BlockKind::Parameter);
-    todo!()
-  }
-
-  fn new_function(
-    &mut self,
-    name: &Mangle,
-    parameters: Vec<Mangle>,
-    returns: Option<Mangle>,
-    start: IrPtr,
-  ) {
-    self.new_block(name.clone(), BlockKind::Function { parameters });
-    todo!()
   }
 
   fn lower(&mut self, block: &Mangle, node_ptr: IrPtr) {
@@ -66,33 +44,46 @@ impl<'a> Analyzer<'a> {
       Declaration {
         assignee,
         is_constant,
+        type_assert,
         value,
-        ..
       } => {
         if is_constant {
-          self.new_constant(&assignee, value);
+          self.new_block(assignee.clone(), BlockKind::Constant { evaluation: None });
+          self.lower(&assignee, value);
+          if let Some(type_) = type_assert {
+            self.lower(&assignee, type_);
+            self.push(&assignee, new(ml::TypeAssert));
+          }
         } else {
           self.lower(block, value);
           self.push(block, new(ml::Set(assignee)));
         }
-      },
+        self.push(block, new(ml::Const(ConstValue::Nothing)));
+      }
       Immediate(const_value) => {
         self.push(block, new(ml::Const(const_value)));
-      },
+      }
       Block(items) => {
-        for item in items {
+        let length = items.len();
+        for (id, item) in items.into_iter().enumerate() {
           self.lower(block, item);
+          if id != length - 1 {
+            self.push(block, new(ml::Drop));
+          }
         }
-      },
+        if length == 0 {
+          self.push(block, new(ml::Const(ConstValue::Nothing)));
+        }
+      }
       Identifier(mangle) => {
         self.push(block, new(ml::Get(mangle)));
-      },
+      }
       StructDef { fields, types } => {
         for type_ in types {
           self.lower(block, type_);
         }
         self.push(block, new(ml::StructDef { fields }));
-      },
+      }
       StructLiteral {
         struct_t,
         field_names,
@@ -113,24 +104,24 @@ impl<'a> Analyzer<'a> {
         );
         if let Some((_, mangle)) = struct_t {
           self.push(block, new(ml::Get(mangle)));
-          self.push(block, new(ml::TypeAssert(None)));
+          self.push(block, new(ml::TypeAssert));
         }
-      },
+      }
       Field { of, index } => {
         self.lower(block, of);
         self.push(block, new(ml::Field(index)));
-      },
+      }
       Binary {
         op, left, right, ..
       } => {
         self.lower(block, left);
         self.lower(block, right);
         self.push(block, new(ml::BinaryOp { kind: op }));
-      },
+      }
       Unary { op, child, .. } => {
         self.lower(block, child);
         self.push(block, new(ml::UnaryOp { kind: op }));
-      },
+      }
       FunctionDef {
         name,
         parameter_names,
@@ -138,101 +129,70 @@ impl<'a> Analyzer<'a> {
         returns,
         body,
       } => {
-        for (name, type_) in
-          parameter_names.iter().zip(parameter_types.into_iter())
-        {
-          self.new_parameter(name, type_);
+        for (name, type_) in parameter_names.iter().zip(parameter_types.into_iter()) {
+          self.new_block(name.clone(), BlockKind::Parameter);
+          self.lower(name, type_);
         }
         if let Some((type_, name)) = &returns {
-          self.new_parameter(name, *type_);
+          self.new_block(name.clone(), BlockKind::Parameter);
+          self.lower(name, *type_);
         }
-        self.new_function(
-          &name,
-          parameter_names.clone(),
-          returns.map(|r| r.1),
-          body,
-        );
-        self.push(block, new(ml::Const(ConstValue::Function(name))));
-      },
+        self.new_block(name.clone(), BlockKind::Function {
+          parameters: parameter_names,
+        });
+        self.lower(&name, body);
+        self.push(block, new(ml::Get(name)));
+      }
       FunctionCall {
-        callee,
-        callee_name,
-        arguments,
+        callee, arguments, ..
       } => {
         let arity = arguments.len();
         self.lower(block, callee);
-        self.push(block, new(ml::Set(callee_name.clone())));
         for argument in arguments {
           self.lower(block, argument);
         }
-        self.push(block, new(ml::Get(callee_name)));
         self.push(block, new(ml::Call { arity }));
-      },
+      }
       If {
         predicate,
         then,
         else_,
       } => {
         self.lower(block, predicate);
-        let branch_pos = self.push(block, new(ml::Noop));
+        self.push(block, new(ml::If));
         self.lower(block, then);
-        let end_then_pos = self.new_label(block);
         if let Some(else_) = else_ {
+          self.push(block, new(ml::Else));
           self.lower(block, else_);
-          let end_else_pos = self.new_label(block);
-          self.set_instr(block, branch_pos, new(ml::Branch(end_then_pos)));
-          self.set_instr(block, end_then_pos, new(ml::Jump(end_else_pos)));
-        } else {
-          self.set_instr(block, branch_pos, new(ml::Branch(end_then_pos)));
         }
-      },
+        self.push(block, new(ml::End));
+      }
       Loop {
         parameter_names,
         parameter_values,
         body,
       } => {
-        let break_label = self.label_count;
-        self.label_count += 1;
         for value in parameter_values {
           self.lower(block, value);
         }
-        for name in parameter_names.into_iter().rev() {
-          self.push(block, new(ml::Set(name)));
+        for name in parameter_names.iter().rev() {
+          self.push(block, new(ml::Set(name.clone())));
         }
-        let loop_start_pos = self.new_label(block);
-        self.break_labels.push(break_label);
+        self.push(block, new(ml::Loop));
         self.lower(block, body);
-        self.break_labels.pop();
-        self.push(block, new(ml::Jump(loop_start_pos)));
-        self.push(block, new(ml::Label(break_label)));
-      },
+        for name in parameter_names.iter().rev() {
+          self.push(block, new(ml::Set(name.clone())));
+        }
+        self.push(block, new(ml::Repeat));
+      }
       Break(e) => {
         if let Some(e) = e {
           self.lower(block, e);
+        } else {
+          self.push(block, new(ml::Const(ConstValue::Nothing)));
         }
-        self.push(block, new(ml::Jump(*self.break_labels.last().unwrap())));
-      },
+        self.push(block, new(ml::Break));
+      }
     }
-  }
-
-  fn new_label(&mut self, block: &Mangle) -> usize {
-    let label = self.label_count;
-    self.label_count += 1;
-    self.push(
-      block,
-      MlIrNode {
-        span: Default::default(),
-        kind: MlIrKind::Label(label),
-      },
-    );
-    label
-  }
-
-  fn next_instr(&self, block: &Mangle) -> IrPtr {
-    self.blocks.get(block).unwrap().body.len()
-  }
-
-  fn set_instr(&mut self, block: &Mangle, position: IrPtr, ir: MlIrNode) {
-    self.blocks.get_mut(block).unwrap().body[position] = ir;
   }
 }

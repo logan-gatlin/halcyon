@@ -99,9 +99,9 @@ impl Compiler {
         callee, arguments, ..
       } => {
         let name = match self.module.nodes[callee].kind.clone() {
-          FunctionDef { name, .. } | Immediate(ConstValue::Function(name)) | Identifier(name) => {
-            name
-          }
+          FunctionDef { name, .. }
+          | Immediate(ConstValue::Function { name, .. })
+          | Identifier(name) => name,
           _ => panic!(),
         };
         arguments

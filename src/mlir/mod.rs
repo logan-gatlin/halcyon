@@ -1,4 +1,8 @@
-mod build_mlir;
+pub mod build_mlir;
+pub mod evaluate;
+
+pub use build_mlir::*;
+pub use evaluate::*;
 
 use std::collections::HashMap;
 
@@ -15,7 +19,7 @@ pub enum BlockKind {
 
 #[derive(Clone, Debug)]
 pub struct Block {
-  kind: BlockKind,
+  pub kind: BlockKind,
   body: Vec<MlIrNode>,
 }
 
@@ -83,7 +87,7 @@ pub enum MlIrKind {
   },
   /// Pop 1 type, assert that the next value on the stack is
   /// of that type. Keep this second value on the stack
-  TypeAssert(Option<Mangle>),
+  TypeAssert,
   /// Pop 1 function, pop N argument values, call the
   /// function and push its return value
   Call {
@@ -91,18 +95,13 @@ pub enum MlIrKind {
   },
   /// Clear the stack of any values up to the last enscope
   Drop,
-  // Pop 1 boolean, continue if true, jump otherwise
-  Branch(usize),
-  // Jump to label
-  Jump(usize),
-  Label(usize),
-  /// Inserts a scope guard, prevents popping values pushed
-  /// before this point
-  StartScope,
-  /// Remove a previously placed scope guard, leaving any
-  /// remaining values on the stack
-  EndScope,
-  Noop,
+  /// Pop 1 boolean, if true continue, otherwise go to else
+  If,
+  Else,
+  End,
+  Repeat,
+  Loop,
+  Break,
 }
 
 impl std::fmt::Debug for MlIrKind {
@@ -111,36 +110,26 @@ impl std::fmt::Debug for MlIrKind {
       MlIrKind::Const(const_value) => write!(f, "push {const_value}"),
       MlIrKind::Set(mangle) => write!(f, "set {mangle}"),
       MlIrKind::Get(mangle) => write!(f, "get {mangle}"),
-      MlIrKind::BinaryOp { kind } => write!(f, "binary {kind}"),
-      MlIrKind::UnaryOp { kind } => write!(f, "unary {kind}"),
+      MlIrKind::BinaryOp { kind } => write!(f, "operator {kind}"),
+      MlIrKind::UnaryOp { kind } => write!(f, "operator {kind}"),
       MlIrKind::Field(name) => write!(f, "field {name}"),
       MlIrKind::StructLiteral { param_names } => {
         write!(f, "struct literal {}", param_names.len())
-      },
+      }
       MlIrKind::StructDef {
         fields: param_names,
       } => {
         write!(f, "struct definition {}", param_names.len())
-      },
-      MlIrKind::TypeAssert(mangle) => write!(
-        f,
-        "type assert{}",
-        if let Some(mangle) = mangle {
-          format!(" ({mangle})")
-        } else {
-          format!("")
-        }
-      ),
+      }
+      MlIrKind::TypeAssert => write!(f, "type assert",),
       MlIrKind::Call { arity } => write!(f, "call {arity}"),
       MlIrKind::Drop => write!(f, "drop"),
-      MlIrKind::Branch(label) => {
-        write!(f, "branch {label}")
-      },
-      MlIrKind::Jump(label) => write!(f, "jump {label}"),
-      MlIrKind::Label(s) => write!(f, "label {s}"),
-      MlIrKind::StartScope => write!(f, "start scope"),
-      MlIrKind::EndScope => write!(f, "end scope"),
-      MlIrKind::Noop => write!(f, "noop"),
+      MlIrKind::If => write!(f, "if"),
+      MlIrKind::Else => write!(f, "else"),
+      MlIrKind::Loop => write!(f, "loop"),
+      MlIrKind::End => write!(f, "end"),
+      MlIrKind::Repeat => write!(f, "repeat"),
+      MlIrKind::Break => write!(f, "break"),
     }
   }
 }

@@ -20,7 +20,7 @@ impl ConstValue {
         vec![w::I32(address as i32), w::I32(length as i32)]
       }
       ConstValue::Glyph(val) => vec![w::I32(val as i32)],
-      ConstValue::Function(val) => vec![w::FuncRef(val)],
+      ConstValue::Function { name, .. } => vec![w::FuncRef(name)],
       ConstValue::StructLiteral { member_values, .. } => member_values
         .into_iter()
         .rev()
