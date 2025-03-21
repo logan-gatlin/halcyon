@@ -2,11 +2,22 @@ use super::*;
 
 pub fn build_mlir(hlir: &HlIrModule) -> MlIrModule {
   let mut this = Analyzer::new(hlir);
-  this.new_block("global".into(), BlockKind::GlobalScope);
+  this.new_block("global".into(), BlockKind::GlobalScope(None));
   this.lower(&"global".to_string(), 0);
-  MlIrModule {
+  let mut module = MlIrModule {
     blocks: this.blocks,
+    virtual_memory: hlir.heap.clone(),
+    dependencies: HashMap::new(),
+  };
+  module.build_dependency_graph();
+  let mut ordered_dependencies = module.dependencies.clone().into_iter().collect::<Vec<_>>();
+  ordered_dependencies.sort_unstable_by(|(_, a), (_, b)| a.len().cmp(&b.len()));
+  for (name, deps) in ordered_dependencies {
+    module.evaluate(&name);
   }
+  let global = module.get_const(&"global".to_string()).unwrap();
+  println!("---\nEvaluated to\n---\n{global}");
+  module
 }
 
 struct Analyzer<'a> {
@@ -15,7 +26,7 @@ struct Analyzer<'a> {
 }
 
 impl<'a> Analyzer<'a> {
-  pub fn new(hl: &'a HlIrModule) -> Self {
+  fn new(hl: &'a HlIrModule) -> Self {
     Self {
       blocks: HashMap::new(),
       hl,
@@ -48,7 +59,7 @@ impl<'a> Analyzer<'a> {
         value,
       } => {
         if is_constant {
-          self.new_block(assignee.clone(), BlockKind::Constant { evaluation: None });
+          self.new_block(assignee.clone(), BlockKind::Constant(None));
           self.lower(&assignee, value);
           if let Some(type_) = type_assert {
             self.lower(&assignee, type_);
@@ -130,15 +141,20 @@ impl<'a> Analyzer<'a> {
         body,
       } => {
         for (name, type_) in parameter_names.iter().zip(parameter_types.into_iter()) {
-          self.new_block(name.clone(), BlockKind::Parameter);
+          self.new_block(name.clone(), BlockKind::Parameter(None));
           self.lower(name, type_);
         }
-        if let Some((type_, name)) = &returns {
-          self.new_block(name.clone(), BlockKind::Parameter);
+        let return_name = if let Some((type_, name)) = &returns {
+          self.new_block(name.clone(), BlockKind::Parameter(None));
           self.lower(name, *type_);
-        }
+          Some(name.clone())
+        } else {
+          None
+        };
         self.new_block(name.clone(), BlockKind::Function {
           parameters: parameter_names,
+          return_type: return_name,
+          value: None,
         });
         self.lower(&name, body);
         self.push(block, new(ml::Get(name)));

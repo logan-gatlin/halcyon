@@ -1,20 +1,26 @@
 pub mod build_mlir;
+pub mod dependencies;
 pub mod evaluate;
 
 pub use build_mlir::*;
+pub use dependencies::*;
 pub use evaluate::*;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::{Span, graph::Graph, hlir::*, operator::*, parse::*};
 
 #[derive(Clone, Debug)]
 pub enum BlockKind {
-  Constant { evaluation: Option<ConstValue> },
-  Function { parameters: Vec<Mangle> },
-  TypeAssert,
-  Parameter,
-  GlobalScope,
+  Constant(Option<ConstValue>),
+  Function {
+    parameters: Vec<Mangle>,
+    return_type: Option<Mangle>,
+    value: Option<ConstValue>,
+  },
+  TypeAssert(Option<Type>),
+  Parameter(Option<Type>),
+  GlobalScope(Option<ConstValue>),
 }
 
 #[derive(Clone, Debug)]
@@ -36,15 +42,8 @@ impl Block {
 #[derive(Debug, Clone)]
 pub struct MlIrModule {
   pub blocks: HashMap<Mangle, Block>,
-}
-
-#[derive(Debug, Clone)]
-pub struct FunctionInfo {
-  pub mangle: Mangle,
-  pub arity: usize,
-  pub parameter_mangles: Vec<Mangle>,
-  pub returns_mangle: Option<Mangle>,
-  pub block: IrPtr,
+  pub virtual_memory: Vec<Vec<u8>>,
+  pub dependencies: HashMap<Mangle, HashSet<Mangle>>,
 }
 
 #[derive(Clone)]

@@ -2,9 +2,18 @@ use crate::compile::assembly::*;
 
 use super::*;
 
+pub const GLOBAL_SCOPE_MANGLE: &str = "_global";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Builtin {
   Type,
+  Nothing,
+  Unreachable,
+  Integer,
+  Real,
+  Boolean,
+  String,
+  Glyph,
   PrintString,
   PrintReal,
   PrintGlyph,
@@ -14,8 +23,15 @@ pub enum Builtin {
 }
 
 impl Builtin {
-  pub const ALL: [Builtin; 7] = [
+  pub const ALL: [Builtin; 14] = [
     Self::Type,
+    Self::Nothing,
+    Self::Unreachable,
+    Self::Integer,
+    Self::Real,
+    Self::Boolean,
+    Self::String,
+    Self::Glyph,
     Self::PrintString,
     Self::PrintReal,
     Self::PrintGlyph,
@@ -26,13 +42,20 @@ impl Builtin {
 
   pub fn to_string(&self) -> &'static str {
     match self {
-      Builtin::Type => "type",
-      Builtin::PrintString => "print_string",
-      Builtin::PrintReal => "print_real",
-      Builtin::PrintGlyph => "print_glyph",
-      Builtin::PrintInteger => "print_integer",
-      Builtin::PrintBoolean => "print_boolean",
-      Builtin::PrintType => "print_type",
+      Self::Type => "type",
+      Self::Nothing => "nothing",
+      Self::Unreachable => "unreachable",
+      Self::Integer => "integer",
+      Self::Real => "real",
+      Self::Boolean => "boolean",
+      Self::String => "string",
+      Self::Glyph => "glyph",
+      Self::PrintString => "print_string",
+      Self::PrintReal => "print_real",
+      Self::PrintGlyph => "print_glyph",
+      Self::PrintInteger => "print_integer",
+      Self::PrintBoolean => "print_boolean",
+      Self::PrintType => "print_type",
     }
   }
 
@@ -46,13 +69,14 @@ impl Builtin {
   }
 
   pub fn value(&self) -> ConstValue {
+    use Primitive::*;
     match self {
-      Builtin::PrintString
-      | Builtin::PrintGlyph
-      | Builtin::PrintReal
-      | Builtin::PrintInteger
-      | Builtin::PrintBoolean
-      | Builtin::PrintType => {
+      Self::PrintString
+      | Self::PrintGlyph
+      | Self::PrintReal
+      | Self::PrintInteger
+      | Self::PrintBoolean
+      | Self::PrintType => {
         let Type::Function {
           param_types,
           return_type,
@@ -67,20 +91,34 @@ impl Builtin {
         }
       }
       //ConstValue::Function(mangle_builtin(self.to_string())),
-      Builtin::Type => ConstValue::Type(Type::Type),
+      Self::Type => ConstValue::Type(Type::Type),
+      Self::Nothing => ConstValue::Type(nothing.promote()),
+      Self::Unreachable => ConstValue::Type(unreachable.promote()),
+      Self::Integer => ConstValue::Type(integer.promote()),
+      Self::Real => ConstValue::Type(real.promote()),
+      Self::Boolean => ConstValue::Type(boolean.promote()),
+      Self::String => ConstValue::Type(string.promote()),
+      Self::Glyph => ConstValue::Type(glyph.promote()),
     }
   }
 
   pub fn type_(&self) -> Type {
     use Primitive as p;
     let param = match self {
-      Builtin::PrintString => p::string.promote(),
-      Builtin::PrintReal => p::real.promote(),
-      Builtin::PrintGlyph => p::glyph.promote(),
-      Builtin::PrintInteger => p::integer.promote(),
-      Builtin::PrintBoolean => p::boolean.promote(),
-      Builtin::PrintType => Type::Type,
-      Builtin::Type => return Type::Type,
+      Self::PrintString => p::string.promote(),
+      Self::PrintReal => p::real.promote(),
+      Self::PrintGlyph => p::glyph.promote(),
+      Self::PrintInteger => p::integer.promote(),
+      Self::PrintBoolean => p::boolean.promote(),
+      Self::PrintType => Type::Type,
+      Self::Type
+      | Self::Nothing
+      | Self::Unreachable
+      | Self::Integer
+      | Self::Real
+      | Self::Boolean
+      | Self::String
+      | Self::Glyph => return Type::Type,
     };
     Type::Function {
       param_types: vec![param],
@@ -94,7 +132,6 @@ impl Builtin {
 
   pub fn import(&self) -> Option<Wasm> {
     match self {
-      Builtin::PrintType | Builtin::Type => None,
       Builtin::PrintString => Some(Wasm::Import {
         ns1: "js".to_string(),
         ns2: "print_string".to_string(),
@@ -150,6 +187,7 @@ impl Builtin {
         }
         .into(),
       }),
+      _ => None,
     }
   }
 }

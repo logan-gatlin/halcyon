@@ -9,7 +9,7 @@ mod mlir;
 mod operator;
 mod parse;
 mod token;
-//mod typecheck;
+mod typecheck;
 
 use hlir::*;
 use lint::render::{Linter, UnwrapLint};
@@ -40,12 +40,6 @@ fn main() {
   let parse_tree = parse(tokens);
   let hlir = build_hlir(parse_tree).unwrap_lint(&linter);
   let mlir = build_mlir(&hlir);
-  for block in mlir.blocks.clone() {
-    if let BlockKind::Constant { .. } | BlockKind::GlobalScope = &block.1.kind {
-      let value = mlir.evaluate_block(&block.0).unwrap();
-      println!("value = {value}");
-    }
-  }
   /*
   let cflow = Analyzer::analyze(&canon_module).unwrap_lint(&linter);
   let solution = Solver::solve(cflow).unwrap_lint(&linter);

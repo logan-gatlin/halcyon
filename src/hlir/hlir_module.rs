@@ -70,7 +70,8 @@ pub struct HlIrNode {
 #[derive(Debug, Clone)]
 pub struct HlIrModule {
   pub nodes: Vec<HlIrNode>,
-  pub functions: HashMap<Mangle, IrPtr>,
+  pub constants: HashMap<Mangle, IrPtr>,
+  pub type_map: HashMap<Mangle, Type>,
   pub heap: Vec<Vec<u8>>,
   pub main: Option<Mangle>,
 }
@@ -90,7 +91,7 @@ impl HlIrModule {
           } else {
             return n.span;
           }
-        },
+        }
         HlIrKind::If { then, .. } => n = &self.nodes[*then],
         _ => return n.span,
       }

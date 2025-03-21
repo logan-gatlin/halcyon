@@ -28,7 +28,7 @@ enum Event {
 #[derive(Debug, Clone)]
 pub struct Canonizer {
   nodes: Vec<Option<HlIrNode>>,
-  functions: HashMap<Mangle, IrPtr>,
+  constants: HashMap<Mangle, IrPtr>,
   scope_depth: usize,
   salt: usize,
   path: Vec<String>,
@@ -42,7 +42,7 @@ impl Canonizer {
   fn new() -> Self {
     let mut this = Self {
       nodes: vec![],
-      functions: HashMap::new(),
+      constants: HashMap::new(),
       path: vec![],
       event_stack: vec![],
       virtual_memory: vec![],
@@ -51,9 +51,6 @@ impl Canonizer {
       main: None,
       _name_to_symbol: HashMap::new(),
     };
-    for prim in Primitive::ALL {
-      this.define_builtin(format!("{prim}"));
-    }
     for builtin in Builtin::ALL {
       this.define_builtin(builtin.to_string())
     }
@@ -69,6 +66,9 @@ impl Canonizer {
       span: Span::default(),
       type_: Type::default(),
     });
+    this
+      .constants
+      .insert(GLOBAL_SCOPE_MANGLE.to_string(), top_node);
     let nodes = this
       .nodes
       .clone()
@@ -77,7 +77,8 @@ impl Canonizer {
       .collect::<Vec<_>>();
     Ok(HlIrModule {
       nodes,
-      functions: this.functions,
+      constants: HashMap::new(),
+      type_map: HashMap::new(),
       heap: this.virtual_memory,
       main: this.main,
     })
@@ -347,7 +348,7 @@ impl Canonizer {
       } => {
         self.start_function();
         let function_mangle = self.define_unique("function");
-        self.functions.insert(function_mangle.clone(), node);
+        self.constants.insert(function_mangle.clone(), node);
         self.enscope();
         self.validate_parameters("Function", &parameters)?;
         let parameter_names = parameters
