@@ -113,9 +113,11 @@ impl<I: Iterator<Item = Token>> Parser<I> {
     let mut current = if let Ok(operator) = UnaryOp::try_from(&next.0) {
       let span = next.1;
       if operator.assoc() == RIGHT_ASSOC {
-        return Err(lint(ParseLint::MissingPostfixUnaryOperand, span, &[
-          format!("{operator}"),
-        ]));
+        return Err(lint(
+          ParseLint::MissingPostfixUnaryOperand,
+          span,
+          &[format!("{operator}")],
+        ));
       }
       self.skip(1);
       let child = self.expression(operator.precedence()).span(span)?;
@@ -225,9 +227,11 @@ impl<I: Iterator<Item = Token>> Parser<I> {
         self.skip(1);
         let span = next.1;
         if operator.assoc() == LEFT_ASSOC {
-          return Err(lint(ParseLint::MissingPrefixUnaryOperand, span, &[
-            format!("{operator}"),
-          ]));
+          return Err(lint(
+            ParseLint::MissingPrefixUnaryOperand,
+            span,
+            &[format!("{operator}")],
+          ));
         }
         current = Expression::new(
           e::Unary {
@@ -257,8 +261,12 @@ impl<I: Iterator<Item = Token>> Parser<I> {
         t::Identifier(s) => s,
         t::RightBrace | t::RightParen | t::RightSquare => break,
         _ => {
-          return Err(lint(TokenLint::MissingDelimeter, span, &["}".to_string()]));
-        }
+          return Err(lint(
+            TokenLint::MissingDelimeter,
+            span,
+            &["}".to_string()],
+          ));
+        },
       };
       self.skip(1);
       let name_span = name_token.1;
@@ -280,7 +288,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
             name_span + colon_span,
             &[name],
           ));
-        }
+        },
       };
       span += type_.span;
       spans.push(name_span + type_.span);
@@ -339,7 +347,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
       Token(t::Identifier(i), span) => {
         self.skip(1);
         Ok((i, span))
-      }
+      },
       _ => Err(lint(ParseLint::ExpectedIdentifier, self.last_span, &[])),
     }
   }

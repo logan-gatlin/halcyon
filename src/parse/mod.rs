@@ -38,7 +38,7 @@ impl<I: Iterator<Item = Token>> Iterator for Parser<I> {
           span: e.span.expect("No span for tokenizer error"),
           kind: StatementKind::Error(e),
         })
-      }
+      },
     }
   }
 }
@@ -57,8 +57,11 @@ impl<I: Iterator<Item = Token>> Parser<I> {
       let next = self.next_tok();
       self.last_span = next.1;
       match next.0 {
-        TokenKind::EOF | TokenKind::Semicolon | TokenKind::RightBrace | TokenKind::NewLine => break,
-        _ => {}
+        TokenKind::EOF
+        | TokenKind::Semicolon
+        | TokenKind::RightBrace
+        | TokenKind::NewLine => break,
+        _ => {},
       }
     }
   }
@@ -93,7 +96,9 @@ impl<I: Iterator<Item = Token>> Parser<I> {
   }
 
   fn peek_not_newline(&mut self) -> Token {
-    while self.look(0, TokenKind::NewLine).is_some() && self.look(1, TokenKind::NewLine).is_some() {
+    while self.look(0, TokenKind::NewLine).is_some()
+      && self.look(1, TokenKind::NewLine).is_some()
+    {
       self.skip(1);
     }
     if self.look(0, TokenKind::NewLine).is_none() {
@@ -118,8 +123,12 @@ impl<I: Iterator<Item = Token>> Parser<I> {
     if next.0 == expect { Some(next) } else { None }
   }
 
-  fn body(&mut self, lint_context: impl Into<String>) -> Result<(Vec<Statement>, Span)> {
+  fn body(
+    &mut self,
+    lint_context: impl Into<String>,
+  ) -> Result<(Vec<Statement>, Span)> {
     use TokenKind as t;
+    self.eat_newlines();
     let mut span = self
       .eat(t::LeftBrace)
       .lint(ParseLint::MissingBody)
@@ -134,15 +143,19 @@ impl<I: Iterator<Item = Token>> Parser<I> {
           span += s;
           self.skip(1);
           break;
-        }
+        },
         Token(t::EOF, _) => {
-          return Err(lint(TokenLint::MissingDelimeter, span, &["}".to_string()]));
-        }
+          return Err(lint(
+            TokenLint::MissingDelimeter,
+            span,
+            &["}".to_string()],
+          ));
+        },
         _ => {
           let statement = self.statement()?;
           span = span + statement.span;
           statements.push(statement);
-        }
+        },
       }
     }
     Ok((statements, span))

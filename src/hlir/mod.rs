@@ -6,7 +6,7 @@ pub mod types;
 
 use std::collections::HashMap;
 
-use crate::{lint::*, operator::*, parse::*};
+use crate::{lint::*, memory::*, operator::*, parse::*};
 
 pub use build_hlir::*;
 pub use builtins::*;

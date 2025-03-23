@@ -5,14 +5,15 @@ use crate::{Span, hlir::builtins::*, hlir::*, lint::*, mlir::*};
 use super::TypeChecker;
 use HlIrKind::*;
 
-impl TypeChecker {
-  pub(super) fn sanitize_main(&self) -> Result<HashSet<IrPtr>> {
-    let Some(main) = self.module.main.clone() else {
-      return Err(lint_nospan(NameLint::InvalidMain));
-    };
+impl<'a> TypeChecker<'a> {
+  pub(super) fn sanitize_main(
+    &self,
+    main_name: Mangle,
+  ) -> Result<HashSet<IrPtr>> {
     let mut visited = HashSet::new();
     let mut to_visit = vec![];
-    let mut current = self.module.functions.get(&main).cloned().unwrap();
+    //println!("{main_name}");
+    let mut current = self.module.constants.get(&main_name).cloned().unwrap();
     'outer: loop {
       visited.insert(current);
       self.sanitize_node(current, &mut to_visit)?;
@@ -37,14 +38,14 @@ impl TypeChecker {
   ) -> Result<()> {
     let err = Err(lint_nospan(TypeLint::Sanitization));
     let span = self.module.nodes[node].span;
-    if let Immediate(ConstValue::Function(mangle)) =
+    if let Immediate(ConstValue::Function { name, .. }) =
       &self.module.nodes[node].kind
     {
       // Only push non-builtin functions
-      if let Some(mangle) = self.module.functions.get(mangle) {
+      if let Some(mangle) = self.module.constants.get(name) {
         to_visit.push(mangle.clone());
       }
-      if let Some(bt) = Builtin::from_mangle(mangle)
+      if let Some(bt) = Builtin::from_mangle(name)
         && !bt.sanitary()
       {
         return err.span(span);
@@ -115,6 +116,7 @@ impl TypeChecker {
         predicate,
         then,
         else_,
+        ..
       } => {
         sanitize(*predicate)?;
         sanitize(*then)?;

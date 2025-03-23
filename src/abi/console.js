@@ -1,11 +1,4 @@
-<!DOCTYPE html>
-<html>
-<head>
-</head>
-
-<script type="module">
-  import init, {compile} from "/pkg/lang.js";
-
+export const _compiler_exec = (b) => {
   const memory = new WebAssembly.Memory({initial: 10, maximum: 100});
   
   function print_string(offset, length) {
@@ -39,13 +32,12 @@
       print_boolean: print_boolean,
     }
   };
-  init().then(() => {
-    compile(`(){
-    print_string("hello world")
-    }`)
-  })
-</script>
-
-<body>
-</body>
-</html>
+  WebAssembly.instantiate(b, imports);
+}
+export const _compiler_cls = () => {}
+export const _compiler_wat = (s) => {
+  console.log(s);
+}
+export const _compiler_print = (s) => {
+  console.log(s);
+}

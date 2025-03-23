@@ -57,7 +57,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
           span,
         };
         s
-      }
+      },
       // Assignment
       (Token(t::Identifier(name), span2), Token(t::Equal, span3)) => {
         self.skip(2);
@@ -72,7 +72,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
             is_constant: false,
           },
         }
-      }
+      },
       // Expression
       (Token(_, span2), _) => {
         span = span + span2;
@@ -82,12 +82,13 @@ impl<I: Iterator<Item = Token>> Parser<I> {
           span,
           kind: s::Expression(expr),
         }
-      }
+      },
     };
     // Check for semicolon
     if self.eat(t::NewLine).is_some()
       || self.eat(t::EOF).is_some()
       || self.eat(t::Semicolon).is_some()
+      || self.look(0, t::RightBrace).is_some()
     {
       self.eat_newlines();
       Ok(statement)

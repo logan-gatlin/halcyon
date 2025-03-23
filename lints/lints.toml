@@ -35,7 +35,7 @@ help = """There are a few ways to write an integer:
   * 0b1111 - Binary number (prefixed with 0b)
   * 0o777 - Octal number (prefixed with 0o)
   * 0xFF - Hexadecimal number (prefixed with 0x)
-Base prefixes and hexadecimal digits are case insensitive. Integers may have an underscore '_' characters in any position"""
+Base prefixes and hexadecimal digits are case insensitive. Integers may have an underscore `_` characters in any position"""
 
 [1006]
 reason = "Invalid real literal"
@@ -94,19 +94,19 @@ help = "A loop requires a parameter to iterate over. A parameter consists of a n
 # Name errors
 [3000]
 reason = "Undefined name"
-help = "The name '%' cannot be found. Names defined using '=' may only be used after they are defined, while names defined using '::' may be used anywhere within the block they are defined"
+help = "The name `%` cannot be found. Names defined using `=` may only be used after they are defined, while names defined using `::` may be used anywhere within the block they are defined"
 
 [3001]
 reason = "Redefinition of name"
-help = "The constant '%' is defined more than once in the same scope"
+help = "The constant `%` is defined more than once in the same scope"
 
 [3002]
 reason = "Redefinition of field"
-help = "This % contains more than one parameter with the same name '%'. Try choosing a different name, or removing this parameter"
+help = "This % contains more than one parameter with the same name `%`. Try choosing a different name, or removing this parameter"
 
 [3003]
 reason = "Invalid main"
-help = "The name 'main' in the global scope must refer to a function with no parameters and no return type, like: `main :: () {...}`"
+help = "When the output of a program (the final expression) evaluates to a function, that function will be compiled. Currently, the produced function must have no parameters and no return type, like: `() {...}`"
 
 [3004]
 reason = "Invalid field"
@@ -123,43 +123,43 @@ help = "'break' expression is used to exit a loop, it may not occur outside of a
 # Type errors
 [4000]
 reason = "Type mismatch"
-help = "Expected '%' here, but found '%'"
+help = "Expected `%` here, but found `%`"
 
 [4001]
 reason = "Type mismatch"
-help = "The predicate of an if expression must be a boolean, but this expression has the type '%'"
+help = "The predicate of an if expression must be a boolean, but this expression has the type `%`"
 
 [4002]
 reason = "Type mismatch"
-help = "The return type of this function is declared to be '%', but is actually '%'"
+help = "The return type of this function is declared to be `%`, but is actually `%`"
 
 [4003]
 reason = "Type mismatch"
-help = "The parameter for this loop is '%', but this expression is '%'"
+help = "The parameter for this loop is `%`, but this expression is `%`"
 
 [4004]
 reason = "Type mismatch"
-help = "A previous break expression in this loop produced '%', but this break produces '%'"
+help = "A previous break expression in this loop produced `%`, but this break produces `%`"
 
 [4005]
 reason = "Type mismatch"
-help = "This function parameter is '%', but this expression is '%'"
+help = "This function parameter is `%`, but this expression is `%`"
 
 [4006]
 reason = "Type mismatch"
-help = "The field '%' of this struct is '%', but this expression is '%'"
+help = "The field `%` of this struct is `%`, but this expression is `%`"
 
 [4007]
 reason = "No fields on type"
-help = "The type '%' has no fields which can be accessed using the '.' operator"
+help = "The type `%` has no fields which can be accessed using the `.` operator"
 
 [4008]
 reason = "Structure field missing"
-help = "This structure does not have a field '%''"
+help = "This structure does not have a field `%``"
 
 [4009]
 reason = "Call of non-function"
-help = "This expression cannot be called because it is '%'. Only functions may be called"
+help = "This expression cannot be called because it is `%`. Only functions may be called"
 
 [4010]
 reason = "Too many arguments"
@@ -171,11 +171,11 @@ help = "This function accepts % arguments. Try providing the missing arguments"
 
 [4012]
 reason = "Binary operator undefined"
-help = "The operator % is not defined for the types '%' and '%'"
+help = "The operator % is not defined for the types `%` and `%`"
 
 [4013]
 reason = "Unary operator undefined"
-help = "The operator % is not defined for the type '%'"
+help = "The operator % is not defined for the type `%`"
 
 [4014]
 reason = "Type modification in compiled artifact"
@@ -192,7 +192,7 @@ help = ""
 
 [5002]
 reason = "Circular reasoning"
-help = "The definition of this term is unsolvable. Try adding a layer of indirection, or replace some terms with literal values"
+help = "This definition is unsolvable. Try adding a layer of indirection, or replace some names with literal values"
 
 [5003]
 reason = "Glyph out of range"

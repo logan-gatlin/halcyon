@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::{hlir::*, lint::*, mlir::*, operator::*};
 
 use HlIrKind::*;
@@ -5,38 +7,16 @@ use Primitive as p;
 
 use super::TypeChecker;
 
-impl TypeChecker {
-  pub(super) fn new(module: HlIrModule, solution: Solution) -> Self {
+impl<'a> TypeChecker<'a> {
+  pub(super) fn new(
+    module: &'a mut HlIrModule,
+    solution: &'a MlIrModule,
+  ) -> Self {
     Self {
       module,
       solution,
+      type_map: HashMap::new(),
       break_stack: vec![],
-    }
-  }
-
-  pub(super) fn const_type(&self, const_value: &ConstValue) -> Type {
-    match const_value {
-      ConstValue::Nothing => p::nothing.promote(),
-      ConstValue::Never => p::unreachable.promote(),
-      ConstValue::Integer(_) => p::integer.promote(),
-      ConstValue::Real(_) => p::real.promote(),
-      ConstValue::Boolean(_) => p::boolean.promote(),
-      ConstValue::String { .. } => p::string.promote(),
-      ConstValue::Glyph(_) => p::glyph.promote(),
-      ConstValue::Function(mangle) => {
-        self.solution.assertions.get(mangle).unwrap().clone()
-      },
-      ConstValue::StructLiteral {
-        member_names,
-        member_values,
-      } => Type::Struct {
-        member_names: member_names.clone(),
-        member_types: member_values
-          .into_iter()
-          .map(|v| self.const_type(v))
-          .collect(),
-      },
-      ConstValue::Type(_) => Type::Type,
     }
   }
 
@@ -52,8 +32,12 @@ impl TypeChecker {
       } => None,
       Immediate(const_value) => Some(const_value),
       Block(items) => None,
-      Identifier(name) => self.solution.constants.get(&name).cloned(),
-      StructDef { fields, types } => {
+      Identifier(name) => self.solution.get_const(&name),
+      StructDef {
+        fields,
+        types,
+        spans,
+      } => {
         let Some(types) = types
           .into_iter()
           .map(|t| match self.consteval(t) {
@@ -61,7 +45,7 @@ impl TypeChecker {
             Ok(Some(c)) => Err(lint(
               TypeLint::TypeMismatch,
               span,
-              &["type".to_string(), format!("{}", self.const_type(&c))],
+              &["type".to_string(), format!("{}", c.type_of())],
             )),
             Ok(None) => Ok(None),
             Err(e) => Err(e),
@@ -81,6 +65,7 @@ impl TypeChecker {
         struct_t,
         field_names,
         field_values,
+        spans,
       } => None,
       Field { of, index } => None,
       Binary {
@@ -94,22 +79,26 @@ impl TypeChecker {
         name,
         parameter_names,
         parameter_types,
+        parameter_spans,
         returns,
         body,
-      } => Some(ConstValue::Function(name)),
+      } => self.solution.get_const(&name),
       FunctionCall {
         callee,
         callee_name,
         arguments,
+        argument_spans,
       } => None,
       If {
         predicate,
+        predicate_span,
         then,
         else_,
       } => None,
       Loop {
         parameter_names,
         parameter_values,
+        parameter_spans,
         body,
       } => None,
       Break(_) => None,
@@ -126,21 +115,9 @@ impl TypeChecker {
         ..
       } => {
         let value_t = self.check(value)?;
-        if let Some(assert) = self.solution.assertions.get(&assignee) {
-          if !value_t.ambiguous() && !is_constant && &value_t != assert {
-            return Err(lint(
-              TypeLint::TypeMismatch,
-              span,
-              &[format!("{assert}"), format!("{value_t}")],
-            ));
-          }
-        }
-        if !is_constant {
-          self.solution.assertions.insert(assignee, value_t);
-        }
         p::nothing.promote()
       },
-      Immediate(const_value) => self.const_type(&const_value),
+      Immediate(const_value) => const_value.type_of(),
       Block(items) => {
         let mut never = false;
         let length = items.len();
@@ -161,12 +138,12 @@ impl TypeChecker {
         }
       },
       Identifier(name) => {
-        if let Some(c) = self.solution.constants.get(&name).cloned() {
-          let type_ = self.const_type(&c);
+        if let Some(c) = self.solution.get_const(&name) {
+          let type_ = c.type_of();
           self.module.nodes[node].kind = Immediate(c);
           type_
         } else {
-          self.solution.assertions.get(&name).unwrap().clone()
+          self.type_map.get(&name).unwrap().clone()
         }
       },
       StructDef { .. } => Type::Type,
@@ -174,6 +151,7 @@ impl TypeChecker {
         struct_t,
         field_names,
         field_values,
+        spans,
       } => {
         let value = if let Some((struct_t, _)) = struct_t {
           self.check(struct_t)?;
@@ -268,13 +246,30 @@ impl TypeChecker {
         };
         opdef.produces
       },
-      FunctionDef { name, body, .. } => {
-        let func_type = self.solution.assertions.get(&name).cloned().unwrap();
-        let Type::Function { return_type, .. } = &func_type else {
+      FunctionDef {
+        name,
+        body,
+        parameter_names,
+        ..
+      } => {
+        let value = self.solution.get_const(&name).unwrap();
+        let type_ = value.type_of();
+        let ConstValue::Function {
+          parameters: parameter_types,
+          returns: return_type,
+          ..
+        } = value
+        else {
           panic!()
         };
+        parameter_names
+          .into_iter()
+          .zip(parameter_types.into_iter())
+          .for_each(|(name, type_)| {
+            self.type_map.insert(name, type_);
+          });
         let body_t = self.check(body)?;
-        if !body_t.ambiguous() && *return_type.clone() != body_t {
+        if !body_t.ambiguous() && return_type.clone() != body_t {
           let Block(body_nodes) = &self.module.nodes[body].kind else {
             panic!()
           };
@@ -288,7 +283,7 @@ impl TypeChecker {
             &[format!("{return_type}"), format!("{body_t}")],
           ));
         }
-        func_type
+        type_
       },
       FunctionCall {
         callee, arguments, ..
@@ -303,18 +298,17 @@ impl TypeChecker {
           }
           argument_types.push((type_, self.module.nodes[arg].span));
         }
-        let Some(ConstValue::Function(mangle)) = self.consteval(callee)? else {
+        let value = self.consteval(callee)?;
+        let Some(ConstValue::Function {
+          name,
+          parameters,
+          returns,
+        }) = value
+        else {
           return Ok(Type::Ambiguous);
         };
-        let Type::Function {
-          param_types,
-          return_type,
-        } = self.solution.assertions.get(&mangle).cloned().unwrap()
-        else {
-          panic!()
-        };
         for ((found, span), expects) in
-          argument_types.into_iter().zip(param_types)
+          argument_types.into_iter().zip(parameters)
         {
           if found != expects {
             return Err(lint(
@@ -324,10 +318,11 @@ impl TypeChecker {
             ));
           }
         }
-        *return_type
+        returns
       },
       If {
         predicate,
+        predicate_span,
         then,
         else_,
       } => {
@@ -366,6 +361,7 @@ impl TypeChecker {
       Loop {
         parameter_names,
         parameter_values,
+        parameter_spans,
         body,
       } => {
         let mut param_types = vec![];
@@ -375,7 +371,7 @@ impl TypeChecker {
         {
           let value_t = self.check(value)?;
           param_types.push(value_t.clone());
-          self.solution.assertions.insert(name, value_t);
+          self.type_map.insert(name, value_t);
         }
         self.break_stack.push(p::unreachable.promote());
         let body_t = self.check(body)?;

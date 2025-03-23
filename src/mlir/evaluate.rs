@@ -24,40 +24,58 @@ impl MlIrModule {
     }
   }
 
-  pub fn evaluate(&mut self, mangle: &Mangle) {
+  pub fn evaluate(
+    &mut self,
+    mangle: &Mangle,
+    memory: &mut Memory,
+  ) -> Result<()> {
     match &self.blocks.get(mangle).unwrap().kind {
       BlockKind::Constant(_) => {
-        let new_value = Some(self.evaluate_constant(mangle).unwrap());
-        self.blocks.get_mut(mangle).unwrap().kind = BlockKind::Constant(new_value);
-      }
+        let new_value = Some(self.evaluate_constant(mangle, memory)?);
+        self.blocks.get_mut(mangle).unwrap().kind =
+          BlockKind::Constant(new_value);
+      },
       BlockKind::Function {
         parameters,
+        parameter_spans,
         return_type,
+        return_span,
         ..
       } => {
-        let new_value = Some(self.evaluate_function(mangle).unwrap());
+        let new_value = Some(self.evaluate_function(mangle, memory)?);
         self.blocks.get_mut(mangle).unwrap().kind = BlockKind::Function {
           parameters: parameters.clone(),
+          parameter_spans: parameter_spans.clone(),
           return_type: return_type.clone(),
+          return_span: return_span.clone(),
           value: new_value,
         };
-      }
-      BlockKind::TypeAssert(_) => {}
-      BlockKind::Parameter(_) => {}
+      },
+      BlockKind::TypeAssert(_) => {},
+      BlockKind::Parameter(_) => {},
       BlockKind::GlobalScope(_) => {
-        let new_value = Some(self.evaluate_constant(mangle).unwrap());
-        self.blocks.get_mut(mangle).unwrap().kind = BlockKind::GlobalScope(new_value);
-      }
+        let new_value = Some(self.evaluate_constant(mangle, memory)?);
+        self.blocks.get_mut(mangle).unwrap().kind =
+          BlockKind::GlobalScope(new_value);
+      },
     }
+    Ok(())
   }
 
-  pub fn evaluate_function(&self, mangle: &Mangle) -> Result<ConstValue> {
+  pub fn evaluate_function(
+    &self,
+    mangle: &Mangle,
+    memory: &mut Memory,
+  ) -> Result<ConstValue> {
     let Some(Block {
-      kind: BlockKind::Function {
-        parameters,
-        return_type,
-        value,
-      },
+      kind:
+        BlockKind::Function {
+          parameters,
+          parameter_spans,
+          return_type,
+          return_span,
+          value,
+        },
       ..
     }) = self.blocks.get(mangle)
     else {
@@ -68,24 +86,35 @@ impl MlIrModule {
     }
     let parameters = parameters
       .iter()
-      .map(|p| self.evaluate_constant(p))
+      .map(|p| self.evaluate_constant(p, memory))
       .try_collect::<Vec<_>>()?
       .into_iter()
-      .map(|v| {
+      .zip(parameter_spans.into_iter())
+      .map(|(v, s)| {
         if let ConstValue::Type(t) = v {
-          Some(t)
+          Ok(t)
         } else {
-          None
+          Err(lint(
+            TypeLint::TypeMismatch,
+            *s,
+            &[format!("{}", Type::Type), format!("{}", v.type_of())],
+          ))
         }
       })
-      .try_collect::<Vec<_>>()
-      .unwrap();
-    let ConstValue::Type(returns) = return_type
+      .try_collect::<Vec<_>>()?;
+    let return_type = return_type
       .clone()
-      .map(|r| self.evaluate_constant(&r))
-      .unwrap_or(Ok(ConstValue::Type(Primitive::nothing.promote())))?
-    else {
-      panic!();
+      .map(|r| self.evaluate_constant(&r, memory))
+      .unwrap_or(Ok(ConstValue::Type(Primitive::nothing.promote())))?;
+    let ConstValue::Type(returns) = return_type else {
+      let e = Err(lint_nospan(TypeLint::TypeMismatch))
+        .context(format!("{}", Type::Type))
+        .context(format!("{}", return_type.type_of()));
+      if let Some(span) = return_span {
+        return e.span(*span);
+      } else {
+        return e;
+      }
     };
     Ok(ConstValue::Function {
       name: mangle.clone(),
@@ -94,7 +123,11 @@ impl MlIrModule {
     })
   }
 
-  pub fn evaluate_constant(&self, mangle: &Mangle) -> Result<ConstValue> {
+  pub fn evaluate_constant(
+    &self,
+    mangle: &Mangle,
+    memory: &mut Memory,
+  ) -> Result<ConstValue> {
     if let Some(value) = self.get_const(mangle) {
       return Ok(value);
     }
@@ -104,7 +137,8 @@ impl MlIrModule {
     let mut return_stack: Vec<FunctionReturn> = vec![];
     let mut ip = 0;
     let stack = &mut vec![];
-    let pop = |stack: &mut Vec<ConstValue>| stack.pop().unwrap_or(ConstValue::Nothing);
+    let pop =
+      |stack: &mut Vec<ConstValue>| stack.pop().unwrap_or(ConstValue::Nothing);
     let mut name_map = HashMap::new();
     loop {
       if ip == block.len() {
@@ -114,56 +148,71 @@ impl MlIrModule {
           block = &self.blocks.get(&block_name).unwrap().body;
           name_map = state.previous_values;
         }
-        // Catch case when last function call was at the end of the previous function
+        // Catch case when last function call was at the end of the
+        // previous function
         if ip == block.len() {
           return Ok(pop(stack));
         }
       }
-      let instr = block.get(ip).unwrap();
+      let instr = block.get(ip).expect("Invalid jump during compeval");
+      let span = instr.span;
       use MlIrKind::*;
       match instr.kind.clone() {
         Const(const_value) => {
           stack.push(const_value);
-        }
+        },
         Set(mangle) => {
           let value = pop(stack);
           name_map.insert(mangle, value);
-        }
+        },
         Get(mangle) => {
           let value = name_map
             .get(&mangle)
             .cloned()
             .or(self.get_const(&mangle))
-            .unwrap();
+            .ok_or(lint(EvalLint::Circular, span, &[]))?;
           stack.push(value.clone());
-        }
+        },
         BinaryOp { kind } => {
           let first = pop(stack);
           let second = pop(stack);
           let opkind = optable
             .try_binary(kind, &first.type_of(), &second.type_of())
-            .unwrap();
-          let result =
-            VirtualMachine::run(vec![second, first], opkind.asm, opkind.produces).unwrap();
+            .span(span)?;
+          let result = VirtualMachine::run(
+            vec![second, first],
+            opkind.asm,
+            opkind.produces,
+          )
+          .unwrap();
           stack.push(result);
-        }
+        },
         UnaryOp { kind } => {
           let value = pop(stack);
-          let opkind = optable.try_unary(kind, &value.type_of()).unwrap();
-          let result = VirtualMachine::run(vec![value], opkind.asm, opkind.produces).unwrap();
+          let opkind = optable.try_unary(kind, &value.type_of()).span(span)?;
+          let result =
+            VirtualMachine::run(vec![value], opkind.asm, opkind.produces)
+              .unwrap();
           stack.push(result);
-        }
+        },
         Field(field) => {
+          let top = pop(stack);
           let ConstValue::StructLiteral {
             member_names,
             member_values,
-          } = pop(stack)
+          } = top
           else {
-            panic!()
+            return Err(lint(
+              TypeLint::NoFieldOnType,
+              span,
+              &[format!("{}", top.type_of())],
+            ));
           };
-          let position = member_names.iter().position(|s| s == &field).unwrap();
+          let position = member_names.iter().position(|s| s == &field).ok_or(
+            lint(TypeLint::NoFieldOnType, span, &[format!("{field}")]),
+          )?;
           stack.push(member_values[position].clone());
-        }
+        },
         StructLiteral { param_names } => {
           let mut param_values = vec![];
           for _ in 0..param_names.len() {
@@ -174,12 +223,17 @@ impl MlIrModule {
             member_names: param_names,
             member_values: param_values,
           });
-        }
+        },
         StructDef { fields } => {
           let mut types = vec![];
           for _ in 0..fields.len() {
-            let ConstValue::Type(t) = pop(stack) else {
-              panic!()
+            let top = pop(stack);
+            let ConstValue::Type(t) = top else {
+              return Err(lint(
+                TypeLint::TypeMismatch,
+                span,
+                &[format!("{}", Type::Type), format!("{}", top.type_of())],
+              ));
             };
             types.push(t);
           }
@@ -188,32 +242,62 @@ impl MlIrModule {
             member_names: fields,
             member_types: types,
           }));
-        }
+        },
         TypeAssert => {
-          let ConstValue::Type(t) = pop(stack) else {
-            panic!()
+          let top = pop(stack);
+          let ConstValue::Type(expect) = top else {
+            return Err(lint(
+              TypeLint::TypeMismatch,
+              span,
+              &[format!("{}", Type::Type), format!("{}", top.type_of())],
+            ));
           };
           let value = pop(stack);
-          if t != value.type_of() {
-            panic!();
+          if expect != value.type_of() {
+            return Err(lint(
+              TypeLint::TypeMismatch,
+              span,
+              &[format!("{}", expect), format!("{}", value.type_of())],
+            ));
           }
           stack.push(value);
-        }
-        Call { arity } => {
+        },
+        Call { arity, spans } => {
           let mut arguments = vec![];
           for _ in 0..arity {
             arguments.push(pop(stack));
           }
+          let top = pop(stack);
           let ConstValue::Function {
             name: func_name,
-            parameters: param_types,
-            returns: return_type,
-          } = pop(stack)
+            parameters,
+            returns,
+          } = top
           else {
-            panic!()
+            return Err(lint(
+              TypeLint::NonFunctionCall,
+              span,
+              &[format!("{}", top.type_of())],
+            ));
           };
+          arguments
+            .iter()
+            .zip(parameters.iter())
+            .zip(spans.iter())
+            .map(|((argument, expect), span)| {
+              if &argument.type_of() != expect {
+                Ok(())
+              } else {
+                Err(lint(
+                  TypeLint::TypeMismatch,
+                  *span,
+                  &[format!("{expect}"), format!("{}", argument.type_of())],
+                ))
+              }
+            })
+            .try_collect::<Vec<_>>()?;
           if let Some(bt) = Builtin::from_mangle(&func_name) {
-            self.execute_builtin(bt, &mut arguments);
+            self.execute_builtin(bt, &mut arguments, memory)?;
             ip += 1;
             continue;
           }
@@ -229,7 +313,7 @@ impl MlIrModule {
             ..
           } = &self.blocks.get(&func_name).unwrap().kind
           else {
-            panic!()
+            panic!("Expected function block type")
           };
           parameter_names.into_iter().for_each(|n| {
             name_map.insert(n.clone(), arguments.pop().unwrap());
@@ -238,13 +322,21 @@ impl MlIrModule {
           block_name = func_name;
           ip = 0;
           continue;
-        }
+        },
         Drop => {
           pop(stack);
-        }
+        },
         If => {
-          let ConstValue::Boolean(predicate) = pop(stack) else {
-            panic!()
+          let top = pop(stack);
+          let ConstValue::Boolean(predicate) = top else {
+            return Err(lint(
+              TypeLint::TypeMismatch,
+              span,
+              &[
+                format!("{}", Primitive::boolean.promote()),
+                format!("{}", top.type_of()),
+              ],
+            ));
           };
           if !predicate {
             let mut nesting = 0;
@@ -260,13 +352,13 @@ impl MlIrModule {
                     break;
                   }
                   nesting -= 1;
-                }
+                },
                 Else if nesting == 0 => break,
-                _ => {}
+                _ => {},
               }
             }
           }
-        }
+        },
         Else => {
           let mut nesting = 0;
           loop {
@@ -281,13 +373,13 @@ impl MlIrModule {
                   break;
                 }
                 nesting -= 1;
-              }
-              _ => {}
+              },
+              _ => {},
             }
           }
-        }
-        End => {}
-        Loop => {}
+        },
+        End => {},
+        Loop => {},
         Repeat => {
           let mut nesting = 0;
           loop {
@@ -302,11 +394,11 @@ impl MlIrModule {
                   break;
                 }
                 nesting -= 1;
-              }
-              _ => {}
+              },
+              _ => {},
             }
           }
-        }
+        },
         Break => {
           let mut nesting = 0;
           loop {
@@ -321,58 +413,61 @@ impl MlIrModule {
                   break;
                 }
                 nesting -= 1;
-              }
-              _ => {}
+              },
+              _ => {},
             }
           }
-        }
+        },
       };
       ip += 1;
     }
   }
 
-  fn execute_builtin(&self, builtin: Builtin, stack: &mut Vec<ConstValue>) -> Result<()> {
+  fn execute_builtin(
+    &self,
+    builtin: Builtin,
+    stack: &mut Vec<ConstValue>,
+    memory: &mut Memory,
+  ) -> Result<()> {
     match builtin {
       Builtin::PrintString => {
-        let ConstValue::String {
-          virtual_address, ..
-        } = stack.pop().unwrap()
+        let ConstValue::String { address, length } = stack.pop().unwrap()
         else {
           panic!();
         };
-        let s = String::from_utf8_lossy(&self.virtual_memory[virtual_address]);
+        let s = String::from_utf8_lossy(&memory.bytes_at(address, length));
         compiler_print(s);
-      }
+      },
       Builtin::PrintReal => {
         let ConstValue::Real(r) = stack.pop().unwrap() else {
           panic!();
         };
         compiler_print(r.to_string());
-      }
+      },
       Builtin::PrintGlyph => {
         let ConstValue::Glyph(g) = stack.pop().unwrap() else {
           panic!();
         };
         compiler_print(g);
-      }
+      },
       Builtin::PrintInteger => {
         let ConstValue::Integer(i) = stack.pop().unwrap() else {
           panic!();
         };
         compiler_print(i.to_string());
-      }
+      },
       Builtin::PrintBoolean => {
         let ConstValue::Boolean(b) = stack.pop().unwrap() else {
           panic!();
         };
         compiler_print(b.to_string());
-      }
+      },
       Builtin::PrintType => {
         let ConstValue::Type(t) = stack.pop().unwrap() else {
           panic!();
         };
         compiler_print(format!("{t}"));
-      }
+      },
       _ => panic!(),
     };
     Ok(())

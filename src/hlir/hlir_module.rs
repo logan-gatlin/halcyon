@@ -14,11 +14,13 @@ pub enum HlIrKind {
   StructDef {
     fields: Vec<String>,
     types: Vec<IrPtr>,
+    spans: Vec<Span>,
   },
   StructLiteral {
     struct_t: Option<(IrPtr, Mangle)>,
     field_names: Vec<String>,
     field_values: Vec<IrPtr>,
+    spans: Vec<Span>,
   },
   Field {
     of: IrPtr,
@@ -39,6 +41,7 @@ pub enum HlIrKind {
     name: Mangle,
     parameter_names: Vec<Mangle>,
     parameter_types: Vec<IrPtr>,
+    parameter_spans: Vec<Span>,
     returns: Option<(IrPtr, Mangle)>,
     body: IrPtr,
   },
@@ -46,15 +49,18 @@ pub enum HlIrKind {
     callee: IrPtr,
     callee_name: Mangle,
     arguments: Vec<IrPtr>,
+    argument_spans: Vec<Span>,
   },
   If {
     predicate: IrPtr,
+    predicate_span: Span,
     then: IrPtr,
     else_: Option<IrPtr>,
   },
   Loop {
     parameter_names: Vec<Mangle>,
     parameter_values: Vec<IrPtr>,
+    parameter_spans: Vec<Span>,
     body: IrPtr,
   },
   Break(Option<IrPtr>),
@@ -72,8 +78,7 @@ pub struct HlIrModule {
   pub nodes: Vec<HlIrNode>,
   pub constants: HashMap<Mangle, IrPtr>,
   pub type_map: HashMap<Mangle, Type>,
-  pub heap: Vec<Vec<u8>>,
-  pub main: Option<Mangle>,
+  pub heap: Memory,
 }
 
 impl HlIrModule {
@@ -91,7 +96,7 @@ impl HlIrModule {
           } else {
             return n.span;
           }
-        }
+        },
         HlIrKind::If { then, .. } => n = &self.nodes[*then],
         _ => return n.span,
       }

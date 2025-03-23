@@ -8,8 +8,8 @@ pub enum ConstValue {
   Real(f64),
   Boolean(bool),
   String {
-    virtual_address: usize,
-    length: usize,
+    address: PtrT,
+    length: PtrT,
   },
   Glyph(char),
   Function {

@@ -1,4 +1,4 @@
-array :: (T: type, size: integer) -> type {
+array :: (T: type, size: integer)->type {
 	if size <= 0 {
 		nothing
 	} else {
@@ -9,8 +9,6 @@ array :: (T: type, size: integer) -> type {
 	}
 }
 
-i4 :: array(integer, 4)
-
 () {
-	print_string("hello world");
+	print_string("Hello world")
 }

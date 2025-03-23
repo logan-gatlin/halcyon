@@ -10,6 +10,9 @@ pub mod vm;
 pub use assembly::*;
 pub use vm::*;
 
+pub fn compile(hlir: HlIrModule) {
+}
+
 #[derive(Debug, Clone)]
 struct BreakTarget {
   block_name: String,
@@ -38,32 +41,15 @@ impl Compiler {
     }
   }
 
-  fn build_data(&mut self) -> Vec<u8> {
-    let mut value_map = HashMap::new();
-    self
-      .module
-      .heap
-      .iter()
-      .fold((0_usize, 0_usize), |(index, item), val| {
-        value_map.insert(item, index);
-        (index + val.len(), item + 1)
-      });
-    for n in &mut self.module.nodes {
-      if let HlIrKind::Immediate(ConstValue::String {
-        ref mut virtual_address,
-        ..
-      }) = n.kind
-      {
-        *virtual_address = *value_map.get(virtual_address).unwrap();
-      }
-    }
-    self.module.heap.clone().into_iter().flatten().collect()
-  }
-
-  pub fn compile(module: HlIrModule, to_compile: Vec<IrPtr>) -> String {
+  pub fn compile(
+    module: HlIrModule,
+    to_compile: Vec<IrPtr>,
+    main_mangle: Mangle,
+  ) -> String {
     let mut this = Self::new(module);
-    let heap = this.build_data();
-    let mut regs: Vec<Wasm> = Builtin::ALL.into_iter().flat_map(|b| b.import()).collect();
+    let heap = this.module.heap.clone().to_buffer();
+    let mut regs: Vec<Wasm> =
+      Builtin::ALL.into_iter().flat_map(|b| b.import()).collect();
     regs.push(Wasm::Import {
       ns1: "js".to_string(),
       ns2: "memory".to_string(),
@@ -77,7 +63,7 @@ impl Compiler {
     for func in to_compile {
       this.lower(func, &mut regs, &mut instrs).unwrap();
     }
-    instrs.push(Wasm::Start(this.module.main.clone().unwrap()));
+    instrs.push(Wasm::Start(main_mangle));
     regs.extend_from_slice(&instrs);
     let mut wasm = String::new();
     for r in regs {
@@ -96,7 +82,9 @@ impl Type {
         p::glyph | p::integer | p::real | p::boolean => 1,
         p::string => 2,
       },
-      Type::Struct { member_types, .. } => member_types.iter().map(|t| t.count_registers()).sum(),
+      Type::Struct { member_types, .. } => {
+        member_types.iter().map(|t| t.count_registers()).sum()
+      },
       Type::Function { .. } => 1,
       Type::Type => 0,
       _ => panic!("Counted registers of ambiguous type"),

@@ -6,23 +6,6 @@ use crate::fail_compile;
 
 use super::{Lint, Span};
 
-pub trait UnwrapLint<T> {
-  fn unwrap_lint(self, linter: &Linter) -> T;
-}
-
-impl<T> UnwrapLint<T> for Result<T, Lint> {
-  fn unwrap_lint(self, linter: &Linter) -> T {
-    match self {
-      Ok(t) => t,
-      Err(lint) => {
-        eprintln!("{}", linter.render(lint));
-        eprintln!("\n{}Compilation failed{}", Linter::RED, Linter::RESET);
-        fail_compile();
-      },
-    }
-  }
-}
-
 #[derive(Debug, Clone)]
 struct LintDescription {
   code: usize,
@@ -41,16 +24,26 @@ pub struct Linter {
 fn format_string(fstr: &str, params: &[String]) -> String {
   let mut out = fstr.to_string();
   for p in params {
-    out = out.replacen('%', p, 1);
+    if p.contains('\n') {
+      out = out.replacen('%', &format!("\n{p}\n"), 1);
+    } else {
+      out = out.replacen('%', p, 1);
+    }
   }
   out
 }
 
 impl Linter {
+  /*
   pub const BLUE: &str = "\x1b[0;34m";
   pub const GREEN: &str = "\x1b[0;32m";
   pub const RED: &str = "\x1b[0;31m";
   pub const RESET: &str = "\x1b[0m";
+  */
+  pub const BLUE: &str = "";
+  pub const GREEN: &str = "";
+  pub const RED: &str = "";
+  pub const RESET: &str = "";
 
   pub fn new(source: String) -> Self {
     let mut line_map = vec![];

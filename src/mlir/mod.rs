@@ -8,14 +8,16 @@ pub use evaluate::*;
 
 use std::collections::{HashMap, HashSet};
 
-use crate::{Span, graph::Graph, hlir::*, operator::*, parse::*};
+use crate::{Span, graph::Graph, hlir::*, memory::*, operator::*, parse::*};
 
 #[derive(Clone, Debug)]
 pub enum BlockKind {
   Constant(Option<ConstValue>),
   Function {
     parameters: Vec<Mangle>,
+    parameter_spans: Vec<Span>,
     return_type: Option<Mangle>,
+    return_span: Option<Span>,
     value: Option<ConstValue>,
   },
   TypeAssert(Option<Type>),
@@ -42,7 +44,6 @@ impl Block {
 #[derive(Debug, Clone)]
 pub struct MlIrModule {
   pub blocks: HashMap<Mangle, Block>,
-  pub virtual_memory: Vec<Vec<u8>>,
   pub dependencies: HashMap<Mangle, HashSet<Mangle>>,
 }
 
@@ -91,6 +92,7 @@ pub enum MlIrKind {
   /// function and push its return value
   Call {
     arity: usize,
+    spans: Vec<Span>,
   },
   /// Clear the stack of any values up to the last enscope
   Drop,
@@ -114,14 +116,14 @@ impl std::fmt::Debug for MlIrKind {
       MlIrKind::Field(name) => write!(f, "field {name}"),
       MlIrKind::StructLiteral { param_names } => {
         write!(f, "struct literal {}", param_names.len())
-      }
+      },
       MlIrKind::StructDef {
         fields: param_names,
       } => {
         write!(f, "struct definition {}", param_names.len())
-      }
+      },
       MlIrKind::TypeAssert => write!(f, "type assert",),
-      MlIrKind::Call { arity } => write!(f, "call {arity}"),
+      MlIrKind::Call { arity, .. } => write!(f, "call {arity}"),
       MlIrKind::Drop => write!(f, "drop"),
       MlIrKind::If => write!(f, "if"),
       MlIrKind::Else => write!(f, "else"),
