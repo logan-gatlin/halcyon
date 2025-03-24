@@ -1,163 +1,93 @@
-mod expression;
-mod primary;
-mod statement;
+mod parse_expression;
 
-use multipeek::*;
+use multipeek::{IteratorExt, MultiPeek};
 
-pub use expression::*;
-pub use statement::*;
+use crate::{lint::*, operator::*, token::*};
 
-pub(super) use crate::lint::*;
-use crate::token::*;
-
-pub fn parse(iter: impl IntoIterator<Item = Token>) -> Vec<Statement> {
-  Parser::new(iter.into_iter()).collect()
+#[derive(Clone, Debug)]
+pub struct Parameters {
+  pub arity: usize,
+  pub names: Vec<String>,
+  pub types: Vec<Expression>,
+  pub spans: Vec<Span>,
 }
 
-pub struct Parser<I>
-where
-  I: Iterator<Item = Token>,
-{
-  iter: MultiPeek<I>,
-  last_span: Span,
-  finished: bool,
-}
-
-impl<I: Iterator<Item = Token>> Iterator for Parser<I> {
-  type Item = Statement;
-
-  fn next(&mut self) -> Option<Self::Item> {
-    if self.finished || self.look(0, TokenKind::EOF).is_some() {
-      return None;
-    }
-    match self.statement() {
-      Ok(s) => Some(s),
-      Err(e) => {
-        self.error_correct();
-        Some(Statement {
-          span: e.span.expect("No span for tokenizer error"),
-          kind: StatementKind::Error(e),
-        })
-      },
-    }
-  }
-}
-
-impl<I: Iterator<Item = Token>> Parser<I> {
-  pub fn new(iter: I) -> Self {
+impl Default for Parameters {
+  fn default() -> Self {
     Self {
-      iter: multipeek(iter),
-      last_span: Span { start: 0, width: 0 },
-      finished: false,
+      arity: 0,
+      names: vec![],
+      types: vec![],
+      spans: vec![],
     }
   }
+}
 
-  fn error_correct(&mut self) {
-    loop {
-      let next = self.next_tok();
-      self.last_span = next.1;
-      match next.0 {
-        TokenKind::EOF
-        | TokenKind::Semicolon
-        | TokenKind::RightBrace
-        | TokenKind::NewLine => break,
-        _ => {},
-      }
-    }
-  }
+#[derive(Debug, Clone)]
+pub enum Literal {
+  Unit,
+  Integer(String, Base),
+  Real(String),
+  String(String),
+  Glyph(char),
+  Boolean(bool),
+}
 
-  fn skip(&mut self, n: usize) {
-    for _ in 0..n {
-      let _ = self.next_tok();
-    }
-  }
+#[derive(Debug, Clone)]
+pub enum ExpressionKind {
+  Literal(Literal),
+  Identifier {
+    name: String,
+  },
+  Binary {
+    op: BinaryOp,
+    left: Box<Expression>,
+    right: Box<Expression>,
+  },
+  Unary {
+    op: UnaryOp,
+    child: Box<Expression>,
+  },
+  Parenthesis(Box<Expression>),
+  FunctionDef {
+    parameters: Parameters,
+    returns: Option<Box<Expression>>,
+    body: Box<Expression>,
+  },
+  FunctionCall {
+    callee: Box<Expression>,
+    args: Vec<Expression>,
+  },
+  StructDef(Parameters),
+  StructLiteral {
+    struct_t: Option<Box<Expression>>,
+    parameters: Parameters,
+  },
+  Field {
+    namespace: Box<Expression>,
+    field: Box<Expression>,
+  },
+  Block(Vec<Expression>),
+  If {
+    predicate: Box<Expression>,
+    then: Box<Expression>,
+    else_: Option<Box<Expression>>,
+  },
+  Loop {
+    parameters: Parameters,
+    body: Box<Expression>,
+  },
+  Break {
+    expr: Option<Box<Expression>>,
+  },
+}
 
-  fn next_tok(&mut self) -> Token {
-    if self.finished {
-      return Token(TokenKind::EOF, self.last_span);
-    }
-    let token = self
-      .iter
-      .next()
-      .unwrap_or(Token(TokenKind::EOF, self.last_span));
-    self.last_span = token.1;
-    if token.0 == TokenKind::EOF {
-      self.finished = true;
-    }
-    token
-  }
+#[derive(Debug, Clone)]
+pub struct Expression {
+  pub kind: ExpressionKind,
+  pub span: Span,
+}
 
-  fn peek(&mut self, n: usize) -> Token {
-    self
-      .iter
-      .peek_nth(n)
-      .cloned()
-      .unwrap_or(Token(TokenKind::EOF, self.last_span))
-  }
-
-  fn peek_not_newline(&mut self) -> Token {
-    while self.look(0, TokenKind::NewLine).is_some()
-      && self.look(1, TokenKind::NewLine).is_some()
-    {
-      self.skip(1);
-    }
-    if self.look(0, TokenKind::NewLine).is_none() {
-      self.peek(0)
-    } else {
-      self.peek(1)
-    }
-  }
-
-  fn eat_newlines(&mut self) {
-    while let Some(_) = self.eat(TokenKind::NewLine) {}
-  }
-
-  fn eat(&mut self, expect: TokenKind) -> Option<Token> {
-    self.look(0, expect)?;
-    let next = self.next_tok();
-    Some(next)
-  }
-
-  fn look(&mut self, n: usize, expect: TokenKind) -> Option<Token> {
-    let next = self.peek(n);
-    if next.0 == expect { Some(next) } else { None }
-  }
-
-  fn body(
-    &mut self,
-    lint_context: impl Into<String>,
-  ) -> Result<(Vec<Statement>, Span)> {
-    use TokenKind as t;
-    self.eat_newlines();
-    let mut span = self
-      .eat(t::LeftBrace)
-      .lint(ParseLint::MissingBody)
-      .context(lint_context)?
-      .1;
-    self.eat_newlines();
-    let mut statements = vec![];
-    loop {
-      span = span + self.peek(0).1;
-      match self.peek(0) {
-        Token(t::RightBrace, s) => {
-          span += s;
-          self.skip(1);
-          break;
-        },
-        Token(t::EOF, _) => {
-          return Err(lint(
-            TokenLint::MissingDelimeter,
-            span,
-            &["}".to_string()],
-          ));
-        },
-        _ => {
-          let statement = self.statement()?;
-          span = span + statement.span;
-          statements.push(statement);
-        },
-      }
-    }
-    Ok((statements, span))
-  }
+pub fn parse(toks: impl IntoIterator<Item = Token>) {
+  todo!()
 }

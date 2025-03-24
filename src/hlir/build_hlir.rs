@@ -316,14 +316,14 @@ impl Canonizer {
     let node = self.new_node();
     let kind = match expr.kind {
       e::Immediate(immediate) => match immediate {
-        Immediate::Unit => k::Immediate(ConstValue::Nothing),
-        Immediate::Integer(val, base) => k::Immediate(ConstValue::Integer(
+        Literal::Unit => k::Immediate(ConstValue::Nothing),
+        Literal::Integer(val, base) => k::Immediate(ConstValue::Integer(
           parse_int_literal(&val, base as u32)?,
         )),
-        Immediate::Real(val) => {
+        Literal::Real(val) => {
           k::Immediate(ConstValue::Real(parse_real_literal(&val)?))
         },
-        Immediate::String(val) => {
+        Literal::String(val) => {
           let bytes = val.into_bytes();
           let address = self.allocate(&bytes);
           k::Immediate(ConstValue::String {
@@ -331,8 +331,8 @@ impl Canonizer {
             length: bytes.len() as PtrT,
           })
         },
-        Immediate::Glyph(val) => k::Immediate(ConstValue::Glyph(val)),
-        Immediate::Boolean(val) => k::Immediate(ConstValue::Boolean(val)),
+        Literal::Glyph(val) => k::Immediate(ConstValue::Glyph(val)),
+        Literal::Boolean(val) => k::Immediate(ConstValue::Boolean(val)),
       },
       e::Identifier { name } => {
         let Symbol { mangle, .. } =
