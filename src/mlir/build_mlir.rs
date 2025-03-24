@@ -3,7 +3,7 @@ use super::*;
 pub fn build_mlir(hlir: &mut HlIrModule) -> Result<MlIrModule> {
   let mut this = Analyzer::new(hlir);
   this.new_block(GLOBAL_SCOPE_MANGLE.into(), BlockKind::GlobalScope(None));
-  this.lower(&GLOBAL_SCOPE_MANGLE.to_string(), 0);
+  this.lower(&GLOBAL_SCOPE_MANGLE.to_string(), 0, &mut 0)?;
   let mut module = MlIrModule {
     blocks: this.blocks,
     dependencies: HashMap::new(),
@@ -49,7 +49,12 @@ impl<'a> Analyzer<'a> {
     self.blocks.insert(name.clone(), Block::new(kind));
   }
 
-  fn lower(&mut self, block: &Mangle, node_ptr: IrPtr) {
+  fn lower(
+    &mut self,
+    block: &Mangle,
+    node_ptr: IrPtr,
+    break_depth: &mut usize,
+  ) -> Result<()> {
     let node = &self.hl.nodes[node_ptr];
     let new = |kind: MlIrKind| MlIrNode {
       span: node.span,
@@ -66,13 +71,13 @@ impl<'a> Analyzer<'a> {
       } => {
         if is_constant {
           self.new_block(assignee.clone(), BlockKind::Constant(None));
-          self.lower(&assignee, value);
+          self.lower(&assignee, value, &mut 0)?;
           if let Some(type_) = type_assert {
-            self.lower(&assignee, type_);
+            self.lower(&assignee, type_, &mut 0)?;
             self.push(&assignee, new(ml::TypeAssert));
           }
         } else {
-          self.lower(block, value);
+          self.lower(block, value, break_depth)?;
           self.push(block, new(ml::Set(assignee)));
         }
         self.push(block, new(ml::Const(ConstValue::Nothing)));
@@ -83,7 +88,7 @@ impl<'a> Analyzer<'a> {
       Block(items) => {
         let length = items.len();
         for (id, item) in items.into_iter().enumerate() {
-          self.lower(block, item);
+          self.lower(block, item, break_depth)?;
           if id != length - 1 {
             self.push(block, new(ml::Drop));
           }
@@ -101,7 +106,7 @@ impl<'a> Analyzer<'a> {
         spans,
       } => {
         for type_ in types {
-          self.lower(block, type_);
+          self.lower(block, type_, &mut 0)?;
         }
         self.push(block, new(ml::StructDef { fields }));
       },
@@ -112,10 +117,10 @@ impl<'a> Analyzer<'a> {
         spans,
       } => {
         for value in field_values {
-          self.lower(block, value);
+          self.lower(block, value, break_depth)?;
         }
         if let Some((struct_t, mangle)) = &struct_t {
-          self.lower(block, *struct_t);
+          self.lower(block, *struct_t, break_depth)?;
           self.push(block, new(ml::Set(mangle.clone())));
         }
         self.push(
@@ -130,18 +135,18 @@ impl<'a> Analyzer<'a> {
         }
       },
       Field { of, index } => {
-        self.lower(block, of);
+        self.lower(block, of, break_depth)?;
         self.push(block, new(ml::Field(index)));
       },
       Binary {
         op, left, right, ..
       } => {
-        self.lower(block, left);
-        self.lower(block, right);
+        self.lower(block, left, break_depth)?;
+        self.lower(block, right, break_depth)?;
         self.push(block, new(ml::BinaryOp { kind: op }));
       },
       Unary { op, child, .. } => {
-        self.lower(block, child);
+        self.lower(block, child, break_depth)?;
         self.push(block, new(ml::UnaryOp { kind: op }));
       },
       FunctionDef {
@@ -156,12 +161,12 @@ impl<'a> Analyzer<'a> {
           parameter_names.iter().zip(parameter_types.into_iter())
         {
           self.new_block(name.clone(), BlockKind::Parameter(None));
-          self.lower(name, type_);
+          self.lower(name, type_, &mut 0)?;
         }
         let mut return_span = None;
         let return_name = if let Some((type_, name)) = &returns {
           self.new_block(name.clone(), BlockKind::Parameter(None));
-          self.lower(name, *type_);
+          self.lower(name, *type_, &mut 0)?;
           return_span = Some(self.hl.value_span(*type_));
           Some(name.clone())
         } else {
@@ -177,7 +182,7 @@ impl<'a> Analyzer<'a> {
             value: None,
           },
         );
-        self.lower(&name, body);
+        self.lower(&name, body, &mut 0)?;
         self.push(block, new(ml::Get(name)));
       },
       FunctionCall {
@@ -185,10 +190,10 @@ impl<'a> Analyzer<'a> {
       } => {
         let arity = arguments.len();
         let mut spans = vec![];
-        self.lower(block, callee);
+        self.lower(block, callee, break_depth)?;
         for argument in arguments {
           spans.push(self.hl.value_span(argument));
-          self.lower(block, argument);
+          self.lower(block, argument, break_depth)?;
         }
         self.push(block, new(ml::Call { arity, spans }));
       },
@@ -198,12 +203,12 @@ impl<'a> Analyzer<'a> {
         then,
         else_,
       } => {
-        self.lower(block, predicate);
+        self.lower(block, predicate, break_depth)?;
         self.push(block, new(ml::If));
-        self.lower(block, then);
+        self.lower(block, then, break_depth)?;
         if let Some(else_) = else_ {
           self.push(block, new(ml::Else));
-          self.lower(block, else_);
+          self.lower(block, else_, break_depth)?;
         }
         self.push(block, new(ml::End));
       },
@@ -214,26 +219,32 @@ impl<'a> Analyzer<'a> {
         body,
       } => {
         for value in parameter_values {
-          self.lower(block, value);
+          self.lower(block, value, break_depth)?;
         }
         for name in parameter_names.iter().rev() {
           self.push(block, new(ml::Set(name.clone())));
         }
         self.push(block, new(ml::Loop));
-        self.lower(block, body);
+        *break_depth += 1;
+        self.lower(block, body, break_depth)?;
+        *break_depth -= 1;
         for name in parameter_names.iter().rev() {
           self.push(block, new(ml::Set(name.clone())));
         }
         self.push(block, new(ml::Repeat));
       },
       Break(e) => {
+        if *break_depth == 0 {
+          return Err(lint(NameLint::NoBreakTarget, node.span, &[]));
+        }
         if let Some(e) = e {
-          self.lower(block, e);
+          self.lower(block, e, break_depth)?;
         } else {
           self.push(block, new(ml::Const(ConstValue::Nothing)));
         }
         self.push(block, new(ml::Break));
       },
     }
+    Ok(())
   }
 }

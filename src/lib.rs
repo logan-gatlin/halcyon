@@ -33,7 +33,8 @@ use wasm_bindgen::prelude::wasm_bindgen;
 
 pub use lint::*;
 
-#[wasm_bindgen(module = "/src/abi/console.js")]
+#[cfg(target_family = "wasm")]
+#[wasm_bindgen(module = "/src/abi/element.js")]
 extern "C" {
   pub fn _compiler_print(s: String);
   pub fn _compiler_cls();
@@ -41,12 +42,22 @@ extern "C" {
   pub fn _compiler_exec(bytes: Vec<u8>);
 }
 
+#[cfg(not(target_family = "wasm"))]
+pub fn _compiler_print(s: String) {
+  println!("{s}");
+}
+#[cfg(not(target_family = "wasm"))]
+pub fn _compiler_cls() {
+}
+#[cfg(not(target_family = "wasm"))]
+pub fn _compiler_wat(s: String) {
+}
+#[cfg(not(target_family = "wasm"))]
+pub fn _compiler_exec(bytes: Vec<u8>) {
+}
+#[cfg(not(target_family = "wasm"))]
 pub fn compiler_print(s: impl Into<String>) {
   _compiler_print(s.into());
-}
-
-pub fn fail_compile() -> ! {
-  exit(1);
 }
 
 pub fn _compile(input: &str) -> Result<Vec<u8>> {
@@ -59,11 +70,17 @@ pub fn _compile(input: &str) -> Result<Vec<u8>> {
   let to_compile = sanitize(&mut hlir, &mlir)?;
   if let Some((ir, main)) = to_compile {
     let asm = Compiler::compile(hlir, ir.into_iter().collect::<Vec<_>>(), main);
+    compiler_print(
+      "Compiled Successfully".apply_style(Color::Green, Attribute::Underline),
+    );
     _compiler_wat(asm.clone());
     let bytes =
       wat::parse_str(asm).map_err(|_| lint_nospan(EvalLint::Unreachable))?;
     Ok(bytes)
   } else {
+    compiler_print(
+      "Compiled Successfully".apply_style(Color::Green, Attribute::Underline),
+    );
     Ok(vec![])
   }
 }
@@ -77,6 +94,11 @@ pub fn compile(input: &str) {
         _compiler_exec(b);
       }
     },
-    Err(e) => compiler_print(linter.render(e)),
+    Err(e) => {
+      compiler_print(
+        "Failed to Compile".apply_style(Color::Red, Attribute::Underline),
+      );
+      compiler_print(linter.render(e))
+    },
   };
 }

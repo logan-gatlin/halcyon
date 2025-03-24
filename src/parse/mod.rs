@@ -2,7 +2,7 @@ mod expression;
 mod primary;
 mod statement;
 
-use multipeek::{MultiPeek, multipeek};
+use multipeek::*;
 
 pub use expression::*;
 pub use statement::*;

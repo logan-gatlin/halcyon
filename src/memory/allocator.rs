@@ -59,7 +59,6 @@ impl Memory {
     let mut address = 0;
     loop {
       let length: PtrT = self.load(address);
-      println!("{address} :: {length}");
       if length == 0 {
         return address;
       } else {
