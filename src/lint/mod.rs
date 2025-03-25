@@ -1,10 +1,12 @@
 mod color;
 pub mod kinds;
 pub mod render;
+pub mod sexpr;
 pub mod span;
 
 pub(super) use color::*;
 pub use kinds::*;
+pub use sexpr::*;
 pub use span::*;
 
 use crate::token::{Token, TokenKind};

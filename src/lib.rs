@@ -5,22 +5,12 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 #![allow(incomplete_features)]
-mod compile;
-mod graph;
-mod hlir;
 mod lint;
-mod memory;
-mod mlir;
 mod operator;
 mod parse;
 mod token;
-mod typecheck;
 
-use compile::Compiler;
-use hlir::*;
 use lint::render::Linter;
-use memory::*;
-use mlir::*;
 use parse::*;
 use std::{
   ops::{Add, AddAssign},
@@ -28,7 +18,6 @@ use std::{
   time::Instant,
 };
 use token::*;
-use typecheck::*;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 pub use lint::*;
@@ -64,6 +53,8 @@ pub fn _compile(input: &str) -> Result<Vec<u8>> {
   _compiler_cls();
   let tokens = tokenize(input.chars())?;
   let parse_tree = parse(tokens);
+  Ok(vec![])
+  /*
   let mut hlir = build_hlir(parse_tree)?;
   let mlir = build_mlir(&mut hlir)?;
   type_check(&mut hlir, &mlir)?;
@@ -83,6 +74,7 @@ pub fn _compile(input: &str) -> Result<Vec<u8>> {
     );
     Ok(vec![])
   }
+  */
 }
 
 #[wasm_bindgen]

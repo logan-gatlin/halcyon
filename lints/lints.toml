@@ -48,48 +48,28 @@ help = """Real numbers may only be written in decimal. A real number must contai
 
 # Parsing errors
 [2000]
-reason = "Unexpected token"
-help = ""
+reason = "Missing operand"
+help = "The operator `%` acts on the expression which comes before it. Try placing this operator after an expression"
 
 [2001]
-reason = "Missing body"
-help = "This % expression is missing a body. A body is a series of expressions surrounded with curly brackets { ... }"
+reason = "Missing operand"
+help = "The operator `%` acts on the expression which comes after it. Try placing this operator before an expression"
 
 [2002]
-reason = "Missing binary operand"
-help = "The % operator goes in-between the two values that it acts on"
+reason = "Missing operand"
+help = "The operator `%` acts on the expressions before and after it. Try placing this operator before two expressions"
 
 [2003]
-reason = "Missing prefix unary operand"
-help = "The % operator goes before the value it acts on"
+reason = "Invalid if"
+help = "An `if` expression is written like `if <predicate> then <expression> else <expression>`"
 
 [2004]
-reason = "Missing postfix unary operand"
-help = "The % operator goes after the value it acts on"
+reason = "Invalid loop"
+help = "A `loop` expression is written like `loop <name>: <value> ...`"
 
 [2005]
-reason = "Missing comma"
-help = "Try adding a comma (,) after this expression"
-
-[2006]
-reason = "Missing function parameter type"
-help = "Function parameters require a type. Try changing this to `%: <type>`"
-
-[2007]
-reason = "Expected identifier"
-help = "An identifier is required here"
-
-[2008]
-reason = "Missing assignee"
-help = "The declaration % must be assigned a value. Try adding an equals (=) after this expression"
-
-[2009]
-reason = "Missing semicolon"
-help = "Try adding a semicolon (;) after this expression"
-
-[2010]
-reason = "Missing loop parameter"
-help = "A loop requires a parameter to iterate over. A parameter consists of a name and an initial value, for example: `loop i: 0 { i + 1 }`"
+reason = "Empty block"
+help = "A block expression must contain at least one expression. You might want to write a unit `()` here instead"
 
 # Name errors
 [3000]

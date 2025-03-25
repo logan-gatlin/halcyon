@@ -23,17 +23,12 @@ pub enum TokenLint {
 
 #[repr(usize)]
 pub enum ParseLint {
-  UnexpectedToken = 2000,
-  MissingBody = 2001,
-  MissingBinaryOperand = 2002,
-  MissingPrefixUnaryOperand = 2003,
-  MissingPostfixUnaryOperand = 2004,
-  MissingComma = 2005,
-  MissingFunctionParameterType = 2006,
-  ExpectedIdentifier = 2007,
-  MissingAssignee = 2008,
-  MissingSemicolon = 2009,
-  MissingLoopParameter = 2010,
+  BadPostfix = 2000,
+  BadPrefix = 2001,
+  BadInfix = 2002,
+  InvalidIf = 2003,
+  InvalidLoop = 2004,
+  EmptyBlock = 2005,
 }
 
 #[repr(usize)]

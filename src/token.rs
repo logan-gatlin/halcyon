@@ -59,7 +59,7 @@ pub enum TokenKind {
   StringLiteral(String),
   GlyphLiteral(char),
   IntegerLiteral(String, Base),
-  FloatLiteral(String),
+  RealLiteral(String),
 
   Loop,
   If,
@@ -140,7 +140,7 @@ impl std::fmt::Display for TokenKind {
         StringLiteral(_) => "string literal",
         GlyphLiteral(_) => "glyph literal",
         IntegerLiteral(_, _) => "integer literal",
-        FloatLiteral(_) => "float literal",
+        RealLiteral(_) => "float literal",
         Loop => "loop",
         If => "if",
         Then => "then",
@@ -249,7 +249,7 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
       },
     };
     // Parse whitespace
-    if current.is_whitespace() && current != '\n' {
+    if current.is_whitespace() {
       let mut buffer = String::from(current);
       while let Some(c) = self.peek(0) {
         if !c.is_whitespace() {
@@ -259,7 +259,11 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
         buffer.push(c.clone());
       }
       position.width = buffer.chars().count();
-      return t(Whitespace(buffer), position);
+      if buffer.contains("\n") {
+        return t(NewLine, position);
+      } else {
+        return t(Whitespace(buffer), position);
+      }
     }
     // Parse multiline comments
     if let ('/', Some('*')) = (current, self.peek(0)) {
@@ -443,7 +447,7 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
       };
       // Determine integer or float
       if base == Base::Decimal && (encountered_dot || buffer.contains("e")) {
-        return t(FloatLiteral(buffer), position);
+        return t(RealLiteral(buffer), position);
       } else {
         return t(IntegerLiteral(buffer, base), position);
       }

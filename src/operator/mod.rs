@@ -1,7 +1,7 @@
-pub mod assembly;
+//pub mod assembly;
 use crate::token::*;
 
-pub use assembly::*;
+//pub use assembly::*;
 
 pub type Precedence = usize;
 
@@ -48,35 +48,41 @@ macro_rules! op {
 
 pub const RIGHT_ASSOC: bool = true;
 pub const LEFT_ASSOC: bool = false;
-pub const FIELD_PREC: Precedence = 13;
 pub const CALL_PREC: Precedence = 12;
 
 // Name, precedence, associativity;
 op! {
   BinaryOp;
-  Star, 10, LEFT_ASSOC;
-  Slash, 10, LEFT_ASSOC;
-  Percent, 10, LEFT_ASSOC;
-  Plus, 9, LEFT_ASSOC;
-  Minus, 9, LEFT_ASSOC;
-  Nand, 8, LEFT_ASSOC;
-  Xor, 7, LEFT_ASSOC;
-  Xnor, 7, LEFT_ASSOC;
-  Or, 6, LEFT_ASSOC;
-  Nor, 6, LEFT_ASSOC;
-  DoubleEqual, 5, LEFT_ASSOC;
-  BangEqual, 5, LEFT_ASSOC;
-  Less, 5, LEFT_ASSOC;
-  LessEqual, 5, LEFT_ASSOC;
-  Greater, 5, LEFT_ASSOC;
-  GreaterEqual, 5, LEFT_ASSOC;
-  And, 4, LEFT_ASSOC;
+  Dot, 13, LEFT_ASSOC;
+  Star, 11, LEFT_ASSOC;
+  Slash, 11, LEFT_ASSOC;
+  Percent, 11, LEFT_ASSOC;
+  Plus, 10, LEFT_ASSOC;
+  Minus, 10, LEFT_ASSOC;
+  Nand, 9, LEFT_ASSOC;
+  Xor, 8, LEFT_ASSOC;
+  Xnor, 8, LEFT_ASSOC;
+  Or, 7, LEFT_ASSOC;
+  Nor, 7, LEFT_ASSOC;
+  DoubleEqual, 6, LEFT_ASSOC;
+  BangEqual, 6, LEFT_ASSOC;
+  Less, 6, LEFT_ASSOC;
+  LessEqual, 6, LEFT_ASSOC;
+  Greater, 6, LEFT_ASSOC;
+  GreaterEqual, 6, LEFT_ASSOC;
+  And, 5, LEFT_ASSOC;
+  Colon, 4, LEFT_ASSOC;
+  Equal, 3, LEFT_ASSOC;
+  Comma, 2, LEFT_ASSOC;
+  Arrow, 1, RIGHT_ASSOC;
+  FatArrow, 1, RIGHT_ASSOC;
 }
 
 op! {
   UnaryOp;
-  Ampersand, 11, RIGHT_ASSOC;
-  Tilda, 11, RIGHT_ASSOC;
-  Minus, 11, LEFT_ASSOC;
-  Not, 11, LEFT_ASSOC;
+  Ampersand, 12, RIGHT_ASSOC;
+  Tilda, 12, RIGHT_ASSOC;
+  Minus, 12, LEFT_ASSOC;
+  Not, 12, LEFT_ASSOC;
+  Break, 0, LEFT_ASSOC;
 }

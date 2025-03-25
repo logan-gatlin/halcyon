@@ -1,27 +1,12 @@
 mod parse_expression;
+mod parse_primary;
+mod printing;
 
 use multipeek::{IteratorExt, MultiPeek};
+use parse_expression::*;
+use parse_primary::*;
 
 use crate::{lint::*, operator::*, token::*};
-
-#[derive(Clone, Debug)]
-pub struct Parameters {
-  pub arity: usize,
-  pub names: Vec<String>,
-  pub types: Vec<Expression>,
-  pub spans: Vec<Span>,
-}
-
-impl Default for Parameters {
-  fn default() -> Self {
-    Self {
-      arity: 0,
-      names: vec![],
-      types: vec![],
-      spans: vec![],
-    }
-  }
-}
 
 #[derive(Debug, Clone)]
 pub enum Literal {
@@ -48,24 +33,9 @@ pub enum ExpressionKind {
     op: UnaryOp,
     child: Box<Expression>,
   },
-  Parenthesis(Box<Expression>),
-  FunctionDef {
-    parameters: Parameters,
-    returns: Option<Box<Expression>>,
-    body: Box<Expression>,
-  },
   FunctionCall {
     callee: Box<Expression>,
-    args: Vec<Expression>,
-  },
-  StructDef(Parameters),
-  StructLiteral {
-    struct_t: Option<Box<Expression>>,
-    parameters: Parameters,
-  },
-  Field {
-    namespace: Box<Expression>,
-    field: Box<Expression>,
+    arguments: Box<Expression>,
   },
   Block(Vec<Expression>),
   If {
@@ -74,11 +44,8 @@ pub enum ExpressionKind {
     else_: Option<Box<Expression>>,
   },
   Loop {
-    parameters: Parameters,
+    parameters: Box<Expression>,
     body: Box<Expression>,
-  },
-  Break {
-    expr: Option<Box<Expression>>,
   },
 }
 
@@ -88,6 +55,38 @@ pub struct Expression {
   pub span: Span,
 }
 
+macro_rules! it {
+  () => {
+    &mut MultiPeek<impl Iterator<Item = Token>>
+  };
+}
+
+fn skip(iter: it!(), n: usize) {
+  for _ in 0..n {
+    iter.next();
+  }
+}
+
+fn eat(iter: it!(), kind: TokenKind) -> Option<Token> {
+  let next = iter.peek();
+  if let Some(next) = next
+    && next.0 == kind
+  {
+    let next = next.clone();
+    skip(iter, 1);
+    Some(next.clone())
+  } else {
+    None
+  }
+}
+
+fn eat_ws(iter: it!()) {
+  while let Some(_) = eat(iter, TokenKind::NewLine) {}
+}
+
 pub fn parse(toks: impl IntoIterator<Item = Token>) {
-  todo!()
+  let e = expression(&mut toks.into_iter().multipeek(), 0)
+    .unwrap()
+    .unwrap();
+  println!("{e}");
 }
