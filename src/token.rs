@@ -47,6 +47,7 @@ pub enum TokenKind {
   GreaterEqual,
   Less,
   LessEqual,
+  DoubleColon,
 
   Pipe,
   Ampersand,
@@ -91,77 +92,73 @@ impl PartialEq for TokenKind {
   }
 }
 
-impl Eq for TokenKind {
-}
+impl Eq for TokenKind {}
 
 impl std::fmt::Display for TokenKind {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     use TokenKind::*;
-    write!(
-      f,
-      "{}",
-      match self {
-        LeftParen => "(",
-        RightParen => ")",
-        LeftBrace => "{",
-        RightBrace => "}",
-        LeftSquare => "[",
-        RightSquare => "]",
-        Comma => ",",
-        Colon => ":",
-        Semicolon => ";",
-        NewLine => "end of line",
-        Dot => ".",
-        DotDot => "..",
-        Plus => "+",
-        Minus => "-",
-        Slash => "/",
-        Star => "*",
-        Percent => "%",
-        Tilda => "~",
-        Arrow => "->",
-        FatArrow => "=>",
-        Bang => "!",
-        BangEqual => "!=",
-        Question => "?",
-        QuestionEqual => "?=",
-        Equal => "=",
-        DoubleEqual => "==",
-        Greater => ">",
-        GreaterEqual => ">=",
-        Less => "<",
-        LessEqual => "<=",
-        Pipe => "|",
-        Ampersand => "&",
-        Carrot => "^",
-        Hash => "#",
-        DotDotEqual => "..=",
-        Identifier(_) => "identifier",
-        StringLiteral(_) => "string literal",
-        GlyphLiteral(_) => "glyph literal",
-        IntegerLiteral(_, _) => "integer literal",
-        RealLiteral(_) => "float literal",
-        Loop => "loop",
-        If => "if",
-        Then => "then",
-        Else => "else",
-        And => "and",
-        Or => "or",
-        Xor => "xor",
-        Not => "not",
-        Nand => "nand",
-        Nor => "nor",
-        Xnor => "xnor",
-        Break => "break",
-        True => "true",
-        False => "false",
-        Struct => "struct",
-        Whitespace(_) => "whitespace",
-        BigComment(_) | SmallComment(_) => "comment",
-        Idk => "idk",
-        EOF => "EOF",
-      }
-    )
+    write!(f, "{}", match self {
+      LeftParen => "(",
+      RightParen => ")",
+      LeftBrace => "{",
+      RightBrace => "}",
+      LeftSquare => "[",
+      RightSquare => "]",
+      Comma => ",",
+      Colon => ":",
+      DoubleColon => "::",
+      Semicolon => ";",
+      NewLine => "end of line",
+      Dot => ".",
+      DotDot => "..",
+      Plus => "+",
+      Minus => "-",
+      Slash => "/",
+      Star => "*",
+      Percent => "%",
+      Tilda => "~",
+      Arrow => "->",
+      FatArrow => "=>",
+      Bang => "!",
+      BangEqual => "!=",
+      Question => "?",
+      QuestionEqual => "?=",
+      Equal => "=",
+      DoubleEqual => "==",
+      Greater => ">",
+      GreaterEqual => ">=",
+      Less => "<",
+      LessEqual => "<=",
+      Pipe => "|",
+      Ampersand => "&",
+      Carrot => "^",
+      Hash => "#",
+      DotDotEqual => "..=",
+      Identifier(_) => "identifier",
+      StringLiteral(_) => "string literal",
+      GlyphLiteral(_) => "glyph literal",
+      IntegerLiteral(_, _) => "integer literal",
+      RealLiteral(_) => "float literal",
+      Loop => "loop",
+      If => "if",
+      Then => "then",
+      Else => "else",
+      And => "and",
+      Or => "or",
+      Xor => "xor",
+      Not => "not",
+      Nand => "nand",
+      Nor => "nor",
+      Xnor => "xnor",
+      Break => "break",
+      True => "true",
+      False => "false",
+      Struct => "struct",
+      Whitespace(_) => "whitespace",
+      BigComment(_) | SmallComment(_) => "comment",
+      Idk => "idk",
+      EOF => "EOF",
+    })
   }
 }
 
@@ -197,7 +194,7 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
       Some(c) => {
         self.index += 1;
         Some(c)
-      },
+      }
       _ => None,
     }
   }
@@ -209,7 +206,7 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
       let c = match self.next_char() {
         Some(c) if c == terminator && !escape => {
           break;
-        },
+        }
         Some(c) => {
           if c == '\\' {
             escape = !escape;
@@ -217,7 +214,7 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
             escape = false;
           }
           c
-        },
+        }
         None => return None,
       };
       buffer.push(c)
@@ -241,12 +238,12 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
     let current = match self.next_char() {
       Some(std::char::REPLACEMENT_CHARACTER) => {
         return Err(lint(TokenLint::InvalidInput, position, &[]));
-      },
+      }
       Some(c) => c,
       None => {
         self.ended = true;
         return t(EOF, position);
-      },
+      }
     };
     // Parse whitespace
     if current.is_whitespace() {
@@ -321,7 +318,7 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
         '[' => LeftSquare,
         ']' => RightSquare,
         ',' => Comma,
-        ':' => Colon,
+        ':' if not_next(':') => Colon,
         ';' => Semicolon,
         '|' => Pipe,
         '&' => Ampersand,
@@ -358,6 +355,7 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
         ('>', '=') => GreaterEqual,
         ('-', '>') => Arrow,
         ('=', '>') => FatArrow,
+        (':', ':') => DoubleColon,
         _ => Idk,
       };
       if kind != Idk {
@@ -499,7 +497,7 @@ impl<'a, I: Iterator<Item = char>> Iterator for Tokenizer<I> {
       match self._next() {
         Ok(Token(SmallComment(_) | BigComment(_) | Idk | Whitespace(_), _)) => {
           continue;
-        },
+        }
         Ok(s) => return Some(Ok(s)),
         Err(e) => return Some(Err(e)),
       }
@@ -534,19 +532,19 @@ fn parse_single_escape(
   span.start += 1;
   span.width = 2;
   Ok(match iter.next() {
-    Some('n') => ('\n', 1),   // New line
-    Some('r') => ('\r', 1),   // Carriage return
-    Some('t') => ('\t', 1),   // Tab
-    Some('b') => ('\x08', 1), // Backspace
-    Some('\\') => ('\\', 1),  // Backslash
-    Some('\0') => ('\0', 1),  // Null
-    Some('"') => ('\"', 1),   // Double quote
-    Some('\'') => ('\'', 1),  // Single quote
+    Some('n') => ('\n', 1),                           // New line
+    Some('r') => ('\r', 1),                           // Carriage return
+    Some('t') => ('\t', 1),                           // Tab
+    Some('b') => ('\x08', 1),                         // Backspace
+    Some('\\') => ('\\', 1),                          // Backslash
+    Some('\0') => ('\0', 1),                          // Null
+    Some('"') => ('\"', 1),                           // Double quote
+    Some('\'') => ('\'', 1),                          // Single quote
     Some('x') => (parse_byte_escape(iter, span)?, 2), // Byte escape
     Some('w') => (parse_wide_escape(iter, span)?, 4), // Wide escape
     _ => {
       return Err(lint(TokenLint::UnrecognizedEscape, span, &[]));
-    },
+    }
   })
 }
 
@@ -560,16 +558,13 @@ fn hex_digit(c: char) -> Option<u32> {
   }
 }
 
-fn parse_byte_escape(
-  iter: &mut impl Iterator<Item = char>,
-  span: Span,
-) -> Result<char> {
+fn parse_byte_escape(iter: &mut impl Iterator<Item = char>, span: Span) -> Result<char> {
   let lint = lint(TokenLint::UnrecognizedEscape, span, &[]);
   let (b1, b2) = match (iter.next(), iter.next()) {
     (Some(b1), Some(b2)) => (b1.to_ascii_lowercase(), b2.to_ascii_lowercase()),
     _ => {
       return Err(lint);
-    },
+    }
   };
   let byte = match (hex_digit(b1), hex_digit(b2)) {
     (Some(b1), Some(b2)) => b1 << 8 | b2,
@@ -578,28 +573,21 @@ fn parse_byte_escape(
   char::from_u32(byte).ok_or(lint)
 }
 
-fn parse_wide_escape(
-  iter: &mut impl Iterator<Item = char>,
-  span: Span,
-) -> Result<char> {
+fn parse_wide_escape(iter: &mut impl Iterator<Item = char>, span: Span) -> Result<char> {
   let lint = lint(TokenLint::UnrecognizedEscape, span, &[]);
-  let (b1, b2, b3, b4) =
-    match (iter.next(), iter.next(), iter.next(), iter.next()) {
-      (Some(b1), Some(b2), Some(b3), Some(b4)) => (
-        b1.to_ascii_lowercase(),
-        b2.to_ascii_lowercase(),
-        b3.to_ascii_lowercase(),
-        b4.to_ascii_lowercase(),
-      ),
-      _ => {
-        return Err(lint);
-      },
-    };
-  let byte = match (hex_digit(b1), hex_digit(b2), hex_digit(b3), hex_digit(b4))
-  {
-    (Some(b1), Some(b2), Some(b3), Some(b4)) => {
-      b1 << 24 | b2 << 16 | b3 << 8 | b4
-    },
+  let (b1, b2, b3, b4) = match (iter.next(), iter.next(), iter.next(), iter.next()) {
+    (Some(b1), Some(b2), Some(b3), Some(b4)) => (
+      b1.to_ascii_lowercase(),
+      b2.to_ascii_lowercase(),
+      b3.to_ascii_lowercase(),
+      b4.to_ascii_lowercase(),
+    ),
+    _ => {
+      return Err(lint);
+    }
+  };
+  let byte = match (hex_digit(b1), hex_digit(b2), hex_digit(b3), hex_digit(b4)) {
+    (Some(b1), Some(b2), Some(b3), Some(b4)) => b1 << 24 | b2 << 16 | b3 << 8 | b4,
     _ => return Err(lint),
   };
   char::from_u32(byte).ok_or(lint)

@@ -21,9 +21,8 @@ pub enum Literal {
 #[derive(Debug, Clone)]
 pub enum ExpressionKind {
   Literal(Literal),
-  Identifier {
-    name: String,
-  },
+  Identifier(String),
+  // for type inferred constants
   Binary {
     op: BinaryOp,
     left: Box<Expression>,
@@ -43,6 +42,11 @@ pub enum ExpressionKind {
     then: Box<Expression>,
     else_: Option<Box<Expression>>,
   },
+  Guard {
+    predicates: Vec<Expression>,
+    branches: Vec<Expression>,
+    else_branch: Option<Box<Expression>>,
+  },
   Loop {
     parameters: Box<Expression>,
     body: Box<Expression>,
@@ -61,9 +65,24 @@ macro_rules! it {
   };
 }
 
+fn peek(iter: it!(), n: usize, expect: TokenKind) -> Option<Token> {
+  match iter.peek_nth(n) {
+    Some(t) if t.0 == expect => Some(t.clone()),
+    _ => None,
+  }
+}
+
 fn skip(iter: it!(), n: usize) {
   for _ in 0..n {
     iter.next();
+  }
+}
+
+fn next_not_ws(iter: it!()) {
+  while iter.peek_nth(0).map(|t| &t.0) == Some(&TokenKind::NewLine)
+    && iter.peek_nth(1).map(|t| &t.0) == Some(&TokenKind::NewLine)
+  {
+    skip(iter, 1)
   }
 }
 
@@ -84,9 +103,29 @@ fn eat_ws(iter: it!()) {
   while let Some(_) = eat(iter, TokenKind::NewLine) {}
 }
 
-pub fn parse(toks: impl IntoIterator<Item = Token>) {
-  let e = expression(&mut toks.into_iter().multipeek(), 0)
-    .unwrap()
-    .unwrap();
-  println!("{e}");
+pub fn parse(toks: impl IntoIterator<Item = Token>) -> Result<Expression> {
+  let mut iter = toks.into_iter().multipeek();
+  let mut program = vec![];
+  let mut span = Span { start: 0, width: 0 };
+  eat_ws(&mut iter);
+  loop {
+    if peek(&mut iter, 0, TokenKind::EOF).is_some() {
+      break;
+    }
+    let e = expression(&mut iter, 0)?.unwrap();
+    eat(&mut iter, TokenKind::NewLine).ok_or(lint(ParseLint::MissingNewLine, e.span, &[]))?;
+    eat_ws(&mut iter);
+    span += e.span;
+    program.push(e);
+  }
+  if program.len() == 0 {
+    Err(lint(ParseLint::EmptyInput, span, &[]))
+  } else if program.len() == 1 {
+    Ok(program[0].clone())
+  } else {
+    Ok(Expression {
+      kind: ExpressionKind::Block(program),
+      span,
+    })
+  }
 }

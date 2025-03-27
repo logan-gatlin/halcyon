@@ -28,7 +28,11 @@ pub enum ParseLint {
   BadInfix = 2002,
   InvalidIf = 2003,
   InvalidLoop = 2004,
-  EmptyBlock = 2005,
+  InvalidGuard = 2005,
+  EmptyBlock = 2006,
+  EmptyInput = 2007,
+  MissingNewLine = 2008,
+  AssignToExpression = 2009,
 }
 
 #[repr(usize)]

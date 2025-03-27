@@ -8,7 +8,7 @@ pub use evaluate::*;
 
 use std::collections::{HashMap, HashSet};
 
-use crate::{Span, graph::Graph, hlir::*, memory::*, operator::*, parse::*};
+use crate::{hlir::*, lint::*, memory::*, operator::*, parse::*};
 
 #[derive(Clone, Debug)]
 pub enum BlockKind {
@@ -116,12 +116,12 @@ impl std::fmt::Debug for MlIrKind {
       MlIrKind::Field(name) => write!(f, "field {name}"),
       MlIrKind::StructLiteral { param_names } => {
         write!(f, "struct literal {}", param_names.len())
-      },
+      }
       MlIrKind::StructDef {
         fields: param_names,
       } => {
         write!(f, "struct definition {}", param_names.len())
-      },
+      }
       MlIrKind::TypeAssert => write!(f, "type assert",),
       MlIrKind::Call { arity, .. } => write!(f, "call {arity}"),
       MlIrKind::Drop => write!(f, "drop"),

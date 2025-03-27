@@ -2,6 +2,7 @@ mod build_hlir;
 pub mod builtins;
 pub mod constant;
 pub mod hlir_module;
+pub mod printing;
 pub mod types;
 
 use std::collections::HashMap;
@@ -17,8 +18,9 @@ pub use types::*;
 pub type IrPtr = usize;
 pub type Mangle = String;
 
-pub fn build_hlir(stmts: Vec<Statement>) -> Result<HlIrModule> {
-  Canonizer::canonize_ast(stmts)
+pub fn build_hlir(stmts: Expression) -> Result<HlIrModule> {
+  let mut canon = Canonizer::new();
+  canon.canonize_expr(stmts)
 }
 
 /// Name mangle syntax:

@@ -9,8 +9,7 @@ pub fn build_mlir(hlir: &mut HlIrModule) -> Result<MlIrModule> {
     dependencies: HashMap::new(),
   };
   module.build_dependency_graph();
-  let mut ordered_dependencies =
-    module.dependencies.clone().into_iter().collect::<Vec<_>>();
+  let mut ordered_dependencies = module.dependencies.clone().into_iter().collect::<Vec<_>>();
   ordered_dependencies.sort_unstable_by(|(_, a), (_, b)| a.len().cmp(&b.len()));
   for (name, deps) in ordered_dependencies {
     module.evaluate(&name, &mut hlir.heap)?;
@@ -49,12 +48,7 @@ impl<'a> Analyzer<'a> {
     self.blocks.insert(name.clone(), Block::new(kind));
   }
 
-  fn lower(
-    &mut self,
-    block: &Mangle,
-    node_ptr: IrPtr,
-    break_depth: &mut usize,
-  ) -> Result<()> {
+  fn lower(&mut self, block: &Mangle, node_ptr: IrPtr, break_depth: &mut usize) -> Result<()> {
     let node = &self.hl.nodes[node_ptr];
     let new = |kind: MlIrKind| MlIrNode {
       span: node.span,
@@ -81,10 +75,10 @@ impl<'a> Analyzer<'a> {
           self.push(block, new(ml::Set(assignee)));
         }
         self.push(block, new(ml::Const(ConstValue::Nothing)));
-      },
+      }
       Immediate(const_value) => {
         self.push(block, new(ml::Const(const_value)));
-      },
+      }
       Block(items) => {
         let length = items.len();
         for (id, item) in items.into_iter().enumerate() {
@@ -96,10 +90,10 @@ impl<'a> Analyzer<'a> {
         if length == 0 {
           self.push(block, new(ml::Const(ConstValue::Nothing)));
         }
-      },
+      }
       Identifier(mangle) => {
         self.push(block, new(ml::Get(mangle)));
-      },
+      }
       StructDef {
         fields,
         types,
@@ -109,7 +103,7 @@ impl<'a> Analyzer<'a> {
           self.lower(block, type_, &mut 0)?;
         }
         self.push(block, new(ml::StructDef { fields }));
-      },
+      }
       StructLiteral {
         struct_t,
         field_names,
@@ -133,22 +127,22 @@ impl<'a> Analyzer<'a> {
           self.push(block, new(ml::Get(mangle)));
           self.push(block, new(ml::TypeAssert));
         }
-      },
+      }
       Field { of, index } => {
         self.lower(block, of, break_depth)?;
         self.push(block, new(ml::Field(index)));
-      },
+      }
       Binary {
         op, left, right, ..
       } => {
         self.lower(block, left, break_depth)?;
         self.lower(block, right, break_depth)?;
         self.push(block, new(ml::BinaryOp { kind: op }));
-      },
+      }
       Unary { op, child, .. } => {
         self.lower(block, child, break_depth)?;
         self.push(block, new(ml::UnaryOp { kind: op }));
-      },
+      }
       FunctionDef {
         name,
         parameter_names,
@@ -157,9 +151,7 @@ impl<'a> Analyzer<'a> {
         returns,
         body,
       } => {
-        for (name, type_) in
-          parameter_names.iter().zip(parameter_types.into_iter())
-        {
+        for (name, type_) in parameter_names.iter().zip(parameter_types.into_iter()) {
           self.new_block(name.clone(), BlockKind::Parameter(None));
           self.lower(name, type_, &mut 0)?;
         }
@@ -172,19 +164,16 @@ impl<'a> Analyzer<'a> {
         } else {
           None
         };
-        self.new_block(
-          name.clone(),
-          BlockKind::Function {
-            parameters: parameter_names,
-            parameter_spans,
-            return_type: return_name,
-            return_span,
-            value: None,
-          },
-        );
+        self.new_block(name.clone(), BlockKind::Function {
+          parameters: parameter_names,
+          parameter_spans,
+          return_type: return_name,
+          return_span,
+          value: None,
+        });
         self.lower(&name, body, &mut 0)?;
         self.push(block, new(ml::Get(name)));
-      },
+      }
       FunctionCall {
         callee, arguments, ..
       } => {
@@ -196,7 +185,7 @@ impl<'a> Analyzer<'a> {
           self.lower(block, argument, break_depth)?;
         }
         self.push(block, new(ml::Call { arity, spans }));
-      },
+      }
       If {
         predicate,
         predicate_span,
@@ -211,7 +200,7 @@ impl<'a> Analyzer<'a> {
           self.lower(block, else_, break_depth)?;
         }
         self.push(block, new(ml::End));
-      },
+      }
       Loop {
         parameter_names,
         parameter_values,
@@ -232,7 +221,7 @@ impl<'a> Analyzer<'a> {
           self.push(block, new(ml::Set(name.clone())));
         }
         self.push(block, new(ml::Repeat));
-      },
+      }
       Break(e) => {
         if *break_depth == 0 {
           return Err(lint(NameLint::NoBreakTarget, node.span, &[]));
@@ -243,7 +232,7 @@ impl<'a> Analyzer<'a> {
           self.push(block, new(ml::Const(ConstValue::Nothing)));
         }
         self.push(block, new(ml::Break));
-      },
+      }
     }
     Ok(())
   }

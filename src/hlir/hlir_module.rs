@@ -49,7 +49,6 @@ pub enum HlIrKind {
     callee: IrPtr,
     callee_name: Mangle,
     arguments: Vec<IrPtr>,
-    argument_spans: Vec<Span>,
   },
   If {
     predicate: IrPtr,
@@ -82,8 +81,12 @@ pub struct HlIrModule {
 }
 
 impl HlIrModule {
+  pub fn get_node(&self, node: IrPtr) -> &HlIrNode {
+    &self.nodes[node]
+  }
+
   pub fn type_of(&self, node: IrPtr) -> Type {
-    self.nodes[node].type_.clone()
+    self.get_node(node).type_.clone()
   }
 
   pub fn value_span(&self, node: IrPtr) -> Span {
@@ -96,7 +99,7 @@ impl HlIrModule {
           } else {
             return n.span;
           }
-        },
+        }
         HlIrKind::If { then, .. } => n = &self.nodes[*then],
         _ => return n.span,
       }

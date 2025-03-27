@@ -68,8 +68,24 @@ reason = "Invalid loop"
 help = "A `loop` expression is written like `loop <name>: <value> ...`"
 
 [2005]
+reason = "Invalid guard"
+help = "A `guard` expression is written like `| <predicate> then <value> ...`"
+
+[2006]
 reason = "Empty block"
-help = "A block expression must contain at least one expression. You might want to write a unit `()` here instead"
+help = "A block expression must contain at least one expression. You might want to write unit `()` here instead"
+
+[2007]
+reason = "Empty input"
+help = "A program cannot be empty, there must be at least one expression. You might want to write unit `()` here instead"
+
+[2008]
+reason = "Expected new-line"
+help = "Multiple expressions may not be on the same line. Try adding a line break after this expression"
+
+[2009]
+reason = "Cannot assign to expression"
+help = "You cannot assign a value to this expression. You may need to use parenthesis to clarify your intent here"
 
 # Name errors
 [3000]

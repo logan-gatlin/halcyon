@@ -1,15 +1,15 @@
-#![feature(let_chains)]
-#![feature(generic_const_exprs)]
-#![feature(iterator_try_collect)]
-#![allow(unused_imports)]
-#![allow(dead_code)]
-#![allow(unused_variables)]
-#![allow(incomplete_features)]
+#![feature(let_chains, generic_const_exprs, iterator_try_collect, box_patterns)]
+#![allow(unused_imports, dead_code, unused_imports, incomplete_features)]
+mod compile;
+mod hlir;
 mod lint;
+mod memory;
+mod mlir;
 mod operator;
 mod parse;
 mod token;
 
+use hlir::*;
 use lint::render::Linter;
 use parse::*;
 use std::{
@@ -36,14 +36,11 @@ pub fn _compiler_print(s: String) {
   println!("{s}");
 }
 #[cfg(not(target_family = "wasm"))]
-pub fn _compiler_cls() {
-}
+pub fn _compiler_cls() {}
 #[cfg(not(target_family = "wasm"))]
-pub fn _compiler_wat(s: String) {
-}
+pub fn _compiler_wat(_s: String) {}
 #[cfg(not(target_family = "wasm"))]
-pub fn _compiler_exec(bytes: Vec<u8>) {
-}
+pub fn _compiler_exec(_bytes: Vec<u8>) {}
 #[cfg(not(target_family = "wasm"))]
 pub fn compiler_print(s: impl Into<String>) {
   _compiler_print(s.into());
@@ -52,7 +49,11 @@ pub fn compiler_print(s: impl Into<String>) {
 pub fn _compile(input: &str) -> Result<Vec<u8>> {
   _compiler_cls();
   let tokens = tokenize(input.chars())?;
-  let parse_tree = parse(tokens);
+  let parse_tree = parse(tokens)?;
+  println!("{parse_tree}");
+  let hlir = build_hlir(parse_tree)?;
+  let hlir_sexpr: SExpression = (&hlir).into();
+  println!("{hlir_sexpr}");
   Ok(vec![])
   /*
   let mut hlir = build_hlir(parse_tree)?;
@@ -85,12 +86,10 @@ pub fn compile(input: &str) {
       if b.len() != 0 {
         _compiler_exec(b);
       }
-    },
+    }
     Err(e) => {
-      compiler_print(
-        "Failed to Compile".apply_style(Color::Red, Attribute::Underline),
-      );
+      compiler_print("Failed to Compile".apply_style(Color::Red, Attribute::Underline));
       compiler_print(linter.render(e))
-    },
+    }
   };
 }

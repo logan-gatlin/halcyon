@@ -10,13 +10,12 @@ pub fn expression(
   let span = next.1;
   // Unary prefix
   let mut current = if let Ok(op) = UnaryOp::try_from(&next.0) {
-    let operand = if op.assoc() == RIGHT_ASSOC {
-      None
-    } else {
-      skip(iter, 1);
-      expression(iter, op.precedence())?
+    if op.assoc() == RIGHT_ASSOC {
+      return Err(lint(ParseLint::BadPostfix, span, &[op.to_string()]));
     }
-    .ok_or(lint(ParseLint::BadPostfix, span, &[op.to_string()]))?;
+    skip(iter, 1);
+    let operand = expression(iter, op.precedence())?
+      .ok_or(lint(ParseLint::BadPrefix, span, &[op.to_string()]))?;
     Expression {
       span: span + operand.span,
       kind: e::Unary {
@@ -77,7 +76,11 @@ pub fn expression(
       }
       skip(iter, 1);
       // Some operators are allowed to eat whitespace
-      if op == BinaryOp::Comma || op == BinaryOp::Equal || op == BinaryOp::Colon
+      if op == BinaryOp::Comma
+        || op == BinaryOp::Equal
+        || op == BinaryOp::DoubleColon
+        || op == BinaryOp::Colon
+        || op == BinaryOp::FatArrow
       {
         eat_ws(iter);
       }
@@ -94,11 +97,8 @@ pub fn expression(
           return Ok(Some(current));
         }
       }
-      let rhs = expression(iter, new_precedence)?.ok_or(lint(
-        ParseLint::BadInfix,
-        span,
-        &[format!("{op}")],
-      ))?;
+      let rhs = expression(iter, new_precedence)?
+        .ok_or(lint(ParseLint::BadInfix, span, &[format!("{op}")]))?;
       current = Expression {
         span: span + rhs.span,
         kind: e::Binary {
@@ -106,7 +106,7 @@ pub fn expression(
           left: current.into(),
           right: rhs.into(),
         },
-      }
+      };
     } else {
       break;
     }
