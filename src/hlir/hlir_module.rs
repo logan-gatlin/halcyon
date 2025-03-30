@@ -11,16 +11,15 @@ pub enum HlIrKind {
   Immediate(ConstValue),
   Block(Vec<IrPtr>),
   Identifier(Mangle),
+  Tuple(Vec<IrPtr>),
   StructDef {
-    fields: Vec<String>,
-    types: Vec<IrPtr>,
-    spans: Vec<Span>,
+    field_names: Vec<String>,
+    field_types: Vec<IrPtr>,
   },
   StructLiteral {
     struct_t: Option<(IrPtr, Mangle)>,
     field_names: Vec<String>,
     field_values: Vec<IrPtr>,
-    spans: Vec<Span>,
   },
   Field {
     of: IrPtr,
@@ -52,7 +51,6 @@ pub enum HlIrKind {
   },
   If {
     predicate: IrPtr,
-    predicate_span: Span,
     then: IrPtr,
     else_: Option<IrPtr>,
   },

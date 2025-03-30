@@ -33,6 +33,7 @@ pub enum ParseLint {
   EmptyInput = 2007,
   MissingNewLine = 2008,
   AssignToExpression = 2009,
+  AmbiguousList = 2010,
 }
 
 #[repr(usize)]

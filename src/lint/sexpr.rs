@@ -13,15 +13,11 @@ pub fn sexpr(this: impl Into<String>, children: &[SExpression]) -> SExpression {
 
 fn indent(s: impl Into<String>, indent: &str) -> String {
   let s: String = s.into();
-  if s.contains("\n") {
-    s.lines()
-      .map(|s| format!("{indent}{s}\n"))
-      .collect::<String>()
-      .trim_end()
-      .to_string()
-  } else {
-    s
-  }
+  s.lines()
+    .map(|s| format!("{indent}{s}\n"))
+    .collect::<String>()
+    .trim_end()
+    .to_string()
 }
 
 impl std::fmt::Display for SExpression {

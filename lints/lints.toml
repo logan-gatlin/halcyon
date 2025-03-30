@@ -87,6 +87,10 @@ help = "Multiple expressions may not be on the same line. Try adding a line brea
 reason = "Cannot assign to expression"
 help = "You cannot assign a value to this expression. You may need to use parenthesis to clarify your intent here"
 
+[2010]
+reason = "Ambiguous list"
+help = "A tuple may not contain assignments or type assertions"
+
 # Name errors
 [3000]
 reason = "Undefined name"

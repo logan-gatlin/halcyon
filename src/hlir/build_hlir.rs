@@ -25,15 +25,25 @@ enum Event {
   },
 }
 
-fn collect_list(expr: Expression) -> Vec<Expression> {
+fn collect_list(mut expr: Expression) -> Vec<Expression> {
+  let mut exprs = vec![];
   use ExpressionKind as e;
-  match expr.kind {
-    e::Binary {
-      op: BinaryOp::Comma,
-      left,
-      right,
-    } => todo!(),
-    _ => todo!(),
+  loop {
+    match expr.kind {
+      e::Binary {
+        op: BinaryOp::Comma,
+        left,
+        right,
+      } => {
+        exprs.push(*right);
+        expr = *left;
+      }
+      _ => {
+        exprs.push(expr);
+        exprs.reverse();
+        break exprs;
+      }
+    }
   }
 }
 
@@ -125,6 +135,131 @@ impl Canonizer {
         left,
         ..
       } => return Err(lint(ParseLint::AssignToExpression, left.span, &[])),
+      e::Binary {
+        op: BinaryOp::Comma,
+        ..
+      } => {
+        let list = collect_list(expr);
+        // A list of items could be a struct literal, a type definition, or a tuple.
+        // This checks which of the choices it is, and makes sure it is not ambiguous
+        let (is_literal, is_definition, is_tuple) =
+          list.iter().fold((None, None, None), |acc, x| {
+            let is_literal = matches!(x, Expression {
+              kind: e::Binary {
+                op: BinaryOp::Equal,
+                left: box Expression {
+                  kind: e::Identifier(_),
+                  ..
+                },
+                ..
+              },
+              ..
+            });
+            let is_definition = matches!(x, Expression {
+              kind: e::Binary {
+                op: BinaryOp::Colon,
+                left: box Expression {
+                  kind: e::Identifier(_),
+                  ..
+                },
+                ..
+              },
+              ..
+            });
+            (
+              acc.0.or(if is_literal { Some(x.span) } else { None }),
+              acc.1.or(if is_definition { Some(x.span) } else { None }),
+              acc.2.or(if !(is_literal || is_definition) {
+                Some(x.span)
+              } else {
+                None
+              }),
+            )
+          });
+        match (is_literal, is_definition, is_tuple) {
+          // Struct literal
+          (Some(_), None, None) => {
+            let (field_names, field_values): (Vec<String>, Vec<Expression>) = list
+              .into_iter()
+              .map(|e| {
+                let Expression {
+                  kind:
+                    e::Binary {
+                      op: BinaryOp::Equal,
+                      left:
+                        box Expression {
+                          kind: e::Identifier(name),
+                          ..
+                        },
+                      right,
+                    },
+                  ..
+                } = e
+                else {
+                  panic!()
+                };
+                (name, *right)
+              })
+              .unzip();
+            let field_values = field_values
+              .into_iter()
+              .map(|v| self.expr(v))
+              .try_collect::<Vec<_>>()?;
+            h::StructLiteral {
+              struct_t: None,
+              field_names,
+              field_values,
+            }
+          }
+          // Struct definition
+          (None, Some(_), None) => {
+            let (field_names, field_types): (Vec<String>, Vec<Expression>) = list
+              .into_iter()
+              .map(|e| {
+                let Expression {
+                  kind:
+                    e::Binary {
+                      op: BinaryOp::Colon,
+                      left:
+                        box Expression {
+                          kind: e::Identifier(name),
+                          ..
+                        },
+                      right,
+                    },
+                  ..
+                } = e
+                else {
+                  panic!()
+                };
+                (name, *right)
+              })
+              .unzip();
+            let field_types = field_types
+              .into_iter()
+              .map(|v| self.expr(v))
+              .try_collect::<Vec<_>>()?;
+            h::StructDef {
+              field_names,
+              field_types,
+            }
+          }
+          // Tuple
+          (None, None, Some(_)) => h::Tuple(
+            list
+              .into_iter()
+              .map(|e| self.expr(e))
+              .try_collect::<Vec<_>>()?,
+          ),
+          (s1, s2, s3) => {
+            return Err(lint(
+              ParseLint::AmbiguousList,
+              s1.or(s2).or(s3).unwrap(),
+              &[],
+            ));
+          }
+        }
+      }
       e::Binary { op, left, right } => h::Binary {
         op,
         opdef: OpDef::default(),
@@ -139,9 +274,12 @@ impl Canonizer {
       e::FunctionCall { callee, arguments } => h::FunctionCall {
         callee: self.expr(*callee)?,
         callee_name: self.define_unique("callee"),
-        arguments: vec![self.expr(*arguments)?],
+        arguments: collect_list(*arguments)
+          .into_iter()
+          .map(|e| self.expr(e))
+          .try_collect::<Vec<_>>()?,
       },
-      e::Block(expressions) => todo!(),
+      e::Block(expressions) => {}
       e::If {
         predicate,
         then,

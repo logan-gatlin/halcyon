@@ -1,5 +1,6 @@
 use super::*;
 
+#[allow(unused_variables)]
 impl HlIrModule {
   fn sexpr(&self, node: IrPtr) -> SExpression {
     let node = self.get_node(node);
@@ -27,16 +28,21 @@ impl HlIrModule {
       ),
       h::Identifier(name) => sexpr(name, &[]),
       h::StructDef {
-        fields,
-        types,
-        spans,
+        field_names,
+        field_types,
       } => todo!(),
       h::StructLiteral {
-        struct_t,
         field_names,
         field_values,
-        spans,
-      } => todo!(),
+        ..
+      } => sexpr(
+        "struct literal",
+        &field_names
+          .into_iter()
+          .zip(field_values.into_iter())
+          .map(|(name, value)| sexpr("field", &[sexpr(name, &[]), self.sexpr(*value)]))
+          .collect::<Vec<_>>(),
+      ),
       h::Field { of, index } => todo!(),
       h::Binary {
         op,
@@ -60,7 +66,6 @@ impl HlIrModule {
       } => todo!(),
       h::If {
         predicate,
-        predicate_span,
         then,
         else_,
       } => todo!(),
@@ -71,6 +76,7 @@ impl HlIrModule {
         body,
       } => todo!(),
       h::Break(_) => todo!(),
+      h::Tuple(items) => todo!(),
     }
   }
 }

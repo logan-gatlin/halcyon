@@ -95,9 +95,8 @@ impl<'a> Analyzer<'a> {
         self.push(block, new(ml::Get(mangle)));
       }
       StructDef {
-        fields,
-        types,
-        spans,
+        field_names: fields,
+        field_types: types,
       } => {
         for type_ in types {
           self.lower(block, type_, &mut 0)?;
@@ -108,7 +107,6 @@ impl<'a> Analyzer<'a> {
         struct_t,
         field_names,
         field_values,
-        spans,
       } => {
         for value in field_values {
           self.lower(block, value, break_depth)?;
@@ -188,7 +186,6 @@ impl<'a> Analyzer<'a> {
       }
       If {
         predicate,
-        predicate_span,
         then,
         else_,
       } => {
@@ -233,6 +230,7 @@ impl<'a> Analyzer<'a> {
         }
         self.push(block, new(ml::Break));
       }
+      Tuple(items) => todo!(),
     }
     Ok(())
   }
