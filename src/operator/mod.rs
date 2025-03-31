@@ -49,41 +49,48 @@ macro_rules! op {
 pub const RIGHT_ASSOC: bool = true;
 pub const LEFT_ASSOC: bool = false;
 pub const CALL_PREC: Precedence = 12;
+pub const GUARD_PREC: Precedence = 10;
+pub const LOOP_PREC: Precedence = 7;
+pub const MATCH_PREC: Precedence = 7;
+pub const IF_ELSE_PREC: Precedence = 1;
 
 // Name, precedence, associativity;
 op! {
   BinaryOp;
-  Dot, 14, LEFT_ASSOC;
-  Star, 12, LEFT_ASSOC;
-  Slash, 12, LEFT_ASSOC;
-  Percent, 12, LEFT_ASSOC;
-  Plus, 11, LEFT_ASSOC;
-  Minus, 11, LEFT_ASSOC;
-  Nand, 10, LEFT_ASSOC;
-  Xor, 9, LEFT_ASSOC;
-  Xnor, 9, LEFT_ASSOC;
-  Or, 8, LEFT_ASSOC;
-  Nor, 8, LEFT_ASSOC;
-  DoubleEqual, 7, LEFT_ASSOC;
-  BangEqual, 7, LEFT_ASSOC;
-  Less, 7, LEFT_ASSOC;
-  LessEqual, 7, LEFT_ASSOC;
-  Greater, 7, LEFT_ASSOC;
-  GreaterEqual, 7, LEFT_ASSOC;
-  And, 6, LEFT_ASSOC;
+  Dot, 17, LEFT_ASSOC;
+  Star, 15, LEFT_ASSOC;
+  Slash, 15, LEFT_ASSOC;
+  Percent, 15, LEFT_ASSOC;
+  Plus, 14, LEFT_ASSOC;
+  Minus, 14, LEFT_ASSOC;
+  Xor, 10, LEFT_ASSOC;
+  Xnor, 10, LEFT_ASSOC;
+  Or, 9, LEFT_ASSOC;
+  Nor, 9, LEFT_ASSOC;
+  Apply, 9, LEFT_ASSOC;
+  DoubleEqual, 8, LEFT_ASSOC;
+  BangEqual, 8, LEFT_ASSOC;
+  Less, 8, LEFT_ASSOC;
+  LessEqual, 8, LEFT_ASSOC;
+  Greater, 8, LEFT_ASSOC;
+  GreaterEqual, 8, LEFT_ASSOC;
+  Nand, 7, LEFT_ASSOC;
+  And, 7, LEFT_ASSOC;
+  Semicolon, 7, LEFT_ASSOC;
   FatArrow, 6, RIGHT_ASSOC;
   Colon, 5, RIGHT_ASSOC;
   Arrow, 5, RIGHT_ASSOC;
   Equal, 4, RIGHT_ASSOC;
   DoubleColon, 4, RIGHT_ASSOC;
   Comma, 3, LEFT_ASSOC;
+  DoubleSemicolon, 1, LEFT_ASSOC;
 }
 
 op! {
   UnaryOp;
-  Ampersand, 13, RIGHT_ASSOC;
-  Tilda, 13, RIGHT_ASSOC;
-  Minus, 13, LEFT_ASSOC;
-  Not, 13, LEFT_ASSOC;
-  Break, 0, LEFT_ASSOC;
+  Ampersand, 15, RIGHT_ASSOC;
+  Tilda, 15, RIGHT_ASSOC;
+  Minus, 15, LEFT_ASSOC;
+  Not, 15, LEFT_ASSOC;
+  Break, 2, LEFT_ASSOC;
 }

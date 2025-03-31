@@ -35,3 +35,9 @@ impl std::fmt::Display for SExpression {
     }
   }
 }
+
+impl Into<SExpression> for &str {
+  fn into(self) -> SExpression {
+    sexpr(format!("{self}"), &[])
+  }
+}

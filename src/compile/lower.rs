@@ -36,7 +36,12 @@ impl Compiler {
       .for_each(|(id, _)| instrs.push(asm::LocalSet(format!("{mangle}${id}"))));
   }
 
-  pub fn lower(&mut self, node: IrPtr, regs: &mut Vec<asm>, instrs: &mut Vec<asm>) -> Result<()> {
+  pub fn lower(
+    &mut self,
+    node: IrPtr,
+    regs: &mut Vec<asm>,
+    instrs: &mut Vec<asm>,
+  ) -> Result<()> {
     use HlIrKind::*;
     let type_ = self.module.type_of(node);
     match self.module.nodes[node].clone().kind {
@@ -47,29 +52,39 @@ impl Compiler {
         ..
       } => {
         if !is_constant {
-          Self::make_register(assignee.clone(), &self.module.type_of(value), regs);
+          Self::make_register(
+            assignee.clone(),
+            &self.module.type_of(value),
+            regs,
+          );
           self.lower(value, regs, instrs)?;
-          Self::set_register(assignee.clone(), &self.module.type_of(value), instrs);
+          Self::set_register(
+            assignee.clone(),
+            &self.module.type_of(value),
+            instrs,
+          );
         }
-      }
-      Immediate(im) => instrs.extend(im.to_wasm_value().into_iter().map(|v| asm::Constant(v))),
+      },
+      Immediate(im) => {
+        instrs.extend(im.to_wasm_value().into_iter().map(|v| asm::Constant(v)))
+      },
       Identifier(mangle) => {
         if let Type::Function { .. } = type_ {
         } else {
           Self::get_register(mangle, &type_, instrs);
         }
-      }
+      },
       Binary {
         opdef, left, right, ..
       } => {
         self.lower(left, regs, instrs)?;
         self.lower(right, regs, instrs)?;
         instrs.extend(opdef.asm);
-      }
+      },
       Unary { opdef, child, .. } => {
         self.lower(child, regs, instrs)?;
         instrs.extend(opdef.asm);
-      }
+      },
       Field { of, index } => {
         let Type::Struct {
           member_names,
@@ -94,7 +109,7 @@ impl Compiler {
           }
         }
         Self::get_register(temporary_name, &type_, instrs);
-      }
+      },
       FunctionCall {
         callee, arguments, ..
       } => {
@@ -109,7 +124,7 @@ impl Compiler {
           .map(|p| self.lower(p, regs, instrs))
           .try_collect::<Vec<_>>()?;
         instrs.push(asm::Call(name.clone()))
-      }
+      },
       FunctionDef {
         name,
         parameter_names,
@@ -147,13 +162,13 @@ impl Compiler {
           results: return_type.register_types(),
           body,
         })
-      }
+      },
       Block(nodes) => {
         nodes
           .into_iter()
           .map(|n| self.lower(n, regs, instrs))
           .try_collect::<Vec<_>>()?;
-      }
+      },
       If {
         predicate,
         then,
@@ -176,7 +191,7 @@ impl Compiler {
         }
         instrs.push(asm::End);
         Self::get_register(result_name, &type_, instrs);
-      }
+      },
       Loop {
         parameter_names,
         parameter_values,
@@ -194,9 +209,9 @@ impl Compiler {
           .cloned()
           .zip(parameter_values.iter().map(|i| self.module.type_of(*i)))
           .collect();
-        loop_registers
-          .iter()
-          .for_each(|(name, type_)| Self::make_register(name.clone(), &type_, regs));
+        loop_registers.iter().for_each(|(name, type_)| {
+          Self::make_register(name.clone(), &type_, regs)
+        });
         parameter_values
           .into_iter()
           .rev()
@@ -215,14 +230,14 @@ impl Compiler {
         instrs.push(asm::Loop(loop_name.clone()));
         self.lower(body, regs, instrs)?;
         self.break_stack.pop();
-        loop_registers
-          .iter()
-          .for_each(|(name, type_)| Self::set_register(name.clone(), type_, instrs));
+        loop_registers.iter().for_each(|(name, type_)| {
+          Self::set_register(name.clone(), type_, instrs)
+        });
         instrs.push(asm::Branch(loop_name.clone()));
         instrs.push(asm::End);
         instrs.push(asm::End);
         Self::get_register(result_name, &type_, instrs);
-      }
+      },
       Break(expr) => {
         let type_ = if let Some(expr) = expr {
           self.lower(expr, regs, instrs)?;
@@ -236,14 +251,19 @@ impl Compiler {
         } = self.break_stack.last().unwrap().clone();
         Self::set_register(result_name, &type_, instrs);
         instrs.push(asm::Branch(block_name));
-      }
+      },
       StructLiteral { field_values, .. } => {
         for value in field_values {
           self.lower(value, regs, instrs)?;
         }
-      }
-      StructDef { .. } => {}
+      },
+      StructDef { .. } => {},
       Tuple(items) => todo!(),
+      Match {
+        on,
+        patterns,
+        branches,
+      } => todo!(),
     };
     Ok(())
   }

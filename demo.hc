@@ -1,9 +1,14 @@
-fizzbuzz :: limit => loop i = 0
-	if i > limit then break else
-	(match (i % 5, i % 3) with
-	| 0, 0 then "FizzBuzz"
-	| 0, _ then "Fizz"
-	| _, 0 then "Buzz"
-	| _, _ then to_string(i))
-	|> print ;
-	i + 1
+print :: () => () ;;
+to_string :: () => () ;;
+
+fizzbuzz :: max =>
+  (i = 0) loop
+    if i > max then break () else
+    print ((i % 3, i % 5) match
+      | 0, 0 then "fizzbuzz"
+      | 0, _ then "fizz"
+      | _, 0 then "buzz"
+      | _, _ then to_string i);
+      i + 1 ;;
+
+fizzbuzz 15

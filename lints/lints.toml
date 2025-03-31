@@ -65,31 +65,39 @@ help = "An `if` expression is written like `if <predicate> then <expression> els
 
 [2004]
 reason = "Invalid loop"
-help = "A `loop` expression is written like `loop <name>: <value> ...`"
+help = "A `loop` expression is written like `(<name> = <initial_value>) loop ...`"
 
 [2005]
-reason = "Invalid guard"
-help = "A `guard` expression is written like `| <predicate> then <value> ...`"
+reason = "Invalid match"
+help = "A `match` expression is written like `<predicate> match | <pattern> then <value> ...`"
 
 [2006]
-reason = "Empty block"
-help = "A block expression must contain at least one expression. You might want to write unit `()` here instead"
+reason = "Empty structure"
+help = "A structure must contain at least one field. Consider using unit `()` here instead"
 
 [2007]
 reason = "Empty input"
 help = "A program cannot be empty, there must be at least one expression. You might want to write unit `()` here instead"
 
 [2008]
-reason = "Expected new-line"
-help = "Multiple expressions may not be on the same line. Try adding a line break after this expression"
+reason = "Invalid Structure"
+help = "Structure literals and definitions are written as `{ name = value... }`  `{ name : type... }` respectively"
 
 [2009]
 reason = "Cannot assign to expression"
 help = "You cannot assign a value to this expression. You may need to use parenthesis to clarify your intent here"
 
 [2010]
-reason = "Ambiguous list"
-help = "A tuple may not contain assignments or type assertions"
+reason = "Missing Comma"
+help = "You may have meant to put a comma after this expression"
+
+[2011]
+reason = "Invalid lambda parameters"
+help = "The left-hand side of the lambda operator may be `()` if there are no arguments, or a tuple of argument names `(arg1, arg2, ...)`"
+
+[2012]
+reason = "Invalid pattern"
+help = "The pattern for a match expression may be a literal value, a name which captures any value, or a tuple of other patterns"
 
 # Name errors
 [3000]

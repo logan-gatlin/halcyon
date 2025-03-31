@@ -1,11 +1,23 @@
 use super::*;
 
 #[derive(Debug, Clone)]
+pub enum PatternKind {
+  Const(ConstValue),
+  Name(String),
+  Tuple(Vec<Pattern>),
+}
+
+#[derive(Debug, Clone)]
+pub struct Pattern {
+  pub kind: PatternKind,
+  pub span: Span,
+}
+
+#[derive(Debug, Clone)]
 pub enum HlIrKind {
   Declaration {
     assignee: Mangle,
     is_constant: bool,
-    type_assert: Option<IrPtr>,
     value: IrPtr,
   },
   Immediate(ConstValue),
@@ -54,6 +66,11 @@ pub enum HlIrKind {
     then: IrPtr,
     else_: Option<IrPtr>,
   },
+  Match {
+    on: IrPtr,
+    patterns: Vec<Pattern>,
+    branches: Vec<IrPtr>,
+  },
   Loop {
     parameter_names: Vec<Mangle>,
     parameter_values: Vec<IrPtr>,
@@ -97,7 +114,7 @@ impl HlIrModule {
           } else {
             return n.span;
           }
-        }
+        },
         HlIrKind::If { then, .. } => n = &self.nodes[*then],
         _ => return n.span,
       }

@@ -35,14 +35,37 @@ fn collect_list(mut expr: Expression) -> Vec<Expression> {
         left,
         right,
       } => {
-        exprs.push(*right);
+        exprs
+          .extend(collect_list(*right).into_iter().rev().collect::<Vec<_>>());
         expr = *left;
-      }
+      },
       _ => {
         exprs.push(expr);
         exprs.reverse();
         break exprs;
-      }
+      },
+    }
+  }
+}
+
+fn collect_block(mut expr: Expression) -> Vec<Expression> {
+  let mut exprs = vec![];
+  use ExpressionKind as e;
+  loop {
+    match expr.kind {
+      e::Binary {
+        op: BinaryOp::Semicolon | BinaryOp::DoubleSemicolon,
+        left,
+        right,
+      } => {
+        exprs.push(*right);
+        expr = *left;
+      },
+      _ => {
+        exprs.push(expr);
+        exprs.reverse();
+        break exprs;
+      },
     }
   }
 }
@@ -77,6 +100,25 @@ impl Canonizer {
     this
   }
 
+  fn literal_to_const(&mut self, literal: Literal) -> Result<ConstValue> {
+    Ok(match literal {
+      Literal::Unit => ConstValue::Nothing,
+      Literal::Integer(i, base) => {
+        ConstValue::Integer(parse_int_literal(&i, base as u32)?)
+      },
+      Literal::Real(r) => ConstValue::Real(parse_real_literal(&r)?),
+      Literal::String(s) => {
+        let address = self.memory.static_allocate(s.len() as PtrT);
+        ConstValue::String {
+          address,
+          length: s.len() as PtrT,
+        }
+      },
+      Literal::Glyph(g) => ConstValue::Glyph(g),
+      Literal::Boolean(b) => ConstValue::Boolean(b),
+    })
+  }
+
   pub fn canonize_expr(mut self, expr: Expression) -> Result<HlIrModule> {
     self.expr(expr)?;
     Ok(HlIrModule {
@@ -93,43 +135,89 @@ impl Canonizer {
     let node = self.new_node();
     let span = expr.span;
     let kind = match expr.kind {
-      e::Literal(literal) => match literal {
-        Literal::Unit => h::Immediate(ConstValue::Nothing),
-        Literal::Integer(i, base) => h::Immediate(ConstValue::Integer(
-          parse_int_literal(&i, base as u32).span(span)?,
-        )),
-        Literal::Real(r) => h::Immediate(ConstValue::Real(parse_real_literal(&r).span(span)?)),
-        Literal::String(s) => {
-          let address = self.memory.static_allocate(s.len() as PtrT);
-          h::Immediate(ConstValue::String {
-            address,
-            length: s.len() as PtrT,
-          })
-        }
-        Literal::Glyph(g) => h::Immediate(ConstValue::Glyph(g)),
-        Literal::Boolean(b) => h::Immediate(ConstValue::Boolean(b)),
+      e::Literal(literal) => {
+        h::Immediate(self.literal_to_const(literal).span(expr.span)?)
       },
       e::Identifier(name) => {
         let symbol = self.name_to_symbol(&name).span(span)?;
         h::Identifier(symbol.mangle.clone())
-      }
+      },
+      // Function definition
       e::Binary {
-        op: op @ (BinaryOp::Equal | BinaryOp::DoubleColon),
+        op: BinaryOp::FatArrow,
+        left,
+        right,
+      } => {
+        let parameter_exprs = collect_list(*left);
+        let parameter_kinds =
+          parameter_exprs.iter().map(|a| &a.kind).collect::<Vec<_>>();
+        let parameter_spans =
+          parameter_exprs.iter().map(|a| a.span).collect::<Vec<_>>();
+        let parameter_names: Vec<String> = match parameter_kinds.as_slice() {
+          [e::Literal(Literal::Unit)] => vec![],
+          _ => parameter_exprs
+            .iter()
+            .map(|e| {
+              if let Expression {
+                kind: e::Identifier(name),
+                ..
+              } = e
+              {
+                Ok(name.clone())
+              } else {
+                Err(lint(ParseLint::InvalidLambdaParameter, span, &[]))
+              }
+            })
+            .try_collect()?,
+        };
+        self.start_function();
+        self.enscope();
+        for (arg, span) in parameter_names
+          .iter()
+          .zip(parameter_exprs.iter().map(|e| e.span))
+        {
+          println!("{arg}");
+          self.define_name(arg, false).span(span)?;
+        }
+        let body = self.expr(*right)?;
+        self.descope();
+        h::FunctionDef {
+          name: self.define_unique("function"),
+          parameter_names,
+          parameter_types: vec![],
+          parameter_spans,
+          returns: None,
+          body,
+        }
+      },
+      // Constant declaration
+      e::Binary {
+        op: BinaryOp::DoubleColon,
         left:
           box Expression {
             kind: e::Identifier(name),
             span: name_span,
           },
         right,
-      } => {
-        let is_constant = op == BinaryOp::DoubleColon;
-        h::Declaration {
-          assignee: self.define_name(name, is_constant).span(name_span)?,
-          is_constant,
-          type_assert: None,
-          value: self.expr(*right)?,
-        }
-      }
+      } => h::Declaration {
+        assignee: self.name_to_symbol(&name).span(name_span)?.mangle.clone(),
+        is_constant: true,
+        value: self.expr(*right)?,
+      },
+      // Runtime assignment
+      e::Binary {
+        op: BinaryOp::Equal,
+        left:
+          box Expression {
+            kind: e::Identifier(name),
+            span: name_span,
+          },
+        right,
+      } => h::Declaration {
+        value: self.expr(*right)?,
+        assignee: self.define_name(name, false).span(name_span)?,
+        is_constant: true,
+      },
       e::Binary {
         op: BinaryOp::Equal | BinaryOp::DoubleColon,
         left,
@@ -138,128 +226,47 @@ impl Canonizer {
       e::Binary {
         op: BinaryOp::Comma,
         ..
+      } => h::Tuple(
+        collect_list(expr)
+          .into_iter()
+          .map(|e| self.expr(e))
+          .try_collect::<Vec<_>>()?,
+      ),
+      e::Binary {
+        op: BinaryOp::Semicolon | BinaryOp::DoubleSemicolon,
+        ..
       } => {
-        let list = collect_list(expr);
-        // A list of items could be a struct literal, a type definition, or a tuple.
-        // This checks which of the choices it is, and makes sure it is not ambiguous
-        let (is_literal, is_definition, is_tuple) =
-          list.iter().fold((None, None, None), |acc, x| {
-            let is_literal = matches!(x, Expression {
-              kind: e::Binary {
-                op: BinaryOp::Equal,
-                left: box Expression {
-                  kind: e::Identifier(_),
-                  ..
+        self.enscope();
+        let exprs = collect_block(expr);
+        // Pre-define constants
+        let block = exprs
+          .into_iter()
+          .map(|e| {
+            if let e::Binary {
+              op: BinaryOp::DoubleColon,
+              left:
+                box Expression {
+                  kind: e::Identifier(name),
+                  span: name_span,
                 },
-                ..
-              },
               ..
-            });
-            let is_definition = matches!(x, Expression {
-              kind: e::Binary {
-                op: BinaryOp::Colon,
-                left: box Expression {
-                  kind: e::Identifier(_),
-                  ..
-                },
-                ..
-              },
-              ..
-            });
-            (
-              acc.0.or(if is_literal { Some(x.span) } else { None }),
-              acc.1.or(if is_definition { Some(x.span) } else { None }),
-              acc.2.or(if !(is_literal || is_definition) {
-                Some(x.span)
-              } else {
-                None
-              }),
-            )
-          });
-        match (is_literal, is_definition, is_tuple) {
-          // Struct literal
-          (Some(_), None, None) => {
-            let (field_names, field_values): (Vec<String>, Vec<Expression>) = list
-              .into_iter()
-              .map(|e| {
-                let Expression {
-                  kind:
-                    e::Binary {
-                      op: BinaryOp::Equal,
-                      left:
-                        box Expression {
-                          kind: e::Identifier(name),
-                          ..
-                        },
-                      right,
-                    },
-                  ..
-                } = e
-                else {
-                  panic!()
-                };
-                (name, *right)
-              })
-              .unzip();
-            let field_values = field_values
-              .into_iter()
-              .map(|v| self.expr(v))
-              .try_collect::<Vec<_>>()?;
-            h::StructLiteral {
-              struct_t: None,
-              field_names,
-              field_values,
+            } = &e.kind
+            {
+              self
+                .define_name(name.clone(), true)
+                .span(*name_span)
+                .map(|_| e)
+            } else {
+              Ok(e)
             }
-          }
-          // Struct definition
-          (None, Some(_), None) => {
-            let (field_names, field_types): (Vec<String>, Vec<Expression>) = list
-              .into_iter()
-              .map(|e| {
-                let Expression {
-                  kind:
-                    e::Binary {
-                      op: BinaryOp::Colon,
-                      left:
-                        box Expression {
-                          kind: e::Identifier(name),
-                          ..
-                        },
-                      right,
-                    },
-                  ..
-                } = e
-                else {
-                  panic!()
-                };
-                (name, *right)
-              })
-              .unzip();
-            let field_types = field_types
-              .into_iter()
-              .map(|v| self.expr(v))
-              .try_collect::<Vec<_>>()?;
-            h::StructDef {
-              field_names,
-              field_types,
-            }
-          }
-          // Tuple
-          (None, None, Some(_)) => h::Tuple(
-            list
-              .into_iter()
-              .map(|e| self.expr(e))
-              .try_collect::<Vec<_>>()?,
-          ),
-          (s1, s2, s3) => {
-            return Err(lint(
-              ParseLint::AmbiguousList,
-              s1.or(s2).or(s3).unwrap(),
-              &[],
-            ));
-          }
-        }
-      }
+          })
+          .try_collect::<Vec<_>>()?
+          .into_iter()
+          .map(|e| self.expr(e))
+          .try_collect::<Vec<_>>()?;
+        self.descope();
+        h::Block(block)
+      },
       e::Binary { op, left, right } => h::Binary {
         op,
         opdef: OpDef::default(),
@@ -279,25 +286,115 @@ impl Canonizer {
           .map(|e| self.expr(e))
           .try_collect::<Vec<_>>()?,
       },
-      e::Block(expressions) => {}
       e::If {
         predicate,
         then,
         else_,
-      } => todo!(),
-      e::Guard {
+      } => h::If {
+        predicate: self.expr(*predicate)?,
+        then: self.expr(*then)?,
+        else_: if let Some(else_) = else_ {
+          Some(self.expr(*else_)?)
+        } else {
+          None
+        },
+      },
+      e::Match {
+        on,
         predicates,
         branches,
-        else_branch,
-      } => todo!(),
-      e::Loop { parameters, body } => todo!(),
+      } => h::Match {
+        on: self.expr(*on)?,
+        patterns: predicates
+          .into_iter()
+          .map(|p| self.pattern(p))
+          .try_collect::<Vec<_>>()?,
+        branches: branches
+          .into_iter()
+          .map(|b| self.expr(b))
+          .try_collect::<Vec<_>>()?,
+      },
+      e::Loop { parameters, body } => {
+        let (parameter_names, parameter_values): (Vec<_>, Vec<_>) =
+          collect_list(*parameters)
+            .into_iter()
+            .map(|p| {
+              if let e::Binary {
+                op: BinaryOp::Equal,
+                left:
+                  box Expression {
+                    kind: e::Identifier(name),
+                    ..
+                  },
+                right,
+              } = &p.kind
+              {
+                Ok((name.clone(), right.clone()))
+              } else {
+                Err(lint(ParseLint::InvalidLoop, p.span, &[]))
+              }
+            })
+            .try_collect::<Vec<_>>()?
+            .into_iter()
+            .unzip();
+        self.enscope();
+        let parameter_values = parameter_values
+          .into_iter()
+          .map(|v| self.expr(*v))
+          .try_collect::<Vec<_>>()?;
+        let parameter_names = parameter_names
+          .into_iter()
+          .map(|n| self.define_name(n, false))
+          .try_collect::<Vec<_>>()?;
+        let body = self.expr(*body)?;
+        let kind = h::Loop {
+          parameter_names,
+          parameter_values,
+          parameter_spans: vec![],
+          body,
+        };
+        self.descope();
+        kind
+      },
+      _ => todo!(),
     };
-    self.set_node(node, HlIrNode {
-      kind,
-      span,
-      type_: Type::Ambiguous,
-    });
+    self.set_node(
+      node,
+      HlIrNode {
+        kind,
+        span,
+        type_: Type::Ambiguous,
+      },
+    );
     Ok(node)
+  }
+
+  fn pattern(&mut self, expr: Expression) -> Result<Pattern> {
+    let span = expr.span;
+    use ExpressionKind as e;
+    Ok(match expr.kind {
+      e::Identifier(name) => Pattern {
+        kind: PatternKind::Name(name),
+        span,
+      },
+      e::Literal(literal) => Pattern {
+        kind: PatternKind::Const(self.literal_to_const(literal).span(span)?),
+        span,
+      },
+      e::Binary {
+        op: BinaryOp::Comma,
+        ..
+      } => Pattern {
+        kind: PatternKind::Tuple(
+          collect_list(expr)
+            .into_iter()
+            .map(|e| self.pattern(e))
+            .try_collect()?,
+        ),
+        span,
+      },
+      _ => return Err(lint(ParseLint::InvalidPattern, span, &[])),
+    })
   }
 
   fn new_node(&mut self) -> IrPtr {
@@ -347,17 +444,24 @@ impl Canonizer {
     assert!(
       self
         ._name_to_symbol
-        .insert(name.clone(), Symbol {
-          mangle,
-          scope_depth: 0,
-          is_constant: true,
-        },)
+        .insert(
+          name.clone(),
+          Symbol {
+            mangle,
+            scope_depth: 0,
+            is_constant: true,
+          },
+        )
         .is_none(),
       "Multiple definitions of builtin {name}"
     );
   }
 
-  fn define_name(&mut self, name: impl Into<String>, is_constant: bool) -> Result<Mangle> {
+  fn define_name(
+    &mut self,
+    name: impl Into<String>,
+    is_constant: bool,
+  ) -> Result<Mangle> {
     let name = name.into();
     let mut path = self.path.clone();
     path.push(name.clone());
@@ -374,11 +478,14 @@ impl Canonizer {
       name: name.clone(),
     };
     self.event_stack.push(event);
-    self._name_to_symbol.insert(name.clone(), Symbol {
-      mangle: mangle.clone(),
-      scope_depth: self.scope_depth,
-      is_constant,
-    });
+    self._name_to_symbol.insert(
+      name.clone(),
+      Symbol {
+        mangle: mangle.clone(),
+        scope_depth: self.scope_depth,
+        is_constant,
+      },
+    );
     Ok(mangle)
   }
 
@@ -393,14 +500,14 @@ impl Canonizer {
         Event::ScopeStart => {
           self.scope_depth -= 1;
           break;
-        }
+        },
         Event::Modify { name, old_value } => {
           if let Some(old) = old_value {
             self._name_to_symbol.insert(name, old);
           } else {
             self._name_to_symbol.remove(&name);
           }
-        }
+        },
       }
     }
   }
