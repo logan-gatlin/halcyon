@@ -1,9 +1,163 @@
-use crate::compile::assembly::*;
-
 use super::*;
+use crate::compile::*;
 
 pub const GLOBAL_SCOPE_MANGLE: &str = "_global";
 
+#[crabtime::function]
+fn gen_builtins() {
+  use convert_case::*;
+  let prims = vec![
+    "nothing",
+    "unreachable",
+    "integer",
+    "real",
+    "boolean",
+    "string",
+    "glyph",
+  ]
+  .into_iter()
+  .map(|s| s.to_string())
+  .collect::<Vec<_>>();
+
+  let enum_items = prims
+    .iter()
+    .map(|p| p.to_case(Case::Pascal))
+    .collect::<Vec<_>>();
+  let enum_list = enum_items.join(",");
+  crabtime::output!(
+    pub enum Bt {
+      {{enum_list}}
+    }
+  );
+  let enum_count = enum_items.len();
+  let qualified_enums = enum_items
+    .iter()
+    .map(|e| format!("Bt::{e}"))
+    .collect::<Vec<_>>();
+  let qualified_enum_list = qualified_enums.join(",");
+  fn generate_match(items: &[String], to: &[String]) -> String {
+    items
+      .iter()
+      .zip(to.iter())
+      .map(|(from, to)| {
+        crabtime::quote! {
+          Bt::{{from}} => stringify! { {{to}} }.to_string()
+        }
+      })
+      .collect::<Vec<_>>()
+      .join(",")
+  }
+
+  let string_match = generate_match(&enum_items, &prims);
+  let mangle_match = generate_match(
+    &enum_items,
+    &prims.iter().map(|p| format!("_{p}")).collect::<Vec<_>>(),
+  );
+
+  crabtime::output!(
+    impl Bt {
+      pub const ALL: [Bt; {{enum_count}}] = [{{qualified_enum_list}}];
+
+      pub fn to_string(&self) -> String {
+        match self {
+          {{string_match}}
+        }
+      }
+
+      pub fn to_mangle(&self) -> String {
+        match self {
+          {{mangle_match}}
+        }
+      }
+    }
+  )
+}
+
+gen_builtins! {}
+
+/*
+macro_rules! count {
+    () => (0usize);
+    ($x:tt $($xs:tt)* ) => (1usize + count!($($xs)*));
+}
+
+macro_rules! builtins {
+  ($($name:ident, $repr:literal, $type:expr, $value:expr, $import:expr);*;) => {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub enum Builtin {
+      $($name),*
+    }
+
+    impl Builtin {
+      pub const ALL: [Builtin; count!($($name)*,) - 1] = [$(Builtin::$name),*];
+
+      pub fn to_string(&self) -> &'static str {
+        match self {
+          $(Self::$name => $repr ),*
+        }
+      }
+
+      pub fn to_mangle(&self) -> Mangle {
+        match self {
+          $(Self::$name => mangle_builtin($repr)),*
+        }
+      }
+
+      pub fn type_of(&self) -> Type {
+        match self {
+          $(Self::$name => $type),*
+        }
+      }
+
+      pub fn value(&self) -> ConstValue {
+        match self {
+          $(Self::$name => $value),*
+        }
+      }
+
+      pub fn import(&self) -> Option<Wasm> {
+        None
+      }
+    }
+  };
+}
+
+const fn p(primitive: Primitive) -> Type {
+  Type::Primitive(primitive)
+}
+
+const fn c(primitive: Primitive) -> ConstValue {
+  ConstValue::Type(Type::Primitive(primitive))
+}
+
+use ConstValue as c;
+use Primitive::*;
+use Type as t;
+*/
+/*
+builtins! {
+  // Primitive types
+  Type, "type", t::Type, c::Type(t::Type), None;
+  Nothing, "nothing", p(nothing), c(nothing), None;
+  Unreachable, "unreachable", p(unreachable), c(unreachable), None;
+  Integer, "integer", p(integer), c(integer), None;
+  Real, "real", p(real), c(real), None;
+  Boolean, "bool", p(boolean), c(boolean), None;
+  String, "string", p(string), c(string), None;
+  Glyph, "glyph", p(glyph), c(glyph), None;
+  // Print functions
+  PrintString, "print_string",
+    Type::Function {
+      param_types: vec![p(string)],
+      return_type: p(nothing).into(),
+    },
+    ConstValue::Function {
+      name: mangle_builtin("print_string"),
+      parameters: vec![p(string)],
+      returns: p(nothing).into(),
+    }, None;
+}
+*/
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Builtin {
   Type,
@@ -59,6 +213,10 @@ impl Builtin {
     }
   }
 
+  pub fn to_mangle(&self) -> String {
+    mangle_builtin(self.to_string())
+  }
+
   pub fn from_mangle(mangle: &Mangle) -> Option<Self> {
     for b in Self::ALL {
       if &mangle_builtin(b.to_string()) == mangle {
@@ -89,7 +247,7 @@ impl Builtin {
           parameters: param_types,
           returns: *return_type,
         }
-      }
+      },
       //ConstValue::Function(mangle_builtin(self.to_string())),
       Self::Type => ConstValue::Type(Type::Type),
       Self::Nothing => ConstValue::Type(nothing.promote()),
@@ -134,9 +292,9 @@ impl Builtin {
     match self {
       Builtin::PrintString => Some(Wasm::Import {
         ns1: "js".to_string(),
-        ns2: "print_string".to_string(),
+        ns2: self.to_string().into(),
         object: Wasm::Function {
-          ident: "_print_string".into(),
+          ident: self.to_mangle(),
           params: vec![("".into(), WasmType::I32), ("".into(), WasmType::I32)],
           body: vec![],
           results: vec![],
@@ -145,9 +303,9 @@ impl Builtin {
       }),
       Builtin::PrintReal => Some(Wasm::Import {
         ns1: "js".to_string(),
-        ns2: "print_real".to_string(),
+        ns2: self.to_string().into(),
         object: Wasm::Function {
-          ident: "_print_real".into(),
+          ident: self.to_mangle(),
           params: vec![("".into(), WasmType::F64)],
           body: vec![],
           results: vec![],
@@ -156,9 +314,9 @@ impl Builtin {
       }),
       Builtin::PrintGlyph => Some(Wasm::Import {
         ns1: "js".to_string(),
-        ns2: "print_glyph".to_string(),
+        ns2: self.to_string().into(),
         object: Wasm::Function {
-          ident: "_print_glyph".into(),
+          ident: self.to_mangle(),
           params: vec![("".into(), WasmType::I32)],
           body: vec![],
           results: vec![],
@@ -167,9 +325,9 @@ impl Builtin {
       }),
       Builtin::PrintInteger => Some(Wasm::Import {
         ns1: "js".to_string(),
-        ns2: "print_integer".to_string(),
+        ns2: self.to_string().into(),
         object: Wasm::Function {
-          ident: "_print_integer".into(),
+          ident: self.to_mangle(),
           params: vec![("".into(), WasmType::I64)],
           body: vec![],
           results: vec![],
@@ -178,9 +336,9 @@ impl Builtin {
       }),
       Builtin::PrintBoolean => Some(Wasm::Import {
         ns1: "js".to_string(),
-        ns2: "print_boolean".to_string(),
+        ns2: self.to_string().into(),
         object: Wasm::Function {
-          ident: "_print_boolean".into(),
+          ident: self.to_mangle(),
           params: vec![("".into(), WasmType::I32)],
           body: vec![],
           results: vec![],

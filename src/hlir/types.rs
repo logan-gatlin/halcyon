@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 macro_rules! count {
     () => (0usize);
     ($x:tt $($xs:tt)* ) => (1usize + count!($($xs)*));
@@ -53,15 +55,14 @@ impl Primitive {
   }
 }
 
-pub enum TypeConstraint {
-  Any,
-  Subset(Vec<Type>),
-}
+pub type TypeVariable = usize;
 
 #[derive(Debug, Clone)]
 pub enum Type {
   /// Indeterminate type
   Ambiguous,
+  // Type variable
+  Polymorphic(TypeVariable),
   /// A primitive type
   Primitive(Primitive),
   /// Record type
@@ -72,7 +73,7 @@ pub enum Type {
   /// Product type
   Tuple(Vec<Type>),
   /// Sum type
-  Variant(Vec<Type>),
+  Variant(HashSet<Type>),
   /// Function type
   Function {
     param_types: Vec<Type>,
@@ -113,7 +114,7 @@ impl PartialEq for Type {
     match (self, other) {
       (t::Ambiguous, t::Ambiguous) => {
         panic!("Tried to compare ambiguous types")
-      }
+      },
       (t::Type, t::Type) => true,
       (t::Primitive(p1), t::Primitive(p2)) => p1 == p2,
       (
@@ -136,12 +137,16 @@ impl PartialEq for Type {
           return_type: r2,
         },
       ) => p1.len() == p2.len() && p1 == p2 && r1 == r2,
+      (t::Tuple(t1), t::Tuple(t2)) => t1 == t2,
+      (t::Variant(v1), t::Variant(v2)) => v1 == v2,
+      (t::Polymorphic(p1), t::Polymorphic(p2)) => p1 == p2,
       _ => false,
     }
   }
 }
 
-impl Eq for Type {}
+impl Eq for Type {
+}
 
 impl std::hash::Hash for Type {
   fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -153,20 +158,36 @@ impl std::hash::Hash for Type {
       } => {
         member_names.hash(state);
         member_types.hash(state);
-      }
+      },
       Type::Function {
         param_types,
         return_type,
       } => {
         param_types.hash(state);
         return_type.hash(state);
-      }
+      },
       Type::Type => "type".hash(state),
       Type::Ambiguous => panic!("Tried to hash ambiguous type"),
       Type::Reference(t) => {
         "ref".hash(state);
         t.hash(state);
-      }
+      },
+      Type::Polymorphic(id) => {
+        "poly".hash(state);
+        id.hash(state);
+      },
+      Type::Tuple(items) => {
+        "tuple".hash(state);
+        for item in items {
+          item.hash(state);
+        }
+      },
+      Type::Variant(items) => {
+        "variant".hash(state);
+        for item in items {
+          item.hash(state);
+        }
+      },
     }
   }
 }
@@ -195,7 +216,7 @@ impl std::fmt::Display for Type {
           .join(",\n");
         let fields = indent(fields);
         write!(f, "struct {{\n{fields}\n}}")
-      }
+      },
       Type::Type => write!(f, "type"),
       Type::Function {
         param_types,
@@ -211,6 +232,27 @@ impl std::fmt::Display for Type {
         return_type
       ),
       Type::Reference(t) => write!(f, "{t}&"),
+      Type::Polymorphic(id) => write!(f, "'{id}"),
+      Type::Tuple(items) => write!(
+        f,
+        "({})",
+        items
+          .into_iter()
+          .map(|i| format!("{i}"))
+          .collect::<Vec<_>>()
+          .join(", ")
+      ),
+      Type::Variant(items) => {
+        write!(
+          f,
+          "{}",
+          items
+            .into_iter()
+            .map(|i| format!("{i}"))
+            .collect::<Vec<_>>()
+            .join(" | ")
+        )
+      },
     }
   }
 }

@@ -1,5 +1,5 @@
 use super::*;
-use crate::{Span, lint::*, operator::*, parse::*, token::*};
+use crate::{lint::*, operator::*, parse::*, span::*, token::*};
 use std::collections::HashSet;
 
 pub fn parse_int_literal(value: &str, base: u32) -> Result<i64> {
@@ -35,14 +35,15 @@ fn collect_list(mut expr: Expression) -> Vec<Expression> {
         left,
         right,
       } => {
-        exprs.extend(collect_list(*right).into_iter().rev().collect::<Vec<_>>());
+        exprs
+          .extend(collect_list(*right).into_iter().rev().collect::<Vec<_>>());
         expr = *left;
-      }
+      },
       _ => {
         exprs.push(expr);
         exprs.reverse();
         break exprs;
-      }
+      },
     }
   }
 }
@@ -59,12 +60,12 @@ fn collect_block(mut expr: Expression) -> Vec<Expression> {
       } => {
         exprs.push(*right);
         expr = *left;
-      }
+      },
       _ => {
         exprs.push(expr);
         exprs.reverse();
         break exprs;
-      }
+      },
     }
   }
 }
@@ -102,7 +103,9 @@ impl Canonizer {
   fn literal_to_const(&mut self, literal: Literal) -> Result<ConstValue> {
     Ok(match literal {
       Literal::Unit => ConstValue::Nothing,
-      Literal::Integer(i, base) => ConstValue::Integer(parse_int_literal(&i, base as u32)?),
+      Literal::Integer(i, base) => {
+        ConstValue::Integer(parse_int_literal(&i, base as u32)?)
+      },
       Literal::Real(r) => ConstValue::Real(parse_real_literal(&r)?),
       Literal::String(s) => {
         let address = self.memory.static_allocate(s.len() as PtrT);
@@ -110,7 +113,7 @@ impl Canonizer {
           address,
           length: s.len() as PtrT,
         }
-      }
+      },
       Literal::Glyph(g) => ConstValue::Glyph(g),
       Literal::Boolean(b) => ConstValue::Boolean(b),
     })
@@ -132,11 +135,13 @@ impl Canonizer {
     let node = self.new_node();
     let span = expr.span;
     let kind = match expr.kind {
-      e::Literal(literal) => h::Immediate(self.literal_to_const(literal).span(expr.span)?),
+      e::Literal(literal) => {
+        h::Immediate(self.literal_to_const(literal).span(expr.span)?)
+      },
       e::Identifier(name) => {
         let symbol = self.name_to_symbol(&name).span(span)?;
         h::Identifier(symbol.mangle.clone())
-      }
+      },
       // Function definition
       e::Binary {
         op: BinaryOp::FatArrow,
@@ -144,8 +149,10 @@ impl Canonizer {
         right,
       } => {
         let parameter_exprs = collect_list(*left);
-        let parameter_kinds = parameter_exprs.iter().map(|a| &a.kind).collect::<Vec<_>>();
-        let parameter_spans = parameter_exprs.iter().map(|a| a.span).collect::<Vec<_>>();
+        let parameter_kinds =
+          parameter_exprs.iter().map(|a| &a.kind).collect::<Vec<_>>();
+        let parameter_spans =
+          parameter_exprs.iter().map(|a| a.span).collect::<Vec<_>>();
         let parameter_names: Vec<String> = match parameter_kinds.as_slice() {
           [e::Literal(Literal::Unit)] => vec![],
           _ => parameter_exprs
@@ -182,7 +189,7 @@ impl Canonizer {
           parameter_spans,
           body,
         }
-      }
+      },
       // Constant declaration
       e::Binary {
         op: BinaryOp::DoubleColon,
@@ -200,7 +207,7 @@ impl Canonizer {
           is_constant: true,
           value: self.expr(*right)?,
         }
-      }
+      },
       // Runtime assignment
       e::Binary {
         op: BinaryOp::Equal,
@@ -283,7 +290,7 @@ impl Canonizer {
         };
         self.descope();
         kind
-      }
+      },
       e::Match {
         on,
         predicates,
@@ -306,29 +313,30 @@ impl Canonizer {
           patterns: patterns.into_iter().try_collect()?,
           branches: branches.into_iter().try_collect()?,
         }
-      }
+      },
       e::Loop { parameters, body } => {
-        let (parameter_names, parameter_values): (Vec<_>, Vec<_>) = collect_list(*parameters)
-          .into_iter()
-          .map(|p| {
-            if let e::Binary {
-              op: BinaryOp::Equal,
-              left:
-                box Expression {
-                  kind: e::Identifier(name),
-                  ..
-                },
-              right,
-            } = &p.kind
-            {
-              Ok((name.clone(), right.clone()))
-            } else {
-              Err(lint(ParseLint::InvalidLoop, p.span, &[]))
-            }
-          })
-          .try_collect::<Vec<_>>()?
-          .into_iter()
-          .unzip();
+        let (parameter_names, parameter_values): (Vec<_>, Vec<_>) =
+          collect_list(*parameters)
+            .into_iter()
+            .map(|p| {
+              if let e::Binary {
+                op: BinaryOp::Equal,
+                left:
+                  box Expression {
+                    kind: e::Identifier(name),
+                    ..
+                  },
+                right,
+              } = &p.kind
+              {
+                Ok((name.clone(), right.clone()))
+              } else {
+                Err(lint(ParseLint::InvalidLoop, p.span, &[]))
+              }
+            })
+            .try_collect::<Vec<_>>()?
+            .into_iter()
+            .unzip();
         self.enscope();
         let parameter_values = parameter_values
           .into_iter()
@@ -347,14 +355,17 @@ impl Canonizer {
         };
         self.descope();
         kind
-      }
+      },
       _ => todo!(),
     };
-    self.set_node(node, HlIrNode {
-      kind,
-      span,
-      type_: Type::Ambiguous,
-    });
+    self.set_node(
+      node,
+      HlIrNode {
+        kind,
+        span,
+        type_: Type::Ambiguous,
+      },
+    );
     Ok(node)
   }
 
@@ -368,7 +379,7 @@ impl Canonizer {
           kind: PatternKind::Wildcard(mangle),
           span,
         }
-      }
+      },
       e::Literal(literal) => Pattern {
         kind: PatternKind::Const(self.literal_to_const(literal).span(span)?),
         span,
@@ -436,17 +447,24 @@ impl Canonizer {
     assert!(
       self
         ._name_to_symbol
-        .insert(name.clone(), Symbol {
-          mangle,
-          scope_depth: 0,
-          is_constant: true,
-        },)
+        .insert(
+          name.clone(),
+          Symbol {
+            mangle,
+            scope_depth: 0,
+            is_constant: true,
+          },
+        )
         .is_none(),
       "Multiple definitions of builtin {name}"
     );
   }
 
-  fn define_name(&mut self, name: impl Into<String>, is_constant: bool) -> Result<Mangle> {
+  fn define_name(
+    &mut self,
+    name: impl Into<String>,
+    is_constant: bool,
+  ) -> Result<Mangle> {
     let name = name.into();
     if name == "_" {
       return Ok("_".to_string());
@@ -466,11 +484,14 @@ impl Canonizer {
       name: name.clone(),
     };
     self.event_stack.push(event);
-    self._name_to_symbol.insert(name.clone(), Symbol {
-      mangle: mangle.clone(),
-      scope_depth: self.scope_depth,
-      is_constant,
-    });
+    self._name_to_symbol.insert(
+      name.clone(),
+      Symbol {
+        mangle: mangle.clone(),
+        scope_depth: self.scope_depth,
+        is_constant,
+      },
+    );
     Ok(mangle)
   }
 
@@ -485,14 +506,14 @@ impl Canonizer {
         Event::ScopeStart => {
           self.scope_depth -= 1;
           break;
-        }
+        },
         Event::Modify { name, old_value } => {
           if let Some(old) = old_value {
             self._name_to_symbol.insert(name, old);
           } else {
             self._name_to_symbol.remove(&name);
           }
-        }
+        },
       }
     }
   }

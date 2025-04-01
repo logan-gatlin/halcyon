@@ -96,6 +96,7 @@ impl VirtualMachine {
       Type::Reference(_) => todo!(),
       Type::Ambiguous => todo!(),
       Type::Type => panic!("Type 'Type' has no WASM representation"),
+      _ => todo!(),
     }
   }
 
