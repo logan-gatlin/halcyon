@@ -16,12 +16,9 @@ pub enum BlockKind {
   Function {
     parameters: Vec<Mangle>,
     parameter_spans: Vec<Span>,
-    return_type: Option<Mangle>,
-    return_span: Option<Span>,
     value: Option<ConstValue>,
   },
   TypeAssert(Option<Type>),
-  Parameter(Option<Type>),
   GlobalScope(Option<ConstValue>),
 }
 

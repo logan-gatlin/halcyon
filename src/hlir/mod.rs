@@ -18,9 +18,9 @@ pub use types::*;
 pub type IrPtr = usize;
 pub type Mangle = String;
 
-pub fn build_hlir(stmts: Expression) -> Result<HlIrModule> {
-  let mut canon = Canonizer::new();
-  canon.canonize_expr(stmts)
+pub fn build_hlir(expr: Expression) -> Result<HlIrModule> {
+  let canon = Canonizer::new();
+  canon.canonize_expr(expr)
 }
 
 /// Name mangle syntax:

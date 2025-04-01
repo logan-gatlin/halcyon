@@ -3,7 +3,7 @@ use super::*;
 #[derive(Debug, Clone)]
 pub enum PatternKind {
   Const(ConstValue),
-  Name(String),
+  Wildcard(String),
   Tuple(Vec<Pattern>),
 }
 
@@ -51,9 +51,7 @@ pub enum HlIrKind {
   FunctionDef {
     name: Mangle,
     parameter_names: Vec<Mangle>,
-    parameter_types: Vec<IrPtr>,
     parameter_spans: Vec<Span>,
-    returns: Option<(IrPtr, Mangle)>,
     body: IrPtr,
   },
   FunctionCall {
@@ -114,7 +112,7 @@ impl HlIrModule {
           } else {
             return n.span;
           }
-        },
+        }
         HlIrKind::If { then, .. } => n = &self.nodes[*then],
         _ => return n.span,
       }

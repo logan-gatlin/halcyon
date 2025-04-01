@@ -53,17 +53,26 @@ impl Primitive {
   }
 }
 
+pub enum TypeConstraint {
+  Any,
+  Subset(Vec<Type>),
+}
+
 #[derive(Debug, Clone)]
 pub enum Type {
   /// Indeterminate type
   Ambiguous,
   /// A primitive type
   Primitive(Primitive),
-  /// User defined type
+  /// Record type
   Struct {
     member_names: Vec<String>,
     member_types: Vec<Type>,
   },
+  /// Product type
+  Tuple(Vec<Type>),
+  /// Sum type
+  Variant(Vec<Type>),
   /// Function type
   Function {
     param_types: Vec<Type>,
