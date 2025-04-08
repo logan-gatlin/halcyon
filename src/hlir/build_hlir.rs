@@ -172,13 +172,11 @@ impl Canonizer {
         };
         self.start_function();
         self.enscope();
-        for (arg, span) in parameter_names
+        let parameter_names = parameter_names
           .iter()
-          .zip(parameter_exprs.iter().map(|e| e.span))
-        {
-          println!("{arg}");
-          self.define_name(arg, false).span(span)?;
-        }
+          .zip(parameter_spans.iter())
+          .map(|(name, span)| self.define_name(name, false).span(*span))
+          .try_collect::<Vec<_>>()?;
         let body = self.expr(*right)?;
         self.descope();
         let mangle = self.define_unique("function");

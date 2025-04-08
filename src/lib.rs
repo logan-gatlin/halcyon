@@ -66,9 +66,12 @@ pub fn _compile(input: &str) -> Result<Vec<u8>> {
 
   let mut cs = ConstraintSolver::new(&mut hlir);
   cs.solve(0);
+  cs.simplify_constraints();
   println!("{:#?}", cs.constraints);
-  let hlir_sexpr: SExpression = (&hlir).into();
-  println!("{hlir:#?}");
+  {
+    let hlir_sexpr: SExpression = (&hlir).into();
+    println!("{hlir_sexpr}");
+  }
   Ok(vec![])
 }
 

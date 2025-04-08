@@ -1,18 +1,14 @@
+mod constraints;
+
 use std::collections::HashMap;
 
 use crate::{hlir::*, operator::*, span::*};
-
-#[derive(Debug, Clone)]
-pub enum TypeConstraint {
-  // For direct type inference
-  Equals(Type, Type),
-  BinaryResult(Type, BinaryOp, Type, Type),
-  UnaryResult(Type, UnaryOp, Type),
-}
+use constraints::*;
 
 pub struct ConstraintSolver<'a> {
   hlir: &'a mut HlIrModule,
   pub constraints: Vec<TypeConstraint>,
+  pub solutions: HashMap<TypeVariable, Type>,
   environment: HashMap<Mangle, Type>,
   binary_defs: Vec<(BinaryOp, Type, Type, Type)>,
   unary_defs: Vec<(UnaryOp, Type, Type)>,
@@ -29,6 +25,7 @@ impl<'a> ConstraintSolver<'a> {
         .into_iter()
         .map(|b| (b.to_mangle(), b.type_()))
         .collect(),
+      solutions: HashMap::new(),
       binary_defs: optable.get_binary_defs(),
       unary_defs: optable.get_unary_defs(),
       type_var_counter: 0,
@@ -87,14 +84,33 @@ impl<'a> ConstraintSolver<'a> {
       } => {
         let left_t = self.solve(left);
         let right_t = self.solve(right);
-        let tv = self.new_type_var();
-        self.constraints.push(TypeConstraint::BinaryResult(
-          tv.clone(),
-          op,
-          left_t,
-          right_t,
-        ));
-        tv
+        let prod_t = self.new_type_var();
+        use BinaryOp::*;
+        match op {
+          Star | Slash | Percent | Plus | Minus => {
+            self
+              .constraints
+              .push(TypeConstraint::Equals(left_t.clone(), right_t.clone()));
+            self
+              .constraints
+              .push(TypeConstraint::Equals(left_t, prod_t.clone()));
+            self
+              .constraints
+              .push(TypeConstraint::Equals(right_t, prod_t.clone()));
+          },
+          And | Nand | Or | Xor | Xnor | DoubleEqual | Less | LessEqual
+          | Greater | GreaterEqual | BangEqual => {
+            self
+              .constraints
+              .push(TypeConstraint::Equals(left_t, right_t));
+            self.constraints.push(TypeConstraint::Equals(
+              prod_t.clone(),
+              Type::Primitive(Primitive::boolean),
+            ));
+          },
+          _ => todo!(),
+        }
+        prod_t
       },
       h::Unary { op, opdef, child } => {
         let on_t = self.solve(child);
@@ -111,17 +127,67 @@ impl<'a> ConstraintSolver<'a> {
         parameter_names,
         parameter_spans,
         body,
-      } => todo!(),
+      } => {
+        let parameter_types = parameter_names
+          .iter()
+          .map(|n| {
+            println!("{n}");
+            let tv = self.new_type_var();
+            self.environment.insert(n.clone(), tv.clone());
+            tv
+          })
+          .collect::<Vec<_>>();
+        let return_t = self.solve(body);
+        Type::Function {
+          param_types: parameter_types,
+          return_type: return_t.into(),
+        }
+      },
       h::FunctionCall {
         callee,
         callee_name,
         arguments,
-      } => todo!(),
+      } => {
+        let tv = self.new_type_var();
+        let callee_t = self.solve(callee);
+        let param_types = arguments
+          .into_iter()
+          .map(|a| self.solve(a))
+          .collect::<Vec<_>>();
+        self.constraints.push(TypeConstraint::Equals(
+          callee_t,
+          Type::Function {
+            param_types,
+            return_type: tv.clone().into(),
+          },
+        ));
+        tv
+      },
       h::If {
         predicate,
         then,
         else_,
-      } => todo!(),
+      } => {
+        let predicate_t = self.solve(predicate);
+        self.constraints.push(TypeConstraint::Equals(
+          predicate_t,
+          Type::Primitive(Primitive::boolean),
+        ));
+        let tv = self.new_type_var();
+        let then_t = self.solve(then);
+        let else_t = if let Some(else_) = else_ {
+          self.solve(else_)
+        } else {
+          Type::Primitive(Primitive::nothing)
+        };
+        self
+          .constraints
+          .push(TypeConstraint::Equals(tv.clone(), then_t));
+        self
+          .constraints
+          .push(TypeConstraint::Equals(tv.clone(), else_t));
+        tv
+      },
       h::Match {
         on,
         patterns,
@@ -137,5 +203,57 @@ impl<'a> ConstraintSolver<'a> {
     };
     self.hlir.nodes.get_mut(node_ptr).unwrap().type_ = type_.clone();
     type_
+  }
+
+  pub fn simplify_constraints(&mut self) {
+    while let Some(constraint) = self.constraints.pop() {
+      println!("Solutions: {:?}", self.solutions);
+      println!("Constraint: {constraint:?}\n");
+      match constraint {
+        TypeConstraint::Equals(t1, t2) => {
+          match (t1, t2) {
+            (t1, t2) if t1 == t2 => {},
+            // Function decomposition
+            (
+              Type::Function {
+                param_types: p1,
+                return_type: r1,
+              },
+              Type::Function {
+                param_types: p2,
+                return_type: r2,
+              },
+            ) => {
+              if p1.len() != p2.len() {
+                // Type (arity) error
+                panic!("Wrong function arity");
+              }
+              p1.into_iter().zip(p2.into_iter()).for_each(|(p1, p2)| {
+                self.constraints.push(TypeConstraint::Equals(p1, p2))
+              });
+              self.constraints.push(TypeConstraint::Equals(*r1, *r2));
+            },
+            // Polymorphic value
+            (Type::Polymorphic(tv), t) | (t, Type::Polymorphic(tv)) => {
+              self.solutions.insert(tv, t.clone());
+              for node in &mut self.hlir.nodes {
+                if let Type::Polymorphic(this_tv) = node.type_.clone()
+                  && tv == this_tv
+                {
+                  node.type_ = t.clone();
+                }
+              }
+
+              self
+                .constraints
+                .iter_mut()
+                .for_each(|c| c.substitute(tv, t.clone()));
+            },
+            _ => todo!(),
+          }
+        },
+        TypeConstraint::UnaryResult(prod, unary_op, t1) => todo!(),
+      }
+    }
   }
 }

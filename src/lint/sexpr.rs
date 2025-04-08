@@ -4,6 +4,12 @@ pub struct SExpression {
   children: Vec<SExpression>,
 }
 
+impl SExpression {
+  pub fn push(&mut self, s: Self) {
+    self.children.push(s);
+  }
+}
+
 pub fn sexpr(this: impl Into<String>, children: &[SExpression]) -> SExpression {
   SExpression {
     this: this.into(),
