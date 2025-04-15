@@ -198,7 +198,8 @@ impl Canonizer {
           },
         right,
       } => {
-        let mangle = self.define_name(name, false).span(name_span)?;
+        let mangle = self.define_name(name, true).span(name_span)?;
+        println!("cs {mangle}");
         self.constants.insert(mangle.clone(), node);
         h::Declaration {
           assignee: mangle,
@@ -215,10 +216,15 @@ impl Canonizer {
             span: name_span,
           },
         right,
-      } => h::Declaration {
-        value: self.expr(*right)?,
-        assignee: self.define_name(name, false).span(name_span)?,
-        is_constant: true,
+      } => {
+        let value = self.expr(*right)?;
+        let assignee = self.define_name(name, false).span(name_span)?;
+        println!("rt {assignee}");
+        h::Declaration {
+          value,
+          assignee,
+          is_constant: true,
+        }
       },
       e::Binary {
         op: BinaryOp::Equal | BinaryOp::DoubleColon,

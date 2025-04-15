@@ -17,8 +17,9 @@ mod parse;
 mod token;
 
 use hlir::*;
-use inference::ConstraintSolver;
+use inference::generate_constraints;
 use lint::render::Linter;
+use mlir::{MlIrModule, build_mlir};
 use parse::*;
 use std::{
   ops::{Add, AddAssign},
@@ -63,11 +64,8 @@ pub fn _compile(input: &str) -> Result<Vec<u8>> {
   let parse_tree = parse(tokens)?;
   println!("{parse_tree}");
   let mut hlir = build_hlir(parse_tree)?;
-
-  let mut cs = ConstraintSolver::new(&mut hlir);
-  cs.solve(0);
-  cs.simplify_constraints();
-  println!("{:#?}", cs.constraints);
+  let constraints = generate_constraints(&mut hlir);
+  println!("{:#?}", constraints);
   {
     let hlir_sexpr: SExpression = (&hlir).into();
     println!("{hlir_sexpr}");

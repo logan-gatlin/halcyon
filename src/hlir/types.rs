@@ -1,5 +1,7 @@
 use std::collections::HashSet;
 
+use super::IrPtr;
+
 macro_rules! count {
     () => (0usize);
     ($x:tt $($xs:tt)* ) => (1usize + count!($($xs)*));
@@ -62,7 +64,8 @@ pub enum Type {
   /// Indeterminate type
   Ambiguous,
   // Type variable
-  Polymorphic(TypeVariable),
+  Undetermined(TypeVariable),
+  Dependent(IrPtr),
   /// A primitive type
   Primitive(Primitive),
   /// Record type
@@ -139,7 +142,7 @@ impl PartialEq for Type {
       ) => p1.len() == p2.len() && p1 == p2 && r1 == r2,
       (t::Tuple(t1), t::Tuple(t2)) => t1 == t2,
       (t::Variant(v1), t::Variant(v2)) => v1 == v2,
-      (t::Polymorphic(p1), t::Polymorphic(p2)) => p1 == p2,
+      (t::Undetermined(p1), t::Undetermined(p2)) => p1 == p2,
       _ => false,
     }
   }
@@ -167,23 +170,19 @@ impl std::hash::Hash for Type {
         return_type.hash(state);
       },
       Type::Type => "type".hash(state),
-      Type::Ambiguous => panic!("Tried to hash ambiguous type"),
+      Type::Ambiguous | Type::Dependent(_) | Type::Variant(_) => {
+        panic!("Tried to hash ambiguous type")
+      },
       Type::Reference(t) => {
         "ref".hash(state);
         t.hash(state);
       },
-      Type::Polymorphic(id) => {
+      Type::Undetermined(id) => {
         "poly".hash(state);
         id.hash(state);
       },
       Type::Tuple(items) => {
         "tuple".hash(state);
-        for item in items {
-          item.hash(state);
-        }
-      },
-      Type::Variant(items) => {
-        "variant".hash(state);
         for item in items {
           item.hash(state);
         }
@@ -218,6 +217,7 @@ impl std::fmt::Display for Type {
         write!(f, "struct {{\n{fields}\n}}")
       },
       Type::Type => write!(f, "type"),
+      Type::Dependent(ptr) => write!(f, "dependent ({ptr})"),
       Type::Function {
         param_types,
         return_type,
@@ -232,7 +232,7 @@ impl std::fmt::Display for Type {
         return_type
       ),
       Type::Reference(t) => write!(f, "{t}&"),
-      Type::Polymorphic(id) => write!(f, "'{id}"),
+      Type::Undetermined(id) => write!(f, "'{id}"),
       Type::Tuple(items) => write!(
         f,
         "({})",
