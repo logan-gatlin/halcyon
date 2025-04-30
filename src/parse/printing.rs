@@ -21,6 +21,23 @@ impl Into<SExpression> for &Expression {
   fn into(self) -> SExpression {
     use ExpressionKind::*;
     match &self.kind {
+      Let {
+        assignee,
+        value,
+        in_,
+      } => {
+        if let Some(in_) = in_ {
+          sexpr(
+            "let",
+            &[
+              sexpr("=", &[value.as_ref().into()]),
+              sexpr("in", &[in_.as_ref().into()]),
+            ],
+          )
+        } else {
+          sexpr("let", &[sexpr("=", &[value.as_ref().into()])])
+        }
+      },
       Literal(literal) => {
         let sexpr = sexpr(format!("{literal}"), &[]);
         sexpr
@@ -69,9 +86,6 @@ impl Into<SExpression> for &Expression {
         } else {
           sexpr("if", &[predicate.as_ref().into(), then.as_ref().into()])
         }
-      },
-      Loop { parameters, body } => {
-        sexpr("loop", &[parameters.as_ref().into(), body.as_ref().into()])
       },
       Structure { lhs, rhs, .. } => sexpr(
         "structure",

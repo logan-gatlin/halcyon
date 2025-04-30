@@ -41,6 +41,29 @@ pub fn primary(
       skip(iter, 1);
       e::Identifier(name)
     },
+    // Declaration
+    t::Let => {
+      let l = lint(ParseLint::InvalidLet, span, &[]);
+      skip(iter, 1);
+      let Some(Token(t::Identifier(assignee), _)) = iter.peek_nth(0).cloned()
+      else {
+        return Err(l.clone());
+      };
+      skip(iter, 1);
+      eat(iter, t::Equal).ok_or(l.clone())?;
+      let value = expression(iter, 0)?.ok_or(l.clone())?;
+      let in_ = if let Some(in_) = peek(iter, 0, t::In) {
+        skip(iter, 1);
+        Some(Box::new(expression(iter, 0)?.ok_or(l)?))
+      } else {
+        None
+      };
+      e::Let {
+        assignee,
+        value: Box::new(value),
+        in_,
+      }
+    },
     t::LeftBrace => {
       skip(iter, 1);
       let mut idents = vec![];

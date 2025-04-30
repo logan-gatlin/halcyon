@@ -105,19 +105,6 @@ pub fn expression(
         },
       }
     }
-    // Loop expression
-    else if t::Loop == next.0 && precedence < LOOP_PREC {
-      skip(iter, 1);
-      current = Expression {
-        kind: e::Loop {
-          parameters: current.into(),
-          body: expression(iter, LOOP_PREC)?
-            .ok_or(lint(ParseLint::InvalidLoop, span, &[]))?
-            .into(),
-        },
-        span,
-      }
-    }
     // Unary postfix
     else if let Ok(op) = UnaryOp::try_from(&next.0) {
       let new_precedence = op.precedence();

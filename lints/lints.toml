@@ -84,8 +84,8 @@ reason = "Invalid Structure"
 help = "Structure literals and definitions are written as `{ name = value... }`  `{ name : type... }` respectively"
 
 [2009]
-reason = "Cannot assign to expression"
-help = "You cannot assign a value to this expression. You may need to use parenthesis to clarify your intent here"
+reason = "Invalid let expression"
+help = "A `let` expression is written as `let <identifier> = <expression>` with an optional `in <expression>`"
 
 [2010]
 reason = "Missing Comma"

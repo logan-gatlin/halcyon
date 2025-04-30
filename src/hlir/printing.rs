@@ -146,7 +146,7 @@ impl HlIrModule {
           .as_ref(),
       ),
     };
-    se.push(format!("{}", node.type_).as_str().into());
+    se.push(format!("(type {})", node.type_).as_str().into());
     se
   }
 }

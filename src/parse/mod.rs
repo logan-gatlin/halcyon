@@ -20,6 +20,11 @@ pub enum Literal {
 
 #[derive(Debug, Clone)]
 pub enum ExpressionKind {
+  Let {
+    assignee: String,
+    value: Box<Expression>,
+    in_: Option<Box<Expression>>,
+  },
   Literal(Literal),
   Identifier(String),
   Binary {
@@ -44,10 +49,6 @@ pub enum ExpressionKind {
     on: Box<Expression>,
     predicates: Vec<Expression>,
     branches: Vec<Expression>,
-  },
-  Loop {
-    parameters: Box<Expression>,
-    body: Box<Expression>,
   },
   Structure {
     is_definition: bool,

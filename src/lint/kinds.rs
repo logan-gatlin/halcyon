@@ -32,7 +32,7 @@ pub enum ParseLint {
   EmptyBlock = 2006,
   EmptyInput = 2007,
   InvalidStructure = 2008,
-  AssignToExpression = 2009,
+  InvalidLet = 2009,
   MissingComma = 2010,
   InvalidLambdaParameter = 2011,
   InvalidPattern = 2012,

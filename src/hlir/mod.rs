@@ -5,7 +5,7 @@ pub mod hlir_module;
 pub mod printing;
 pub mod types;
 
-use std::collections::HashMap;
+use std::{collections::HashMap, ffi::CString};
 
 use crate::{lint::*, memory::*, operator::*, parse::*};
 
@@ -39,6 +39,10 @@ pub fn mangle_name(path: Vec<String>, salt: &str) -> Mangle {
   }
   buf.extend_from_slice(salt.as_bytes());
   String::from_utf8(buf).unwrap()
+}
+
+pub fn demangle_name(mangle: Mangle) -> String {
+  todo!()
 }
 
 /// Builtin mangle syntax:

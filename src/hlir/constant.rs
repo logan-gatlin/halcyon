@@ -21,6 +21,7 @@ pub enum ConstValue {
     member_names: Vec<String>,
     member_values: Vec<ConstValue>,
   },
+  Tuple(Vec<ConstValue>),
   Type(Type),
 }
 
@@ -50,6 +51,9 @@ impl ConstValue {
         member_names: member_names.clone(),
         member_types: member_values.iter().map(|v| v.type_of()).collect(),
       },
+      ConstValue::Tuple(items) => {
+        Type::Tuple(items.iter().map(|i| i.type_of()).collect())
+      },
       ConstValue::Type(_) => Type::Type,
     }
   }
@@ -64,6 +68,15 @@ impl std::fmt::Display for ConstValue {
       ConstValue::Function { name, .. } => write!(f, "{name}"),
       ConstValue::StructLiteral { .. } => write!(f, "(struct)"),
       ConstValue::Type(val) => write!(f, "{val}"),
+      ConstValue::Tuple(items) => write!(
+        f,
+        "({})",
+        items
+          .iter()
+          .map(|i| format!("{i}"))
+          .collect::<Vec<_>>()
+          .join(", ")
+      ),
       ConstValue::Integer(val) => write!(f, "{val}"),
       ConstValue::Real(val) => write!(f, "{val}"),
       ConstValue::Glyph(val) => write!(f, "{val}"),

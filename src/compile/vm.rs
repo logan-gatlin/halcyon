@@ -23,6 +23,11 @@ impl ConstValue {
         .rev()
         .flat_map(|c| c.to_wasm_value())
         .collect(),
+      ConstValue::Tuple(items) => items
+        .into_iter()
+        .rev()
+        .flat_map(|c| c.to_wasm_value())
+        .collect(),
       ConstValue::Type(_) => panic!("Type 'Type' has no WASM representation"),
     }
   }

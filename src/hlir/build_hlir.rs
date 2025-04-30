@@ -199,7 +199,6 @@ impl Canonizer {
         right,
       } => {
         let mangle = self.define_name(name, true).span(name_span)?;
-        println!("cs {mangle}");
         self.constants.insert(mangle.clone(), node);
         h::Declaration {
           assignee: mangle,
@@ -219,7 +218,6 @@ impl Canonizer {
       } => {
         let value = self.expr(*right)?;
         let assignee = self.define_name(name, false).span(name_span)?;
-        println!("rt {assignee}");
         h::Declaration {
           value,
           assignee,
@@ -230,7 +228,7 @@ impl Canonizer {
         op: BinaryOp::Equal | BinaryOp::DoubleColon,
         left,
         ..
-      } => return Err(lint(ParseLint::AssignToExpression, left.span, &[])),
+      } => return Err(lint(ParseLint::InvalidLet, left.span, &[])),
       e::Binary {
         op: BinaryOp::Comma,
         ..
@@ -317,48 +315,6 @@ impl Canonizer {
           patterns: patterns.into_iter().try_collect()?,
           branches: branches.into_iter().try_collect()?,
         }
-      },
-      e::Loop { parameters, body } => {
-        let (parameter_names, parameter_values): (Vec<_>, Vec<_>) =
-          collect_list(*parameters)
-            .into_iter()
-            .map(|p| {
-              if let e::Binary {
-                op: BinaryOp::Equal,
-                left:
-                  box Expression {
-                    kind: e::Identifier(name),
-                    ..
-                  },
-                right,
-              } = &p.kind
-              {
-                Ok((name.clone(), right.clone()))
-              } else {
-                Err(lint(ParseLint::InvalidLoop, p.span, &[]))
-              }
-            })
-            .try_collect::<Vec<_>>()?
-            .into_iter()
-            .unzip();
-        self.enscope();
-        let parameter_values = parameter_values
-          .into_iter()
-          .map(|v| self.expr(*v))
-          .try_collect::<Vec<_>>()?;
-        let parameter_names = parameter_names
-          .into_iter()
-          .map(|n| self.define_name(n, false))
-          .try_collect::<Vec<_>>()?;
-        let body = self.expr(*body)?;
-        let kind = h::Loop {
-          parameter_names,
-          parameter_values,
-          parameter_spans: vec![],
-          body,
-        };
-        self.descope();
-        kind
       },
       _ => todo!(),
     };
