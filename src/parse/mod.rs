@@ -21,6 +21,7 @@ pub enum Literal {
 #[derive(Debug, Clone)]
 pub enum ExpressionKind {
   Let {
+    assignee_span: Span,
     assignee: String,
     value: Box<Expression>,
     in_: Option<Box<Expression>>,

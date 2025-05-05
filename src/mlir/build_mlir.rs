@@ -26,23 +26,28 @@ fn lower(
       assignee,
       is_constant,
       value,
+      in_,
+      ..
     } => {
       lower(hlir, *value, instrs, map);
       instrs.push(new(m::Set(assignee.clone())));
-    },
+      if let Some(in_) = in_ {
+        lower(hlir, *in_, instrs, map);
+      }
+    }
     Immediate(const_value) => instrs.push(new(m::Const(const_value.clone()))),
     Block(items) => {
       for item in items {
         lower(hlir, *item, instrs, map);
       }
-    },
+    }
     Identifier(mangle) => instrs.push(new(m::Get(mangle.clone()))),
     Tuple(items) => {
       for item in items {
         lower(hlir, *item, instrs, map);
       }
       instrs.push(new(m::Tuple(items.len())));
-    },
+    }
     StructDef {
       field_names,
       field_types,
@@ -51,7 +56,7 @@ fn lower(
         lower(hlir, *field, instrs, map);
       }
       instrs.push(new(m::StructDef(field_names.clone())));
-    },
+    }
     StructLiteral {
       struct_t,
       field_names,
@@ -61,11 +66,11 @@ fn lower(
         lower(hlir, *field, instrs, map);
       }
       instrs.push(new(m::StructLiteral(field_names.clone())));
-    },
+    }
     Field { of, index } => {
       lower(hlir, *of, instrs, map);
       instrs.push(new(m::Field(index.clone())));
-    },
+    }
     Binary {
       op,
       opdef,
@@ -75,11 +80,11 @@ fn lower(
       lower(hlir, *left, instrs, map);
       lower(hlir, *right, instrs, map);
       instrs.push(new(m::BinaryOp(*op)))
-    },
+    }
     Unary { op, opdef, child } => {
       lower(hlir, *child, instrs, map);
       instrs.push(new(m::UnaryOp(*op)));
-    },
+    }
     FunctionDef {
       name,
       parameter_names,
@@ -92,7 +97,7 @@ fn lower(
       }
       lower(hlir, *body, instrs, map);
       instrs.push(new(m::Return));
-    },
+    }
     FunctionCall {
       callee,
       callee_name,
@@ -105,7 +110,7 @@ fn lower(
       }
       instrs.push(new(m::Get(callee_name.clone())));
       instrs.push(new(m::Call(arguments.len())));
-    },
+    }
     If {
       predicate,
       then,
@@ -119,19 +124,12 @@ fn lower(
         lower(hlir, *else_, instrs, map);
       }
       instrs.push(new(m::End));
-    },
+    }
     Match {
       on,
       patterns,
       branches,
     } => todo!(),
-    Loop {
-      parameter_names,
-      parameter_values,
-      parameter_spans,
-      body,
-    } => todo!(),
-    Break(_) => todo!(),
   }
   let end_span = instrs.len();
   map.insert(ptr, MlIrSpan(start_span, end_span - start_span));

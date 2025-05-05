@@ -45,14 +45,11 @@ pub fn _compiler_print(s: String) {
   println!("{s}");
 }
 #[cfg(not(target_family = "wasm"))]
-pub fn _compiler_cls() {
-}
+pub fn _compiler_cls() {}
 #[cfg(not(target_family = "wasm"))]
-pub fn _compiler_wat(_s: String) {
-}
+pub fn _compiler_wat(_s: String) {}
 #[cfg(not(target_family = "wasm"))]
-pub fn _compiler_exec(_bytes: Vec<u8>) {
-}
+pub fn _compiler_exec(_bytes: Vec<u8>) {}
 
 pub fn compiler_print(s: impl Into<String>) {
   _compiler_print(s.into());
@@ -62,13 +59,13 @@ pub fn _compile(input: &str) -> Result<Vec<u8>> {
   _compiler_cls();
   let tokens = tokenize(input.chars())?;
   let parse_tree = parse(tokens)?;
-  println!("{parse_tree}");
-  /*
   let mut hlir = build_hlir(parse_tree)?;
   let constraints = generate_constraints(&mut hlir);
+  /*
   let mlir = build_mlir(&hlir);
   println!("{}", mlir.evaluate(0).unwrap());
   */
+  println!("{hlir}");
   Ok(vec![])
 }
 
@@ -80,12 +77,10 @@ pub fn compile(input: &str) {
       if b.len() != 0 {
         _compiler_exec(b);
       }
-    },
+    }
     Err(e) => {
-      compiler_print(
-        "Failed to Compile".apply_style(Color::Red, Attribute::Underline),
-      );
+      compiler_print("Failed to Compile".apply_style(Color::Red, Attribute::Underline));
       compiler_print(linter.render(e))
-    },
+    }
   };
 }

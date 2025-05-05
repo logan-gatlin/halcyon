@@ -19,6 +19,7 @@ pub enum HlIrKind {
     assignee: Mangle,
     is_constant: bool,
     value: IrPtr,
+    in_: Option<IrPtr>,
   },
   Immediate(ConstValue),
   Block(Vec<IrPtr>),
@@ -69,13 +70,6 @@ pub enum HlIrKind {
     patterns: Vec<Pattern>,
     branches: Vec<IrPtr>,
   },
-  Loop {
-    parameter_names: Vec<Mangle>,
-    parameter_values: Vec<IrPtr>,
-    parameter_spans: Vec<Span>,
-    body: IrPtr,
-  },
-  Break(Option<IrPtr>),
 }
 
 #[derive(Debug, Clone)]

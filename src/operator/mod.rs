@@ -80,7 +80,6 @@ op! {
   FatArrow, 6, RIGHT_ASSOC;
   Colon, 5, RIGHT_ASSOC;
   Arrow, 5, RIGHT_ASSOC;
-  Equal, 4, RIGHT_ASSOC;
   DoubleColon, 4, RIGHT_ASSOC;
   Comma, 3, LEFT_ASSOC;
   DoubleSemicolon, 1, LEFT_ASSOC;

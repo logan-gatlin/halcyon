@@ -177,66 +177,6 @@ impl Compiler {
         instrs.push(asm::End);
         Self::get_register(result_name, &type_, instrs);
       }
-      Loop {
-        parameter_names,
-        parameter_values,
-        body,
-        ..
-      } => {
-        let result_name = if type_.count_registers() == 0 {
-          "".to_string()
-        } else {
-          self.new_name()
-        };
-        Self::make_register(result_name.clone(), &type_, regs);
-        let loop_registers: Vec<_> = parameter_names
-          .iter()
-          .cloned()
-          .zip(parameter_values.iter().map(|i| self.module.type_of(*i)))
-          .collect();
-        loop_registers
-          .iter()
-          .for_each(|(name, type_)| Self::make_register(name.clone(), &type_, regs));
-        parameter_values
-          .into_iter()
-          .rev()
-          .map(|i| self.lower(i, regs, instrs))
-          .try_collect::<Vec<_>>()?;
-        loop_registers
-          .iter()
-          .for_each(|reg| Self::set_register(reg.0.clone(), &reg.1, instrs));
-        let block_name = self.new_name();
-        instrs.push(asm::Block(block_name.clone()));
-        self.break_stack.push(BreakTarget {
-          block_name,
-          result_name: result_name.clone(),
-        });
-        let loop_name = self.new_name();
-        instrs.push(asm::Loop(loop_name.clone()));
-        self.lower(body, regs, instrs)?;
-        self.break_stack.pop();
-        loop_registers
-          .iter()
-          .for_each(|(name, type_)| Self::set_register(name.clone(), type_, instrs));
-        instrs.push(asm::Branch(loop_name.clone()));
-        instrs.push(asm::End);
-        instrs.push(asm::End);
-        Self::get_register(result_name, &type_, instrs);
-      }
-      Break(expr) => {
-        let type_ = if let Some(expr) = expr {
-          self.lower(expr, regs, instrs)?;
-          self.module.type_of(expr)
-        } else {
-          Type::Primitive(Primitive::nothing)
-        };
-        let BreakTarget {
-          block_name,
-          result_name,
-        } = self.break_stack.last().unwrap().clone();
-        Self::set_register(result_name, &type_, instrs);
-        instrs.push(asm::Branch(block_name));
-      }
       StructLiteral { field_values, .. } => {
         for value in field_values {
           self.lower(value, regs, instrs)?;
