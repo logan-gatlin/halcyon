@@ -1,4 +1,4 @@
-use crate::{compile::*, hlir::*, lint::*, memory::*, mlir::*};
+use crate::{compile::*, hlir::*, lint::*, memory::*};
 
 pub struct VirtualMachine {
   pub stack: Vec<WasmValue>,
@@ -54,7 +54,7 @@ impl VirtualMachine {
     match expects {
       Type::Primitive(primitive) => match primitive {
         Primitive::nothing => Ok(ConstValue::Nothing),
-        Primitive::unreachable => {
+        Primitive::never => {
           panic!("Cannot construct never primitive from wasm")
         },
         Primitive::integer => {
@@ -98,7 +98,6 @@ impl VirtualMachine {
       },
       Type::Struct { .. } => todo!(),
       Type::Function { .. } => todo!(),
-      Type::Reference(_) => todo!(),
       Type::Ambiguous => todo!(),
       Type::Type => panic!("Type 'Type' has no WASM representation"),
       _ => todo!(),

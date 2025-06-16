@@ -21,6 +21,7 @@ pub enum Literal {
 #[derive(Debug, Clone)]
 pub enum ExpressionKind {
   Let {
+    is_constant: bool,
     assignee_span: Span,
     assignee: String,
     value: Box<Expression>,
@@ -45,11 +46,6 @@ pub enum ExpressionKind {
     predicate: Box<Expression>,
     then: Box<Expression>,
     else_: Option<Box<Expression>>,
-  },
-  Match {
-    on: Box<Expression>,
-    predicates: Vec<Expression>,
-    branches: Vec<Expression>,
   },
   Structure {
     is_definition: bool,

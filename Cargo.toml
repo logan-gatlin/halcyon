@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 wat = "1.219"
+wasm-encoder = "0.233"
 punycode = "0.4"
 wasm-bindgen = "0.2"
 multipeek = "0.1"

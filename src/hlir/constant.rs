@@ -30,7 +30,7 @@ impl ConstValue {
     use Primitive::*;
     match self {
       ConstValue::Nothing => nothing.promote(),
-      ConstValue::Never => unreachable.promote(),
+      ConstValue::Never => never.promote(),
       ConstValue::Integer(_) => integer.promote(),
       ConstValue::Real(_) => real.promote(),
       ConstValue::Boolean(_) => boolean.promote(),
@@ -52,7 +52,7 @@ impl ConstValue {
         member_types: member_values.iter().map(|v| v.type_of()).collect(),
       },
       ConstValue::Tuple(items) => {
-        Type::Tuple(items.iter().map(|i| i.type_of()).collect())
+        Type::Product(items.iter().map(|i| i.type_of()).collect())
       },
       ConstValue::Type(_) => Type::Type,
     }
@@ -64,9 +64,9 @@ impl std::fmt::Display for ConstValue {
     match self {
       ConstValue::Nothing => write!(f, "()"),
       ConstValue::Never => write!(f, "!"),
-      ConstValue::String { .. } => write!(f, "(string)"),
+      ConstValue::String { .. } => write!(f, "<string>"),
       ConstValue::Function { name, .. } => write!(f, "{name}"),
-      ConstValue::StructLiteral { .. } => write!(f, "(struct)"),
+      ConstValue::StructLiteral { .. } => write!(f, "<struct>"),
       ConstValue::Type(val) => write!(f, "{val}"),
       ConstValue::Tuple(items) => write!(
         f,

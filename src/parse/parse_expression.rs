@@ -92,19 +92,6 @@ pub fn expression(
         },
       };
     }
-    // Match expression
-    else if t::Match == next.0 && precedence < MATCH_PREC {
-      skip(iter, 1);
-      let (predicates, branches) = match_rhs(iter, span)?;
-      current = Expression {
-        span,
-        kind: e::Match {
-          on: current.into(),
-          predicates,
-          branches,
-        },
-      }
-    }
     // Unary postfix
     else if let Ok(op) = UnaryOp::try_from(&next.0) {
       let new_precedence = op.precedence();

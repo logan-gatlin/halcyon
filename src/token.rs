@@ -23,6 +23,7 @@ pub enum TokenKind {
 
   Comma,
   Colon,
+  DoubleColon,
   Semicolon,
   DoubleSemicolon,
 
@@ -48,7 +49,6 @@ pub enum TokenKind {
   GreaterEqual,
   Less,
   LessEqual,
-  DoubleColon,
 
   Pipe,
   Ampersand,

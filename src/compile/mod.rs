@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{hlir::*, mlir::*};
+use crate::hlir::*;
 
 pub mod assembly;
 mod lower;
@@ -78,7 +78,7 @@ impl Type {
     use Primitive as p;
     match self {
       Type::Primitive(primitive) => match primitive {
-        p::nothing | p::unreachable => 0,
+        p::nothing | p::never => 0,
         p::glyph | p::integer | p::real | p::boolean => 1,
         p::string => 2,
       },
@@ -96,7 +96,7 @@ impl Type {
     use WasmType as a;
     match self {
       Type::Primitive(primitive) => match primitive {
-        p::nothing | p::unreachable => vec![],
+        p::nothing | p::never => vec![],
         p::integer => vec![a::I64],
         p::real => vec![a::F64],
         p::boolean => vec![a::I32],

@@ -251,7 +251,7 @@ impl Builtin {
       //ConstValue::Function(mangle_builtin(self.to_string())),
       Self::Type => ConstValue::Type(Type::Type),
       Self::Nothing => ConstValue::Type(nothing.promote()),
-      Self::Unreachable => ConstValue::Type(unreachable.promote()),
+      Self::Unreachable => ConstValue::Type(never.promote()),
       Self::Integer => ConstValue::Type(integer.promote()),
       Self::Real => ConstValue::Type(real.promote()),
       Self::Boolean => ConstValue::Type(boolean.promote()),

@@ -44,7 +44,7 @@ macro_rules! primitives {
 }
 
 primitives! {
-  nothing, unreachable,
+  nothing, never,
   integer,
   real,
   boolean,
@@ -64,8 +64,7 @@ pub enum Type {
   /// Indeterminate type
   Ambiguous,
   // Type variable
-  Undetermined(TypeVariable),
-  Dependent(IrPtr),
+  TypeVariable(TypeVariable),
   /// A primitive type
   Primitive(Primitive),
   /// Record type
@@ -73,18 +72,16 @@ pub enum Type {
     member_names: Vec<String>,
     member_types: Vec<Type>,
   },
-  /// Product type
-  Tuple(Vec<Type>),
-  /// Sum type
-  Variant(HashSet<Type>),
+  /// Tuple
+  Product(Vec<Type>),
+  /// Variant or enum
+  Sum(HashSet<Type>),
   /// Function type
   Function {
     param_types: Vec<Type>,
     return_type: Box<Type>,
   },
-  /// Alias type
-  Reference(Box<Type>),
-  /// Higher level type
+  /// Higher order type
   Type,
 }
 
@@ -97,11 +94,77 @@ impl Type {
     }
   }
 
-  pub fn unwrap_reference(mut self) -> Self {
-    while let Self::Reference(t) = self {
-      self = *t;
+  pub fn contains_type_var(&self, tv: TypeVariable) -> bool {
+    match self {
+      Type::TypeVariable(t) => tv == *t,
+      Type::Struct {
+        member_names,
+        member_types,
+      } => member_types
+        .into_iter()
+        .fold(false, |accum, x| accum || x.contains_type_var(tv)),
+      Type::Product(items) => items
+        .into_iter()
+        .fold(false, |accum, x| accum || x.contains_type_var(tv)),
+      Type::Sum(hash_set) => hash_set
+        .into_iter()
+        .fold(false, |accum, x| accum || x.contains_type_var(tv)),
+      Type::Function {
+        param_types,
+        return_type,
+      } => {
+        param_types
+          .into_iter()
+          .fold(false, |accum, x| accum || x.contains_type_var(tv))
+          || return_type.contains_type_var(tv)
+      },
+      Type::Type => false,
+      Type::Ambiguous => false,
+      Type::Primitive(primitive) => false,
     }
-    self
+  }
+
+  pub fn substitute(&mut self, tv: TypeVariable, type_: &Type) {
+    match self {
+      Type::Ambiguous => {},
+      Type::TypeVariable(t) => {
+        if *t == tv {
+          *self = type_.clone();
+        }
+      },
+      Type::Primitive(primitive) => {},
+      Type::Struct {
+        member_names,
+        member_types,
+      } => {
+        member_types
+          .iter_mut()
+          .for_each(|t| t.substitute(tv, type_));
+      },
+      Type::Product(items) => {
+        items.iter_mut().for_each(|i| i.substitute(tv, type_))
+      },
+      Type::Sum(hash_set) => {
+        *self = Type::Sum(
+          hash_set
+            .clone()
+            .into_iter()
+            .map(|mut t| {
+              t.substitute(tv, type_);
+              t
+            })
+            .collect::<HashSet<_>>(),
+        );
+      },
+      Type::Function {
+        param_types,
+        return_type,
+      } => {
+        param_types.iter_mut().for_each(|t| t.substitute(tv, type_));
+        return_type.substitute(tv, type_);
+      },
+      Type::Type => {},
+    }
   }
 }
 
@@ -140,9 +203,9 @@ impl PartialEq for Type {
           return_type: r2,
         },
       ) => p1.len() == p2.len() && p1 == p2 && r1 == r2,
-      (t::Tuple(t1), t::Tuple(t2)) => t1 == t2,
-      (t::Variant(v1), t::Variant(v2)) => v1 == v2,
-      (t::Undetermined(p1), t::Undetermined(p2)) => p1 == p2,
+      (t::Product(t1), t::Product(t2)) => t1 == t2,
+      (t::Sum(v1), t::Sum(v2)) => v1 == v2,
+      (t::TypeVariable(p1), t::TypeVariable(p2)) => p1 == p2,
       _ => false,
     }
   }
@@ -170,18 +233,15 @@ impl std::hash::Hash for Type {
         return_type.hash(state);
       },
       Type::Type => "type".hash(state),
-      Type::Ambiguous | Type::Dependent(_) | Type::Variant(_) => {
+      Type::Ambiguous => {
         panic!("Tried to hash ambiguous type")
       },
-      Type::Reference(t) => {
-        "ref".hash(state);
-        t.hash(state);
-      },
-      Type::Undetermined(id) => {
+      Type::Sum(_) => todo!(),
+      Type::TypeVariable(id) => {
         "poly".hash(state);
         id.hash(state);
       },
-      Type::Tuple(items) => {
+      Type::Product(items) => {
         "tuple".hash(state);
         for item in items {
           item.hash(state);
@@ -217,7 +277,6 @@ impl std::fmt::Display for Type {
         write!(f, "struct {{\n{fields}\n}}")
       },
       Type::Type => write!(f, "type"),
-      Type::Dependent(ptr) => write!(f, "dependent ({ptr})"),
       Type::Function {
         param_types,
         return_type,
@@ -231,9 +290,8 @@ impl std::fmt::Display for Type {
           .join(", "),
         return_type
       ),
-      Type::Reference(t) => write!(f, "{t}&"),
-      Type::Undetermined(id) => write!(f, "'{id}"),
-      Type::Tuple(items) => write!(
+      Type::TypeVariable(id) => write!(f, "'{id}"),
+      Type::Product(items) => write!(
         f,
         "({})",
         items
@@ -242,7 +300,7 @@ impl std::fmt::Display for Type {
           .collect::<Vec<_>>()
           .join(", ")
       ),
-      Type::Variant(items) => {
+      Type::Sum(items) => {
         write!(
           f,
           "{}",
