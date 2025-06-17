@@ -101,7 +101,7 @@ impl HlIrModule {
           } else {
             return n.span;
           }
-        },
+        }
         HlIrKind::If { then, .. } => n = &self.nodes[*then],
         _ => return n.span,
       }

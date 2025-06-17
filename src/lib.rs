@@ -8,6 +8,7 @@
 )]
 
 mod compile;
+mod compile2;
 mod hlir;
 mod lint;
 mod memory;
@@ -44,14 +45,11 @@ pub fn _compiler_print(s: String) {
   println!("{s}");
 }
 #[cfg(not(target_family = "wasm"))]
-pub fn _compiler_cls() {
-}
+pub fn _compiler_cls() {}
 #[cfg(not(target_family = "wasm"))]
-pub fn _compiler_wat(_s: String) {
-}
+pub fn _compiler_wat(_s: String) {}
 #[cfg(not(target_family = "wasm"))]
-pub fn _compiler_exec(_bytes: Vec<u8>) {
-}
+pub fn _compiler_exec(_bytes: Vec<u8>) {}
 
 pub fn compiler_print(s: impl Into<String>) {
   _compiler_print(s.into());
@@ -77,12 +75,10 @@ pub fn compile(input: &str) {
       if b.len() != 0 {
         _compiler_exec(b);
       }
-    },
+    }
     Err(e) => {
-      compiler_print(
-        "Failed to Compile".apply_style(Color::Red, Attribute::Underline),
-      );
+      compiler_print("Failed to Compile".apply_style(Color::Red, Attribute::Underline));
       compiler_print(linter.render(e))
-    },
+    }
   };
 }
