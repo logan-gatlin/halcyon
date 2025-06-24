@@ -1,80 +1,7 @@
 use super::*;
-use crate::compile::*;
+//use crate::compile::*;
 
 pub const GLOBAL_SCOPE_MANGLE: &str = "_global";
-
-#[crabtime::function]
-fn gen_builtins() {
-  use convert_case::*;
-  let prims = vec![
-    "nothing",
-    "unreachable",
-    "integer",
-    "real",
-    "boolean",
-    "string",
-    "glyph",
-  ]
-  .into_iter()
-  .map(|s| s.to_string())
-  .collect::<Vec<_>>();
-
-  let enum_items = prims
-    .iter()
-    .map(|p| p.to_case(Case::Pascal))
-    .collect::<Vec<_>>();
-  let enum_list = enum_items.join(",");
-  crabtime::output!(
-    pub enum Bt {
-      {{enum_list}}
-    }
-  );
-  let enum_count = enum_items.len();
-  let qualified_enums = enum_items
-    .iter()
-    .map(|e| format!("Bt::{e}"))
-    .collect::<Vec<_>>();
-  let qualified_enum_list = qualified_enums.join(",");
-  fn generate_match(items: &[String], to: &[String]) -> String {
-    items
-      .iter()
-      .zip(to.iter())
-      .map(|(from, to)| {
-        crabtime::quote! {
-          Bt::{{from}} => stringify! { {{to}} }.to_string()
-        }
-      })
-      .collect::<Vec<_>>()
-      .join(",")
-  }
-
-  let string_match = generate_match(&enum_items, &prims);
-  let mangle_match = generate_match(
-    &enum_items,
-    &prims.iter().map(|p| format!("_{p}")).collect::<Vec<_>>(),
-  );
-
-  crabtime::output!(
-    impl Bt {
-      pub const ALL: [Bt; {{enum_count}}] = [{{qualified_enum_list}}];
-
-      pub fn to_string(&self) -> String {
-        match self {
-          {{string_match}}
-        }
-      }
-
-      pub fn to_mangle(&self) -> String {
-        match self {
-          {{mangle_match}}
-        }
-      }
-    }
-  )
-}
-
-gen_builtins! {}
-
 /*
 macro_rules! count {
     () => (0usize);
@@ -226,6 +153,7 @@ impl Builtin {
     None
   }
 
+  /*
   pub fn value(&self) -> ConstValue {
     use Primitive::*;
     match self {
@@ -259,6 +187,7 @@ impl Builtin {
       Self::Glyph => ConstValue::Type(glyph.promote()),
     }
   }
+  */
 
   pub fn type_(&self) -> Type {
     use Primitive as p;
@@ -287,6 +216,7 @@ impl Builtin {
   pub fn sanitary(&self) -> bool {
     self != &Self::PrintType
   }
+  /*
 
   pub fn import(&self) -> Option<Wasm> {
     match self {
@@ -348,4 +278,5 @@ impl Builtin {
       _ => None,
     }
   }
+  */
 }

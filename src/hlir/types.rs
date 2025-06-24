@@ -34,8 +34,10 @@ macro_rules! primitives {
       }
     }
     impl std::fmt::Display for Primitive {
+      #[allow(unreachable_patterns)]
       fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+          Primitive::nothing => write!(f, "()"),
           $(Primitive::$i => write!(f, stringify!{$i}),)*
         }
       }
@@ -280,16 +282,17 @@ impl std::fmt::Display for Type {
       Type::Function {
         param_types,
         return_type,
-      } => write!(
-        f,
-        "({}) -> {}",
-        param_types
-          .iter()
-          .map(|t| format!("{t}"))
-          .collect::<Vec<_>>()
-          .join(", "),
-        return_type
-      ),
+      } => match param_types.as_slice() {
+        [] => write!(
+          f,
+          "{} -> {return_type}",
+          Type::Primitive(Primitive::nothing),
+        ),
+        [t] => write!(f, "{t} -> {return_type}"),
+        _ => {
+          write!(f, "{} -> {return_type}", Type::Product(param_types.clone()))
+        },
+      },
       Type::TypeVariable(id) => write!(f, "'{id}"),
       Type::Product(items) => write!(
         f,

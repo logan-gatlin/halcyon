@@ -153,23 +153,26 @@ impl Canonizer {
           parameter_exprs.iter().map(|a| &a.kind).collect::<Vec<_>>();
         let parameter_spans =
           parameter_exprs.iter().map(|a| a.span).collect::<Vec<_>>();
-        let parameter_names: Vec<String> = match parameter_kinds.as_slice() {
-          [e::Literal(Literal::Unit)] => vec![],
-          _ => parameter_exprs
-            .iter()
-            .map(|e| {
-              if let Expression {
-                kind: e::Identifier(name),
-                ..
-              } = e
-              {
-                Ok(name.clone())
-              } else {
-                Err(lint(ParseLint::InvalidLambdaParameter, span, &[]))
-              }
-            })
-            .try_collect()?,
-        };
+        let (parameter_names, parameter_spans): (Vec<String>, Vec<Span>) =
+          match parameter_kinds.as_slice() {
+            [e::Literal(Literal::Unit)] => (vec![], vec![]),
+            _ => parameter_exprs
+              .iter()
+              .map(|e| {
+                if let Expression {
+                  kind: e::Identifier(name),
+                  ..
+                } = e
+                {
+                  Ok((name.clone(), e.span))
+                } else {
+                  Err(lint(ParseLint::InvalidLambdaParameter, span, &[]))
+                }
+              })
+              .try_collect::<Vec<_>>()?
+              .into_iter()
+              .unzip(),
+          };
         self.start_function();
         self.enscope();
         let parameter_names = parameter_names
@@ -241,13 +244,11 @@ impl Canonizer {
       ),
       e::Binary { op, left, right } => h::Binary {
         op,
-        opdef: OpDef::default(),
         left: self.expr(*left)?,
         right: self.expr(*right)?,
       },
       e::Unary { op, child } => h::Unary {
         op,
-        opdef: OpDef::default(),
         child: self.expr(*child)?,
       },
       e::FunctionCall { callee, arguments } => h::FunctionCall {

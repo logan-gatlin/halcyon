@@ -12,11 +12,7 @@ pub enum ConstValue {
     length: PtrT,
   },
   Glyph(char),
-  Function {
-    name: Mangle,
-    parameters: Vec<Type>,
-    returns: Type,
-  },
+  Function(u32),
   StructLiteral {
     member_names: Vec<String>,
     member_values: Vec<ConstValue>,
@@ -36,14 +32,7 @@ impl ConstValue {
       ConstValue::Boolean(_) => boolean.promote(),
       ConstValue::String { .. } => string.promote(),
       ConstValue::Glyph(_) => glyph.promote(),
-      ConstValue::Function {
-        parameters,
-        returns,
-        ..
-      } => Type::Function {
-        param_types: parameters.clone(),
-        return_type: returns.clone().into(),
-      },
+      ConstValue::Function(_) => todo!(),
       ConstValue::StructLiteral {
         member_names,
         member_values,
@@ -65,7 +54,7 @@ impl std::fmt::Display for ConstValue {
       ConstValue::Nothing => write!(f, "()"),
       ConstValue::Never => write!(f, "!"),
       ConstValue::String { .. } => write!(f, "<string>"),
-      ConstValue::Function { name, .. } => write!(f, "{name}"),
+      ConstValue::Function(i) => write!(f, "{i}"),
       ConstValue::StructLiteral { .. } => write!(f, "<struct>"),
       ConstValue::Type(val) => write!(f, "{val}"),
       ConstValue::Tuple(items) => write!(

@@ -92,15 +92,10 @@ impl HlIrModule {
       h::Field { of, index } => {
         sexpr("field", &[self.sexpr(*of), index.as_str().into()])
       },
-      h::Binary {
-        op,
-        opdef,
-        left,
-        right,
-      } => sexpr(format!("{op}"), &[self.sexpr(*left), self.sexpr(*right)]),
-      h::Unary { op, opdef, child } => {
-        sexpr(format!("{op}"), &[self.sexpr(*child)])
+      h::Binary { op, left, right } => {
+        sexpr(format!("{op}"), &[self.sexpr(*left), self.sexpr(*right)])
       },
+      h::Unary { op, child } => sexpr(format!("{op}"), &[self.sexpr(*child)]),
       h::FunctionDef {
         name,
         parameter_names,

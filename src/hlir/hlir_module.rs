@@ -40,13 +40,11 @@ pub enum HlIrKind {
   },
   Binary {
     op: BinaryOp,
-    opdef: OpDef,
     left: IrPtr,
     right: IrPtr,
   },
   Unary {
     op: UnaryOp,
-    opdef: OpDef,
     child: IrPtr,
   },
   FunctionDef {
@@ -101,7 +99,7 @@ impl HlIrModule {
           } else {
             return n.span;
           }
-        }
+        },
         HlIrKind::If { then, .. } => n = &self.nodes[*then],
         _ => return n.span,
       }

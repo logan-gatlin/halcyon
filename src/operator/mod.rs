@@ -1,11 +1,9 @@
-pub mod assembly;
+//pub mod assembly;
 use crate::{
   hlir::{Primitive, Type},
   lint::*,
   token::*,
 };
-
-pub use assembly::*;
 
 pub type Precedence = usize;
 

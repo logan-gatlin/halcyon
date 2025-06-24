@@ -1,6 +1,6 @@
 use super::*;
 
-use crate::{compile::*, hlir::*, lint::*};
+use crate::{hlir::*, lint::*};
 use std::collections::HashMap;
 use std::hash::Hasher;
 

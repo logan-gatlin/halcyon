@@ -16,7 +16,9 @@ impl TypeConstraint {
   }
 }
 
-pub fn hindley_milner_inference(module: &mut HlIrModule) -> Vec<TypeConstraint> {
+pub fn hindley_milner_inference(
+  module: &mut HlIrModule,
+) -> Vec<TypeConstraint> {
   infer_types(
     &mut Context {
       module,
@@ -81,7 +83,7 @@ fn infer_types(
       } else {
         Type::Primitive(Primitive::nothing)
       }
-    }
+    },
     HlIrKind::Immediate(const_value) => Type::Primitive(match const_value {
       ConstValue::Nothing => Primitive::nothing,
       ConstValue::Never => Primitive::never,
@@ -100,16 +102,17 @@ fn infer_types(
         });
       constraints.extend_from_slice(&cons);
       t
-    }
+    },
     HlIrKind::Identifier(i) => ctx.name_map.get(&i).unwrap().clone(),
     HlIrKind::Tuple(items) => {
       let (types, cons): (Vec<_>, Vec<_>) = items
         .into_iter()
         .map(|i| infer_types(ctx, given_constraints, i))
         .unzip();
-      constraints.extend_from_slice(&cons.into_iter().flatten().collect::<Vec<_>>());
+      constraints
+        .extend_from_slice(&cons.into_iter().flatten().collect::<Vec<_>>());
       Type::Product(types)
-    }
+    },
     HlIrKind::StructDef {
       field_names,
       field_types,
@@ -118,7 +121,8 @@ fn infer_types(
         .into_iter()
         .map(|t| infer_types(ctx, given_constraints, t))
         .unzip();
-      constraints.extend_from_slice(&cons.into_iter().flatten().collect::<Vec<_>>());
+      constraints
+        .extend_from_slice(&cons.into_iter().flatten().collect::<Vec<_>>());
       constraints.extend_from_slice(
         &field_t
           .into_iter()
@@ -126,7 +130,7 @@ fn infer_types(
           .collect::<Vec<_>>(),
       );
       Type::Type
-    }
+    },
     HlIrKind::StructLiteral {
       struct_t,
       field_names,
@@ -136,19 +140,15 @@ fn infer_types(
         .into_iter()
         .map(|n| infer_types(ctx, given_constraints, n))
         .unzip();
-      constraints.extend_from_slice(&val_cons.into_iter().flatten().collect::<Vec<_>>());
+      constraints
+        .extend_from_slice(&val_cons.into_iter().flatten().collect::<Vec<_>>());
       Type::Struct {
         member_names: field_names,
         member_types: val_t,
       }
-    }
+    },
     HlIrKind::Field { of, index } => new_type_var(ctx),
-    HlIrKind::Binary {
-      op,
-      opdef,
-      left,
-      right,
-    } => {
+    HlIrKind::Binary { op, left, right } => {
       let tv = new_type_var(ctx);
       let (left_t, left_cons) = infer_types(ctx, &constraints, left);
       let (right_t, right_cons) = infer_types(ctx, &constraints, right);
@@ -160,19 +160,19 @@ fn infer_types(
         Star | Slash | Percent | Plus | Minus => {
           constraints.push(TypeConstraint(left_t.clone(), tv.clone()));
           constraints.push(TypeConstraint(right_t.clone(), tv.clone()));
-        }
-        And | Nand | Or | Xor | Xnor | DoubleEqual | Less | LessEqual | Greater | GreaterEqual
-        | BangEqual => {
+        },
+        And | Nand | Or | Xor | Xnor | DoubleEqual | Less | LessEqual
+        | Greater | GreaterEqual | BangEqual => {
           constraints.push(TypeConstraint(
             tv.clone(),
             Type::Primitive(Primitive::boolean),
           ));
-        }
+        },
         _ => todo!(),
       }
       tv
-    }
-    HlIrKind::Unary { op, opdef, child } => {
+    },
+    HlIrKind::Unary { op, child } => {
       let (child_t, child_cons) = infer_types(ctx, given_constraints, child);
       constraints.extend_from_slice(&child_cons);
       use UnaryOp::*;
@@ -182,7 +182,7 @@ fn infer_types(
         Break => Type::Primitive(Primitive::never),
         Minus | Not => child_t,
       }
-    }
+    },
     HlIrKind::FunctionDef {
       name,
       parameter_names,
@@ -190,7 +190,8 @@ fn infer_types(
       body,
     } => {
       let mut param_types = vec![];
-      (0..parameter_spans.len()).for_each(|_| param_types.push(new_type_var(ctx)));
+      (0..parameter_spans.len())
+        .for_each(|_| param_types.push(new_type_var(ctx)));
       parameter_names
         .into_iter()
         .zip(param_types.clone().into_iter())
@@ -203,7 +204,7 @@ fn infer_types(
         param_types,
         return_type: t.into(),
       }
-    }
+    },
     HlIrKind::FunctionCall {
       callee,
       callee_name,
@@ -211,14 +212,23 @@ fn infer_types(
     } => {
       let tv = new_type_var(ctx);
       let (callee_t, cons) = infer_types(ctx, given_constraints, callee);
-      let param_types: Vec<_> = arguments
-        .into_iter()
-        .map(|a| {
-          let (t, cons) = infer_types(ctx, given_constraints, a);
-          constraints.extend_from_slice(&cons);
-          t
-        })
-        .collect();
+      let param_types: Vec<_> = if arguments.len() == 1
+        && let HlIrKind::Immediate(ConstValue::Nothing) =
+          ctx.module.get_node(arguments[0]).kind
+      {
+        ctx.module.nodes.get_mut(arguments[0]).unwrap().type_ =
+          Type::Primitive(Primitive::nothing);
+        vec![]
+      } else {
+        arguments
+          .into_iter()
+          .map(|a| {
+            let (t, cons) = infer_types(ctx, given_constraints, a);
+            constraints.extend_from_slice(&cons);
+            t
+          })
+          .collect()
+      };
       constraints.push(TypeConstraint(
         Type::Function {
           param_types,
@@ -227,7 +237,7 @@ fn infer_types(
         callee_t,
       ));
       tv
-    }
+    },
     HlIrKind::If {
       predicate,
       then,
@@ -250,23 +260,24 @@ fn infer_types(
         TypeConstraint(else_t, tv.clone()),
       ]);
       tv
-    }
+    },
   };
 
   ctx.module.nodes.get_mut(node).unwrap().type_ = type_.clone();
   (type_, constraints)
 }
 
-pub fn unification(constraints: &[TypeConstraint]) -> Vec<(TypeVariable, Type)> {
+pub fn unification(
+  constraints: &[TypeConstraint],
+) -> Vec<(TypeVariable, Type)> {
   let mut cons = constraints.to_vec();
   let mut solution = vec![];
   while let Some(con) = cons.pop() {
     if con.0.ambiguous() || con.1.ambiguous() {
       continue;
     }
-    println!("{} ;; {}", con.0, con.1);
     match (con.0, con.1) {
-      (t1, t2) if t1 == t2 => {}
+      (t1, t2) if t1 == t2 => {},
       (
         Type::Function {
           param_types: p1,
@@ -284,21 +295,24 @@ pub fn unification(constraints: &[TypeConstraint]) -> Vec<(TypeVariable, Type)> 
           .zip(p2.into_iter())
           .for_each(|(t1, t2)| cons.push(TypeConstraint(t1, t2)));
         cons.push(TypeConstraint(*r1, *r2));
-      }
-      (Type::TypeVariable(tv), t) | (t, Type::TypeVariable(tv)) if !t.contains_type_var(tv) => {
+      },
+      (Type::TypeVariable(tv), t) | (t, Type::TypeVariable(tv))
+        if !t.contains_type_var(tv) =>
+      {
         cons.iter_mut().for_each(|TypeConstraint(t1, t2)| {
           t1.substitute(tv, &t);
           t2.substitute(tv, &t);
         });
         solution.push((tv, t));
-      }
-      (Type::Product(p1), Type::Product(p2)) if p1.len() == p2.len() => cons.extend_from_slice(
-        &p1
-          .into_iter()
-          .zip(p2.into_iter())
-          .map(|(t1, t2)| TypeConstraint(t1, t2))
-          .collect::<Vec<_>>(),
-      ),
+      },
+      (Type::Product(p1), Type::Product(p2)) if p1.len() == p2.len() => cons
+        .extend_from_slice(
+          &p1
+            .into_iter()
+            .zip(p2.into_iter())
+            .map(|(t1, t2)| TypeConstraint(t1, t2))
+            .collect::<Vec<_>>(),
+        ),
       (
         Type::Struct {
           member_names: n1,
@@ -315,9 +329,7 @@ pub fn unification(constraints: &[TypeConstraint]) -> Vec<(TypeVariable, Type)> 
           .map(|(t1, t2)| TypeConstraint(t1, t2))
           .collect::<Vec<_>>(),
       ),
-      _ => {
-        panic!();
-      }
+      (t1, t2) => panic!("{t1} ;; {t2}"),
     }
   }
   solution
@@ -344,10 +356,10 @@ pub fn apply_solution(
         if let Some(in_) = in_ {
           to_visit.push(in_);
         }
-      }
-      HlIrKind::Immediate(const_value) => {}
+      },
+      HlIrKind::Immediate(const_value) => {},
       HlIrKind::Block(items) => to_visit.extend_from_slice(&items),
-      HlIrKind::Identifier(_) => {}
+      HlIrKind::Identifier(_) => {},
       HlIrKind::Tuple(items) => to_visit.extend_from_slice(&items),
       HlIrKind::StructDef {
         field_names,
@@ -362,20 +374,15 @@ pub fn apply_solution(
           to_visit.push(struct_t.0);
         }
         to_visit.extend_from_slice(&field_values);
-      }
+      },
       HlIrKind::Field { of, index } => to_visit.push(of),
-      HlIrKind::Binary {
-        op,
-        opdef,
-        left,
-        right,
-      } => {
+      HlIrKind::Binary { op, left, right } => {
         to_visit.push(left);
         to_visit.push(right);
-      }
-      HlIrKind::Unary { op, opdef, child } => {
+      },
+      HlIrKind::Unary { op, child } => {
         to_visit.push(child);
-      }
+      },
       HlIrKind::FunctionDef {
         name,
         parameter_names,
@@ -383,7 +390,7 @@ pub fn apply_solution(
         body,
       } => {
         to_visit.push(body);
-      }
+      },
       HlIrKind::FunctionCall {
         callee,
         callee_name,
@@ -391,7 +398,7 @@ pub fn apply_solution(
       } => {
         to_visit.push(callee);
         to_visit.extend_from_slice(&arguments);
-      }
+      },
       HlIrKind::If {
         predicate,
         then,
@@ -402,7 +409,7 @@ pub fn apply_solution(
         if let Some(else_) = else_ {
           to_visit.push(else_);
         }
-      }
+      },
     }
     while let Some(next) = to_visit.pop() {
       if !visited.contains(&next) {
