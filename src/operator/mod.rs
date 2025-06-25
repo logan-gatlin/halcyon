@@ -147,28 +147,24 @@ impl BinaryOp {
       (Less, p(boolean), p(boolean)) => p(boolean),
       (Less, p(glyph), p(glyph)) => p(boolean),
       (Less, p(string), p(string)) => p(boolean),
-      (Less, p(nothing), p(nothing)) => p(boolean),
 
       (LessEqual, p(integer), p(integer)) => p(boolean),
       (LessEqual, p(real), p(real)) => p(boolean),
       (LessEqual, p(boolean), p(boolean)) => p(boolean),
       (LessEqual, p(glyph), p(glyph)) => p(boolean),
       (LessEqual, p(string), p(string)) => p(boolean),
-      (LessEqual, p(nothing), p(nothing)) => p(boolean),
 
       (Greater, p(integer), p(integer)) => p(boolean),
       (Greater, p(real), p(real)) => p(boolean),
       (Greater, p(boolean), p(boolean)) => p(boolean),
       (Greater, p(glyph), p(glyph)) => p(boolean),
       (Greater, p(string), p(string)) => p(boolean),
-      (Greater, p(nothing), p(nothing)) => p(boolean),
 
       (GreaterEqual, p(integer), p(integer)) => p(boolean),
       (GreaterEqual, p(real), p(real)) => p(boolean),
       (GreaterEqual, p(boolean), p(boolean)) => p(boolean),
       (GreaterEqual, p(glyph), p(glyph)) => p(boolean),
       (GreaterEqual, p(string), p(string)) => p(boolean),
-      (GreaterEqual, p(nothing), p(nothing)) => p(boolean),
       _ => return e,
     })
   }

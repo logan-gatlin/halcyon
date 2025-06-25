@@ -11,16 +11,9 @@ wasm-bindgen = "0.2"
 multipeek = "0.1"
 toml = "0.8"
 convert_case = "0.8"
-crabtime = "1.1.2"
-
-[build-dependencies]
-wat = "1.219"
-punycode = "0.4"
-wasm-bindgen = "0.2"
-multipeek = "0.1"
-toml = "0.8"
-crabtime = "1.1.2"
-convert_case = "0.8"
+wasmparser = "0.235"
+wasmprinter = "0.235"
+wasm-opt = "0.116"
 
 [profile.release]
 strip = true

@@ -64,9 +64,25 @@ pub fn _compile(input: &str) -> Result<Vec<u8>> {
   let parse_tree = parse(tokens)?;
   let mut hlir = build_hlir(parse_tree)?;
   let constraints = hindley_milner_inference(&mut hlir);
+  println!("# CONSTRAINTS");
+  println!("{constraints:#?}");
   let solution = unification(&constraints);
+  println!("# SOLUTION");
+  println!("{solution:#?}");
   apply_solution(&mut hlir, 0, solution);
+  println!("# IR");
   println!("{hlir}");
+  let wasm = compile2::compile(hlir);
+  println!("# WAT");
+  println!("{}", wasmprinter::print_bytes(&wasm).unwrap());
+  if let Err(e) = wasmparser::validate(&wasm) {
+    eprintln!(
+      "{}",
+      "# !!! VALIDATION ERROR !!!"
+        .apply_style(Color::Red, Attribute::Underline)
+    );
+    eprintln!("{e}");
+  }
   Ok(vec![])
 }
 

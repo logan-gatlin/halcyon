@@ -95,11 +95,15 @@ fn infer_types(
       _ => unreachable!(),
     }),
     HlIrKind::Block(items) => {
-      let (t, cons) = items
-        .into_iter()
-        .fold((Type::Primitive(Primitive::nothing), vec![]), |t, i| {
-          infer_types(ctx, given_constraints, i)
-        });
+      let (t, cons) = items.into_iter().fold(
+        (Type::Primitive(Primitive::nothing), vec![]),
+        |t, i| {
+          let mut cons = t.1;
+          let (type_, new_constraints) = infer_types(ctx, given_constraints, i);
+          cons.extend_from_slice(&new_constraints);
+          (type_, cons)
+        },
+      );
       constraints.extend_from_slice(&cons);
       t
     },
@@ -147,7 +151,11 @@ fn infer_types(
         member_types: val_t,
       }
     },
-    HlIrKind::Field { of, index } => new_type_var(ctx),
+    HlIrKind::Field { of, index } => {
+      let (_, cons) = infer_types(ctx, given_constraints, of);
+      constraints.extend_from_slice(&cons);
+      new_type_var(ctx)
+    },
     HlIrKind::Binary { op, left, right } => {
       let tv = new_type_var(ctx);
       let (left_t, left_cons) = infer_types(ctx, &constraints, left);
@@ -419,7 +427,6 @@ pub fn apply_solution(
     }
     break;
   }
-
   visited.into_iter().for_each(|n| {
     let nt = &mut module.nodes.get_mut(n).unwrap().type_;
     solution.iter().for_each(|(tv, t)| nt.substitute(*tv, t));

@@ -5,34 +5,53 @@ use wasm_encoder::*;
 
 use crate::hlir::*;
 
+pub fn compile(hlir: HlIrModule) -> Vec<u8> {
+  let mut state = ModuleState::new();
+  let mut main = FunctionEncoder::new([]);
+  let nodes = hlir.nodes;
+  lower::lower(&nodes, 0, &mut state, &mut main);
+  state.make_function(&Type::main_fn(), main);
+  state.encode()
+}
+
 #[derive(Debug, Clone)]
-pub struct Function {
-  inputs: Vec<ValType>,
-  outputs: Vec<ValType>,
+pub struct FunctionEncoder {
+  local_names: HashMap<Mangle, u32>,
+  parameters: Vec<ValType>,
   locals: Vec<ValType>,
   instrs: Vec<Instruction<'static>>,
 }
 
-impl Function {
-  pub fn new(
-    inputs: impl IntoIterator<Item = ValType>,
-    outputs: impl IntoIterator<Item = ValType>,
-  ) -> Self {
+impl FunctionEncoder {
+  pub fn new(parameters: impl IntoIterator<Item = ValType>) -> Self {
     Self {
-      inputs: inputs.into_iter().collect(),
-      outputs: outputs.into_iter().collect(),
+      local_names: HashMap::new(),
+      parameters: parameters.into_iter().collect(),
       locals: vec![],
       instrs: vec![],
     }
   }
 
-  pub fn local(&mut self, type_: ValType) -> usize {
+  pub fn local(&mut self, name: Mangle, type_: ValType) -> u32 {
     self.locals.push(type_);
-    self.inputs.len() + self.locals.len() - 1
+    let id = (self.parameters.len() + self.locals.len() - 1) as u32;
+    self.local_names.insert(name, id);
+    id
   }
 
   pub fn instr(&mut self, instr: Instruction<'static>) {
     self.instrs.push(instr);
+  }
+
+  pub fn encode(self) -> Function {
+    let mut func = Function::new_with_locals_types(self.locals);
+    self
+      .instrs
+      .into_iter()
+      .fold(&mut func, |func, i| func.instruction(&i))
+      .instructions()
+      .end();
+    func
   }
 }
 
@@ -50,15 +69,50 @@ enum RegisteredType {
   Struct(Vec<StorageType>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct ModuleState {
   type_map: HashMap<Type, u32>,
   type_section: Vec<RegisteredType>,
-  function_index: HashMap<Mangle, u32>,
-  function_types: HashMap<Mangle, u32>,
+  function_section: Vec<u32>,
+  code_section: Vec<Function>,
 }
 
 impl ModuleState {
+  pub fn new() -> Self {
+    Self {
+      type_map: HashMap::new(),
+      type_section: vec![],
+      function_section: vec![],
+      code_section: vec![],
+    }
+  }
+
+  pub fn make_function(&mut self, type_: &Type, code: FunctionEncoder) -> u32 {
+    let id = self.get_type_id(type_).unwrap();
+    self.function_section.push(id);
+    self.code_section.push(code.encode());
+    (self.code_section.len() - 1) as u32
+  }
+
+  pub fn encode(self) -> Vec<u8> {
+    Module::new()
+      // Type section
+      .section(&self.make_type_section())
+      // Function section
+      .section(
+      &*self
+        .function_section
+        .into_iter()
+        .fold(&mut FunctionSection::new(), |f, t| f.function(t)),
+      )
+      // Code section
+      .section(
+        &*self.code_section.into_iter().fold(&mut CodeSection::new(), |s, c| s.function(&c))
+      )
+      // Finalize
+      .clone().finish()
+  }
+
   pub fn make_type_section(&self) -> TypeSection {
     let mut ts = TypeSection::new();
     for t in &self.type_section {
@@ -79,7 +133,17 @@ impl ModuleState {
     ts
   }
 
-  pub fn get_stype(&mut self, t: &Type) -> Option<StorageType> {
+  pub fn get_type_id(&mut self, t: &Type) -> Option<u32> {
+    match self.get_type(t)? {
+      StorageType::Val(ValType::Ref(RefType {
+        heap_type: HeapType::Concrete(id),
+        ..
+      })) => Some(id),
+      _ => None,
+    }
+  }
+
+  pub fn get_type(&mut self, t: &Type) -> Option<StorageType> {
     let register = |this: &mut Self, t: Type, rt: RegisteredType| {
       let id = this.type_section.len() as u32;
       this.type_section.push(rt);
@@ -120,7 +184,7 @@ impl ModuleState {
       } => RegisteredType::Struct(
         member_types
           .into_iter()
-          .flat_map(|t| self.get_stype(t))
+          .flat_map(|t| self.get_type(t))
           .collect(),
       ),
       Type::Function {
@@ -129,13 +193,13 @@ impl ModuleState {
       } => RegisteredType::Function(FuncType::new(
         param_types
           .into_iter()
-          .flat_map(|t| self.get_stype(t))
+          .flat_map(|t| self.get_type(t))
           .map(|t| storage_to_valtype(t))
           .collect::<Vec<_>>(),
-        self.get_stype(return_type).map(|t| storage_to_valtype(t)),
+        self.get_type(return_type).map(|t| storage_to_valtype(t)),
       )),
       Type::Product(items) => RegisteredType::Struct(
-        items.into_iter().flat_map(|t| self.get_stype(t)).collect(),
+        items.into_iter().flat_map(|t| self.get_type(t)).collect(),
       ),
       Type::Sum(hash_set) => todo!(),
       Type::Type => todo!(),

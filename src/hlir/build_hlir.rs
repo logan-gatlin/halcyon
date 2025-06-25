@@ -224,6 +224,7 @@ impl Canonizer {
           in_,
         }
       },
+      // Tuple
       e::Binary {
         op: BinaryOp::Comma,
         ..
@@ -233,6 +234,21 @@ impl Canonizer {
           .map(|e| self.expr(e))
           .try_collect::<Vec<_>>()?,
       ),
+      // Field get
+      e::Binary {
+        op: BinaryOp::Dot,
+        left,
+        right,
+      } => {
+        let e::Identifier(index) = right.kind else {
+          return Err(lint(NameLint::FieldNotIdent, right.span, &[]));
+        };
+        h::Field {
+          of: self.expr(*left)?,
+          index,
+        }
+      },
+      // Block
       e::Binary {
         op: BinaryOp::Semicolon | BinaryOp::DoubleSemicolon,
         ..

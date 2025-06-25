@@ -12,40 +12,20 @@ pub enum ConstValue {
     length: PtrT,
   },
   Glyph(char),
-  Function(u32),
+  Function {
+    func_index: u32,
+    type_index: u32,
+  },
   StructLiteral {
     member_names: Vec<String>,
     member_values: Vec<ConstValue>,
+    type_id: u32,
   },
-  Tuple(Vec<ConstValue>),
+  Tuple {
+    members: Vec<ConstValue>,
+    type_id: u32,
+  },
   Type(Type),
-}
-
-impl ConstValue {
-  pub fn type_of(&self) -> Type {
-    use Primitive::*;
-    match self {
-      ConstValue::Nothing => nothing.promote(),
-      ConstValue::Never => never.promote(),
-      ConstValue::Integer(_) => integer.promote(),
-      ConstValue::Real(_) => real.promote(),
-      ConstValue::Boolean(_) => boolean.promote(),
-      ConstValue::String { .. } => string.promote(),
-      ConstValue::Glyph(_) => glyph.promote(),
-      ConstValue::Function(_) => todo!(),
-      ConstValue::StructLiteral {
-        member_names,
-        member_values,
-      } => Type::Struct {
-        member_names: member_names.clone(),
-        member_types: member_values.iter().map(|v| v.type_of()).collect(),
-      },
-      ConstValue::Tuple(items) => {
-        Type::Product(items.iter().map(|i| i.type_of()).collect())
-      },
-      ConstValue::Type(_) => Type::Type,
-    }
-  }
 }
 
 impl std::fmt::Display for ConstValue {
@@ -54,13 +34,16 @@ impl std::fmt::Display for ConstValue {
       ConstValue::Nothing => write!(f, "()"),
       ConstValue::Never => write!(f, "!"),
       ConstValue::String { .. } => write!(f, "<string>"),
-      ConstValue::Function(i) => write!(f, "{i}"),
+      ConstValue::Function {
+        func_index,
+        type_index,
+      } => write!(f, "{func_index}"),
       ConstValue::StructLiteral { .. } => write!(f, "<struct>"),
       ConstValue::Type(val) => write!(f, "{val}"),
-      ConstValue::Tuple(items) => write!(
+      ConstValue::Tuple { members, type_id } => write!(
         f,
         "({})",
-        items
+        members
           .iter()
           .map(|i| format!("{i}"))
           .collect::<Vec<_>>()

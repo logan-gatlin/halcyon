@@ -88,6 +88,44 @@ pub enum Type {
 }
 
 impl Type {
+  pub fn main_fn() -> Type {
+    Type::Function {
+      param_types: vec![],
+      return_type: Type::Primitive(Primitive::nothing).into(),
+    }
+  }
+
+  pub fn is_zero_size(&self) -> bool {
+    match self {
+      Type::Primitive(Primitive::nothing) => true,
+      _ => false,
+    }
+  }
+
+  pub fn field_index(&self, name: &str) -> Option<u32> {
+    if let Type::Struct {
+      member_names,
+      member_types,
+    } = self
+    {
+      let mut index = 0;
+      let mut found = false;
+      for (n, t) in member_names.iter().zip(member_types.iter()) {
+        if t.is_zero_size() {
+          continue;
+        }
+        if n == name {
+          found = true;
+          break;
+        }
+        index += 1;
+      }
+      if found { Some(index) } else { None }
+    } else {
+      None
+    }
+  }
+
   pub fn ambiguous(&self) -> bool {
     if let Self::Ambiguous = self {
       true
