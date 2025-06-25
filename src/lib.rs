@@ -7,8 +7,8 @@
   incomplete_features
 )]
 
-//mod compile;
-mod compile2;
+mod compile;
+mod execute;
 mod hlir;
 mod lint;
 mod memory;
@@ -62,6 +62,7 @@ pub fn _compile(input: &str) -> Result<Vec<u8>> {
   _compiler_cls();
   let tokens = tokenize(input.chars())?;
   let parse_tree = parse(tokens)?;
+  println!("{parse_tree}");
   let mut hlir = build_hlir(parse_tree)?;
   let constraints = hindley_milner_inference(&mut hlir);
   println!("# CONSTRAINTS");
@@ -72,7 +73,7 @@ pub fn _compile(input: &str) -> Result<Vec<u8>> {
   apply_solution(&mut hlir, 0, solution);
   println!("# IR");
   println!("{hlir}");
-  let wasm = compile2::compile(hlir);
+  let wasm = compile::compile(hlir);
   println!("# WAT");
   println!("{}", wasmprinter::print_bytes(&wasm).unwrap());
   if let Err(e) = wasmparser::validate(&wasm) {

@@ -4,16 +4,14 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-wat = "1.219"
 wasm-encoder = "0.233"
 punycode = "0.4"
 wasm-bindgen = "0.2"
 multipeek = "0.1"
 toml = "0.8"
-convert_case = "0.8"
 wasmparser = "0.235"
 wasmprinter = "0.235"
-wasm-opt = "0.116"
+wasmtime = "34.0"
 
 [profile.release]
 strip = true

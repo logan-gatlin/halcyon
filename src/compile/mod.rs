@@ -1,115 +1,262 @@
+mod lower;
+
 use std::collections::HashMap;
+use wasm_encoder::*;
 
 use crate::hlir::*;
 
-pub mod assembly;
-mod lower;
-mod text;
-pub mod vm;
-
-pub use assembly::*;
-pub use vm::*;
-
-pub fn compile(hlir: HlIrModule) {
+pub fn compile(hlir: HlIrModule) -> Vec<u8> {
+  let mut state = ModuleState::new();
+  let main = state.make_function(&Type::main_fn(), []);
+  let nodes = hlir.nodes;
+  lower::lower(&nodes, 0, &mut state, main);
+  state.encode()
 }
 
 #[derive(Debug, Clone)]
-struct BreakTarget {
-  block_name: String,
-  result_name: String,
+pub struct FunctionEncoder {
+  local_names: HashMap<Mangle, u32>,
+  parameters: Vec<ValType>,
+  locals: Vec<ValType>,
+  instrs: Vec<Instruction<'static>>,
 }
 
-pub struct Compiler {
-  /// Unique salt added to the names of WASM loops, blocks,
-  /// and compiler generated temporary registers.
-  /// Incremented after every use
-  unique_salt: usize,
-  /// The name of WASM blocks which can be 'broken' out of
-  /// are pushed onto this stack for inner break statements
-  /// to refer to
-  break_stack: Vec<BreakTarget>,
-
-  module: HlIrModule,
-}
-
-impl Compiler {
-  pub fn new(module: HlIrModule) -> Self {
+impl FunctionEncoder {
+  pub fn new(parameters: impl IntoIterator<Item = ValType>) -> Self {
     Self {
-      unique_salt: 0,
-      break_stack: vec![],
-      module,
+      local_names: HashMap::new(),
+      parameters: parameters.into_iter().collect(),
+      locals: vec![],
+      instrs: vec![],
     }
   }
 
-  pub fn compile(
-    module: HlIrModule,
-    to_compile: Vec<IrPtr>,
-    main_mangle: Mangle,
-  ) -> String {
-    let mut this = Self::new(module);
-    let heap = this.module.heap.clone().to_buffer();
-    let mut regs: Vec<Wasm> =
-      Builtin::ALL.into_iter().flat_map(|b| b.import()).collect();
-    regs.push(Wasm::Import {
-      ns1: "js".to_string(),
-      ns2: "memory".to_string(),
-      object: Wasm::Memory { min: 10, max: 100 }.into(),
-    });
-    regs.push(Wasm::Data {
-      offset: 0,
-      content: heap,
-    });
-    let mut instrs = vec![];
-    for func in to_compile {
-      this.lower(func, &mut regs, &mut instrs).unwrap();
-    }
-    instrs.push(Wasm::Start(main_mangle));
-    regs.extend_from_slice(&instrs);
-    let mut wasm = String::new();
-    for r in regs {
-      wasm.push_str(&format!("{}\n", r.to_wat()));
-    }
-    format!("(module\n{wasm})")
+  pub fn local(&mut self, name: Mangle, type_: ValType) -> u32 {
+    self.locals.push(type_);
+    let id = (self.parameters.len() + self.locals.len() - 1) as u32;
+    self.local_names.insert(name, id);
+    id
+  }
+
+  pub fn temporary(&mut self, type_: ValType) -> u32 {
+    self.locals.push(type_);
+    (self.parameters.len() + self.locals.len() - 1) as u32
+  }
+
+  pub fn instr(&mut self, instr: Instruction<'static>) {
+    self.instrs.push(instr);
+  }
+
+  pub fn encode(self) -> Function {
+    let mut func = Function::new_with_locals_types(self.locals);
+    self
+      .instrs
+      .into_iter()
+      .fold(&mut func, |func, i| func.instruction(&i))
+      .instructions()
+      .end();
+    func
   }
 }
 
-impl Type {
-  pub fn count_registers(&self) -> usize {
-    use Primitive as p;
-    match self {
-      Type::Primitive(primitive) => match primitive {
-        p::nothing | p::never => 0,
-        p::glyph | p::integer | p::real | p::boolean => 1,
-        p::string => 2,
-      },
-      Type::Struct { member_types, .. } => {
-        member_types.iter().map(|t| t.count_registers()).sum()
-      },
-      Type::Function { .. } => 1,
-      Type::Type => 0,
-      _ => panic!("Counted registers of ambiguous type"),
+pub fn storage_to_valtype(s: StorageType) -> ValType {
+  match s {
+    StorageType::I8 | StorageType::I16 => ValType::I32,
+    StorageType::Val(val_type) => val_type,
+  }
+}
+
+#[derive(Debug, Clone)]
+enum RegisteredType {
+  Function(FuncType),
+  Array(StorageType),
+  Struct(Vec<StorageType>),
+}
+
+#[derive(Debug, Clone)]
+struct ModuleState {
+  type_map: HashMap<Type, u32>,
+  type_section: Vec<RegisteredType>,
+  function_section: Vec<u32>,
+  code_section: Vec<FunctionEncoder>,
+}
+
+impl ModuleState {
+  pub fn new() -> Self {
+    Self {
+      type_map: HashMap::new(),
+      type_section: vec![],
+      function_section: vec![],
+      code_section: vec![],
     }
   }
 
-  pub fn register_types(&self) -> Vec<WasmType> {
-    use Primitive as p;
-    use WasmType as a;
-    match self {
-      Type::Primitive(primitive) => match primitive {
-        p::nothing | p::never => vec![],
-        p::integer => vec![a::I64],
-        p::real => vec![a::F64],
-        p::boolean => vec![a::I32],
-        p::string => vec![a::PTR_T, a::PTR_T],
-        p::glyph => vec![a::I32],
-      },
-      Type::Struct { member_types, .. } => member_types
-        .iter()
-        .flat_map(|t| t.register_types())
-        .collect(),
-      Type::Function { .. } => vec![a::FuncRef],
-      Type::Type => vec![],
-      _ => panic!("Splatted ambiguous type"),
+  pub fn make_function(
+    &mut self,
+    type_: &Type,
+    parameter_names: impl IntoIterator<Item = Mangle>,
+  ) -> u32 {
+    let Type::Function {
+      param_types,
+      return_type,
+    } = type_
+    else {
+      panic!()
+    };
+    let mut name_map = HashMap::new();
+    let mut index = 0;
+    for (name, t) in parameter_names.into_iter().zip(param_types.iter()) {
+      if t.is_zero_size() {
+        continue;
+      }
+      name_map.insert(name, index);
+      index += 1;
     }
+    let mut code = FunctionEncoder::new(
+      param_types
+        .into_iter()
+        .flat_map(|t| self.get_type(t))
+        .map(storage_to_valtype),
+    );
+    code.local_names = name_map;
+    let id = self.get_type_id(type_).unwrap();
+    self.function_section.push(id);
+    self.code_section.push(code);
+    (self.code_section.len() - 1) as u32
+  }
+
+  pub fn func(&mut self, index: u32) -> &mut FunctionEncoder {
+    &mut self.code_section[index as usize]
+  }
+
+  pub fn encode(self) -> Vec<u8> {
+    let no_funcs = self.function_section.len() as u32;
+    Module::new()
+      // Type section
+      .section(&self.make_type_section())
+      // Function section
+      .section(
+      &*self
+        .function_section
+        .into_iter()
+        .fold(&mut FunctionSection::new(), |f, t| f.function(t)),
+      )
+      // Table section
+      .section(
+        TableSection::new().table(TableType {
+            element_type: RefType::FUNCREF,
+            table64: false,
+            minimum: no_funcs as u64,
+            maximum: Some(no_funcs as u64),
+            shared: false,
+        })
+      )
+      // Elements
+      .section(
+        ElementSection::new().segment(ElementSegment {
+            mode: ElementMode::Active { table: None, offset: &ConstExpr::i32_const(0) },
+            elements: Elements::Functions(std::borrow::Cow::from(&(0..no_funcs).into_iter().collect::<Vec<_>>())),
+        })
+      )
+      // Code section
+      .section(
+        &*self.code_section.into_iter().fold(&mut CodeSection::new(), |s, c| s.function(&c.encode()))
+      )
+      // Finalize
+      .clone().finish()
+  }
+
+  pub fn make_type_section(&self) -> TypeSection {
+    let mut ts = TypeSection::new();
+    for t in &self.type_section {
+      match t {
+        RegisteredType::Function(func_type) => ts.ty().func_type(func_type),
+        RegisteredType::Array(storage_type) => {
+          ts.ty().array(storage_type, true)
+        },
+        RegisteredType::Struct(storage_types) => {
+          ts.ty()
+            .struct_(storage_types.into_iter().map(|t| FieldType {
+              element_type: *t,
+              mutable: true,
+            }))
+        },
+      }
+    }
+    ts
+  }
+
+  pub fn get_type_id(&mut self, t: &Type) -> Option<u32> {
+    match self.get_type(t)? {
+      StorageType::Val(ValType::Ref(RefType {
+        heap_type: HeapType::Concrete(id),
+        ..
+      })) => Some(id),
+      _ => None,
+    }
+  }
+
+  pub fn get_type(&mut self, t: &Type) -> Option<StorageType> {
+    let register = |this: &mut Self, t: Type, rt: RegisteredType| {
+      let id = this.type_section.len() as u32;
+      this.type_section.push(rt);
+      this.type_map.insert(t, id);
+      StorageType::Val(ValType::Ref(RefType {
+        nullable: false,
+        heap_type: HeapType::Concrete(id),
+      }))
+    };
+
+    if let Some(t) = self.type_map.get(t) {
+      return Some(StorageType::Val(ValType::Ref(RefType {
+        nullable: false,
+        heap_type: HeapType::Concrete(*t),
+      })));
+    }
+    let rt = match t {
+      Type::Ambiguous => panic!(),
+      Type::TypeVariable(_) => panic!(),
+      Type::Primitive(p) => {
+        return match p {
+          Primitive::nothing => None,
+          Primitive::never => None,
+          Primitive::integer => Some(StorageType::Val(ValType::I64)),
+          Primitive::real => Some(StorageType::Val(ValType::F64)),
+          Primitive::boolean => Some(StorageType::I8),
+          Primitive::string => Some(register(
+            self,
+            t.clone(),
+            RegisteredType::Array(StorageType::I8),
+          )),
+          Primitive::glyph => Some(StorageType::Val(ValType::I32)),
+        };
+      },
+      Type::Struct {
+        member_names,
+        member_types,
+      } => RegisteredType::Struct(
+        member_types
+          .into_iter()
+          .flat_map(|t| self.get_type(t))
+          .collect(),
+      ),
+      Type::Function {
+        param_types,
+        return_type,
+      } => RegisteredType::Function(FuncType::new(
+        param_types
+          .into_iter()
+          .flat_map(|t| self.get_type(t))
+          .map(|t| storage_to_valtype(t))
+          .collect::<Vec<_>>(),
+        self.get_type(return_type).map(|t| storage_to_valtype(t)),
+      )),
+      Type::Product(items) => RegisteredType::Struct(
+        items.into_iter().flat_map(|t| self.get_type(t)).collect(),
+      ),
+      Type::Sum(hash_set) => todo!(),
+      Type::Type => todo!(),
+    };
+    Some(register(self, t.clone(), rt))
   }
 }

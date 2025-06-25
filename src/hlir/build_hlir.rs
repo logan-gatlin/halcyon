@@ -48,6 +48,29 @@ fn collect_list(mut expr: Expression) -> Vec<Expression> {
   }
 }
 
+fn collect_parameters(mut expr: Expression) -> Vec<Expression> {
+  let mut exprs = vec![];
+  use ExpressionKind as e;
+  loop {
+    match expr.kind {
+      e::FunctionCall { callee, arguments } => {
+        exprs.extend(
+          collect_parameters(*arguments)
+            .into_iter()
+            .rev()
+            .collect::<Vec<_>>(),
+        );
+        expr = *callee;
+      },
+      _ => {
+        exprs.push(expr);
+        exprs.reverse();
+        break exprs;
+      },
+    }
+  }
+}
+
 fn collect_block(mut expr: Expression) -> Vec<Expression> {
   let mut exprs = vec![];
   use ExpressionKind as e;
@@ -148,7 +171,7 @@ impl Canonizer {
         left,
         right,
       } => {
-        let parameter_exprs = collect_list(*left);
+        let parameter_exprs = collect_parameters(*left);
         let parameter_kinds =
           parameter_exprs.iter().map(|a| &a.kind).collect::<Vec<_>>();
         let parameter_spans =
