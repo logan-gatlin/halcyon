@@ -220,6 +220,7 @@ fn infer_types(
     } => {
       let tv = new_type_var(ctx);
       let (callee_t, cons) = infer_types(ctx, given_constraints, callee);
+      constraints.extend_from_slice(&cons);
       let param_types: Vec<_> = if arguments.len() == 1
         && let HlIrKind::Immediate(ConstValue::Nothing) =
           ctx.module.get_node(arguments[0]).kind

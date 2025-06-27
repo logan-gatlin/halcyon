@@ -75,7 +75,7 @@ pub fn lower(
       }
       for i in 0..(items.len() - 1) {
         lower(nodes, items[i], state, f);
-        if !nodes[i].type_.is_zero_size() {
+        if !nodes[items[i]].type_.is_zero_size() {
           state.func(f).instr(i::Drop);
         }
       }
