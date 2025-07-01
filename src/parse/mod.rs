@@ -21,7 +21,8 @@ pub enum Literal {
 #[derive(Debug, Clone)]
 pub enum ExpressionKind {
   Let {
-    is_constant: bool,
+    is_type: bool,
+    is_recursive: bool,
     assignee_span: Span,
     assignee: String,
     value: Box<Expression>,

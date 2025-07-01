@@ -5,6 +5,9 @@ use crate::{hlir::*, operator::*};
 #[derive(Debug, Clone)]
 pub struct TypeConstraint(Type, Type);
 
+#[derive(Debug, Clone)]
+pub struct Substitution(TypeVariable, Type);
+
 impl TypeConstraint {
   pub fn substitute(&mut self, tv: TypeVariable, type_: &Type) {
     self.0.substitute(tv, type_);
@@ -16,75 +19,59 @@ impl TypeConstraint {
   }
 }
 
-pub fn hindley_milner_inference(
-  module: &mut HlIrModule,
-) -> Vec<TypeConstraint> {
-  infer_types(
-    &mut Context {
-      module,
-      type_var: 0,
-      name_map: HashMap::new(),
-    },
-    &[],
-    0,
-  )
-  .1
-}
-
-struct Context<'a> {
-  module: &'a mut HlIrModule,
-  type_var: usize,
-  name_map: HashMap<Mangle, Type>,
-}
-
-impl<'a> Context<'a> {
-  fn new(module: &'a mut HlIrModule) -> Self {
-    Self {
-      module,
-      type_var: 0,
-      name_map: HashMap::new(),
-    }
-  }
-}
-
-fn infer_types(
-  ctx: &mut Context,
-  given_constraints: &[TypeConstraint],
-  node: IrPtr,
-) -> (Type, Vec<TypeConstraint>) {
-  let new_type_var = |t: &mut Context| {
-    let temp = t.type_var;
-    t.type_var += 1;
-    Type::TypeVariable(temp)
+pub fn type_solve(module: &mut HlIrModule) {
+  let mut type_var = 0;
+  let mut new_type_var = move || {
+    type_var += 1;
+    Type::TypeVariable(type_var - 1)
   };
+
   let mut constraints = vec![];
-  let type_ = match ctx.module.nodes.get(node).unwrap().kind.clone() {
-    HlIrKind::Declaration {
+  type_inference(
+    &mut module.nodes,
+    0,
+    &mut HashMap::new(),
+    &mut new_type_var,
+    &mut constraints,
+  );
+  let solution = unification(&constraints);
+  apply_solution(&mut module.nodes, 0, solution);
+}
+
+fn type_inference(
+  nodes: &mut [HlIrNode],
+  ptr: IrPtr,
+  name_map: &mut HashMap<Mangle, Type>,
+  new_type_var: &mut impl FnMut() -> Type,
+  constraints: &mut Vec<TypeConstraint>,
+) -> Type {
+  use HlIrKind::*;
+  let type_ = match nodes[ptr].kind.clone() {
+    Declaration {
       assignee,
       is_constant,
       value,
       in_,
     } => {
       if is_constant {
-        let tv = new_type_var(ctx);
-        ctx.name_map.insert(assignee, tv.clone());
-        let (t, cons) = infer_types(ctx, given_constraints, value);
-        constraints.extend_from_slice(&cons);
+        let tv = new_type_var();
+        name_map.insert(assignee, tv.clone());
+        let t =
+          type_inference(nodes, value, name_map, new_type_var, constraints);
         constraints.push(TypeConstraint(t, tv));
       } else {
-        let (t, cons) = infer_types(ctx, given_constraints, value);
-        constraints.extend_from_slice(&cons);
-        ctx.name_map.insert(assignee, t);
+        let t =
+          type_inference(nodes, value, name_map, new_type_var, constraints);
+        name_map.insert(assignee, t);
       }
+
       if let Some(in_) = in_ {
-        let (t, cons) = infer_types(ctx, given_constraints, in_);
-        constraints.extend_from_slice(&cons);
-        t
+        type_inference(nodes, in_, name_map, new_type_var, constraints)
       } else {
         Type::Primitive(Primitive::nothing)
       }
     },
-    HlIrKind::Immediate(const_value) => Type::Primitive(match const_value {
+    Immediate(c) => Type::Primitive(match c {
       ConstValue::Nothing => Primitive::nothing,
       ConstValue::Never => Primitive::never,
       ConstValue::Integer(_) => Primitive::integer,
@@ -94,74 +81,43 @@ fn infer_types(
       ConstValue::Glyph(_) => Primitive::glyph,
       _ => unreachable!(),
     }),
-    HlIrKind::Block(items) => {
-      let (t, cons) = items.into_iter().fold(
-        (Type::Primitive(Primitive::nothing), vec![]),
-        |t, i| {
-          let mut cons = t.1;
-          let (type_, new_constraints) = infer_types(ctx, given_constraints, i);
-          cons.extend_from_slice(&new_constraints);
-          (type_, cons)
-        },
-      );
-      constraints.extend_from_slice(&cons);
-      t
-    },
-    HlIrKind::Identifier(i) => ctx.name_map.get(&i).unwrap().clone(),
-    HlIrKind::Tuple(items) => {
-      let (types, cons): (Vec<_>, Vec<_>) = items
+    Block(items) => items
+      .into_iter()
+      .fold(Type::Primitive(Primitive::nothing), |t, i| {
+        type_inference(nodes, i, name_map, new_type_var, constraints)
+      }),
+    Identifier(i) => name_map.get(&i).unwrap().clone(),
+    Tuple(items) => Type::Product(
+      items
         .into_iter()
-        .map(|i| infer_types(ctx, given_constraints, i))
-        .unzip();
-      constraints
-        .extend_from_slice(&cons.into_iter().flatten().collect::<Vec<_>>());
-      Type::Product(types)
-    },
-    HlIrKind::StructDef {
+        .map(|i| type_inference(nodes, i, name_map, new_type_var, constraints))
+        .collect(),
+    ),
+    StructDef {
       field_names,
       field_types,
-    } => {
-      let (field_t, cons): (Vec<_>, Vec<_>) = field_types
-        .into_iter()
-        .map(|t| infer_types(ctx, given_constraints, t))
-        .unzip();
-      constraints
-        .extend_from_slice(&cons.into_iter().flatten().collect::<Vec<_>>());
-      constraints.extend_from_slice(
-        &field_t
-          .into_iter()
-          .map(|t| TypeConstraint(t, Type::Type))
-          .collect::<Vec<_>>(),
-      );
-      Type::Type
-    },
-    HlIrKind::StructLiteral {
+    } => todo!(),
+    StructLiteral {
       struct_t,
       field_names,
       field_values,
-    } => {
-      let (val_t, val_cons): (Vec<_>, Vec<_>) = field_values
+    } => Type::Struct {
+      member_names: field_names,
+      member_types: field_values
         .into_iter()
-        .map(|n| infer_types(ctx, given_constraints, n))
-        .unzip();
-      constraints
-        .extend_from_slice(&val_cons.into_iter().flatten().collect::<Vec<_>>());
-      Type::Struct {
-        member_names: field_names,
-        member_types: val_t,
-      }
+        .map(|v| type_inference(nodes, v, name_map, new_type_var, constraints))
+        .collect(),
     },
-    HlIrKind::Field { of, index } => {
-      let (_, cons) = infer_types(ctx, given_constraints, of);
-      constraints.extend_from_slice(&cons);
-      new_type_var(ctx)
+    Field { of, index } => {
+      type_inference(nodes, of, name_map, new_type_var, constraints);
+      new_type_var()
     },
-    HlIrKind::Binary { op, left, right } => {
-      let tv = new_type_var(ctx);
-      let (left_t, left_cons) = infer_types(ctx, &constraints, left);
-      let (right_t, right_cons) = infer_types(ctx, &constraints, right);
-      constraints.extend_from_slice(&left_cons);
-      constraints.extend_from_slice(&right_cons);
+    Binary { op, left, right } => {
+      let tv = new_type_var();
+      let left_t =
+        type_inference(nodes, left, name_map, new_type_var, constraints);
+      let right_t =
+        type_inference(nodes, right, name_map, new_type_var, constraints);
       constraints.push(TypeConstraint(left_t.clone(), right_t.clone()));
       use BinaryOp::*;
       match op {
@@ -180,9 +136,9 @@ fn infer_types(
       }
       tv
     },
-    HlIrKind::Unary { op, child } => {
-      let (child_t, child_cons) = infer_types(ctx, given_constraints, child);
-      constraints.extend_from_slice(&child_cons);
+    Unary { op, child } => {
+      let child_t =
+        type_inference(nodes, child, name_map, new_type_var, constraints);
       use UnaryOp::*;
       match op {
         Ampersand => Type::Ambiguous,
@@ -191,53 +147,51 @@ fn infer_types(
         Minus | Not => child_t,
       }
     },
-    HlIrKind::FunctionDef {
+    FunctionDef {
       name,
       parameter_names,
       parameter_spans,
       body,
     } => {
-      let mut param_types = vec![];
-      (0..parameter_spans.len())
-        .for_each(|_| param_types.push(new_type_var(ctx)));
+      let arity = parameter_names.len();
+      let parameter_types =
+        (0..arity).map(|_| new_type_var()).collect::<Vec<_>>();
       parameter_names
         .into_iter()
-        .zip(param_types.clone().into_iter())
+        .zip(parameter_types.clone())
         .for_each(|(n, t)| {
-          ctx.name_map.insert(n, t);
+          name_map.insert(n, t);
         });
-      let (t, cons) = infer_types(ctx, given_constraints, body).into();
-      constraints.extend_from_slice(&cons);
+      let return_type =
+        type_inference(nodes, body, name_map, new_type_var, constraints);
       Type::Function {
-        param_types,
-        return_type: t.into(),
+        param_types: parameter_types,
+        return_type: return_type.into(),
       }
     },
-    HlIrKind::FunctionCall {
+    FunctionCall {
       callee,
       callee_name,
       arguments,
     } => {
-      let tv = new_type_var(ctx);
-      let (callee_t, cons) = infer_types(ctx, given_constraints, callee);
-      constraints.extend_from_slice(&cons);
+      let tv = new_type_var();
+      let callee_t =
+        type_inference(nodes, callee, name_map, new_type_var, constraints);
       let param_types: Vec<_> = if arguments.len() == 1
         && let HlIrKind::Immediate(ConstValue::Nothing) =
-          ctx.module.get_node(arguments[0]).kind
+          nodes[arguments[0]].kind
       {
-        ctx.module.nodes.get_mut(arguments[0]).unwrap().type_ =
-          Type::Primitive(Primitive::nothing);
+        nodes[arguments[0]].type_ = Type::Primitive(Primitive::nothing);
         vec![]
       } else {
         arguments
           .into_iter()
           .map(|a| {
-            let (t, cons) = infer_types(ctx, given_constraints, a);
-            constraints.extend_from_slice(&cons);
-            t
+            type_inference(nodes, a, name_map, new_type_var, constraints)
           })
           .collect()
       };
+      println!("{:?}", param_types);
       constraints.push(TypeConstraint(
         Type::Function {
           param_types,
@@ -247,22 +201,21 @@ fn infer_types(
       ));
       tv
     },
-    HlIrKind::If {
+    If {
       predicate,
       then,
       else_,
     } => {
-      let tv = new_type_var(ctx);
-      let (pred_t, pred_cons) = infer_types(ctx, given_constraints, predicate);
-      let (then_t, then_cons) = infer_types(ctx, given_constraints, then);
-      let (else_t, else_cons) = if let Some(else_) = else_ {
-        infer_types(ctx, given_constraints, else_)
+      let tv = new_type_var();
+      let pred_t =
+        type_inference(nodes, predicate, name_map, new_type_var, constraints);
+      let then_t =
+        type_inference(nodes, then, name_map, new_type_var, constraints);
+      let else_t = if let Some(else_) = else_ {
+        type_inference(nodes, else_, name_map, new_type_var, constraints)
       } else {
-        (Type::Primitive(Primitive::nothing), vec![])
+        Type::Primitive(Primitive::nothing)
       };
-      constraints.extend_from_slice(&pred_cons);
-      constraints.extend_from_slice(&then_cons);
-      constraints.extend_from_slice(&else_cons);
       constraints.extend_from_slice(&[
         TypeConstraint(pred_t, Type::Primitive(Primitive::boolean)),
         TypeConstraint(then_t, tv.clone()),
@@ -271,14 +224,11 @@ fn infer_types(
       tv
     },
   };
-
-  ctx.module.nodes.get_mut(node).unwrap().type_ = type_.clone();
-  (type_, constraints)
+  nodes[ptr].type_ = type_.clone();
+  type_
 }
 
-pub fn unification(
-  constraints: &[TypeConstraint],
-) -> Vec<(TypeVariable, Type)> {
+fn unification(constraints: &[TypeConstraint]) -> Vec<Substitution> {
   let mut cons = constraints.to_vec();
   let mut solution = vec![];
   while let Some(con) = cons.pop() {
@@ -312,7 +262,7 @@ pub fn unification(
           t1.substitute(tv, &t);
           t2.substitute(tv, &t);
         });
-        solution.push((tv, t));
+        solution.push(Substitution(tv, t));
       },
       (Type::Product(p1), Type::Product(p2)) if p1.len() == p2.len() => cons
         .extend_from_slice(
@@ -344,16 +294,16 @@ pub fn unification(
   solution
 }
 
-pub fn apply_solution(
-  module: &mut HlIrModule,
+fn apply_solution(
+  nodes: &mut [HlIrNode],
   mut node_ptr: IrPtr,
-  solution: Vec<(TypeVariable, Type)>,
+  solution: Vec<Substitution>,
 ) {
   let mut visited = HashSet::new();
   let mut to_visit = vec![];
   'outer: loop {
     visited.insert(node_ptr);
-    let node = module.nodes.get_mut(node_ptr).unwrap();
+    let node = &mut nodes[node_ptr];
     match node.kind.clone() {
       HlIrKind::Declaration {
         assignee,
@@ -429,7 +379,9 @@ pub fn apply_solution(
     break;
   }
   visited.into_iter().for_each(|n| {
-    let nt = &mut module.nodes.get_mut(n).unwrap().type_;
-    solution.iter().for_each(|(tv, t)| nt.substitute(*tv, t));
+    let nt = &mut nodes[n].type_;
+    solution
+      .iter()
+      .for_each(|Substitution(tv, t)| nt.substitute(*tv, t));
   });
 }

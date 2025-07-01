@@ -215,7 +215,8 @@ impl Canonizer {
         }
       },
       e::Let {
-        is_constant,
+        is_type,
+        is_recursive: is_constant,
         assignee_span,
         assignee,
         value,

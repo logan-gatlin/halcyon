@@ -1,7 +1,6 @@
 use crate::Span;
 use crate::lint::*;
-use multipeek::MultiPeek;
-use multipeek::multipeek;
+use multipeek::{MultiPeek, multipeek};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Base {
@@ -64,8 +63,6 @@ pub enum TokenKind {
   RealLiteral(String),
 
   Match,
-  Loop,
-  Do,
   Let,
   In,
   If,
@@ -81,7 +78,8 @@ pub enum TokenKind {
   Break,
   True,
   False,
-  Struct,
+  Fn,
+  Type,
 
   Whitespace(String),
   SmallComment(String),
@@ -150,8 +148,6 @@ impl std::fmt::Display for TokenKind {
         IntegerLiteral(_, _) => "integer literal",
         RealLiteral(_) => "float literal",
         Match => "match",
-        Loop => "loop",
-        Do => "do",
         Let => "let",
         In => "in",
         If => "if",
@@ -167,7 +163,8 @@ impl std::fmt::Display for TokenKind {
         Break => "break",
         True => "true",
         False => "false",
-        Struct => "struct",
+        Fn => "fn",
+        Type => "type",
         Whitespace(_) => "whitespace",
         BigComment(_) | SmallComment(_) => "comment",
         Idk => "idk",
@@ -475,8 +472,6 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
     // Match keywords
     {
       let kind = match buffer.as_str() {
-        "loop" => Loop,
-        "do" => Do,
         "let" => Let,
         "in" => In,
         "match" => Match,
@@ -493,7 +488,8 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
         "not" => Not,
         "true" => True,
         "false" => False,
-        "struct" => Struct,
+        "fn" => Fn,
+        "type" => Type,
         _ => Identifier(buffer),
       };
       return t(kind, position);

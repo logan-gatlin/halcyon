@@ -64,13 +64,7 @@ pub fn _compile(input: &str) -> Result<Vec<u8>> {
   let parse_tree = parse(tokens)?;
   println!("{parse_tree}");
   let mut hlir = build_hlir(parse_tree)?;
-  let constraints = hindley_milner_inference(&mut hlir);
-  println!("# CONSTRAINTS");
-  println!("{constraints:#?}");
-  let solution = unification(&constraints);
-  println!("# SOLUTION");
-  println!("{solution:#?}");
-  apply_solution(&mut hlir, 0, solution);
+  type_solve(&mut hlir);
   println!("# IR");
   println!("{hlir}");
   let wasm = compile::compile(hlir);

@@ -42,9 +42,9 @@ pub fn primary(
       e::Identifier(name)
     },
     // Declaration
-    t::Let => {
+    t::Let | t::Type => {
+      let is_type = iter.next().unwrap().0 == t::Type;
       let l = lint(ParseLint::InvalidLet, span, &[]);
-      skip(iter, 1);
       let Some(Token(t::Identifier(assignee), span2)) =
         iter.peek_nth(0).cloned()
       else {
@@ -53,7 +53,7 @@ pub fn primary(
       let assignee_span = span2;
       span += span2;
       skip(iter, 1);
-      let is_constant = if peek(iter, 0, t::Equal).is_some() {
+      let is_recursive = if peek(iter, 0, t::Equal).is_some() {
         false
       } else if peek(iter, 0, t::DoubleColon).is_some() {
         true
@@ -72,7 +72,8 @@ pub fn primary(
         None
       };
       e::Let {
-        is_constant,
+        is_type,
+        is_recursive,
         assignee_span,
         assignee,
         value: Box::new(value),

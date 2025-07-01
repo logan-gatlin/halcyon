@@ -22,7 +22,8 @@ impl Into<SExpression> for &Expression {
     use ExpressionKind::*;
     match &self.kind {
       Let {
-        is_constant: false,
+        is_type,
+        is_recursive: false,
         assignee_span,
         assignee,
         value,
@@ -41,7 +42,8 @@ impl Into<SExpression> for &Expression {
         }
       },
       Let {
-        is_constant: true,
+        is_type,
+        is_recursive: true,
         assignee_span,
         assignee,
         value,

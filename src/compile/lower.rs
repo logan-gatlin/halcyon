@@ -19,10 +19,7 @@ fn unwrap_const(c: ConstValue, f: u32, state: &mut ModuleState) {
       state.func(f).instr(i::StructNew(string_t))
     },
     ConstValue::Glyph(g) => state.func(f).instr(i::I32Const(g as i32)),
-    ConstValue::Function {
-      func_index,
-      type_index,
-    } => {
+    ConstValue::Function { func_index, .. } => {
       state.func(f).instr(i::RefFunc(func_index));
     },
     ConstValue::Tuple {
