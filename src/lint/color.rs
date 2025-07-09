@@ -1,3 +1,4 @@
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub enum Color {
   Red,
@@ -7,6 +8,7 @@ pub enum Color {
   Normal,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub enum Attribute {
   Normal,

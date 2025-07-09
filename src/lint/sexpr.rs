@@ -10,10 +10,13 @@ impl SExpression {
   }
 }
 
-pub fn sexpr(this: impl Into<String>, children: &[SExpression]) -> SExpression {
+pub fn sexpr(
+  this: impl Into<String>,
+  children: impl IntoIterator<Item = SExpression>,
+) -> SExpression {
   SExpression {
     this: this.into(),
-    children: children.to_vec(),
+    children: children.into_iter().collect::<Vec<_>>(),
   }
 }
 
@@ -44,6 +47,6 @@ impl std::fmt::Display for SExpression {
 
 impl Into<SExpression> for &str {
   fn into(self) -> SExpression {
-    sexpr(format!("{self}"), &[])
+    sexpr(format!("{self}"), [])
   }
 }

@@ -1,73 +1,48 @@
 use super::*;
 
-impl Into<SExpression> for &Pattern {
-  fn into(self) -> SExpression {
-    sexpr(
-      "pattern",
-      &[match &self.kind {
-        PatternKind::Const(const_value) => {
-          const_value.to_string().as_str().into()
-        },
-        PatternKind::Wildcard(name) => sexpr(name, &[]),
-        PatternKind::Tuple(patterns) => sexpr(
-          "tuple",
-          &patterns.into_iter().map(|p| p.into()).collect::<Vec<_>>(),
-        ),
-      }],
-    )
-  }
-}
-
-#[allow(unused_variables)]
 impl HlIrModule {
   fn sexpr(&self, node: IrPtr) -> SExpression {
-    let node = self.get_node(node);
+    let node = &self[node];
     use HlIrKind as h;
     let mut se = match &node.kind {
       h::Declaration {
         assignee,
-        is_constant,
+        is_type,
         value,
         in_,
+        ..
       } => sexpr(
-        if *is_constant { "let-const" } else { "let" },
-        &[
-          sexpr("mangle", &[assignee.as_str().into()]),
-          sexpr("value", &[self.sexpr(*value)]),
+        if *is_type { "let" } else { "type" },
+        [
+          sexpr("mangle", [assignee.as_str().into()]),
+          sexpr("value", [self.sexpr(*value)]),
           if let Some(i) = in_ {
-            sexpr("in", &[self.sexpr(*i)])
+            sexpr("in", [self.sexpr(*i)])
           } else {
-            sexpr("", &[])
+            sexpr("", [])
           },
         ],
       ),
-      h::Immediate(const_value) => sexpr(format!("{const_value}"), &[]),
-      h::Block(items) => sexpr(
-        "block",
-        &items
-          .into_iter()
-          .map(|i| self.sexpr(*i))
-          .collect::<Vec<_>>(),
-      ),
-      h::Identifier(name) => sexpr("identifier", &[name.as_str().into()]),
+      h::Immediate(const_value) => sexpr(format!("{const_value}"), []),
+      h::Block(items) => sexpr("block", items.into_iter().map(|i| self.sexpr(*i))),
+      h::Identifier(name) => sexpr("identifier", [name.as_str().into()]),
       h::StructDef {
         field_names,
         field_types,
       } => sexpr(
         "struct-definition",
-        &field_names
+        field_names
           .into_iter()
           .zip(field_types.into_iter())
           .map(|(name, value)| {
             sexpr(
               "field",
-              &[
-                sexpr("name", &[sexpr(name, &[])]),
-                sexpr("type", &[self.sexpr(*value)]),
+              [
+                sexpr("name", [sexpr(name, [])]),
+                sexpr("type", [self.sexpr(*value)]),
               ],
             )
-          })
-          .collect::<Vec<_>>(),
+          }),
       ),
       h::StructLiteral {
         field_names,
@@ -75,49 +50,32 @@ impl HlIrModule {
         ..
       } => sexpr(
         "struct-literal",
-        &field_names
+        field_names
           .into_iter()
           .zip(field_values.into_iter())
           .map(|(name, value)| {
             sexpr(
               "field",
-              &[
-                sexpr("name", &[sexpr(name, &[])]),
-                sexpr("value", &[self.sexpr(*value)]),
+              [
+                sexpr("name", [sexpr(name, [])]),
+                sexpr("value", [self.sexpr(*value)]),
               ],
             )
-          })
-          .collect::<Vec<_>>(),
+          }),
       ),
-      h::Field { of, index } => {
-        sexpr("field", &[self.sexpr(*of), index.as_str().into()])
-      },
+      h::Field { of, index } => sexpr("field", [self.sexpr(*of), index.as_str().into()]),
       h::Binary { op, left, right } => {
-        sexpr(format!("{op}"), &[self.sexpr(*left), self.sexpr(*right)])
-      },
-      h::Unary { op, child } => sexpr(format!("{op}"), &[self.sexpr(*child)]),
-      h::FunctionDef {
-        name,
-        parameter_names,
-        parameter_spans,
-        body,
-      } => sexpr("function", &[self.sexpr(*body)]),
+        sexpr(format!("{op}"), [self.sexpr(*left), self.sexpr(*right)])
+      }
+      h::Unary { op, child } => sexpr(format!("{op}"), [self.sexpr(*child)]),
+      h::FunctionDef { body, .. } => sexpr("function", [self.sexpr(*body)]),
       h::FunctionCall {
-        callee,
-        callee_name,
-        arguments,
+        callee, arguments, ..
       } => sexpr(
         "call",
-        &[
-          sexpr("func", &[self.sexpr(*callee)]),
-          sexpr(
-            "args",
-            arguments
-              .into_iter()
-              .map(|a| self.sexpr(*a))
-              .collect::<Vec<_>>()
-              .as_slice(),
-          ),
+        [
+          sexpr("func", [self.sexpr(*callee)]),
+          sexpr("args", arguments.into_iter().map(|a| self.sexpr(*a))),
         ],
       ),
       h::If {
@@ -128,19 +86,19 @@ impl HlIrModule {
         if let Some(else_) = else_ {
           sexpr(
             "if",
-            &[
-              sexpr("predicate", &[self.sexpr(*predicate)]),
-              sexpr("then", &[self.sexpr(*then)]),
-              sexpr("else", &[self.sexpr(*else_)]),
+            [
+              sexpr("predicate", [self.sexpr(*predicate)]),
+              sexpr("then", [self.sexpr(*then)]),
+              sexpr("else", [self.sexpr(*else_)]),
             ],
           )
         } else {
-          sexpr("if", &[sexpr("then", &[self.sexpr(*then)])])
+          sexpr("if", [sexpr("then", [self.sexpr(*then)])])
         }
-      },
+      }
       h::Tuple(items) => sexpr(
         "tuple",
-        &items
+        items
           .into_iter()
           .map(|n| self.sexpr(*n))
           .collect::<Vec<_>>(),

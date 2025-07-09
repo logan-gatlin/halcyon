@@ -1,9 +1,5 @@
 //pub mod assembly;
-use crate::{
-  hlir::{Primitive, Type},
-  lint::*,
-  token::*,
-};
+use crate::{hlir::*, lint::*, token::*};
 
 pub type Precedence = usize;
 
@@ -51,9 +47,6 @@ macro_rules! op {
 pub const RIGHT_ASSOC: bool = true;
 pub const LEFT_ASSOC: bool = false;
 pub const CALL_PREC: Precedence = 12;
-pub const LOOP_PREC: Precedence = 7;
-pub const MATCH_PREC: Precedence = 7;
-pub const IF_ELSE_PREC: Precedence = 1;
 
 // Name, precedence, associativity;
 op! {
@@ -77,13 +70,10 @@ op! {
   GreaterEqual, 8, LEFT_ASSOC;
   Nand, 7, LEFT_ASSOC;
   And, 7, LEFT_ASSOC;
-  Semicolon, 7, LEFT_ASSOC;
-  FatArrow, 6, RIGHT_ASSOC;
-  Colon, 5, RIGHT_ASSOC;
   Arrow, 5, RIGHT_ASSOC;
   DoubleColon, 4, RIGHT_ASSOC;
   Comma, 3, LEFT_ASSOC;
-  DoubleSemicolon, 1, LEFT_ASSOC;
+  Semicolon, 1, LEFT_ASSOC;
 }
 
 op! {
@@ -92,7 +82,6 @@ op! {
   Tilda, 15, RIGHT_ASSOC;
   Minus, 15, LEFT_ASSOC;
   Not, 15, LEFT_ASSOC;
-  Break, 2, LEFT_ASSOC;
 }
 
 impl BinaryOp {
@@ -175,8 +164,7 @@ impl UnaryOp {
     use Primitive::*;
     use Type::Primitive as p;
     use UnaryOp::*;
-    let e =
-      Err(lint_nospan(TypeLint::UnaryOpUndefined)).context(format!("{t1}"));
+    let e = Err(lint_nospan(TypeLint::UnaryOpUndefined)).context(format!("{t1}"));
     Ok(match (self, t1) {
       (Minus, p(integer)) => p(integer),
       (Minus, p(real)) => p(real),

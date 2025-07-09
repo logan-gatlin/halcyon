@@ -1,1 +1,1 @@
-fn (a : integer) b c => a + b + c
+fn #export("foo") a => a + 1

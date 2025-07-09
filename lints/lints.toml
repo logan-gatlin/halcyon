@@ -92,12 +92,20 @@ reason = "Missing Comma"
 help = "You may have meant to put a comma after this expression"
 
 [2011]
-reason = "Invalid lambda parameters"
-help = "The left-hand side of the lambda operator may be `()` if there are no arguments, or a tuple of argument names `(arg1, arg2, ...)`"
+reason = "Invalid function argument"
+help = "Function arguments may be any number of identifiers: `fn a b c ... => ...`"
 
 [2012]
 reason = "Invalid pattern"
 help = "The pattern for a match expression may be a literal value, a name which captures any value, or a tuple of other patterns"
+
+[2013]
+reason = "Expected expression"
+help = "Expected an expression here, but found '%' instead"
+
+[2014]
+reason = "Invalid directive"
+help = "A directive must have a name and a body inside parenthesis: `#name(...)`"
 
 # Name errors
 [3000]
@@ -127,6 +135,20 @@ help = "A loop may only have a single parameter. Try removing any parameters aft
 [3006]
 reason = "No target for break"
 help = "'break' expression is used to exit a loop, it may not occur outside of a loop. Try removing 'break'"
+
+[3007]
+reason = "Unrecognized directive"
+help = """The recognized directives are:
+* #[builtin(<string>)]
+* #[foreign(<string>, <string>, <type>)]"""
+
+[3008]
+reason = "Non-unique export"
+help = "Every export must have a unique name"
+
+[3009]
+reason = "Non-unique import"
+help = "An item may only be imported in one place"
 
 # Type errors
 [4000]
@@ -186,23 +208,9 @@ reason = "Unary operator undefined"
 help = "The operator % is not defined for the type `%`"
 
 [4014]
-reason = "Type modification in compiled artifact"
-help = "Types only exist in the interpreter and the compiler. A compiled program may not interact with types in any way"
+reason = "Expected a type here"
+help = "This expression is not supported inside a type"
 
-# Evaluation errors
-[5000]
-reason = "Recursion limit reached"
-help = "The maximum recursion limit (%) was reached during constant evaluation"
-
-[5001]
-reason = "Encountered unreachable"
-help = ""
-
-[5002]
-reason = "Circular reasoning"
-help = "This definition is unsolvable. Try adding a layer of indirection, or replace some names with literal values"
-
-[5003]
-reason = "Glyph out of range"
-help = "This expression created an invalid glyph. A glyph must be valid UTF-8"
-
+[4015]
+reason = "Not available during compilation"
+help = "This expression relies on information not available during compilation"

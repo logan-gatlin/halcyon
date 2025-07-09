@@ -1,6 +1,7 @@
-use super::*;
-use crate::{lint::*, operator::*, parse::*, span::*, token::*};
 use std::collections::HashSet;
+
+use super::*;
+use crate::{lint::*, operator::*, parse::*};
 
 pub fn parse_int_literal(value: &str, base: u32) -> Result<i64> {
   i64::from_str_radix(value, base).lint(TokenLint::InvalidInteger)
@@ -35,38 +36,14 @@ fn collect_list(mut expr: Expression) -> Vec<Expression> {
         left,
         right,
       } => {
-        exprs
-          .extend(collect_list(*right).into_iter().rev().collect::<Vec<_>>());
+        exprs.extend(collect_list(*right).into_iter().rev().collect::<Vec<_>>());
         expr = *left;
-      },
+      }
       _ => {
         exprs.push(expr);
         exprs.reverse();
         break exprs;
-      },
-    }
-  }
-}
-
-fn collect_parameters(mut expr: Expression) -> Vec<Expression> {
-  let mut exprs = vec![];
-  use ExpressionKind as e;
-  loop {
-    match expr.kind {
-      e::FunctionCall { callee, arguments } => {
-        exprs.extend(
-          collect_parameters(*arguments)
-            .into_iter()
-            .rev()
-            .collect::<Vec<_>>(),
-        );
-        expr = *callee;
-      },
-      _ => {
-        exprs.push(expr);
-        exprs.reverse();
-        break exprs;
-      },
+      }
     }
   }
 }
@@ -77,18 +54,18 @@ fn collect_block(mut expr: Expression) -> Vec<Expression> {
   loop {
     match expr.kind {
       e::Binary {
-        op: BinaryOp::Semicolon | BinaryOp::DoubleSemicolon,
+        op: BinaryOp::Semicolon,
         left,
         right,
       } => {
         exprs.push(*right);
         expr = *left;
-      },
+      }
       _ => {
         exprs.push(expr);
         exprs.reverse();
         break exprs;
-      },
+      }
     }
   }
 }
@@ -96,23 +73,21 @@ fn collect_block(mut expr: Expression) -> Vec<Expression> {
 #[derive(Debug, Clone)]
 pub struct Canonizer {
   nodes: Vec<Option<HlIrNode>>,
-  constants: HashMap<Mangle, IrPtr>,
+  func_index: u32,
   scope_depth: usize,
   salt: usize,
-  path: Vec<String>,
   event_stack: Vec<Event>,
-  memory: Memory,
   _name_to_symbol: HashMap<String, Symbol>,
+  exports: HashSet<String>,
 }
 
 impl Canonizer {
   pub fn new() -> Self {
     let mut this = Self {
       nodes: vec![],
-      constants: HashMap::new(),
-      path: vec![],
+      func_index: 0,
+      exports: HashSet::new(),
       event_stack: vec![],
-      memory: Memory::new(10, 100),
       scope_depth: 0,
       salt: 0,
       _name_to_symbol: HashMap::new(),
@@ -126,17 +101,9 @@ impl Canonizer {
   fn literal_to_const(&mut self, literal: Literal) -> Result<ConstValue> {
     Ok(match literal {
       Literal::Unit => ConstValue::Nothing,
-      Literal::Integer(i, base) => {
-        ConstValue::Integer(parse_int_literal(&i, base as u32)?)
-      },
+      Literal::Integer(i, base) => ConstValue::Integer(parse_int_literal(&i, base as u32)?),
       Literal::Real(r) => ConstValue::Real(parse_real_literal(&r)?),
-      Literal::String(s) => {
-        let address = self.memory.static_allocate(s.len() as PtrT);
-        ConstValue::String {
-          address,
-          length: s.len() as PtrT,
-        }
-      },
+      Literal::String(s) => ConstValue::String(s),
       Literal::Glyph(g) => ConstValue::Glyph(g),
       Literal::Boolean(b) => ConstValue::Boolean(b),
     })
@@ -146,9 +113,6 @@ impl Canonizer {
     self.expr(expr)?;
     Ok(HlIrModule {
       nodes: self.nodes.into_iter().map(|n| n.unwrap()).collect(),
-      constants: self.constants,
-      type_map: HashMap::new(),
-      heap: self.memory,
     })
   }
 
@@ -158,72 +122,63 @@ impl Canonizer {
     let node = self.new_node();
     let span = expr.span;
     let kind = match expr.kind {
-      e::Literal(literal) => {
-        h::Immediate(self.literal_to_const(literal).span(expr.span)?)
-      },
+      e::Literal(literal) => h::Immediate(self.literal_to_const(literal).span(expr.span)?),
       e::Identifier(name) => {
         let symbol = self.name_to_symbol(&name).span(span)?;
         h::Identifier(symbol.mangle.clone())
-      },
+      }
       // Function def
-      e::Binary {
-        op: BinaryOp::FatArrow,
-        left,
-        right,
+      e::FunctionDef {
+        export_name,
+        arguments,
+        argument_spans,
+        types,
+        body,
       } => {
-        let parameter_exprs = collect_parameters(*left);
-        let parameter_kinds =
-          parameter_exprs.iter().map(|a| &a.kind).collect::<Vec<_>>();
-        let parameter_spans =
-          parameter_exprs.iter().map(|a| a.span).collect::<Vec<_>>();
-        let (parameter_names, parameter_spans): (Vec<String>, Vec<Span>) =
-          match parameter_kinds.as_slice() {
-            [e::Literal(Literal::Unit)] => (vec![], vec![]),
-            _ => parameter_exprs
-              .iter()
-              .map(|e| {
-                if let Expression {
-                  kind: e::Identifier(name),
-                  ..
-                } = e
-                {
-                  Ok((name.clone(), e.span))
-                } else {
-                  Err(lint(ParseLint::InvalidLambdaParameter, span, &[]))
-                }
-              })
-              .try_collect::<Vec<_>>()?
-              .into_iter()
-              .unzip(),
-          };
+        if let Some(export) = &export_name {
+          if !self.exports.insert(export.clone()) {
+            return Err(lint(NameLint::NonUniqueExport, span, &[]));
+          }
+        }
         self.start_function();
         self.enscope();
-        let parameter_names = parameter_names
+        let parameter_names = arguments
           .iter()
-          .zip(parameter_spans.iter())
+          .zip(argument_spans.iter())
           .map(|(name, span)| self.define_name(name, false).span(*span))
           .try_collect::<Vec<_>>()?;
-        let body = self.expr(*right)?;
+        let parameter_types = types
+          .into_iter()
+          .map(|t| t.map(|t| self.expr(t)))
+          .map(|t| match t {
+            Some(Ok(e)) => Ok(Some(e)),
+            Some(Err(e)) => Err(e),
+            None => Ok(None),
+          })
+          .try_collect::<Vec<_>>()?;
+        let body = self.expr(*body)?;
+        let id = self.func_index;
+        self.func_index += 1;
         self.descope();
-        let mangle = self.define_unique("function");
-        self.constants.insert(mangle.clone(), node);
         h::FunctionDef {
-          name: mangle,
+          export_name,
           parameter_names,
-          parameter_spans,
+          parameter_spans: argument_spans,
+          parameter_types,
           body,
+          id,
         }
-      },
+      }
       e::Let {
         is_type,
-        is_recursive: is_constant,
+        is_recursive,
         assignee_span,
         assignee,
         value,
         in_,
       } => {
         self.enscope();
-        let (assignee, value) = if is_constant {
+        let (assignee, value) = if is_recursive {
           (
             self.define_name(assignee, true).span(assignee_span)?,
             self.expr(*value)?,
@@ -244,10 +199,11 @@ impl Canonizer {
         h::Declaration {
           value,
           assignee,
-          is_constant,
+          is_type,
+          is_recursive,
           in_,
         }
-      },
+      }
       // Tuple
       e::Binary {
         op: BinaryOp::Comma,
@@ -271,10 +227,10 @@ impl Canonizer {
           of: self.expr(*left)?,
           index,
         }
-      },
+      }
       // Block
       e::Binary {
-        op: BinaryOp::Semicolon | BinaryOp::DoubleSemicolon,
+        op: BinaryOp::Semicolon,
         ..
       } => h::Block(
         collect_block(expr)
@@ -293,7 +249,6 @@ impl Canonizer {
       },
       e::FunctionCall { callee, arguments } => h::FunctionCall {
         callee: self.expr(*callee)?,
-        callee_name: self.define_unique("callee"),
         arguments: collect_list(*arguments)
           .into_iter()
           .map(|e| self.expr(e))
@@ -320,7 +275,7 @@ impl Canonizer {
         };
         self.descope();
         kind
-      },
+      }
       e::Structure {
         is_definition,
         lhs,
@@ -335,12 +290,11 @@ impl Canonizer {
           }
         } else {
           h::StructLiteral {
-            struct_t: None,
             field_names,
             field_values: right,
           }
         }
-      },
+      }
     };
     self.set_node(
       node,
@@ -351,37 +305,6 @@ impl Canonizer {
       },
     );
     Ok(node)
-  }
-
-  fn pattern(&mut self, expr: Expression) -> Result<Pattern> {
-    let span = expr.span;
-    use ExpressionKind as e;
-    Ok(match expr.kind {
-      e::Identifier(name) => {
-        let mangle = self.define_name(name, false).span(span)?;
-        Pattern {
-          kind: PatternKind::Wildcard(mangle),
-          span,
-        }
-      },
-      e::Literal(literal) => Pattern {
-        kind: PatternKind::Const(self.literal_to_const(literal).span(span)?),
-        span,
-      },
-      e::Binary {
-        op: BinaryOp::Comma,
-        ..
-      } => Pattern {
-        kind: PatternKind::Tuple(
-          collect_list(expr)
-            .into_iter()
-            .map(|e| self.pattern(e))
-            .try_collect()?,
-        ),
-        span,
-      },
-      _ => return Err(lint(ParseLint::InvalidPattern, span, &[])),
-    })
   }
 
   fn new_node(&mut self) -> IrPtr {
@@ -408,23 +331,6 @@ impl Canonizer {
     returned_salt
   }
 
-  fn allocate(&mut self, bytes: &[u8]) -> PtrT {
-    let address = self.memory.static_allocate(bytes.len() as PtrT);
-    for (i, b) in bytes.iter().enumerate() {
-      self.memory.store(address + i as PtrT, b);
-    }
-    address
-  }
-
-  fn define_unique(&mut self, hint: &str) -> Mangle {
-    let name = String::from(hint);
-    let mut path = self.path.clone();
-    path.push(name.clone());
-    let salt = self.next_salt();
-    let mangle = mangle_name(path, &salt);
-    mangle
-  }
-
   fn define_builtin(&mut self, name: impl Into<String>) {
     let name = name.into();
     let mangle = mangle_builtin(&name);
@@ -444,17 +350,12 @@ impl Canonizer {
     );
   }
 
-  fn define_name(
-    &mut self,
-    name: impl Into<String>,
-    is_constant: bool,
-  ) -> Result<Mangle> {
+  fn define_name(&mut self, name: impl Into<String>, is_constant: bool) -> Result<Mangle> {
     let name = name.into();
     if name == "_" {
       return Ok("_".to_string());
     }
-    let mut path = self.path.clone();
-    path.push(name.clone());
+    let path = vec![name.clone()];
     let salt = self.next_salt();
     let mangle = mangle_name(path, &salt);
     let old_value = self.name_to_symbol(&name).ok().cloned();
@@ -490,14 +391,14 @@ impl Canonizer {
         Event::ScopeStart => {
           self.scope_depth -= 1;
           break;
-        },
+        }
         Event::Modify { name, old_value } => {
           if let Some(old) = old_value {
             self._name_to_symbol.insert(name, old);
           } else {
             self._name_to_symbol.remove(&name);
           }
-        },
+        }
       }
     }
   }

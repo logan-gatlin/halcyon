@@ -39,6 +39,13 @@ pub enum ExpressionKind {
     op: UnaryOp,
     child: Box<Expression>,
   },
+  FunctionDef {
+    export_name: Option<String>,
+    arguments: Vec<String>,
+    argument_spans: Vec<Span>,
+    types: Vec<Option<Expression>>,
+    body: Box<Expression>,
+  },
   FunctionCall {
     callee: Box<Expression>,
     arguments: Box<Expression>,
@@ -95,5 +102,20 @@ fn eat(iter: it!(), kind: TokenKind) -> Option<Token> {
 
 pub fn parse(toks: impl IntoIterator<Item = Token>) -> Result<Expression> {
   let mut iter = toks.into_iter().multipeek();
-  expression(&mut iter, 0)?.ok_or(lint_nospan(ParseLint::EmptyInput))
+  let parsed = match expression(&mut iter, 0)? {
+    Some(e) => Ok(e),
+    None => Err(lint_nospan(ParseLint::EmptyInput)),
+  }?;
+  if let Some(t) = iter.peek_nth(0)
+    && t.0 != TokenKind::EOF
+  {
+    println!("{:?}", t.1);
+    Err(lint(
+      ParseLint::ExpectedExpression,
+      t.1,
+      &[format!("{}", t.0)],
+    ))
+  } else {
+    Ok(parsed)
+  }
 }

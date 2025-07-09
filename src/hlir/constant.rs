@@ -3,14 +3,10 @@ use super::*;
 #[derive(Clone, Debug)]
 pub enum ConstValue {
   Nothing,
-  Never,
   Integer(i64),
   Real(f64),
   Boolean(bool),
-  String {
-    address: PtrT,
-    length: PtrT,
-  },
+  String(String),
   Glyph(char),
   Function {
     func_index: u32,
@@ -28,19 +24,21 @@ pub enum ConstValue {
   Type(Type),
 }
 
+impl From<Type> for ConstValue {
+  fn from(value: Type) -> Self {
+    Self::Type(value)
+  }
+}
+
 impl std::fmt::Display for ConstValue {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       ConstValue::Nothing => write!(f, "()"),
-      ConstValue::Never => write!(f, "!"),
       ConstValue::String { .. } => write!(f, "<string>"),
-      ConstValue::Function {
-        func_index,
-        type_index,
-      } => write!(f, "{func_index}"),
+      ConstValue::Function { func_index, .. } => write!(f, "{func_index}"),
       ConstValue::StructLiteral { .. } => write!(f, "<struct>"),
       ConstValue::Type(val) => write!(f, "{val}"),
-      ConstValue::Tuple { members, type_id } => write!(
+      ConstValue::Tuple { members, .. } => write!(
         f,
         "({})",
         members

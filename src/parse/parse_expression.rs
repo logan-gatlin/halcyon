@@ -1,35 +1,5 @@
 use super::*;
 
-fn match_rhs(
-  iter: &mut MultiPeek<impl Iterator<Item = Token>>,
-  mut span: Span,
-) -> Result<(Vec<Expression>, Vec<Expression>)> {
-  use TokenKind as t;
-  let mut predicates = vec![];
-  let mut branches = vec![];
-  loop {
-    span = eat(iter, t::Pipe)
-      .ok_or(lint(ParseLint::InvalidMatch, span, &[]))?
-      .1;
-    predicates.push(expression(iter, 0)?.ok_or(lint(
-      ParseLint::InvalidMatch,
-      span,
-      &[],
-    ))?);
-    span = eat(iter, t::Then)
-      .ok_or(lint(ParseLint::InvalidMatch, span, &[]))?
-      .1;
-    branches.push(expression(iter, 0)?.ok_or(lint(
-      ParseLint::InvalidMatch,
-      span,
-      &[],
-    ))?);
-    if peek(iter, 0, t::Pipe).is_none() {
-      break Ok((predicates, branches));
-    }
-  }
-}
-
 pub fn expression(
   iter: &mut MultiPeek<impl Iterator<Item = Token>>,
   precedence: usize,

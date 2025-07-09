@@ -8,7 +8,7 @@ macro_rules! convert {
   };
 }
 
-convert!(TokenLint, ParseLint, NameLint, TypeLint, EvalLint);
+convert!(TokenLint, ParseLint, NameLint, TypeLint);
 
 #[repr(usize)]
 pub enum TokenLint {
@@ -34,8 +34,10 @@ pub enum ParseLint {
   InvalidStructure = 2008,
   InvalidLet = 2009,
   MissingComma = 2010,
-  InvalidLambdaParameter = 2011,
+  InvalidFunctionArgument = 2011,
   InvalidPattern = 2012,
+  ExpectedExpression = 2013,
+  InvalidDirective = 2014,
 }
 
 #[repr(usize)]
@@ -47,6 +49,9 @@ pub enum NameLint {
   FieldNotIdent = 3004,
   MultipleLoopParams = 3005,
   NoBreakTarget = 3006,
+  UnrecognizedDirective = 3007,
+  NonUniqueExport = 3008,
+  NonUniqueImport = 3009,
 }
 
 #[repr(usize)]
@@ -59,13 +64,6 @@ pub enum TypeLint {
   TooFewArgs = 4011,
   BinaryOpUndefined = 4012,
   UnaryOpUndefined = 4013,
-  Sanitization = 4014,
-}
-
-#[repr(usize)]
-pub enum EvalLint {
-  RecursionLimit = 5000,
-  Unreachable = 5001,
-  Circular = 5002,
-  GlyphOutOfRange = 5003,
+  NotAType = 4014,
+  NotAvailable = 4015,
 }

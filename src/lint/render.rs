@@ -1,9 +1,10 @@
-use std::{collections::HashMap, process::exit};
+use std::collections::HashMap;
 
 use toml::Table;
 
 use super::*;
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 struct LintDescription {
   code: usize,
@@ -11,6 +12,7 @@ struct LintDescription {
   help: String,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct Linter {
   lint_map: HashMap<usize, LintDescription>,
@@ -105,9 +107,7 @@ impl Linter {
     let mut underline = String::with_capacity(src_text.len());
     let start_index = self.index_map[line_no];
     for (id, c) in src_text.chars().enumerate() {
-      if start_index + id >= span.start
-        && start_index + id < span.start + span.width
-      {
+      if start_index + id >= span.start && start_index + id < span.start + span.width {
         underline.push('^');
       } else if c == '\t' {
         underline.push('\t');
@@ -124,10 +124,10 @@ impl Linter {
     let source_help = if let Some(s) = lint.span {
       let (position, src, underline, row) = self.underline_source(s);
       let width = row.to_string().len();
-      let rowmark1 = format!("{row:^width$}| ", width = width + 2)
-        .apply_style(Color::Blue, Attribute::Normal);
-      let rowmark2 = format!("{:^width$}| ", "", width = width + 2)
-        .apply_style(Color::Blue, Attribute::Normal);
+      let rowmark1 =
+        format!("{row:^width$}| ", width = width + 2).apply_style(Color::Blue, Attribute::Normal);
+      let rowmark2 =
+        format!("{:^width$}| ", "", width = width + 2).apply_style(Color::Blue, Attribute::Normal);
       format!("{position}\n{rowmark1}{src}\n{rowmark2}{underline}\n",)
     } else {
       "".into()

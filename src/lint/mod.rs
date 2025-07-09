@@ -9,8 +9,6 @@ pub use kinds::*;
 pub use sexpr::*;
 pub use span::*;
 
-use crate::token::{Token, TokenKind};
-
 pub type Result<T> = std::result::Result<T, Lint>;
 
 #[derive(Clone, Debug)]
@@ -76,7 +74,7 @@ impl<T> WithSpan for std::result::Result<T, Lint> {
       Err(mut l) => {
         l.span = l.span.or(Some(span));
         Err(l)
-      },
+      }
     }
   }
 }
@@ -92,7 +90,7 @@ impl<T> WithContext for std::result::Result<T, Lint> {
       Err(mut l) => {
         l.context.push(parameter.into());
         Err(l)
-      },
+      }
     }
   }
 }

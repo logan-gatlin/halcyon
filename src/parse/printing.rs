@@ -23,57 +23,47 @@ impl Into<SExpression> for &Expression {
     match &self.kind {
       Let {
         is_type,
-        is_recursive: false,
-        assignee_span,
         assignee,
         value,
         in_,
+        ..
       } => {
+        let name = if *is_type { "type" } else { "let" };
         if let Some(in_) = in_ {
           sexpr(
-            "let",
-            &[
-              sexpr("=", &[value.as_ref().into()]),
-              sexpr("in", &[in_.as_ref().into()]),
+            name,
+            [
+              sexpr(assignee, []),
+              sexpr("=", [value.as_ref().into()]),
+              sexpr("in", [in_.as_ref().into()]),
             ],
           )
         } else {
-          sexpr("let", &[sexpr("=", &[value.as_ref().into()])])
+          sexpr(name, [sexpr("=", [value.as_ref().into()])])
         }
-      },
-      Let {
-        is_type,
-        is_recursive: true,
-        assignee_span,
-        assignee,
-        value,
-        in_,
-      } => {
-        if let Some(in_) = in_ {
-          sexpr(
-            "let",
-            &[
-              sexpr("::", &[value.as_ref().into()]),
-              sexpr("in", &[in_.as_ref().into()]),
-            ],
-          )
-        } else {
-          sexpr("let", &[sexpr("::", &[value.as_ref().into()])])
-        }
-      },
+      }
       Literal(literal) => {
-        let sexpr = sexpr(format!("{literal}"), &[]);
+        let sexpr = sexpr(format!("{literal}"), []);
         sexpr
-      },
-      Identifier(name) => sexpr(format!("{name}"), &[]),
+      }
+      Identifier(name) => sexpr(format!("{name}"), []),
       Binary { op, left, right } => sexpr(
         format!("{op}"),
-        &[left.as_ref().into(), right.as_ref().into()],
+        [left.as_ref().into(), right.as_ref().into()],
       ),
-      Unary { op, child } => sexpr(format!("{op}"), &[child.as_ref().into()]),
+      Unary { op, child } => sexpr(format!("{op}"), [child.as_ref().into()]),
+      FunctionDef {
+        arguments, body, ..
+      } => sexpr(
+        "fn",
+        [
+          sexpr("args", arguments.into_iter().map(|a| sexpr(a, []))),
+          sexpr("body", [body.as_ref().into()]),
+        ],
+      ),
       FunctionCall { callee, arguments } => {
-        sexpr("call", &[callee.as_ref().into(), arguments.as_ref().into()])
-      },
+        sexpr("call", [callee.as_ref().into(), arguments.as_ref().into()])
+      }
       If {
         predicate,
         then,
@@ -82,23 +72,30 @@ impl Into<SExpression> for &Expression {
         if let Some(else_) = else_ {
           sexpr(
             "if",
-            &[
+            [
               predicate.as_ref().into(),
               then.as_ref().into(),
               else_.as_ref().into(),
             ],
           )
         } else {
-          sexpr("if", &[predicate.as_ref().into(), then.as_ref().into()])
+          sexpr("if", [predicate.as_ref().into(), then.as_ref().into()])
         }
-      },
-      Structure { lhs, rhs, .. } => sexpr(
-        "structure",
-        &lhs
+      }
+      Structure {
+        lhs,
+        rhs,
+        is_definition,
+      } => sexpr(
+        if *is_definition {
+          "structure-definition"
+        } else {
+          "structure-literal"
+        },
+        lhs
           .into_iter()
           .zip(rhs.into_iter())
-          .map(|(r, l)| sexpr("field", &[r.as_str().into(), l.into()]))
-          .collect::<Vec<_>>(),
+          .map(|(r, l)| sexpr("field", [r.as_str().into(), l.into()])),
       ),
     }
   }
