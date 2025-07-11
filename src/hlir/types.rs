@@ -97,17 +97,19 @@ impl std::ops::Add for Type {
   fn add(self, rhs: Self) -> Self::Output {
     match (self, rhs) {
       (t1, t2) if t1 == t2 => t1,
-      (Type::Sum(s1), Type::Sum(s2)) => Type::Sum(s1.union(&s2).cloned().collect::<HashSet<_>>()),
+      (Type::Sum(s1), Type::Sum(s2)) => {
+        Type::Sum(s1.union(&s2).cloned().collect::<HashSet<_>>())
+      },
       (Type::Sum(mut s), t) | (t, Type::Sum(mut s)) => {
         s.insert(t);
         Type::Sum(s)
-      }
+      },
       (t1, t2) => {
         let mut hs = HashSet::new();
         hs.insert(t1);
         hs.insert(t2);
         Type::Sum(hs)
-      }
+      },
     }
   }
 }
@@ -120,16 +122,16 @@ impl std::ops::Mul for Type {
       (Type::Product(mut v1), Type::Product(mut v2)) => {
         v1.append(&mut v2);
         Type::Product(v1)
-      }
+      },
       (Type::Product(mut s), t) => {
         s.push(t);
         Type::Product(s)
-      }
+      },
       (t, Type::Product(mut s)) => {
         let mut v = vec![t];
         v.append(&mut s);
         Type::Product(v)
-      }
+      },
       (t1, t2) => Type::Product(vec![t1, t2]),
     }
   }
@@ -188,7 +190,7 @@ impl Type {
           .into_iter()
           .fold(false, |accum, x| accum || x.contains_type_var(tv))
           || return_type.contains_type_var(tv)
-      }
+      },
       Type::Type => false,
       Type::Ambiguous => false,
       Type::Primitive(_) => false,
@@ -197,19 +199,21 @@ impl Type {
 
   pub fn substitute(&mut self, tv: TypeVariable, type_: &Type) {
     match self {
-      Type::Ambiguous => {}
+      Type::Ambiguous => {},
       Type::TypeVariable(t) => {
         if *t == tv {
           *self = type_.clone();
         }
-      }
-      Type::Primitive(_) => {}
+      },
+      Type::Primitive(_) => {},
       Type::Struct { member_types, .. } => {
         member_types
           .iter_mut()
           .for_each(|t| t.substitute(tv, type_));
-      }
-      Type::Product(items) => items.iter_mut().for_each(|i| i.substitute(tv, type_)),
+      },
+      Type::Product(items) => {
+        items.iter_mut().for_each(|i| i.substitute(tv, type_))
+      },
       Type::Sum(hash_set) => {
         *self = Type::Sum(
           hash_set
@@ -221,15 +225,15 @@ impl Type {
             })
             .collect::<HashSet<_>>(),
         );
-      }
+      },
       Type::Function {
         param_types,
         return_type,
       } => {
         param_types.iter_mut().for_each(|t| t.substitute(tv, type_));
         return_type.substitute(tv, type_);
-      }
-      Type::Type => {}
+      },
+      Type::Type => {},
     }
   }
 }
@@ -246,7 +250,7 @@ impl PartialEq for Type {
     match (self, other) {
       (t::Ambiguous, t::Ambiguous) => {
         panic!("Tried to compare ambiguous types")
-      }
+      },
       (t::Type, t::Type) => true,
       (t::Primitive(p1), t::Primitive(p2)) => p1 == p2,
       (
@@ -277,7 +281,8 @@ impl PartialEq for Type {
   }
 }
 
-impl Eq for Type {}
+impl Eq for Type {
+}
 
 impl std::hash::Hash for Type {
   fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -289,29 +294,29 @@ impl std::hash::Hash for Type {
       } => {
         member_names.hash(state);
         member_types.hash(state);
-      }
+      },
       Type::Function {
         param_types,
         return_type,
       } => {
         param_types.hash(state);
         return_type.hash(state);
-      }
+      },
       Type::Type => "type".hash(state),
       Type::Ambiguous => {
         panic!("Tried to hash ambiguous type")
-      }
+      },
       Type::Sum(_) => todo!(),
       Type::TypeVariable(id) => {
         "poly".hash(state);
         id.hash(state);
-      }
+      },
       Type::Product(items) => {
         "tuple".hash(state);
         for item in items {
           item.hash(state);
         }
-      }
+      },
     }
   }
 }
@@ -340,7 +345,7 @@ impl std::fmt::Display for Type {
           .join(",\n");
         let fields = indent(fields);
         write!(f, "struct {{\n{fields}\n}}")
-      }
+      },
       Type::Type => write!(f, "type"),
       Type::Function {
         param_types,
@@ -354,7 +359,7 @@ impl std::fmt::Display for Type {
         [t] => write!(f, "{t} -> {return_type}"),
         _ => {
           write!(f, "{} -> {return_type}", Type::Product(param_types.clone()))
-        }
+        },
       },
       Type::TypeVariable(id) => write!(f, "'{id}"),
       Type::Product(items) => write!(
@@ -376,7 +381,13 @@ impl std::fmt::Display for Type {
             .collect::<Vec<_>>()
             .join(" + ")
         )
-      }
+      },
     }
   }
+}
+
+#[derive(Debug, Clone)]
+pub struct TypeSea {
+  types: Vec<Type>,
+  type_var: usize,
 }

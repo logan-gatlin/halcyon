@@ -29,7 +29,7 @@ pub fn type_inference(
       } else {
         Type::Primitive(Primitive::nothing)
       }
-    }
+    },
     h::Declaration {
       assignee,
       is_type: false,
@@ -40,10 +40,22 @@ pub fn type_inference(
       if is_recursive {
         let tv = fresh_type_var();
         environment.insert_type(assignee, tv.clone());
-        let t = type_inference(nodes, value, environment, fresh_type_var, constraints)?;
+        let t = type_inference(
+          nodes,
+          value,
+          environment,
+          fresh_type_var,
+          constraints,
+        )?;
         constraints.push(TypeConstraint(t, tv, nodes[value].span));
       } else {
-        let t = type_inference(nodes, value, environment, fresh_type_var, constraints)?;
+        let t = type_inference(
+          nodes,
+          value,
+          environment,
+          fresh_type_var,
+          constraints,
+        )?;
         environment.insert_type(assignee, t);
       }
 
@@ -52,7 +64,7 @@ pub fn type_inference(
       } else {
         Type::Primitive(Primitive::nothing)
       }
-    }
+    },
     h::Immediate(c) => Type::Primitive(match c {
       ConstValue::Nothing => Primitive::nothing,
       ConstValue::Integer(_) => Primitive::integer,
@@ -71,7 +83,9 @@ pub fn type_inference(
     h::Tuple(items) => Type::Product(
       items
         .into_iter()
-        .map(|i| type_inference(nodes, i, environment, fresh_type_var, constraints))
+        .map(|i| {
+          type_inference(nodes, i, environment, fresh_type_var, constraints)
+        })
         .try_collect()?,
     ),
     h::StructDef { .. } => todo!(),
@@ -83,50 +97,104 @@ pub fn type_inference(
       member_names: field_names,
       member_types: field_values
         .into_iter()
-        .map(|v| type_inference(nodes, v, environment, fresh_type_var, constraints))
+        .map(|v| {
+          type_inference(nodes, v, environment, fresh_type_var, constraints)
+        })
         .try_collect()?,
     },
     h::Field { of, .. } => {
       type_inference(nodes, of, environment, fresh_type_var, constraints)?;
       fresh_type_var()
-    }
+    },
     h::Binary { op, left, right } => {
       let tv = fresh_type_var();
-      let left_t = type_inference(nodes, left, environment, fresh_type_var, constraints)?;
-      let right_t = type_inference(nodes, right, environment, fresh_type_var, constraints)?;
+      let left_t =
+        type_inference(nodes, left, environment, fresh_type_var, constraints)?;
+      let right_t =
+        type_inference(nodes, right, environment, fresh_type_var, constraints)?;
       constraints.push(TypeConstraint(left_t.clone(), right_t.clone(), span));
       use BinaryOp::*;
       match op {
         Star | Slash | Percent | Plus | Minus => {
-          constraints.push(TypeConstraint(left_t.clone(), tv.clone(), span));
-          constraints.push(TypeConstraint(right_t.clone(), tv.clone(), span));
-        }
-        And | Nand | Or | Xor | Xnor | DoubleEqual | Less | LessEqual | Greater | GreaterEqual
-        | BangEqual => {
           constraints.push(TypeConstraint(
+            Primitive::integer.into(),
+            left_t.clone(),
+            nodes[left].span,
+          ));
+          constraints.push(TypeConstraint(
+            Primitive::integer.into(),
+            right_t.clone(),
+            nodes[right].span,
+          ));
+          constraints.push(TypeConstraint(
+            Primitive::integer.into(),
             tv.clone(),
-            Type::Primitive(Primitive::boolean),
             span,
           ));
-        }
+        },
+        And | Nand | Or | Xor | Xnor => {
+          constraints.push(TypeConstraint(
+            Type::Primitive(Primitive::boolean),
+            left_t.clone(),
+            nodes[left].span,
+          ));
+          constraints.push(TypeConstraint(
+            Type::Primitive(Primitive::boolean),
+            right_t.clone(),
+            nodes[right].span,
+          ));
+          constraints.push(TypeConstraint(
+            Type::Primitive(Primitive::boolean),
+            tv.clone(),
+            span,
+          ));
+        },
+
+        DoubleEqual | Less | LessEqual | Greater | GreaterEqual | BangEqual => {
+          constraints.push(TypeConstraint(
+            left_t.clone(),
+            tv.clone(),
+            nodes[left].span,
+          ));
+          constraints.push(TypeConstraint(
+            right_t.clone(),
+            tv.clone(),
+            nodes[right].span,
+          ));
+        },
         Arrow => {
-          constraints.push(TypeConstraint(Type::Type, left_t, span));
-          constraints.push(TypeConstraint(Type::Type, right_t, span));
-          constraints.push(TypeConstraint(tv.clone(), Type::Type, span));
-        }
+          constraints.push(TypeConstraint(
+            Type::Type,
+            left_t,
+            nodes[left].span,
+          ));
+          constraints.push(TypeConstraint(
+            Type::Type,
+            right_t,
+            nodes[right].span,
+          ));
+          constraints.push(TypeConstraint(Type::Type, tv.clone(), span));
+        },
         _ => todo!(),
       }
       tv
-    }
+    },
     h::Unary { op, child } => {
-      let child_t = type_inference(nodes, child, environment, fresh_type_var, constraints)?;
+      let child_t =
+        type_inference(nodes, child, environment, fresh_type_var, constraints)?;
       use UnaryOp::*;
-      match op {
-        Ampersand => Type::Ambiguous,
-        Tilda => Type::Primitive(Primitive::nothing),
-        Minus | Not => child_t,
-      }
-    }
+      let expect_t = match op {
+        Minus => Primitive::integer.promote(),
+        MinusDot => Primitive::real.promote(),
+        Not => Primitive::boolean.promote(),
+      };
+      constraints.push(TypeConstraint(
+        expect_t.clone(),
+        child_t,
+        nodes[child].span,
+      ));
+      expect_t
+    },
     h::FunctionDef {
       parameter_names,
       parameter_types,
@@ -148,26 +216,36 @@ pub fn type_inference(
         .for_each(|(n, t)| {
           environment.insert_type(n, t);
         });
-      let return_type = type_inference(nodes, body, environment, fresh_type_var, constraints)?;
+      let return_type =
+        type_inference(nodes, body, environment, fresh_type_var, constraints)?;
       Type::Function {
         param_types: parameter_types,
         return_type: return_type.into(),
       }
-    }
+    },
     h::FunctionCall {
       callee, arguments, ..
     } => {
       let tv = fresh_type_var();
-      let callee_t = type_inference(nodes, callee, environment, fresh_type_var, constraints)?;
+      let callee_t = type_inference(
+        nodes,
+        callee,
+        environment,
+        fresh_type_var,
+        constraints,
+      )?;
       let param_types: Vec<_> = if arguments.len() == 1
-        && let HlIrKind::Immediate(ConstValue::Nothing) = nodes[arguments[0]].kind
+        && let HlIrKind::Immediate(ConstValue::Nothing) =
+          nodes[arguments[0]].kind
       {
         nodes[arguments[0]].type_ = Type::Primitive(Primitive::nothing);
         vec![]
       } else {
         arguments
           .into_iter()
-          .map(|a| type_inference(nodes, a, environment, fresh_type_var, constraints))
+          .map(|a| {
+            type_inference(nodes, a, environment, fresh_type_var, constraints)
+          })
           .try_collect()?
       };
       constraints.push(TypeConstraint(
@@ -179,15 +257,22 @@ pub fn type_inference(
         span,
       ));
       tv
-    }
+    },
     h::If {
       predicate,
       then,
       else_,
     } => {
       let tv = fresh_type_var();
-      let pred_t = type_inference(nodes, predicate, environment, fresh_type_var, constraints)?;
-      let then_t = type_inference(nodes, then, environment, fresh_type_var, constraints)?;
+      let pred_t = type_inference(
+        nodes,
+        predicate,
+        environment,
+        fresh_type_var,
+        constraints,
+      )?;
+      let then_t =
+        type_inference(nodes, then, environment, fresh_type_var, constraints)?;
       let else_t = if let Some(else_) = else_ {
         type_inference(nodes, else_, environment, fresh_type_var, constraints)?
       } else {
@@ -211,7 +296,7 @@ pub fn type_inference(
         ),
       ]);
       tv
-    }
+    },
   };
   nodes[ptr].type_ = type_.clone();
   Ok(type_)

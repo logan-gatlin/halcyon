@@ -53,10 +53,14 @@ op! {
   BinaryOp;
   Dot, 17, LEFT_ASSOC;
   Star, 15, LEFT_ASSOC;
+  StarDot, 15, LEFT_ASSOC;
   Slash, 15, LEFT_ASSOC;
+  SlashDot, 15, LEFT_ASSOC;
   Percent, 15, LEFT_ASSOC;
   Plus, 14, LEFT_ASSOC;
+  PlusDot, 14, LEFT_ASSOC;
   Minus, 14, LEFT_ASSOC;
+  MinusDot, 14, LEFT_ASSOC;
   Xor, 10, LEFT_ASSOC;
   Xnor, 10, LEFT_ASSOC;
   Or, 9, LEFT_ASSOC;
@@ -78,9 +82,8 @@ op! {
 
 op! {
   UnaryOp;
-  Ampersand, 15, RIGHT_ASSOC;
-  Tilda, 15, RIGHT_ASSOC;
   Minus, 15, LEFT_ASSOC;
+  MinusDot, 15, LEFT_ASSOC;
   Not, 15, LEFT_ASSOC;
 }
 
@@ -95,26 +98,20 @@ impl BinaryOp {
     Ok(match (self, t1, t2) {
       // Math
       (Plus, p(integer), p(integer)) => p(integer),
-      (Plus, p(real), p(real)) => p(real),
+      (PlusDot, p(real), p(real)) => p(real),
       (Minus, p(integer), p(integer)) => p(integer),
-      (Minus, p(real), p(real)) => p(real),
+      (MinusDot, p(real), p(real)) => p(real),
       (Star, p(integer), p(integer)) => p(integer),
-      (Star, p(real), p(real)) => p(real),
+      (StarDot, p(real), p(real)) => p(real),
       (Slash, p(integer), p(integer)) => p(integer),
-      (Slash, p(real), p(real)) => p(real),
+      (SlashDot, p(real), p(real)) => p(real),
       (Percent, p(integer), p(integer)) => p(integer),
       // Logic
-      (And, p(integer), p(integer)) => p(integer),
       (And, p(boolean), p(boolean)) => p(boolean),
-      (Or, p(integer), p(integer)) => p(integer),
       (Or, p(boolean), p(boolean)) => p(boolean),
-      (Xor, p(integer), p(integer)) => p(integer),
       (Xor, p(boolean), p(boolean)) => p(boolean),
-      (Xnor, p(integer), p(integer)) => p(integer),
       (Xnor, p(boolean), p(boolean)) => p(boolean),
-      (Nand, p(integer), p(integer)) => p(integer),
       (Nand, p(boolean), p(boolean)) => p(boolean),
-      (Nor, p(integer), p(integer)) => p(integer),
       (Nor, p(boolean), p(boolean)) => p(boolean),
       // Equivalence
       (DoubleEqual, p(integer), p(integer)) => p(boolean),
@@ -164,11 +161,11 @@ impl UnaryOp {
     use Primitive::*;
     use Type::Primitive as p;
     use UnaryOp::*;
-    let e = Err(lint_nospan(TypeLint::UnaryOpUndefined)).context(format!("{t1}"));
+    let e =
+      Err(lint_nospan(TypeLint::UnaryOpUndefined)).context(format!("{t1}"));
     Ok(match (self, t1) {
       (Minus, p(integer)) => p(integer),
-      (Minus, p(real)) => p(real),
-      (Not, p(integer)) => p(integer),
+      (MinusDot, p(real)) => p(real),
       (Not, p(boolean)) => p(boolean),
       _ => return e,
     })

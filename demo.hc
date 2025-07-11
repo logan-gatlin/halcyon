@@ -1,1 +1,1 @@
-fn #export("foo") a => a + 1
+fn a b => a + b
