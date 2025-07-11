@@ -1,5 +1,5 @@
+mod externals;
 mod lower;
-mod passes;
 
 use std::collections::HashMap;
 use wasm_encoder::*;
@@ -148,8 +148,7 @@ impl ModuleState {
       })
       .clone();
     let start_func = self.import_section.len();
-    let no_funcs =
-      (self.import_section.len() + self.function_section.len()) as u32;
+    let no_funcs = (self.import_section.len() + self.function_section.len()) as u32;
     Module::new()
       // Type section
       .section(&self.make_type_section())
@@ -201,16 +200,14 @@ impl ModuleState {
     for t in &self.type_section {
       match t {
         RegisteredType::Function(func_type) => ts.ty().func_type(func_type),
-        RegisteredType::Array(storage_type) => {
-          ts.ty().array(storage_type, true)
-        },
+        RegisteredType::Array(storage_type) => ts.ty().array(storage_type, true),
         RegisteredType::Struct(storage_types) => {
           ts.ty()
             .struct_(storage_types.into_iter().map(|t| FieldType {
               element_type: *t,
               mutable: true,
             }))
-        },
+        }
       }
     }
     ts
@@ -252,23 +249,17 @@ impl ModuleState {
           t.clone(),
           match p {
             Primitive::nothing => RegisteredType::Struct(vec![]),
-            Primitive::integer => {
-              RegisteredType::Struct(vec![StorageType::Val(ValType::I64)])
-            },
-            Primitive::real => {
-              RegisteredType::Struct(vec![StorageType::Val(ValType::F64)])
-            },
+            Primitive::integer => RegisteredType::Struct(vec![StorageType::Val(ValType::I64)]),
+            Primitive::real => RegisteredType::Struct(vec![StorageType::Val(ValType::F64)]),
             Primitive::boolean => return StorageType::I8,
             Primitive::string => RegisteredType::Array(StorageType::I8),
-            Primitive::glyph => {
-              RegisteredType::Struct(vec![StorageType::Val(ValType::I32)])
-            },
+            Primitive::glyph => RegisteredType::Struct(vec![StorageType::Val(ValType::I32)]),
           },
         );
-      },
-      Type::Struct { member_types, .. } => RegisteredType::Struct(
-        member_types.into_iter().map(|t| self.get_type(t)).collect(),
-      ),
+      }
+      Type::Struct { member_types, .. } => {
+        RegisteredType::Struct(member_types.into_iter().map(|t| self.get_type(t)).collect())
+      }
       Type::Function {
         param_types,
         return_type,
@@ -280,9 +271,9 @@ impl ModuleState {
           .collect::<Vec<_>>(),
         [storage_to_valtype(self.get_type(return_type))],
       )),
-      Type::Product(items) => RegisteredType::Struct(
-        items.into_iter().map(|t| self.get_type(t)).collect(),
-      ),
+      Type::Product(items) => {
+        RegisteredType::Struct(items.into_iter().map(|t| self.get_type(t)).collect())
+      }
       Type::Sum(_) => todo!(),
       Type::Type => todo!(),
     };
