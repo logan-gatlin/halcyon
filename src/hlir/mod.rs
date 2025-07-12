@@ -106,13 +106,6 @@ pub struct HlIrNode {
 }
 
 #[derive(Debug, Clone)]
-pub struct ForeignFunction {
-  pub major: String,
-  pub minor: String,
-  pub type_: Type,
-}
-
-#[derive(Debug, Clone)]
 pub struct HlIrModule {
   pub nodes: Vec<HlIrNode>,
 }

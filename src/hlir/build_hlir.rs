@@ -301,7 +301,7 @@ impl Canonizer {
       HlIrNode {
         kind,
         span,
-        type_: Type::Ambiguous,
+        type_: Type::Any,
       },
     );
     Ok(node)

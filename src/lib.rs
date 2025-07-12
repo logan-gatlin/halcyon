@@ -1,7 +1,7 @@
 #![feature(generic_const_exprs, iterator_try_collect, box_patterns)]
 #![allow(incomplete_features)]
 
-mod compile;
+//mod compile;
 mod execute;
 mod hlir;
 mod lint;
@@ -53,6 +53,7 @@ pub fn _compile(input: &str) -> Result<Vec<u8>> {
   type_solve(&mut hlir)?;
   println!("# IR");
   println!("{hlir}");
+  /*
   let wasm = compile::compile(hlir);
   println!("# WAT");
   let wat = wasmprinter::print_bytes(&wasm).unwrap();
@@ -66,6 +67,8 @@ pub fn _compile(input: &str) -> Result<Vec<u8>> {
     eprintln!("{e}");
   }
   Ok(wasm)
+  */
+  todo!()
 }
 
 pub fn compile(input: &str) {

@@ -27,7 +27,7 @@ pub fn type_inference(
       if let Some(in_) = in_ {
         type_inference(nodes, in_, environment, fresh_type_var, constraints)?
       } else {
-        Type::Primitive(Primitive::nothing)
+        Type::Unit
       }
     }
     h::Declaration {
@@ -50,23 +50,21 @@ pub fn type_inference(
       if let Some(in_) = in_ {
         type_inference(nodes, in_, environment, fresh_type_var, constraints)?
       } else {
-        Type::Primitive(Primitive::nothing)
+        Type::Unit
       }
     }
-    h::Immediate(c) => Type::Primitive(match c {
-      ConstValue::Nothing => Primitive::nothing,
-      ConstValue::Integer(_) => Primitive::integer,
-      ConstValue::Real(_) => Primitive::real,
-      ConstValue::Boolean(_) => Primitive::boolean,
-      ConstValue::String { .. } => Primitive::string,
-      ConstValue::Glyph(_) => Primitive::glyph,
+    h::Immediate(c) => match c {
+      ConstValue::Nothing => Type::Unit,
+      ConstValue::Integer(_) => Type::Integer,
+      ConstValue::Real(_) => Type::Real,
+      ConstValue::Boolean(_) => Type::Boolean,
+      ConstValue::String { .. } => Type::String,
+      ConstValue::Glyph(_) => Type::Glyph,
       _ => unreachable!(),
-    }),
-    h::Block(items) => items
-      .into_iter()
-      .try_fold(Type::Primitive(Primitive::nothing), |_, i| {
-        type_inference(nodes, i, environment, fresh_type_var, constraints)
-      })?,
+    },
+    h::Block(items) => items.into_iter().try_fold(Type::Unit, |_, i| {
+      type_inference(nodes, i, environment, fresh_type_var, constraints)
+    })?,
     h::Identifier(i) => environment.get_type(&i).clone(),
     h::Tuple(items) => Type::Product(
       items
@@ -103,11 +101,7 @@ pub fn type_inference(
         }
         And | Nand | Or | Xor | Xnor | DoubleEqual | Less | LessEqual | Greater | GreaterEqual
         | BangEqual => {
-          constraints.push(TypeConstraint(
-            tv.clone(),
-            Type::Primitive(Primitive::boolean),
-            span,
-          ));
+          constraints.push(TypeConstraint(tv.clone(), Type::Boolean, span));
         }
         Arrow => {
           constraints.push(TypeConstraint(Type::Type, left_t, span));
@@ -122,8 +116,8 @@ pub fn type_inference(
       let child_t = type_inference(nodes, child, environment, fresh_type_var, constraints)?;
       use UnaryOp::*;
       match op {
-        Ampersand => Type::Ambiguous,
-        Tilda => Type::Primitive(Primitive::nothing),
+        Ampersand => Type::Any,
+        Tilda => Type::Unit,
         Minus | Not => child_t,
       }
     }
@@ -162,7 +156,7 @@ pub fn type_inference(
       let param_types: Vec<_> = if arguments.len() == 1
         && let HlIrKind::Immediate(ConstValue::Nothing) = nodes[arguments[0]].kind
       {
-        nodes[arguments[0]].type_ = Type::Primitive(Primitive::nothing);
+        nodes[arguments[0]].type_ = Type::Unit;
         vec![]
       } else {
         arguments
@@ -191,14 +185,10 @@ pub fn type_inference(
       let else_t = if let Some(else_) = else_ {
         type_inference(nodes, else_, environment, fresh_type_var, constraints)?
       } else {
-        Type::Primitive(Primitive::nothing)
+        Type::Unit
       };
       constraints.extend_from_slice(&[
-        TypeConstraint(
-          pred_t,
-          Type::Primitive(Primitive::boolean),
-          nodes[predicate].span,
-        ),
+        TypeConstraint(pred_t, Type::Boolean, nodes[predicate].span),
         TypeConstraint(then_t, tv.clone(), nodes[then].span),
         TypeConstraint(
           else_t,

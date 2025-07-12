@@ -1,72 +1,27 @@
 use std::collections::HashSet;
 
-macro_rules! count {
-    () => (0usize);
-    ($x:tt $($xs:tt)* ) => (1usize + count!($($xs)*));
-}
-
-macro_rules! primitives {
-  ( $($i:ident),* ) => {
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-    #[allow(non_camel_case_types, dead_code)]
-    pub enum Primitive {
-      $($i,)*
-    }
-
-    impl Primitive {
-      pub const ALL: [Primitive; count!($($i)*,) - 1] = [$(Primitive::$i),*];
-
-      pub fn from_string(string: &str) -> Option<Self> {
-        match string {
-          $(stringify!{$i} => Some(Self::$i),)*
-          _ => None,
-        }
-      }
-
-      pub fn mangle(&self) -> crate::hlir::Mangle {
-        match self {
-          $(
-          Primitive::$i => crate::hlir::mangle_builtin(stringify!{$i}),
-          )*
-        }
-      }
-    }
-    impl std::fmt::Display for Primitive {
-      #[allow(unreachable_patterns)]
-      fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-          Primitive::nothing => write!(f, "()"),
-          $(Primitive::$i => write!(f, stringify!{$i}),)*
-        }
-      }
-    }
-  };
-}
-
-primitives! {
-  nothing,
-  integer,
-  real,
-  boolean,
-  string, glyph
-}
-
-impl Primitive {
-  pub fn promote(self) -> Type {
-    Type::Primitive(self)
-  }
-}
-
 pub type TypeVariable = usize;
 
 #[derive(Debug, Clone)]
 pub enum Type {
   /// Indeterminate type
-  Ambiguous,
+  Any,
+  /// The empty type ()
+  Unit,
+  /// Signed 64 bit integer
+  Integer,
+  /// IEEE 64 bit floating point
+  Real,
+  /// true or false
+  Boolean,
+  /// Fat pointer to byte array of UTF-8
+  String,
+  /// UTF-8 codepoint 32 bit
+  Glyph,
+  /// Higher order type
+  Type,
   // Type variable
   TypeVariable(TypeVariable),
-  /// A primitive type
-  Primitive(Primitive),
   /// Record type
   Struct {
     member_names: Vec<String>,
@@ -81,14 +36,6 @@ pub enum Type {
     param_types: Vec<Type>,
     return_type: Box<Type>,
   },
-  /// Higher order type
-  Type,
-}
-
-impl From<Primitive> for Type {
-  fn from(value: Primitive) -> Self {
-    Type::Primitive(value)
-  }
 }
 
 impl std::ops::Add for Type {
@@ -139,7 +86,14 @@ impl Type {
   pub fn main_fn() -> Type {
     Type::Function {
       param_types: vec![],
-      return_type: Type::Primitive(Primitive::nothing).into(),
+      return_type: Type::Unit.into(),
+    }
+  }
+
+  pub fn is_subtype(&self, other: &Type) -> bool {
+    match self.partial_cmp(other) {
+      Some(std::cmp::Ordering::Greater) | Some(std::cmp::Ordering::Equal) => true,
+      _ => false,
     }
   }
 
@@ -161,11 +115,7 @@ impl Type {
   }
 
   pub fn ambiguous(&self) -> bool {
-    if let Self::Ambiguous = self {
-      true
-    } else {
-      false
-    }
+    if let Self::Any = self { true } else { false }
   }
 
   pub fn contains_type_var(&self, tv: TypeVariable) -> bool {
@@ -189,21 +139,17 @@ impl Type {
           .fold(false, |accum, x| accum || x.contains_type_var(tv))
           || return_type.contains_type_var(tv)
       }
-      Type::Type => false,
-      Type::Ambiguous => false,
-      Type::Primitive(_) => false,
+      _ => false,
     }
   }
 
   pub fn substitute(&mut self, tv: TypeVariable, type_: &Type) {
     match self {
-      Type::Ambiguous => {}
       Type::TypeVariable(t) => {
         if *t == tv {
           *self = type_.clone();
         }
       }
-      Type::Primitive(_) => {}
       Type::Struct { member_types, .. } => {
         member_types
           .iter_mut()
@@ -229,14 +175,27 @@ impl Type {
         param_types.iter_mut().for_each(|t| t.substitute(tv, type_));
         return_type.substitute(tv, type_);
       }
-      Type::Type => {}
+      _ => {}
     }
   }
 }
 
 impl Default for Type {
   fn default() -> Self {
-    Self::Ambiguous
+    Self::Any
+  }
+}
+
+impl PartialOrd for Type {
+  fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    use crate::hlir::Type::*;
+    use std::cmp::Ordering::*;
+    Some(match (self, other) {
+      (Any, Any) => Equal,
+      (Any, _) => Greater,
+      (t1, t2) if t1 == t2 => Equal,
+      _ => return None,
+    })
   }
 }
 
@@ -244,11 +203,16 @@ impl PartialEq for Type {
   fn eq(&self, other: &Self) -> bool {
     use Type as t;
     match (self, other) {
-      (t::Ambiguous, t::Ambiguous) => {
+      (t::Any, t::Any) => {
         panic!("Tried to compare ambiguous types")
       }
-      (t::Type, t::Type) => true,
-      (t::Primitive(p1), t::Primitive(p2)) => p1 == p2,
+      (t::Unit, t::Unit)
+      | (t::Integer, t::Integer)
+      | (t::Real, t::Real)
+      | (t::Boolean, t::Boolean)
+      | (t::Glyph, t::Glyph)
+      | (t::String, t::String)
+      | (t::Type, t::Type) => true,
       (
         t::Struct {
           member_names: names1,
@@ -282,7 +246,6 @@ impl Eq for Type {}
 impl std::hash::Hash for Type {
   fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
     match self {
-      Type::Primitive(primitive) => primitive.hash(state),
       Type::Struct {
         member_names,
         member_types,
@@ -298,8 +261,8 @@ impl std::hash::Hash for Type {
         return_type.hash(state);
       }
       Type::Type => "type".hash(state),
-      Type::Ambiguous => {
-        panic!("Tried to hash ambiguous type")
+      Type::Any => {
+        "any".hash(state);
       }
       Type::Sum(_) => todo!(),
       Type::TypeVariable(id) => {
@@ -311,6 +274,9 @@ impl std::hash::Hash for Type {
         for item in items {
           item.hash(state);
         }
+      }
+      Type::Unit | Type::Integer | Type::Real | Type::Boolean | Type::String | Type::Glyph => {
+        format!("{self}").hash(state);
       }
     }
   }
@@ -326,8 +292,13 @@ fn indent(s: String) -> String {
 impl std::fmt::Display for Type {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
-      Type::Ambiguous => write!(f, "?"),
-      Type::Primitive(primitive) => write!(f, "{primitive}"),
+      Type::Any => write!(f, "?"),
+      Type::Unit => write!(f, "()"),
+      Type::Integer => write!(f, "integer"),
+      Type::Real => write!(f, "real"),
+      Type::Boolean => write!(f, "boolean"),
+      Type::String => write!(f, "string"),
+      Type::Glyph => write!(f, "glyph"),
       Type::Struct {
         member_names,
         member_types,
@@ -346,11 +317,7 @@ impl std::fmt::Display for Type {
         param_types,
         return_type,
       } => match param_types.as_slice() {
-        [] => write!(
-          f,
-          "{} -> {return_type}",
-          Type::Primitive(Primitive::nothing),
-        ),
+        [] => write!(f, "{} -> {return_type}", Type::Unit,),
         [t] => write!(f, "{t} -> {return_type}"),
         _ => {
           write!(f, "{} -> {return_type}", Type::Product(param_types.clone()))

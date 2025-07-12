@@ -112,7 +112,7 @@ pub fn parse_type(nodes: &HlIrModule, node: IrPtr, env: &Environment) -> Result<
         .context(format!("{}", Type::Type))
         .span(span);
     }
-    Immediate(ConstValue::Nothing) => Primitive::nothing.into(),
+    Immediate(ConstValue::Nothing) => Type::Unit,
     _ => return Err(lint_nospan(TypeLint::NotAType)).span(span),
   })
 }

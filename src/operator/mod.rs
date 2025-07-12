@@ -1,5 +1,5 @@
 //pub mod assembly;
-use crate::{hlir::*, lint::*, token::*};
+use crate::token::*;
 
 pub type Precedence = usize;
 
@@ -82,95 +82,4 @@ op! {
   Tilda, 15, RIGHT_ASSOC;
   Minus, 15, LEFT_ASSOC;
   Not, 15, LEFT_ASSOC;
-}
-
-impl BinaryOp {
-  pub fn with(&self, t1: &Type, t2: &Type) -> Result<Type> {
-    use BinaryOp::*;
-    use Primitive::*;
-    use Type::Primitive as p;
-    let e = Err(lint_nospan(TypeLint::BinaryOpUndefined))
-      .context(format!("{t1}"))
-      .context(format!("{t2}"));
-    Ok(match (self, t1, t2) {
-      // Math
-      (Plus, p(integer), p(integer)) => p(integer),
-      (Plus, p(real), p(real)) => p(real),
-      (Minus, p(integer), p(integer)) => p(integer),
-      (Minus, p(real), p(real)) => p(real),
-      (Star, p(integer), p(integer)) => p(integer),
-      (Star, p(real), p(real)) => p(real),
-      (Slash, p(integer), p(integer)) => p(integer),
-      (Slash, p(real), p(real)) => p(real),
-      (Percent, p(integer), p(integer)) => p(integer),
-      // Logic
-      (And, p(integer), p(integer)) => p(integer),
-      (And, p(boolean), p(boolean)) => p(boolean),
-      (Or, p(integer), p(integer)) => p(integer),
-      (Or, p(boolean), p(boolean)) => p(boolean),
-      (Xor, p(integer), p(integer)) => p(integer),
-      (Xor, p(boolean), p(boolean)) => p(boolean),
-      (Xnor, p(integer), p(integer)) => p(integer),
-      (Xnor, p(boolean), p(boolean)) => p(boolean),
-      (Nand, p(integer), p(integer)) => p(integer),
-      (Nand, p(boolean), p(boolean)) => p(boolean),
-      (Nor, p(integer), p(integer)) => p(integer),
-      (Nor, p(boolean), p(boolean)) => p(boolean),
-      // Equivalence
-      (DoubleEqual, p(integer), p(integer)) => p(boolean),
-      (DoubleEqual, p(real), p(real)) => p(boolean),
-      (DoubleEqual, p(boolean), p(boolean)) => p(boolean),
-      (DoubleEqual, p(glyph), p(glyph)) => p(boolean),
-      (DoubleEqual, p(string), p(string)) => p(boolean),
-      (DoubleEqual, p(nothing), p(nothing)) => p(boolean),
-
-      (BangEqual, p(integer), p(integer)) => p(boolean),
-      (BangEqual, p(real), p(real)) => p(boolean),
-      (BangEqual, p(boolean), p(boolean)) => p(boolean),
-      (BangEqual, p(glyph), p(glyph)) => p(boolean),
-      (BangEqual, p(string), p(string)) => p(boolean),
-      (BangEqual, p(nothing), p(nothing)) => p(boolean),
-
-      (Less, p(integer), p(integer)) => p(boolean),
-      (Less, p(real), p(real)) => p(boolean),
-      (Less, p(boolean), p(boolean)) => p(boolean),
-      (Less, p(glyph), p(glyph)) => p(boolean),
-      (Less, p(string), p(string)) => p(boolean),
-
-      (LessEqual, p(integer), p(integer)) => p(boolean),
-      (LessEqual, p(real), p(real)) => p(boolean),
-      (LessEqual, p(boolean), p(boolean)) => p(boolean),
-      (LessEqual, p(glyph), p(glyph)) => p(boolean),
-      (LessEqual, p(string), p(string)) => p(boolean),
-
-      (Greater, p(integer), p(integer)) => p(boolean),
-      (Greater, p(real), p(real)) => p(boolean),
-      (Greater, p(boolean), p(boolean)) => p(boolean),
-      (Greater, p(glyph), p(glyph)) => p(boolean),
-      (Greater, p(string), p(string)) => p(boolean),
-
-      (GreaterEqual, p(integer), p(integer)) => p(boolean),
-      (GreaterEqual, p(real), p(real)) => p(boolean),
-      (GreaterEqual, p(boolean), p(boolean)) => p(boolean),
-      (GreaterEqual, p(glyph), p(glyph)) => p(boolean),
-      (GreaterEqual, p(string), p(string)) => p(boolean),
-      _ => return e,
-    })
-  }
-}
-
-impl UnaryOp {
-  pub fn with(&self, t1: Type) -> Result<Type> {
-    use Primitive::*;
-    use Type::Primitive as p;
-    use UnaryOp::*;
-    let e = Err(lint_nospan(TypeLint::UnaryOpUndefined)).context(format!("{t1}"));
-    Ok(match (self, t1) {
-      (Minus, p(integer)) => p(integer),
-      (Minus, p(real)) => p(real),
-      (Not, p(integer)) => p(integer),
-      (Not, p(boolean)) => p(boolean),
-      _ => return e,
-    })
-  }
 }

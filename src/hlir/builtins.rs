@@ -49,15 +49,14 @@ impl Builtin {
   }
 
   pub fn value(&self) -> ConstValue {
-    use Primitive::*;
     match self {
       Self::Type => ConstValue::Type(Type::Type),
-      Self::Nothing => ConstValue::Type(nothing.promote()),
-      Self::Integer => ConstValue::Type(integer.promote()),
-      Self::Real => ConstValue::Type(real.promote()),
-      Self::Boolean => ConstValue::Type(boolean.promote()),
-      Self::String => ConstValue::Type(string.promote()),
-      Self::Glyph => ConstValue::Type(glyph.promote()),
+      Self::Nothing => ConstValue::Type(Type::Unit),
+      Self::Integer => ConstValue::Type(Type::Integer),
+      Self::Real => ConstValue::Type(Type::Real),
+      Self::Boolean => ConstValue::Type(Type::Boolean),
+      Self::String => ConstValue::Type(Type::String),
+      Self::Glyph => ConstValue::Type(Type::Glyph),
     }
   }
 

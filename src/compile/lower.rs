@@ -125,95 +125,13 @@ pub fn lower(nodes: &mut HlIrModule, ptr: IrPtr, state: &mut ModuleState, f: u32
     h::Binary { op, left, right } => {
       lower(nodes, left, state, f);
       lower(nodes, right, state, f);
-      let f = state.func(f);
-      let left_t = &nodes[left].type_;
-      let right_t = &nodes[right].type_;
-      use BinaryOp::*;
-      use Primitive::*;
-      match (op, left_t, right_t) {
-        (op, Type::Primitive(p1), Type::Primitive(p2)) => match (op, p1, p2) {
-          // Arithmetic
-          (Plus, integer, integer) => f.instr(i::I64Add),
-          (Plus, real, real) => f.instr(i::F64Add),
-          (Minus, integer, integer) => f.instr(i::I64Sub),
-          (Minus, real, real) => f.instr(i::F64Sub),
-          (Star, integer, integer) => f.instr(i::I64Mul),
-          (Star, real, real) => f.instr(i::F64Mul),
-          (Slash, integer, integer) => f.instr(i::I64DivS),
-          (Slash, real, real) => f.instr(i::F64Div),
-          (Percent, integer, integer) => f.instr(i::I64RemS),
-          (And, integer, integer) => f.instr(i::I64And),
-          (And, boolean, boolean) => f.instr(i::I32And),
-          (Or, integer, integer) => f.instr(i::I64Or),
-          (Or, boolean, boolean) => f.instr(i::I32Or),
-          (Xor, integer, integer) => f.instr(i::I64Xor),
-          (Xor, boolean, boolean) => {
-            f.instr(i::I32Xor);
-            f.instr(i::I32Const(0b1));
-            f.instr(i::I32And);
-          }
-          // TODO other logical ops
-
-          // Comparisons
-          (DoubleEqual, integer, integer) => f.instr(i::I64Eq),
-          (DoubleEqual, real, real) => f.instr(i::F64Eq),
-          (DoubleEqual, glyph, glyph) | (DoubleEqual, boolean, boolean) => f.instr(i::I32Eq),
-          (DoubleEqual, nothing, nothing) => f.instr(i::I32Const(1)),
-
-          (BangEqual, integer, integer) => f.instr(i::I64Ne),
-          (BangEqual, real, real) => f.instr(i::F64Ne),
-          (BangEqual, glyph, glyph) | (BangEqual, boolean, boolean) => f.instr(i::I32Ne),
-          (BangEqual, nothing, nothing) => f.instr(i::I32Const(0)),
-
-          (Less, integer, integer) => f.instr(i::I64LtS),
-          (Less, real, real) => f.instr(i::F64Lt),
-          (Less, glyph, glyph) | (Less, boolean, boolean) => f.instr(i::I32LtU),
-
-          (LessEqual, integer, integer) => f.instr(i::I64LeS),
-          (LessEqual, real, real) => f.instr(i::F64Le),
-          (LessEqual, glyph, glyph) | (LessEqual, boolean, boolean) => f.instr(i::I32LeU),
-
-          (Greater, integer, integer) => f.instr(i::I64GtS),
-          (Greater, real, real) => f.instr(i::F64Gt),
-          (Greater, glyph, glyph) | (Greater, boolean, boolean) => f.instr(i::I32GtU),
-
-          (GreaterEqual, integer, integer) => f.instr(i::I64GeS),
-          (GreaterEqual, real, real) => f.instr(i::F64Ge),
-          (GreaterEqual, glyph, glyph) | (GreaterEqual, boolean, boolean) => f.instr(i::I32GeU),
-          // TODO string ops
-          _ => panic!(),
-        },
-        _ => panic!(),
-      }
+      todo!()
     }
     h::Unary { op, child } => {
       lower(nodes, child, state, f);
       let child_t = &nodes[child].type_;
       let f = state.func(f);
-      use Primitive::*;
-      use UnaryOp::*;
-      match (op, child_t) {
-        (op, Type::Primitive(p)) => match (op, p) {
-          (Minus, integer) => {
-            f.instr(i::I64Const(-1));
-            f.instr(i::I64Mul);
-          }
-          (Minus, real) => {
-            f.instr(i::F64Const(Ieee64::from(-1.0)));
-            f.instr(i::F64Mul);
-          }
-          (Not, integer) => {
-            f.instr(i::I64Const(-1));
-            f.instr(i::I64Xor);
-          }
-          (Not, boolean) => {
-            f.instr(i::I32Const(1));
-            f.instr(i::I32Xor)
-          }
-          _ => panic!(),
-        },
-        _ => panic!(),
-      }
+      todo!()
     }
     h::If {
       predicate,
