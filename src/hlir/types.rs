@@ -1,5 +1,7 @@
 use std::collections::HashSet;
 
+use crate::hlir::mangle_builtin;
+
 pub type TypeVariable = usize;
 
 #[derive(Debug, Clone)]
@@ -90,6 +92,29 @@ impl Type {
       param_types: vec![],
       return_type: Type::Unit.into(),
     }
+  }
+
+  pub fn primitives() -> Vec<Type> {
+    vec![
+      Self::Unit,
+      Self::Integer,
+      Self::Real,
+      Self::Boolean,
+      Self::String,
+      Self::Glyph,
+    ]
+  }
+
+  pub fn primitive_mangle(&self) -> Option<String> {
+    Some(mangle_builtin(match self {
+      Type::Unit => "unit",
+      Type::Integer => "integer",
+      Type::Real => "real",
+      Type::Boolean => "boolean",
+      Type::String => "string",
+      Type::Glyph => "glyph",
+      _ => return None,
+    }))
   }
 
   pub fn is_subtype(&self, other: &Type) -> bool {

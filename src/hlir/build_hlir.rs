@@ -93,9 +93,10 @@ impl Canonizer {
       salt: 0,
       _name_to_symbol: HashMap::new(),
     };
-    for builtin in Builtin::ALL {
-      this.define_builtin(builtin.to_string())
-    }
+    Type::primitives()
+      .iter()
+      .flat_map(Type::primitive_mangle)
+      .map(|m| this.define_builtin(m));
     this
   }
 

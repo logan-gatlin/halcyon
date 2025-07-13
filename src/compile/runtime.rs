@@ -2,7 +2,38 @@ use super::*;
 
 use Instruction as i;
 
-fn unary_op(state: &mut ModuleState, type_: Type, op: Instruction<'static>) {
+fn unary_op(
+  state: &mut ModuleState,
+  type_: Type,
+  instructions: Vec<Instruction<'static>>,
+) -> u32 {
+  let f = state.make_function(
+    &Type::Function {
+      param_types: vec![type_.clone()],
+      return_type: type_.clone().into(),
+    },
+    ["a".into()],
+  );
+  let tid = state.get_type_id(&type_);
+  instructions
+    .into_iter()
+    .for_each(|i| state.func(f).instr(i));
+  f
+}
+
+pub fn make_unary_operators(state: &mut ModuleState) -> HashMap<UnaryOp, u32> {
+  use UnaryOp::*;
+  let mut op_map = HashMap::new();
+  [(
+    Minus,
+    Type::Integer,
+    vec![i::I64Const(0), i::LocalGet(0), i::I64Sub],
+  )]
+  .into_iter()
+  .for_each(|(op, t, i)| {
+    op_map.insert(op, unary_op(state, t, i));
+  });
+  op_map
 }
 
 fn binary_op(

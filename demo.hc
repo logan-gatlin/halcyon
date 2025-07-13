@@ -1,2 +1,8 @@
-let a = fn a => a + 1 in
-a 1
+let identity =
+	fn a => (a, a, a)
+in (
+	identity 1;
+	identity true;
+	identity "asdf asdf asdf";
+	identity 'a'
+)

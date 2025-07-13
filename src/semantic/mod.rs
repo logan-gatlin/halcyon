@@ -20,12 +20,14 @@ impl Environment {
     let mut let_bound_map = HashMap::new();
     let mut type_map = HashMap::new();
     let mut value_map = HashMap::new();
-    for bt in Builtin::ALL {
-      let mangle = bt.to_mangle();
-      let_bound_map.insert(mangle.clone(), false);
-      type_map.insert(bt.to_mangle(), bt.type_());
-      value_map.insert(bt.to_mangle(), bt.value());
-    }
+    Type::primitives()
+      .into_iter()
+      .map(|p| (p.primitive_mangle().unwrap(), p))
+      .for_each(|(mangle, prim)| {
+        let_bound_map.insert(mangle.clone(), false);
+        type_map.insert(mangle.clone(), Type::Type);
+        value_map.insert(mangle.clone(), ConstValue::Type(prim));
+      });
     Self {
       let_bound_map,
       type_map,
