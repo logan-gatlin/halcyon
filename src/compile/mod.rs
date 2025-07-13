@@ -1,17 +1,21 @@
 mod externals;
 mod lower;
+mod runtime;
 
 use std::collections::HashMap;
 use wasm_encoder::*;
 
-use crate::hlir::*;
+use crate::{hlir::*, operator::*};
+
+use runtime::*;
 
 pub fn compile(mut hlir: HlIrModule) -> Vec<u8> {
   let mut state = ModuleState::new();
+  state.binary_operator_map = make_binary_operators(&mut state);
   let main = state.make_main_function();
   lower::lower(&mut hlir, 0, &mut state, main);
   state.func(main).instr(Instruction::Drop);
-  state.encode()
+  state.encode(main)
 }
 
 #[derive(Debug, Clone)]
@@ -80,7 +84,8 @@ struct ModuleState {
   type_section: Vec<RegisteredType>,
   function_section: Vec<u32>,
   code_section: Vec<FunctionEncoder>,
-  import_section: Vec<ForeignFunction>,
+  import_section: Vec<()>,
+  binary_operator_map: HashMap<BinaryOp, u32>,
 }
 
 impl ModuleState {
@@ -91,7 +96,12 @@ impl ModuleState {
       function_section: vec![],
       code_section: vec![],
       import_section: vec![],
+      binary_operator_map: HashMap::new(),
     }
+  }
+
+  pub fn get_binary_operator(&self, op: BinaryOp) -> u32 {
+    self.binary_operator_map.get(&op).unwrap().clone()
   }
 
   pub fn make_main_function(&mut self) -> u32 {
@@ -134,7 +144,8 @@ impl ModuleState {
     &mut self.code_section[index as usize - self.import_section.len()]
   }
 
-  pub fn encode(mut self) -> Vec<u8> {
+  pub fn encode(self, main_func: u32) -> Vec<u8> {
+    /*
     let import_section = self
       .import_section
       .clone()
@@ -147,13 +158,14 @@ impl ModuleState {
         )
       })
       .clone();
-    let start_func = self.import_section.len();
-    let no_funcs = (self.import_section.len() + self.function_section.len()) as u32;
+    */
+    let no_funcs =
+      (self.import_section.len() + self.function_section.len()) as u32;
     Module::new()
       // Type section
       .section(&self.make_type_section())
       // Import section
-      .section(&import_section)
+      //.section(&import_section)
       // Function section
       .section(
         &*self
@@ -171,7 +183,7 @@ impl ModuleState {
       }))
       // Start section
       .section(&StartSection {
-        function_index: start_func as u32,
+        function_index: main_func,
       })
       // Elements
       .section(ElementSection::new().segment(ElementSegment {
@@ -200,14 +212,16 @@ impl ModuleState {
     for t in &self.type_section {
       match t {
         RegisteredType::Function(func_type) => ts.ty().func_type(func_type),
-        RegisteredType::Array(storage_type) => ts.ty().array(storage_type, true),
+        RegisteredType::Array(storage_type) => {
+          ts.ty().array(storage_type, true)
+        },
         RegisteredType::Struct(storage_types) => {
           ts.ty()
             .struct_(storage_types.into_iter().map(|t| FieldType {
               element_type: *t,
               mutable: true,
             }))
-        }
+        },
       }
     }
     ts
@@ -241,25 +255,27 @@ impl ModuleState {
       }));
     }
     let rt = match t {
-      Type::Ambiguous => panic!(),
-      Type::TypeVariable(_) => panic!(),
-      Type::Primitive(p) => {
-        return register(
-          self,
-          t.clone(),
-          match p {
-            Primitive::nothing => RegisteredType::Struct(vec![]),
-            Primitive::integer => RegisteredType::Struct(vec![StorageType::Val(ValType::I64)]),
-            Primitive::real => RegisteredType::Struct(vec![StorageType::Val(ValType::F64)]),
-            Primitive::boolean => return StorageType::I8,
-            Primitive::string => RegisteredType::Array(StorageType::I8),
-            Primitive::glyph => RegisteredType::Struct(vec![StorageType::Val(ValType::I32)]),
-          },
-        );
-      }
-      Type::Struct { member_types, .. } => {
-        RegisteredType::Struct(member_types.into_iter().map(|t| self.get_type(t)).collect())
-      }
+      Type::Any => panic!(),
+      Type::TypeVariable(_) => {
+        return StorageType::Val(ValType::Ref(RefType::ANYREF));
+      },
+      Type::Unit => RegisteredType::Struct(vec![]),
+      Type::Integer => {
+        RegisteredType::Struct(vec![StorageType::Val(ValType::I64)])
+      },
+      Type::Real => {
+        RegisteredType::Struct(vec![StorageType::Val(ValType::F64)])
+      },
+      Type::Boolean => {
+        RegisteredType::Struct(vec![StorageType::Val(ValType::I32)])
+      },
+      Type::String => RegisteredType::Array(StorageType::I8),
+      Type::Glyph => {
+        RegisteredType::Struct(vec![StorageType::Val(ValType::I32)])
+      },
+      Type::Struct { member_types, .. } => RegisteredType::Struct(
+        member_types.into_iter().map(|t| self.get_type(t)).collect(),
+      ),
       Type::Function {
         param_types,
         return_type,
@@ -271,9 +287,9 @@ impl ModuleState {
           .collect::<Vec<_>>(),
         [storage_to_valtype(self.get_type(return_type))],
       )),
-      Type::Product(items) => {
-        RegisteredType::Struct(items.into_iter().map(|t| self.get_type(t)).collect())
-      }
+      Type::Product(items) => RegisteredType::Struct(
+        items.into_iter().map(|t| self.get_type(t)).collect(),
+      ),
       Type::Sum(_) => todo!(),
       Type::Type => todo!(),
     };

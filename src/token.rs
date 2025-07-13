@@ -29,9 +29,13 @@ pub enum TokenKind {
   Dot,
   DotDot,
   Plus,
+  PlusDot,
   Minus,
+  MinusDot,
   Slash,
+  SlashDot,
   Star,
+  StarDot,
   Percent,
   Tilda,
   Arrow,
@@ -73,9 +77,6 @@ pub enum TokenKind {
   Or,
   Xor,
   Not,
-  Nand,
-  Nor,
-  Xnor,
   Break,
   True,
   False,
@@ -96,7 +97,8 @@ impl PartialEq for TokenKind {
   }
 }
 
-impl Eq for TokenKind {}
+impl Eq for TokenKind {
+}
 
 impl std::fmt::Display for TokenKind {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -122,6 +124,10 @@ impl std::fmt::Display for TokenKind {
         Minus => "-",
         Slash => "/",
         Star => "*",
+        PlusDot => "+.",
+        MinusDot => "-.",
+        SlashDot => "/.",
+        StarDot => "*.",
         Percent => "%",
         Tilda => "~",
         Apply => "|>",
@@ -158,9 +164,6 @@ impl std::fmt::Display for TokenKind {
         Or => "or",
         Xor => "xor",
         Not => "not",
-        Nand => "nand",
-        Nor => "nor",
-        Xnor => "xnor",
         Break => "break",
         True => "true",
         False => "false",
@@ -207,7 +210,7 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
       Some(c) => {
         self.index += 1;
         Some(c)
-      }
+      },
       _ => None,
     }
   }
@@ -219,7 +222,7 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
       let c = match self.next_char() {
         Some(c) if c == terminator && !escape => {
           break;
-        }
+        },
         Some(c) => {
           if c == '\\' {
             escape = !escape;
@@ -227,7 +230,7 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
             escape = false;
           }
           c
-        }
+        },
         None => return None,
       };
       buffer.push(c)
@@ -251,12 +254,12 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
     let current = match self.next_char() {
       Some(std::char::REPLACEMENT_CHARACTER) => {
         return Err(lint(TokenLint::InvalidInput, position, &[]));
-      }
+      },
       Some(c) => c,
       None => {
         self.ended = true;
         return t(EOF, position);
-      }
+      },
     };
     // Parse whitespace
     if current.is_whitespace() {
@@ -334,10 +337,10 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
         '#' => Hash,
         '~' => Tilda,
         '.' if not_next('.') => Dot,
-        '+' => Plus,
-        '-' if not_next('>') => Minus,
-        '*' => Star,
-        '/' => Slash,
+        '+' if not_next('.') => Plus,
+        '-' if not_next('.') && not_next('>') => Minus,
+        '*' if not_next('.') => Star,
+        '/' if not_next('.') => Slash,
         '%' => Percent,
         '@' => At,
         '!' if not_next('=') => Bang,
@@ -367,6 +370,10 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
         (':', ':') => DoubleColon,
         ('|', '>') => Apply,
         (';', ';') => DoubleSemicolon,
+        ('+', '.') => PlusDot,
+        ('-', '.') => MinusDot,
+        ('*', '.') => StarDot,
+        ('/', '.') => SlashDot,
         _ => Idk,
       };
       if kind != Idk {
@@ -462,7 +469,9 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
       }
     }
     // Match keyword or identifier
-    if current.is_ascii_punctuation() || (!current.is_alphanumeric() && current != '_') {
+    if current.is_ascii_punctuation()
+      || (!current.is_alphanumeric() && current != '_')
+    {
       position.width = 1;
       return t(TokenKind::Idk, position);
     }
@@ -488,9 +497,6 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
         "and" => And,
         "or" => Or,
         "xor" => Xor,
-        "nand" => Nand,
-        "nor" => Nor,
-        "xnor" => Xnor,
         "not" => Not,
         "true" => True,
         "false" => False,
@@ -515,7 +521,7 @@ impl<'a, I: Iterator<Item = char>> Iterator for Tokenizer<I> {
       match self._next() {
         Ok(Token(SmallComment(_) | BigComment(_) | Whitespace(_), _)) => {
           continue;
-        }
+        },
         Ok(s) => return Some(Ok(s)),
         Err(e) => return Some(Err(e)),
       }
@@ -550,19 +556,19 @@ fn parse_single_escape(
   span.start += 1;
   span.width = 2;
   Ok(match iter.next() {
-    Some('n') => ('\n', 1),                           // New line
-    Some('r') => ('\r', 1),                           // Carriage return
-    Some('t') => ('\t', 1),                           // Tab
-    Some('b') => ('\x08', 1),                         // Backspace
-    Some('\\') => ('\\', 1),                          // Backslash
-    Some('\0') => ('\0', 1),                          // Null
-    Some('"') => ('\"', 1),                           // Double quote
-    Some('\'') => ('\'', 1),                          // Single quote
+    Some('n') => ('\n', 1),   // New line
+    Some('r') => ('\r', 1),   // Carriage return
+    Some('t') => ('\t', 1),   // Tab
+    Some('b') => ('\x08', 1), // Backspace
+    Some('\\') => ('\\', 1),  // Backslash
+    Some('\0') => ('\0', 1),  // Null
+    Some('"') => ('\"', 1),   // Double quote
+    Some('\'') => ('\'', 1),  // Single quote
     Some('x') => (parse_byte_escape(iter, span)?, 2), // Byte escape
     Some('w') => (parse_wide_escape(iter, span)?, 4), // Wide escape
     _ => {
       return Err(lint(TokenLint::UnrecognizedEscape, span, &[]));
-    }
+    },
   })
 }
 
@@ -576,13 +582,16 @@ fn hex_digit(c: char) -> Option<u32> {
   }
 }
 
-fn parse_byte_escape(iter: &mut impl Iterator<Item = char>, span: Span) -> Result<char> {
+fn parse_byte_escape(
+  iter: &mut impl Iterator<Item = char>,
+  span: Span,
+) -> Result<char> {
   let lint = lint(TokenLint::UnrecognizedEscape, span, &[]);
   let (b1, b2) = match (iter.next(), iter.next()) {
     (Some(b1), Some(b2)) => (b1.to_ascii_lowercase(), b2.to_ascii_lowercase()),
     _ => {
       return Err(lint);
-    }
+    },
   };
   let byte = match (hex_digit(b1), hex_digit(b2)) {
     (Some(b1), Some(b2)) => b1 << 8 | b2,
@@ -591,21 +600,28 @@ fn parse_byte_escape(iter: &mut impl Iterator<Item = char>, span: Span) -> Resul
   char::from_u32(byte).ok_or(lint)
 }
 
-fn parse_wide_escape(iter: &mut impl Iterator<Item = char>, span: Span) -> Result<char> {
+fn parse_wide_escape(
+  iter: &mut impl Iterator<Item = char>,
+  span: Span,
+) -> Result<char> {
   let lint = lint(TokenLint::UnrecognizedEscape, span, &[]);
-  let (b1, b2, b3, b4) = match (iter.next(), iter.next(), iter.next(), iter.next()) {
-    (Some(b1), Some(b2), Some(b3), Some(b4)) => (
-      b1.to_ascii_lowercase(),
-      b2.to_ascii_lowercase(),
-      b3.to_ascii_lowercase(),
-      b4.to_ascii_lowercase(),
-    ),
-    _ => {
-      return Err(lint);
-    }
-  };
-  let byte = match (hex_digit(b1), hex_digit(b2), hex_digit(b3), hex_digit(b4)) {
-    (Some(b1), Some(b2), Some(b3), Some(b4)) => b1 << 24 | b2 << 16 | b3 << 8 | b4,
+  let (b1, b2, b3, b4) =
+    match (iter.next(), iter.next(), iter.next(), iter.next()) {
+      (Some(b1), Some(b2), Some(b3), Some(b4)) => (
+        b1.to_ascii_lowercase(),
+        b2.to_ascii_lowercase(),
+        b3.to_ascii_lowercase(),
+        b4.to_ascii_lowercase(),
+      ),
+      _ => {
+        return Err(lint);
+      },
+    };
+  let byte = match (hex_digit(b1), hex_digit(b2), hex_digit(b3), hex_digit(b4))
+  {
+    (Some(b1), Some(b2), Some(b3), Some(b4)) => {
+      b1 << 24 | b2 << 16 | b3 << 8 | b4
+    },
     _ => return Err(lint),
   };
   char::from_u32(byte).ok_or(lint)

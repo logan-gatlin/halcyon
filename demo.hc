@@ -1,2 +1,2 @@
-(fn a => a + 1) ;
-(fn a => a)
+let a = fn a => a + 1 in
+a 1

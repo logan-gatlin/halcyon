@@ -36,14 +36,15 @@ fn collect_list(mut expr: Expression) -> Vec<Expression> {
         left,
         right,
       } => {
-        exprs.extend(collect_list(*right).into_iter().rev().collect::<Vec<_>>());
+        exprs
+          .extend(collect_list(*right).into_iter().rev().collect::<Vec<_>>());
         expr = *left;
-      }
+      },
       _ => {
         exprs.push(expr);
         exprs.reverse();
         break exprs;
-      }
+      },
     }
   }
 }
@@ -60,12 +61,12 @@ fn collect_block(mut expr: Expression) -> Vec<Expression> {
       } => {
         exprs.push(*right);
         expr = *left;
-      }
+      },
       _ => {
         exprs.push(expr);
         exprs.reverse();
         break exprs;
-      }
+      },
     }
   }
 }
@@ -100,8 +101,10 @@ impl Canonizer {
 
   fn literal_to_const(&mut self, literal: Literal) -> Result<ConstValue> {
     Ok(match literal {
-      Literal::Unit => ConstValue::Nothing,
-      Literal::Integer(i, base) => ConstValue::Integer(parse_int_literal(&i, base as u32)?),
+      Literal::Unit => ConstValue::Unit,
+      Literal::Integer(i, base) => {
+        ConstValue::Integer(parse_int_literal(&i, base as u32)?)
+      },
       Literal::Real(r) => ConstValue::Real(parse_real_literal(&r)?),
       Literal::String(s) => ConstValue::String(s),
       Literal::Glyph(g) => ConstValue::Glyph(g),
@@ -122,11 +125,13 @@ impl Canonizer {
     let node = self.new_node();
     let span = expr.span;
     let kind = match expr.kind {
-      e::Literal(literal) => h::Immediate(self.literal_to_const(literal).span(expr.span)?),
+      e::Literal(literal) => {
+        h::Immediate(self.literal_to_const(literal).span(expr.span)?)
+      },
       e::Identifier(name) => {
         let symbol = self.name_to_symbol(&name).span(span)?;
         h::Identifier(symbol.mangle.clone())
-      }
+      },
       // Function def
       e::FunctionDef {
         export_name,
@@ -168,7 +173,7 @@ impl Canonizer {
           body,
           id,
         }
-      }
+      },
       e::Let {
         is_type,
         is_recursive,
@@ -203,7 +208,7 @@ impl Canonizer {
           is_recursive,
           in_,
         }
-      }
+      },
       // Tuple
       e::Binary {
         op: BinaryOp::Comma,
@@ -227,7 +232,7 @@ impl Canonizer {
           of: self.expr(*left)?,
           index,
         }
-      }
+      },
       // Block
       e::Binary {
         op: BinaryOp::Semicolon,
@@ -275,7 +280,7 @@ impl Canonizer {
         };
         self.descope();
         kind
-      }
+      },
       e::Structure {
         is_definition,
         lhs,
@@ -294,7 +299,7 @@ impl Canonizer {
             field_values: right,
           }
         }
-      }
+      },
     };
     self.set_node(
       node,
@@ -350,7 +355,11 @@ impl Canonizer {
     );
   }
 
-  fn define_name(&mut self, name: impl Into<String>, is_constant: bool) -> Result<Mangle> {
+  fn define_name(
+    &mut self,
+    name: impl Into<String>,
+    is_constant: bool,
+  ) -> Result<Mangle> {
     let name = name.into();
     if name == "_" {
       return Ok("_".to_string());
@@ -391,14 +400,14 @@ impl Canonizer {
         Event::ScopeStart => {
           self.scope_depth -= 1;
           break;
-        }
+        },
         Event::Modify { name, old_value } => {
           if let Some(old) = old_value {
             self._name_to_symbol.insert(name, old);
           } else {
             self._name_to_symbol.remove(&name);
           }
-        }
+        },
       }
     }
   }

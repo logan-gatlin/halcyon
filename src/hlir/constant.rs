@@ -2,7 +2,7 @@ use super::*;
 
 #[derive(Clone, Debug)]
 pub enum ConstValue {
-  Nothing,
+  Unit,
   Integer(i64),
   Real(f64),
   Boolean(bool),
@@ -33,7 +33,7 @@ impl From<Type> for ConstValue {
 impl std::fmt::Display for ConstValue {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
-      ConstValue::Nothing => write!(f, "()"),
+      ConstValue::Unit => write!(f, "()"),
       ConstValue::String { .. } => write!(f, "<string>"),
       ConstValue::Function { func_index, .. } => write!(f, "{func_index}"),
       ConstValue::StructLiteral { .. } => write!(f, "<struct>"),

@@ -53,14 +53,16 @@ op! {
   BinaryOp;
   Dot, 17, LEFT_ASSOC;
   Star, 15, LEFT_ASSOC;
+  StarDot, 15, LEFT_ASSOC;
   Slash, 15, LEFT_ASSOC;
+  SlashDot, 15, LEFT_ASSOC;
   Percent, 15, LEFT_ASSOC;
   Plus, 14, LEFT_ASSOC;
+  PlusDot, 14, LEFT_ASSOC;
   Minus, 14, LEFT_ASSOC;
+  MinusDot, 14, LEFT_ASSOC;
   Xor, 10, LEFT_ASSOC;
-  Xnor, 10, LEFT_ASSOC;
   Or, 9, LEFT_ASSOC;
-  Nor, 9, LEFT_ASSOC;
   Apply, 9, LEFT_ASSOC;
   DoubleEqual, 8, LEFT_ASSOC;
   BangEqual, 8, LEFT_ASSOC;
@@ -68,7 +70,6 @@ op! {
   LessEqual, 8, LEFT_ASSOC;
   Greater, 8, LEFT_ASSOC;
   GreaterEqual, 8, LEFT_ASSOC;
-  Nand, 7, LEFT_ASSOC;
   And, 7, LEFT_ASSOC;
   Arrow, 5, RIGHT_ASSOC;
   DoubleColon, 4, RIGHT_ASSOC;
@@ -78,8 +79,7 @@ op! {
 
 op! {
   UnaryOp;
-  Ampersand, 15, RIGHT_ASSOC;
-  Tilda, 15, RIGHT_ASSOC;
   Minus, 15, LEFT_ASSOC;
+  MinusDot, 15, LEFT_ASSOC;
   Not, 15, LEFT_ASSOC;
 }

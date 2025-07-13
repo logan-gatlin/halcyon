@@ -9,30 +9,97 @@ use std::collections::{HashMap, HashSet};
 use crate::{hlir::*, lint::*, operator::*};
 
 pub struct Environment {
+  let_bound_map: HashMap<Mangle, bool>,
   type_map: HashMap<Mangle, Type>,
   value_map: HashMap<Mangle, ConstValue>,
+  type_variable: TypeVariable,
 }
 
 impl Environment {
   pub fn new() -> Self {
+    let mut let_bound_map = HashMap::new();
     let mut type_map = HashMap::new();
     let mut value_map = HashMap::new();
     for bt in Builtin::ALL {
+      let mangle = bt.to_mangle();
+      let_bound_map.insert(mangle.clone(), false);
       type_map.insert(bt.to_mangle(), bt.type_());
       value_map.insert(bt.to_mangle(), bt.value());
     }
     Self {
+      let_bound_map,
       type_map,
       value_map,
+      type_variable: 0,
     }
   }
 
-  pub fn get_type(&self, mangle: &Mangle) -> &Type {
-    self.type_map.get(mangle).unwrap()
+  pub fn fresh_type_var(&mut self) -> Type {
+    let tv = self.type_variable;
+    self.type_variable += 1;
+    Type::TypeVariable(tv)
   }
 
-  pub fn insert_type(&mut self, mangle: Mangle, type_: Type) {
-    self.type_map.insert(mangle, type_);
+  fn map_fresh_type_variables(
+    &mut self,
+    t: &Type,
+    map: &mut HashMap<TypeVariable, TypeVariable>,
+  ) {
+    match t {
+      Type::Any
+      | Type::Unit
+      | Type::Integer
+      | Type::Real
+      | Type::Boolean
+      | Type::String
+      | Type::Glyph
+      | Type::Type => {},
+      Type::TypeVariable(tv) => {
+        if !map.contains_key(tv) {
+          let new_tv = self.type_variable;
+          self.type_variable += 1;
+          map.insert(*tv, new_tv);
+        }
+      },
+      Type::Sum(hash_set) => hash_set
+        .into_iter()
+        .for_each(|t| self.map_fresh_type_variables(t, map)),
+      Type::Product(items)
+      | Type::Struct {
+        member_types: items,
+        ..
+      } => items
+        .into_iter()
+        .for_each(|t| self.map_fresh_type_variables(t, map)),
+      Type::Function {
+        param_types,
+        return_type,
+      } => {
+        param_types
+          .into_iter()
+          .for_each(|t| self.map_fresh_type_variables(t, map));
+        self.map_fresh_type_variables(return_type, map);
+      },
+    }
+  }
+
+  pub fn get_type(&mut self, mangle: &Mangle) -> Type {
+    if *self.let_bound_map.get(mangle).unwrap() {
+      let mut t = self.type_map.get(mangle).unwrap().clone();
+      let mut fresh = HashMap::new();
+      self.map_fresh_type_variables(&t, &mut fresh);
+      fresh
+        .into_iter()
+        .for_each(|(old, new)| t.substitute(old, &Type::TypeVariable(new)));
+      t
+    } else {
+      self.type_map.get(mangle).unwrap().clone()
+    }
+  }
+
+  pub fn insert_type(&mut self, mangle: Mangle, type_: Type, let_bound: bool) {
+    self.type_map.insert(mangle.clone(), type_);
+    self.let_bound_map.insert(mangle, let_bound);
   }
 
   pub fn get_value(&self, mangle: &Mangle) -> Result<&ConstValue> {
@@ -54,26 +121,18 @@ pub struct TypeConstraint(Type, Type, Span);
 pub struct Substitution(TypeVariable, Type);
 
 pub fn type_solve(module: &mut HlIrModule) -> Result<()> {
-  let mut type_var = 0;
-  let mut new_type_var = move || {
-    type_var += 1;
-    Type::TypeVariable(type_var - 1)
-  };
-
   let mut constraints = vec![];
-  type_inference(
-    module,
-    0,
-    &mut Environment::new(),
-    &mut new_type_var,
-    &mut constraints,
-  )?;
+  type_inference(module, 0, &mut Environment::new(), &mut constraints)?;
   let solution = unification(&constraints)?;
   apply_solution(module, 0, solution);
   Ok(())
 }
 
-pub fn parse_type(nodes: &HlIrModule, node: IrPtr, env: &Environment) -> Result<Type> {
+pub fn parse_type(
+  nodes: &HlIrModule,
+  node: IrPtr,
+  env: &Environment,
+) -> Result<Type> {
   let span = nodes[node].span;
   use HlIrKind::*;
   Ok(match &nodes[node].kind {
@@ -92,8 +151,12 @@ pub fn parse_type(nodes: &HlIrModule, node: IrPtr, env: &Environment) -> Result<
         .try_collect()?,
     },
     Binary { op, left, right } => match op {
-      BinaryOp::Plus => parse_type(nodes, *left, env)? + parse_type(nodes, *right, env)?,
-      BinaryOp::Star => parse_type(nodes, *left, env)? * parse_type(nodes, *right, env)?,
+      BinaryOp::Plus => {
+        parse_type(nodes, *left, env)? + parse_type(nodes, *right, env)?
+      },
+      BinaryOp::Star => {
+        parse_type(nodes, *left, env)? * parse_type(nodes, *right, env)?
+      },
       BinaryOp::Arrow => Type::Function {
         param_types: vec![parse_type(nodes, *left, env)?],
         return_type: parse_type(nodes, *right, env)?.into(),
@@ -104,15 +167,15 @@ pub fn parse_type(nodes: &HlIrModule, node: IrPtr, env: &Environment) -> Result<
           .context(format!("{}", Type::Type))
           .context(format!("{}", Type::Type))
           .span(span);
-      }
+      },
     },
     Unary { op, .. } => {
       return Err(lint_nospan(TypeLint::UnaryOpUndefined))
         .context(format!("{op}"))
         .context(format!("{}", Type::Type))
         .span(span);
-    }
-    Immediate(ConstValue::Nothing) => Type::Unit,
+    },
+    Immediate(ConstValue::Unit) => Type::Unit,
     _ => return Err(lint_nospan(TypeLint::NotAType)).span(span),
   })
 }

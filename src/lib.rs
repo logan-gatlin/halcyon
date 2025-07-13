@@ -1,7 +1,7 @@
 #![feature(generic_const_exprs, iterator_try_collect, box_patterns)]
 #![allow(incomplete_features)]
 
-//mod compile;
+mod compile;
 mod execute;
 mod hlir;
 mod lint;
@@ -32,9 +32,11 @@ pub fn _compiler_print(s: String) {
   println!("{s}");
 }
 #[cfg(not(target_family = "wasm"))]
-pub fn _compiler_cls() {}
+pub fn _compiler_cls() {
+}
 #[cfg(not(target_family = "wasm"))]
-pub fn _compiler_wat(_s: String) {}
+pub fn _compiler_wat(_s: String) {
+}
 #[cfg(not(target_family = "wasm"))]
 pub fn _compiler_exec(bytes: Vec<u8>) {
   std::fs::write("test.wasm", bytes).unwrap();
@@ -53,7 +55,6 @@ pub fn _compile(input: &str) -> Result<Vec<u8>> {
   type_solve(&mut hlir)?;
   println!("# IR");
   println!("{hlir}");
-  /*
   let wasm = compile::compile(hlir);
   println!("# WAT");
   let wat = wasmprinter::print_bytes(&wasm).unwrap();
@@ -62,13 +63,12 @@ pub fn _compile(input: &str) -> Result<Vec<u8>> {
   if let Err(e) = wasmparser::validate(&wasm) {
     eprintln!(
       "{}",
-      "# !!! VALIDATION ERROR !!!".apply_style(Color::Red, Attribute::Underline)
+      "# !!! VALIDATION ERROR !!!"
+        .apply_style(Color::Red, Attribute::Underline)
     );
     eprintln!("{e}");
   }
   Ok(wasm)
-  */
-  todo!()
 }
 
 pub fn compile(input: &str) {
@@ -78,10 +78,12 @@ pub fn compile(input: &str) {
       if b.len() != 0 {
         _compiler_exec(b);
       }
-    }
+    },
     Err(e) => {
-      compiler_print("Failed to Compile".apply_style(Color::Red, Attribute::Underline));
+      compiler_print(
+        "Failed to Compile".apply_style(Color::Red, Attribute::Underline),
+      );
       compiler_print(linter.render(e))
-    }
+    },
   };
 }

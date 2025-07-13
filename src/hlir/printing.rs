@@ -12,7 +12,7 @@ impl HlIrModule {
         in_,
         ..
       } => sexpr(
-        if *is_type { "let" } else { "type" },
+        if *is_type { "type" } else { "let" },
         [
           sexpr("mangle", [assignee.as_str().into()]),
           sexpr("value", [self.sexpr(*value)]),
@@ -24,17 +24,17 @@ impl HlIrModule {
         ],
       ),
       h::Immediate(const_value) => sexpr(format!("{const_value}"), []),
-      h::Block(items) => sexpr("block", items.into_iter().map(|i| self.sexpr(*i))),
+      h::Block(items) => {
+        sexpr("block", items.into_iter().map(|i| self.sexpr(*i)))
+      },
       h::Identifier(name) => sexpr("identifier", [name.as_str().into()]),
       h::StructDef {
         field_names,
         field_types,
       } => sexpr(
         "struct-definition",
-        field_names
-          .into_iter()
-          .zip(field_types.into_iter())
-          .map(|(name, value)| {
+        field_names.into_iter().zip(field_types.into_iter()).map(
+          |(name, value)| {
             sexpr(
               "field",
               [
@@ -42,7 +42,8 @@ impl HlIrModule {
                 sexpr("type", [self.sexpr(*value)]),
               ],
             )
-          }),
+          },
+        ),
       ),
       h::StructLiteral {
         field_names,
@@ -50,10 +51,8 @@ impl HlIrModule {
         ..
       } => sexpr(
         "struct-literal",
-        field_names
-          .into_iter()
-          .zip(field_values.into_iter())
-          .map(|(name, value)| {
+        field_names.into_iter().zip(field_values.into_iter()).map(
+          |(name, value)| {
             sexpr(
               "field",
               [
@@ -61,12 +60,15 @@ impl HlIrModule {
                 sexpr("value", [self.sexpr(*value)]),
               ],
             )
-          }),
+          },
+        ),
       ),
-      h::Field { of, index } => sexpr("field", [self.sexpr(*of), index.as_str().into()]),
+      h::Field { of, index } => {
+        sexpr("field", [self.sexpr(*of), index.as_str().into()])
+      },
       h::Binary { op, left, right } => {
         sexpr(format!("{op}"), [self.sexpr(*left), self.sexpr(*right)])
-      }
+      },
       h::Unary { op, child } => sexpr(format!("{op}"), [self.sexpr(*child)]),
       h::FunctionDef { body, .. } => sexpr("function", [self.sexpr(*body)]),
       h::FunctionCall {
@@ -95,7 +97,7 @@ impl HlIrModule {
         } else {
           sexpr("if", [sexpr("then", [self.sexpr(*then)])])
         }
-      }
+      },
       h::Tuple(items) => sexpr(
         "tuple",
         items

@@ -110,6 +110,55 @@ pub struct HlIrModule {
   pub nodes: Vec<HlIrNode>,
 }
 
+impl HlIrModule {
+  pub fn ir_range(&self, start: IrPtr) -> std::ops::Range<IrPtr> {
+    let mut current = start;
+    loop {
+      use HlIrKind::*;
+      current = *match &self[current].kind {
+        Declaration { value, in_, .. } => {
+          if let Some(in_) = in_ {
+            in_
+          } else {
+            value
+          }
+        },
+        FunctionCall { callee, arguments } => {
+          arguments.last().unwrap_or(callee)
+        },
+        StructDef {
+          field_types: items, ..
+        }
+        | StructLiteral {
+          field_values: items,
+          ..
+        }
+        | Tuple(items)
+        | Block(items) => {
+          if let Some(last) = items.last() {
+            last
+          } else {
+            break;
+          }
+        },
+        FunctionDef { body: last, .. }
+        | Binary { right: last, .. }
+        | Unary { child: last, .. }
+        | Field { of: last, .. } => last,
+        If { then, else_, .. } => {
+          if let Some(else_) = else_ {
+            else_
+          } else {
+            then
+          }
+        },
+        Immediate(_) | Identifier(_) => break,
+      }
+    }
+    start..current
+  }
+}
+
 impl std::ops::Index<usize> for HlIrModule {
   type Output = HlIrNode;
 
