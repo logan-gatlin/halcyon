@@ -72,9 +72,6 @@ pub fn type_inference(
       ConstValue::Glyph(_) => Type::Glyph,
       _ => unreachable!(),
     },
-    h::Block(items) => items.into_iter().try_fold(Type::Unit, |_, i| {
-      type_inference(nodes, i, environment, constraints)
-    })?,
     h::Identifier(i) => environment.get_type(&i).clone(),
     h::Tuple(items) => Type::Product(
       items
@@ -101,11 +98,12 @@ pub fn type_inference(
     h::Binary { op, left, right } => {
       let left_t = type_inference(nodes, left, environment, constraints)?;
       let right_t = type_inference(nodes, right, environment, constraints)?;
-      constraints.push(tc(left_t.clone(), right_t.clone(), span));
       use BinaryOp::*;
       match op {
+        Semicolon => right_t,
         Star | Slash | Percent | Plus | Minus => {
           constraints.extend_from_slice(&[
+            tc(left_t.clone(), right_t.clone(), span),
             tc(Type::Integer, left_t, nodes[left].span),
             tc(Type::Integer, right_t, nodes[right].span),
           ]);
@@ -113,6 +111,7 @@ pub fn type_inference(
         },
         StarDot | SlashDot | PlusDot | MinusDot => {
           constraints.extend_from_slice(&[
+            tc(left_t.clone(), right_t.clone(), span),
             tc(Type::Real, left_t, nodes[left].span),
             tc(Type::Real, right_t, nodes[right].span),
           ]);
@@ -120,12 +119,14 @@ pub fn type_inference(
         },
         And | Or | Xor => {
           constraints.extend_from_slice(&[
+            tc(left_t.clone(), right_t.clone(), span),
             tc(Type::Boolean, left_t, nodes[left].span),
             tc(Type::Boolean, right_t, nodes[right].span),
           ]);
           Type::Boolean
         },
         DoubleEqual | BangEqual | Less | LessEqual | Greater | GreaterEqual => {
+          constraints.push(tc(left_t.clone(), right_t.clone(), span));
           constraints.push(tc(left_t, right_t, nodes[right].span));
           Type::Boolean
         },
@@ -144,54 +145,27 @@ pub fn type_inference(
       expect_t
     },
     h::FunctionDef {
-      parameter_names,
-      parameter_types,
+      parameter_name,
+      parameter_type: parameter_types,
       body,
       ..
     } => {
-      let parameter_types = parameter_types
-        .into_iter()
-        .map(|t| match t.map(|t| parse_type(nodes, t, environment)) {
-          Some(Ok(t)) => Ok(t),
-          Some(Err(e)) => Err(e),
-          None => Ok(environment.fresh_type_var()),
-        })
-        .try_collect::<Vec<_>>()?;
-      parameter_names
-        .into_iter()
-        .zip(parameter_types.clone())
-        .for_each(|(n, t)| {
-          environment.insert_type(n, t, false);
-        });
+      let parameter_type = match parameter_types {
+        Some(n) => parse_type(nodes, n, environment)?,
+        None => environment.fresh_type_var(),
+      };
+      environment.insert_type(parameter_name, parameter_type.clone(), false);
       let return_type = type_inference(nodes, body, environment, constraints)?;
-      Type::Function {
-        param_types: parameter_types,
-        return_type: return_type.into(),
-      }
+      Type::Function(parameter_type.into(), return_type.into())
     },
-    h::FunctionCall {
-      callee, arguments, ..
-    } => {
+    h::FunctionCall { callee, argument } => {
       let tv = environment.fresh_type_var();
       let callee_t = type_inference(nodes, callee, environment, constraints)?;
-      let param_types: Vec<_> = if arguments.len() == 1
-        && let HlIrKind::Immediate(ConstValue::Unit) = nodes[arguments[0]].kind
-      {
-        nodes[arguments[0]].type_ = Type::Unit;
-        vec![]
-      } else {
-        arguments
-          .into_iter()
-          .map(|a| type_inference(nodes, a, environment, constraints))
-          .try_collect()?
-      };
+      let arg_t = type_inference(nodes, argument, environment, constraints)?;
       constraints.push(tc(
-        Type::Function {
-          param_types,
-          return_type: tv.clone().into(),
-        },
         callee_t,
-        span,
+        Type::Function(arg_t.into(), tv.clone().into()),
+        nodes[argument].span,
       ));
       tv
     },
@@ -224,6 +198,19 @@ pub fn type_inference(
       tv
     },
   };
+  if let h::FunctionDef {
+    captures,
+    capture_types,
+    ..
+  } = &mut nodes[ptr].kind
+  {
+    captures
+      .into_iter()
+      .zip(capture_types.into_iter())
+      .for_each(|(cap, ty)| {
+        *ty = environment.get_type(cap);
+      });
+  }
   nodes[ptr].type_ = type_.clone();
   Ok(type_)
 }

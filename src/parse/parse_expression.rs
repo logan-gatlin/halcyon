@@ -87,7 +87,7 @@ pub fn expression(
       && t::RightParen != next.0
       && t::RightSquare != next.0
       && t::RightBrace != next.0
-      && precedence <= CALL_PREC
+      && precedence < CALL_PREC
     {
       let arguments = match expression(iter, CALL_PREC)? {
         Some(a) => a,

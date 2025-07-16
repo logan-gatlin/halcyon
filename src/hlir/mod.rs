@@ -1,25 +1,16 @@
 mod build_hlir;
-pub mod builtins;
 pub mod constant;
 pub mod printing;
 pub mod types;
 
-use std::collections::HashMap;
-
-use crate::{lint::*, operator::*, parse::*};
+use crate::{lint::*, operator::*};
 
 pub use build_hlir::*;
-pub use builtins::*;
 pub use constant::*;
 pub use types::*;
 
 pub type IrPtr = usize;
 pub type Mangle = String;
-
-pub fn build_hlir(expr: Expression) -> Result<HlIrModule> {
-  let canon = Canonizer::new();
-  canon.canonize_expr(expr)
-}
 
 /// Name mangle syntax:
 /// mangle ::= "$" path salt
@@ -55,7 +46,6 @@ pub enum HlIrKind {
     in_: Option<IrPtr>,
   },
   Immediate(ConstValue),
-  Block(Vec<IrPtr>),
   Identifier(Mangle),
   Tuple(Vec<IrPtr>),
   StructDef {
@@ -80,16 +70,16 @@ pub enum HlIrKind {
     child: IrPtr,
   },
   FunctionDef {
-    id: u32,
-    export_name: Option<String>,
-    parameter_names: Vec<Mangle>,
-    parameter_spans: Vec<Span>,
-    parameter_types: Vec<Option<IrPtr>>,
+    parameter_name: Mangle,
+    parameter_span: Span,
+    parameter_type: Option<IrPtr>,
+    captures: Vec<Mangle>,
+    capture_types: Vec<Type>,
     body: IrPtr,
   },
   FunctionCall {
     callee: IrPtr,
-    arguments: Vec<IrPtr>,
+    argument: IrPtr,
   },
   If {
     predicate: IrPtr,
@@ -123,9 +113,10 @@ impl HlIrModule {
             value
           }
         },
-        FunctionCall { callee, arguments } => {
-          arguments.last().unwrap_or(callee)
-        },
+        FunctionCall {
+          argument: arguments,
+          ..
+        } => arguments,
         StructDef {
           field_types: items, ..
         }
@@ -133,8 +124,7 @@ impl HlIrModule {
           field_values: items,
           ..
         }
-        | Tuple(items)
-        | Block(items) => {
+        | Tuple(items) => {
           if let Some(last) = items.last() {
             last
           } else {

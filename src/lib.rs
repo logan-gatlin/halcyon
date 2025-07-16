@@ -1,8 +1,8 @@
 #![feature(generic_const_exprs, iterator_try_collect, box_patterns)]
 #![allow(incomplete_features)]
 
+mod builtin;
 mod compile;
-mod execute;
 mod hlir;
 mod lint;
 mod operator;
@@ -50,7 +50,6 @@ pub fn _compile(input: &str) -> Result<Vec<u8>> {
   _compiler_cls();
   let tokens = tokenize(input.chars())?;
   let parse_tree = parse(tokens)?;
-  println!("{parse_tree}");
   let mut hlir = build_hlir(parse_tree)?;
   type_solve(&mut hlir)?;
   println!("# IR");

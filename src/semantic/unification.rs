@@ -4,6 +4,7 @@ pub fn unification(
   constraints: &[TypeConstraint],
 ) -> Result<Vec<Substitution>> {
   let mut cons = constraints.to_vec();
+  cons.reverse();
   let mut solution = vec![];
   while let Some(con) = cons.pop() {
     if con.0.ambiguous() || con.1.ambiguous() {
@@ -12,22 +13,8 @@ pub fn unification(
     let span = con.2;
     match (con.0, con.1) {
       (t1, t2) if t1 == t2 => {},
-      (
-        Type::Function {
-          param_types: p1,
-          return_type: r1,
-        },
-        Type::Function {
-          param_types: p2,
-          return_type: r2,
-        },
-      ) => {
-        if p1.len() != p2.len() {
-          panic!();
-        }
-        p1.into_iter()
-          .zip(p2.into_iter())
-          .for_each(|(t1, t2)| cons.push(TypeConstraint(t1, t2, span)));
+      (Type::Function(p1, r1), Type::Function(p2, r2)) => {
+        cons.push(TypeConstraint(*p1, *p2, span));
         cons.push(TypeConstraint(*r1, *r2, span));
       },
       (Type::TypeVariable(tv), t) | (t, Type::TypeVariable(tv))
@@ -90,7 +77,6 @@ pub fn apply_solution(
         }
       },
       HlIrKind::Immediate(_) => {},
-      HlIrKind::Block(items) => to_visit.extend_from_slice(&items),
       HlIrKind::Identifier(_) => {},
       HlIrKind::Tuple(items) => to_visit.extend_from_slice(&items),
       HlIrKind::StructDef { field_types, .. } => {
@@ -111,10 +97,12 @@ pub fn apply_solution(
         to_visit.push(body);
       },
       HlIrKind::FunctionCall {
-        callee, arguments, ..
+        callee,
+        argument: arguments,
+        ..
       } => {
         to_visit.push(callee);
-        to_visit.extend_from_slice(&arguments);
+        to_visit.push(arguments);
       },
       HlIrKind::If {
         predicate,
@@ -141,5 +129,12 @@ pub fn apply_solution(
     solution
       .iter()
       .for_each(|Substitution(tv, t)| nt.substitute(*tv, t));
+    if let HlIrKind::FunctionDef { capture_types, .. } = &mut nodes[n].kind {
+      capture_types.into_iter().for_each(|old_t| {
+        solution.iter().for_each(|Substitution(tv, new_t)| {
+          old_t.substitute(*tv, new_t);
+        })
+      })
+    }
   });
 }

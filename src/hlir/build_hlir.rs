@@ -1,431 +1,287 @@
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 use super::*;
-use crate::{lint::*, operator::*, parse::*};
-
-pub fn parse_int_literal(value: &str, base: u32) -> Result<i64> {
-  i64::from_str_radix(value, base).lint(TokenLint::InvalidInteger)
-}
-
-pub fn parse_real_literal(value: &str) -> Result<f64> {
-  value.parse().lint(TokenLint::InvalidReal)
-}
-#[derive(Debug, Clone)]
-struct Symbol {
-  pub mangle: Mangle,
-  pub scope_depth: usize,
-  pub is_constant: bool,
-}
+use crate::{lint::*, parse::*};
 
 #[derive(Debug, Clone)]
-enum Event {
-  ScopeStart,
-  Modify {
-    name: String,
-    old_value: Option<Symbol>,
-  },
+struct Scope {
+  clean: String,
+  old: Option<(Mangle, FunctionDepth)>,
 }
 
-fn collect_list(mut expr: Expression) -> Vec<Expression> {
-  let mut exprs = vec![];
-  use ExpressionKind as e;
-  loop {
-    match expr.kind {
-      e::Binary {
-        op: BinaryOp::Comma,
-        left,
-        right,
-      } => {
-        exprs
-          .extend(collect_list(*right).into_iter().rev().collect::<Vec<_>>());
-        expr = *left;
-      },
-      _ => {
-        exprs.push(expr);
-        exprs.reverse();
-        break exprs;
-      },
-    }
-  }
-}
-
-fn collect_block(mut expr: Expression) -> Vec<Expression> {
-  let mut exprs = vec![];
-  use ExpressionKind as e;
-  loop {
-    match expr.kind {
-      e::Binary {
-        op: BinaryOp::Semicolon,
-        left,
-        right,
-      } => {
-        exprs.push(*right);
-        expr = *left;
-      },
-      _ => {
-        exprs.push(expr);
-        exprs.reverse();
-        break exprs;
-      },
-    }
-  }
-}
+type FunctionDepth = usize;
 
 #[derive(Debug, Clone)]
-pub struct Canonizer {
-  nodes: Vec<Option<HlIrNode>>,
-  func_index: u32,
-  scope_depth: usize,
+pub struct NameSpace {
+  name_table: HashMap<String, (Mangle, FunctionDepth)>,
+  builtins: HashMap<String, Mangle>,
   salt: usize,
-  event_stack: Vec<Event>,
-  _name_to_symbol: HashMap<String, Symbol>,
-  exports: HashSet<String>,
+  scopes: Vec<Scope>,
+  captures: Vec<Vec<Mangle>>,
 }
 
-impl Canonizer {
+impl NameSpace {
   pub fn new() -> Self {
-    let mut this = Self {
-      nodes: vec![],
-      func_index: 0,
-      exports: HashSet::new(),
-      event_stack: vec![],
-      scope_depth: 0,
+    let mut builtins = HashMap::new();
+    Type::primitives().into_iter().for_each(|(_, name)| {
+      builtins.insert(name.to_string(), mangle_builtin(name));
+    });
+    Self {
+      name_table: HashMap::new(),
+      builtins,
       salt: 0,
-      _name_to_symbol: HashMap::new(),
+      scopes: vec![],
+      captures: vec![],
+    }
+  }
+
+  pub fn push(&mut self, name: String) -> Mangle {
+    let mangle = mangle_name(vec![name.clone()], &format!("{}", self.salt));
+    self.salt += 1;
+    self.scopes.push(Scope {
+      clean: name.clone(),
+      old: self
+        .name_table
+        .insert(name.clone(), (mangle.clone(), self.captures.len())),
+    });
+    mangle
+  }
+
+  pub fn pop(&mut self) {
+    let Scope { clean, old, .. } = self.scopes.pop().unwrap();
+    match old {
+      Some(old) => self.name_table.insert(clean, old),
+      None => self.name_table.remove(&clean),
     };
-    Type::primitives()
-      .iter()
-      .flat_map(Type::primitive_mangle)
-      .map(|m| this.define_builtin(m));
-    this
   }
 
-  fn literal_to_const(&mut self, literal: Literal) -> Result<ConstValue> {
-    Ok(match literal {
-      Literal::Unit => ConstValue::Unit,
-      Literal::Integer(i, base) => {
-        ConstValue::Integer(parse_int_literal(&i, base as u32)?)
-      },
-      Literal::Real(r) => ConstValue::Real(parse_real_literal(&r)?),
-      Literal::String(s) => ConstValue::String(s),
-      Literal::Glyph(g) => ConstValue::Glyph(g),
-      Literal::Boolean(b) => ConstValue::Boolean(b),
-    })
-  }
-
-  pub fn canonize_expr(mut self, expr: Expression) -> Result<HlIrModule> {
-    self.expr(expr)?;
-    Ok(HlIrModule {
-      nodes: self.nodes.into_iter().map(|n| n.unwrap()).collect(),
-    })
-  }
-
-  fn expr(&mut self, expr: Expression) -> Result<IrPtr> {
-    use ExpressionKind as e;
-    use HlIrKind as h;
-    let node = self.new_node();
-    let span = expr.span;
-    let kind = match expr.kind {
-      e::Literal(literal) => {
-        h::Immediate(self.literal_to_const(literal).span(expr.span)?)
-      },
-      e::Identifier(name) => {
-        let symbol = self.name_to_symbol(&name).span(span)?;
-        h::Identifier(symbol.mangle.clone())
-      },
-      // Function def
-      e::FunctionDef {
-        export_name,
-        arguments,
-        argument_spans,
-        types,
-        body,
-      } => {
-        if let Some(export) = &export_name {
-          if !self.exports.insert(export.clone()) {
-            return Err(lint(NameLint::NonUniqueExport, span, &[]));
-          }
+  pub fn get(&mut self, name: &String) -> Option<Mangle> {
+    match self.name_table.get(name) {
+      Some((mangle, depth)) => {
+        for capture in (*depth)..(self.captures.len()) {
+          self.captures[capture].push(mangle.clone());
         }
-        self.start_function();
-        self.enscope();
-        let parameter_names = arguments
-          .iter()
-          .zip(argument_spans.iter())
-          .map(|(name, span)| self.define_name(name, false).span(*span))
-          .try_collect::<Vec<_>>()?;
-        let parameter_types = types
-          .into_iter()
-          .map(|t| t.map(|t| self.expr(t)))
-          .map(|t| match t {
-            Some(Ok(e)) => Ok(Some(e)),
-            Some(Err(e)) => Err(e),
-            None => Ok(None),
-          })
-          .try_collect::<Vec<_>>()?;
-        let body = self.expr(*body)?;
-        let id = self.func_index;
-        self.func_index += 1;
-        self.descope();
-        h::FunctionDef {
-          export_name,
-          parameter_names,
-          parameter_spans: argument_spans,
-          parameter_types,
-          body,
-          id,
-        }
+        Some(mangle.clone())
       },
-      e::Let {
-        is_type,
-        is_recursive,
-        assignee_span,
+      None => self.builtins.get(name).cloned(),
+    }
+  }
+
+  pub fn new_func(&mut self) {
+    self.captures.push(vec![]);
+  }
+
+  pub fn end_func(&mut self) -> Vec<Mangle> {
+    self.captures.pop().unwrap()
+  }
+}
+
+pub fn build_hlir(e: Expression) -> Result<HlIrModule> {
+  let mut module = HlIrModule { nodes: vec![] };
+  let mut ns = NameSpace::new();
+  expr(&mut module, &mut ns, e)?;
+  Ok(module)
+}
+
+fn expr(
+  module: &mut HlIrModule,
+  ns: &mut NameSpace,
+  ex: Expression,
+) -> Result<IrPtr> {
+  use ExpressionKind as e;
+  use HlIrKind as h;
+  let span = ex.span;
+  let ptr = module.nodes.len();
+  module.nodes.push(HlIrNode {
+    kind: h::Immediate(ConstValue::Unit),
+    span,
+    type_: Default::default(),
+  });
+  let kind = match ex.kind {
+    e::Let {
+      is_type,
+      is_recursive: true,
+      assignee,
+      value,
+      in_,
+      ..
+    } => {
+      let assignee = ns.push(assignee);
+      let value = expr(module, ns, *value)?;
+      if !matches!(module[value].kind, h::FunctionDef { .. }) {
+        panic!()
+      }
+      let in_ = if let Some(in_) = in_ {
+        Some(expr(module, ns, *in_)?)
+      } else {
+        None
+      };
+      ns.pop();
+      h::Declaration {
         assignee,
+        is_type,
+        is_recursive: true,
         value,
         in_,
-      } => {
-        self.enscope();
-        let (assignee, value) = if is_recursive {
-          (
-            self.define_name(assignee, true).span(assignee_span)?,
-            self.expr(*value)?,
-          )
-        } else {
-          let t = (
-            self.expr(*value)?,
-            self.define_name(assignee, false).span(assignee_span)?,
-          );
-          (t.1, t.0)
-        };
-        let in_ = if let Some(in_) = in_ {
-          Some(self.expr(*in_)?)
+      }
+    },
+    e::Let {
+      is_type,
+      is_recursive: false,
+      assignee,
+      value,
+      in_,
+      ..
+    } => {
+      let value = expr(module, ns, *value)?;
+      let assignee = ns.push(assignee);
+      let in_ = if let Some(in_) = in_ {
+        Some(expr(module, ns, *in_)?)
+      } else {
+        None
+      };
+      h::Declaration {
+        assignee,
+        is_type,
+        is_recursive: false,
+        value,
+        in_,
+      }
+    },
+    e::Literal(literal) => {
+      fn int(value: &str, base: u32) -> Result<i64> {
+        i64::from_str_radix(value, base).lint(TokenLint::InvalidInteger)
+      }
+      fn real(value: &str) -> Result<f64> {
+        value.parse().lint(TokenLint::InvalidReal)
+      }
+
+      h::Immediate(match literal {
+        Literal::Unit => ConstValue::Unit,
+        Literal::Integer(i, base) => {
+          ConstValue::Integer(int(&i, base as u32).span(span)?)
+        },
+        Literal::Real(r) => ConstValue::Real(real(&r).span(span)?),
+        Literal::String(s) => ConstValue::String(s),
+        Literal::Glyph(g) => ConstValue::Glyph(g),
+        Literal::Boolean(b) => ConstValue::Boolean(b),
+      })
+    },
+    e::Identifier(name) => {
+      let mangle =
+        ns.get(&name)
+          .ok_or(lint(NameLint::UndefinedName, span, &[name]))?;
+      h::Identifier(mangle)
+    },
+    e::Binary { op, left, right } => h::Binary {
+      op,
+      left: expr(module, ns, *left)?,
+      right: expr(module, ns, *right)?,
+    },
+    e::Unary { op, child } => h::Unary {
+      op,
+      child: expr(module, ns, *child)?,
+    },
+    e::FunctionDef {
+      export_name: _,
+      mut arguments,
+      mut argument_spans,
+      mut types,
+      body,
+    } => {
+      if arguments.len() == 0 {
+        todo!()
+      } else {
+        ns.new_func();
+        let (argument, new_arguments) = arguments.split_first().unwrap();
+        let parameter_name = ns.push(argument.clone());
+        arguments = new_arguments.to_vec();
+        let (parameter_span, new_spans) = argument_spans.split_first().unwrap();
+        let parameter_span = parameter_span.clone();
+        argument_spans = new_spans.to_vec();
+        let (type_, new_type_s) = types.split_first().unwrap();
+        let parameter_type = if let Some(type_) = type_.clone() {
+          Some(expr(module, ns, type_)?)
         } else {
           None
         };
-        self.descope();
-        h::Declaration {
-          value,
-          assignee,
-          is_type,
-          is_recursive,
-          in_,
-        }
-      },
-      // Tuple
-      e::Binary {
-        op: BinaryOp::Comma,
-        ..
-      } => h::Tuple(
-        collect_list(expr)
-          .into_iter()
-          .map(|e| self.expr(e))
-          .try_collect::<Vec<_>>()?,
-      ),
-      // Field get
-      e::Binary {
-        op: BinaryOp::Dot,
-        left,
-        right,
-      } => {
-        let e::Identifier(index) = right.kind else {
-          return Err(lint(NameLint::FieldNotIdent, right.span, &[]));
+        types = new_type_s.to_vec();
+        let body = if arguments.len() == 0 {
+          expr(module, ns, *body)?
+        } else {
+          expr(
+            module,
+            ns,
+            Expression {
+              kind: e::FunctionDef {
+                export_name: None,
+                arguments,
+                argument_spans,
+                types,
+                body,
+              },
+              span,
+            },
+          )?
         };
-        h::Field {
-          of: self.expr(*left)?,
-          index,
+        let captures = ns.end_func();
+        let capture_types = vec![Type::Any; captures.len()];
+        h::FunctionDef {
+          parameter_name,
+          parameter_span,
+          parameter_type,
+          captures,
+          capture_types,
+          body,
         }
-      },
-      // Block
-      e::Binary {
-        op: BinaryOp::Semicolon,
-        ..
-      } => h::Block(
-        collect_block(expr)
-          .into_iter()
-          .map(|e| self.expr(e))
-          .try_collect::<Vec<_>>()?,
-      ),
-      e::Binary { op, left, right } => h::Binary {
-        op,
-        left: self.expr(*left)?,
-        right: self.expr(*right)?,
-      },
-      e::Unary { op, child } => h::Unary {
-        op,
-        child: self.expr(*child)?,
-      },
-      e::FunctionCall { callee, arguments } => h::FunctionCall {
-        callee: self.expr(*callee)?,
-        arguments: collect_list(*arguments)
-          .into_iter()
-          .map(|e| self.expr(e))
-          .try_collect::<Vec<_>>()?,
-      },
-      e::If {
+      }
+    },
+    e::FunctionCall { callee, arguments } => {
+      let callee = expr(module, ns, *callee)?;
+      let argument = expr(module, ns, *arguments)?;
+      h::FunctionCall { callee, argument }
+    },
+    e::If {
+      predicate,
+      then,
+      else_,
+    } => {
+      let predicate = expr(module, ns, *predicate)?;
+      let then = expr(module, ns, *then)?;
+      let else_ = if let Some(else_) = else_ {
+        Some(expr(module, ns, *else_)?)
+      } else {
+        None
+      };
+      h::If {
         predicate,
         then,
         else_,
-      } => {
-        self.enscope();
-        let kind = h::If {
-          predicate: self.expr(*predicate)?,
-          then: {
-            let body = self.expr(*then)?;
-            body
-          },
-          else_: if let Some(else_) = else_ {
-            let body = self.expr(*else_)?;
-            Some(body)
-          } else {
-            None
-          },
-        };
-        self.descope();
-        kind
-      },
-      e::Structure {
-        is_definition,
-        lhs,
-        rhs,
-      } => {
-        let field_names = lhs;
-        let right = rhs.into_iter().map(|e| self.expr(e)).try_collect()?;
-        if is_definition {
-          h::StructDef {
-            field_names,
-            field_types: right,
-          }
-        } else {
-          h::StructLiteral {
-            field_names,
-            field_values: right,
-          }
-        }
-      },
-    };
-    self.set_node(
-      node,
-      HlIrNode {
-        kind,
-        span,
-        type_: Type::Any,
-      },
-    );
-    Ok(node)
-  }
-
-  fn new_node(&mut self) -> IrPtr {
-    self.nodes.push(None);
-    self.nodes.len() - 1
-  }
-
-  fn set_node(&mut self, position: IrPtr, node: HlIrNode) {
-    assert!(self.nodes[position].is_none());
-    self.nodes[position] = Some(node);
-  }
-
-  fn name_to_symbol(&self, name: &str) -> Result<&Symbol> {
-    self
-      ._name_to_symbol
-      .get(name)
-      .ok_or(lint_nospan(NameLint::UndefinedName))
-      .context(name)
-  }
-
-  fn next_salt(&mut self) -> String {
-    let returned_salt = self.salt.to_string();
-    self.salt += 1;
-    returned_salt
-  }
-
-  fn define_builtin(&mut self, name: impl Into<String>) {
-    let name = name.into();
-    let mangle = mangle_builtin(&name);
-    assert!(
-      self
-        ._name_to_symbol
-        .insert(
-          name.clone(),
-          Symbol {
-            mangle,
-            scope_depth: 0,
-            is_constant: true,
-          },
-        )
-        .is_none(),
-      "Multiple definitions of builtin {name}"
-    );
-  }
-
-  fn define_name(
-    &mut self,
-    name: impl Into<String>,
-    is_constant: bool,
-  ) -> Result<Mangle> {
-    let name = name.into();
-    if name == "_" {
-      return Ok("_".to_string());
-    }
-    let path = vec![name.clone()];
-    let salt = self.next_salt();
-    let mangle = mangle_name(path, &salt);
-    let old_value = self.name_to_symbol(&name).ok().cloned();
-    if let Some(old) = &old_value {
-      if old.scope_depth == self.scope_depth && is_constant == old.is_constant {
-        return Err(lint_nospan(NameLint::ConstRedefinition)).context(name);
       }
-    }
-    let event = Event::Modify {
-      old_value,
-      name: name.clone(),
-    };
-    self.event_stack.push(event);
-    self._name_to_symbol.insert(
-      name.clone(),
-      Symbol {
-        mangle: mangle.clone(),
-        scope_depth: self.scope_depth,
-        is_constant,
-      },
-    );
-    Ok(mangle)
-  }
-
-  fn enscope(&mut self) {
-    self.event_stack.push(Event::ScopeStart);
-    self.scope_depth += 1;
-  }
-
-  fn descope(&mut self) {
-    while let Some(e) = self.event_stack.pop() {
-      match e {
-        Event::ScopeStart => {
-          self.scope_depth -= 1;
-          break;
-        },
-        Event::Modify { name, old_value } => {
-          if let Some(old) = old_value {
-            self._name_to_symbol.insert(name, old);
-          } else {
-            self._name_to_symbol.remove(&name);
-          }
-        },
-      }
-    }
-  }
-
-  fn start_function(&mut self) {
-    let mut to_reset = vec![];
-    for (name, symbol) in self._name_to_symbol.iter() {
-      if !symbol.is_constant {
-        self.event_stack.push(Event::Modify {
-          name: name.clone(),
-          old_value: Some(symbol.clone()),
-        });
-        to_reset.push(name.clone())
-      }
-    }
-    for name in to_reset {
-      self._name_to_symbol.remove(&name);
-    }
-  }
+    },
+    e::Structure {
+      is_definition: true,
+      lhs,
+      rhs,
+    } => h::StructDef {
+      field_names: lhs,
+      field_types: rhs
+        .into_iter()
+        .map(|e| expr(module, ns, e))
+        .try_collect()?,
+    },
+    e::Structure {
+      is_definition: false,
+      lhs,
+      rhs,
+    } => h::StructLiteral {
+      field_names: lhs,
+      field_values: rhs
+        .into_iter()
+        .map(|e| expr(module, ns, e))
+        .try_collect()?,
+    },
+  };
+  module[ptr].kind = kind;
+  Ok(ptr)
 }

@@ -8,6 +8,12 @@ impl SExpression {
   pub fn push(&mut self, s: Self) {
     self.children.push(s);
   }
+
+  pub fn push_front(&mut self, s: Self) {
+    let mut new_children = vec![s];
+    new_children.extend_from_slice(&self.children);
+    self.children = new_children;
+  }
 }
 
 pub fn sexpr(

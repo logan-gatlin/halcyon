@@ -72,7 +72,6 @@ op! {
   GreaterEqual, 8, LEFT_ASSOC;
   And, 7, LEFT_ASSOC;
   Arrow, 5, RIGHT_ASSOC;
-  DoubleColon, 4, RIGHT_ASSOC;
   Comma, 3, LEFT_ASSOC;
   Semicolon, 1, LEFT_ASSOC;
 }

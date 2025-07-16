@@ -20,14 +20,12 @@ impl Environment {
     let mut let_bound_map = HashMap::new();
     let mut type_map = HashMap::new();
     let mut value_map = HashMap::new();
-    Type::primitives()
-      .into_iter()
-      .map(|p| (p.primitive_mangle().unwrap(), p))
-      .for_each(|(mangle, prim)| {
-        let_bound_map.insert(mangle.clone(), false);
-        type_map.insert(mangle.clone(), Type::Type);
-        value_map.insert(mangle.clone(), ConstValue::Type(prim));
-      });
+    Type::primitives().into_iter().for_each(|(prim, name)| {
+      let mangle = mangle_builtin(name);
+      let_bound_map.insert(mangle.clone(), false);
+      type_map.insert(mangle.clone(), Type::Type);
+      value_map.insert(mangle.clone(), ConstValue::Type(prim));
+    });
     Self {
       let_bound_map,
       type_map,
@@ -49,6 +47,7 @@ impl Environment {
   ) {
     match t {
       Type::Any
+      | Type::_ClosureCapture
       | Type::Unit
       | Type::Integer
       | Type::Real
@@ -73,13 +72,8 @@ impl Environment {
       } => items
         .into_iter()
         .for_each(|t| self.map_fresh_type_variables(t, map)),
-      Type::Function {
-        param_types,
-        return_type,
-      } => {
-        param_types
-          .into_iter()
-          .for_each(|t| self.map_fresh_type_variables(t, map));
+      Type::Function(param_type, return_type) => {
+        self.map_fresh_type_variables(param_type, map);
         self.map_fresh_type_variables(return_type, map);
       },
     }
@@ -119,12 +113,19 @@ impl Environment {
 #[derive(Debug, Clone)]
 pub struct TypeConstraint(Type, Type, Span);
 
+impl std::fmt::Display for TypeConstraint {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "({}) == ({})", self.0, self.1)
+  }
+}
+
 #[derive(Debug, Clone)]
 pub struct Substitution(TypeVariable, Type);
 
 pub fn type_solve(module: &mut HlIrModule) -> Result<()> {
+  let mut env = Environment::new();
   let mut constraints = vec![];
-  type_inference(module, 0, &mut Environment::new(), &mut constraints)?;
+  type_inference(module, 0, &mut env, &mut constraints)?;
   let solution = unification(&constraints)?;
   apply_solution(module, 0, solution);
   Ok(())
@@ -159,10 +160,10 @@ pub fn parse_type(
       BinaryOp::Star => {
         parse_type(nodes, *left, env)? * parse_type(nodes, *right, env)?
       },
-      BinaryOp::Arrow => Type::Function {
-        param_types: vec![parse_type(nodes, *left, env)?],
-        return_type: parse_type(nodes, *right, env)?.into(),
-      },
+      BinaryOp::Arrow => Type::Function(
+        parse_type(nodes, *left, env)?.into(),
+        parse_type(nodes, *right, env)?.into(),
+      ),
       _ => {
         return Err(lint_nospan(TypeLint::BinaryOpUndefined))
           .context(format!("{op}"))

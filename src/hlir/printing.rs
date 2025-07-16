@@ -24,9 +24,6 @@ impl HlIrModule {
         ],
       ),
       h::Immediate(const_value) => sexpr(format!("{const_value}"), []),
-      h::Block(items) => {
-        sexpr("block", items.into_iter().map(|i| self.sexpr(*i)))
-      },
       h::Identifier(name) => sexpr("identifier", [name.as_str().into()]),
       h::StructDef {
         field_names,
@@ -70,14 +67,41 @@ impl HlIrModule {
         sexpr(format!("{op}"), [self.sexpr(*left), self.sexpr(*right)])
       },
       h::Unary { op, child } => sexpr(format!("{op}"), [self.sexpr(*child)]),
-      h::FunctionDef { body, .. } => sexpr("function", [self.sexpr(*body)]),
+      h::FunctionDef {
+        body,
+        parameter_name,
+        captures,
+        capture_types,
+        ..
+      } => sexpr(
+        "function",
+        [
+          Some(sexpr("argument", [parameter_name.as_str().into()])),
+          if captures.len() == 0 {
+            None
+          } else {
+            Some(sexpr(
+              "captures",
+              captures
+                .into_iter()
+                .zip(capture_types.into_iter())
+                .map(|(cap, ty)| sexpr(cap, [format!("{ty}").as_str().into()])),
+            ))
+          },
+          Some(sexpr("body", [self.sexpr(*body)])),
+        ]
+        .into_iter()
+        .flatten(),
+      ),
       h::FunctionCall {
-        callee, arguments, ..
+        callee,
+        argument: arguments,
+        ..
       } => sexpr(
         "call",
         [
           sexpr("func", [self.sexpr(*callee)]),
-          sexpr("args", arguments.into_iter().map(|a| self.sexpr(*a))),
+          sexpr("arg", [self.sexpr(*arguments)]),
         ],
       ),
       h::If {
@@ -106,7 +130,9 @@ impl HlIrModule {
           .collect::<Vec<_>>(),
       ),
     };
-    se.push(format!("(type {})", node.type_).as_str().into());
+    if !matches!(node.type_, Type::Any) {
+      se.push_front(format!("(type {})", node.type_).as_str().into());
+    }
     se
   }
 }

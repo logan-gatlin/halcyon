@@ -3,73 +3,61 @@ use super::*;
 use Instruction as i;
 
 fn unary_op(
-  state: &mut ModuleState,
+  state: &mut ModuleEncoder,
   type_: Type,
   instructions: Vec<Instruction<'static>>,
 ) -> u32 {
-  let f = state.make_function(
-    &Type::Function {
-      param_types: vec![type_.clone()],
-      return_type: type_.clone().into(),
-    },
-    ["a".into()],
-  );
-  let tid = state.get_type_id(&type_);
-  instructions
-    .into_iter()
-    .for_each(|i| state.func(f).instr(i));
-  f
+  todo!()
 }
 
-pub fn make_unary_operators(state: &mut ModuleState) -> HashMap<UnaryOp, u32> {
+pub fn make_unary_operators(
+  state: &mut ModuleEncoder,
+) -> HashMap<UnaryOp, u32> {
   use UnaryOp::*;
-  let mut op_map = HashMap::new();
-  [(
-    Minus,
-    Type::Integer,
-    vec![i::I64Const(0), i::LocalGet(0), i::I64Sub],
-  )]
-  .into_iter()
-  .for_each(|(op, t, i)| {
-    op_map.insert(op, unary_op(state, t, i));
-  });
-  op_map
+  todo!()
 }
 
 fn binary_op(
-  state: &mut ModuleState,
+  state: &mut ModuleEncoder,
   type_: Type,
   op: Instruction<'static>,
 ) -> u32 {
-  let f = state.make_function(
-    &Type::Function {
-      param_types: vec![type_.clone(), type_.clone()],
-      return_type: type_.clone().into(),
-    },
-    ["a".into(), "b".into()],
+  let param_type = type_.clone() * type_.clone();
+  let f = state.new_function(
+    &Type::Function(param_type.clone().into(), type_.clone().into()),
+    "a".to_string(),
+    vec![],
+    vec![],
   );
-  let tid = state.get_type_id(&type_);
-  [
+  let param_type_id = state.get_type_id(&param_type, false);
+  let return_type_id = state.get_type_id(&type_, false);
+  state.func(f).extend(&[
     i::LocalGet(0),
     i::StructGet {
-      struct_type_index: tid,
+      struct_type_index: param_type_id,
       field_index: 0,
     },
-    i::LocalGet(1),
     i::StructGet {
-      struct_type_index: tid,
+      struct_type_index: return_type_id,
+      field_index: 0,
+    },
+    i::LocalGet(0),
+    i::StructGet {
+      struct_type_index: param_type_id,
+      field_index: 1,
+    },
+    i::StructGet {
+      struct_type_index: return_type_id,
       field_index: 0,
     },
     op,
-    i::StructNew(tid),
-  ]
-  .into_iter()
-  .for_each(|i| state.func(f).instr(i));
+    i::StructNew(return_type_id),
+  ]);
   f
 }
 
 pub fn make_binary_operators(
-  state: &mut ModuleState,
+  state: &mut ModuleEncoder,
 ) -> HashMap<BinaryOp, u32> {
   use BinaryOp::*;
   let mut op_map = HashMap::new();
@@ -88,6 +76,8 @@ pub fn make_binary_operators(
     (And, Type::Boolean, i::I32And),
     (Or, Type::Boolean, i::I32Or),
     (Xor, Type::Boolean, i::I32Xor),
+    /*
+     */
   ]
   .into_iter()
   .for_each(|(op, t, i)| {

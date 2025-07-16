@@ -1,7 +1,5 @@
 use std::collections::HashSet;
 
-use crate::hlir::mangle_builtin;
-
 pub type TypeVariable = usize;
 
 #[derive(Debug, Clone)]
@@ -34,10 +32,10 @@ pub enum Type {
   /// Variant or enum
   Sum(HashSet<Type>),
   /// Function type
-  Function {
-    param_types: Vec<Type>,
-    return_type: Box<Type>,
-  },
+  Function(Box<Type>, Box<Type>),
+  /// Placeholder until arrays are implemented, so I can
+  /// generate ANYREF array in type section
+  _ClosureCapture,
 }
 
 impl std::ops::Add for Type {
@@ -87,34 +85,19 @@ impl std::ops::Mul for Type {
 }
 
 impl Type {
-  pub fn main_fn() -> Type {
-    Type::Function {
-      param_types: vec![],
-      return_type: Type::Unit.into(),
-    }
-  }
-
-  pub fn primitives() -> Vec<Type> {
+  pub fn primitives() -> Vec<(Type, &'static str)> {
     vec![
-      Self::Unit,
-      Self::Integer,
-      Self::Real,
-      Self::Boolean,
-      Self::String,
-      Self::Glyph,
+      (Self::Unit, "unit"),
+      (Self::Integer, "integer"),
+      (Self::Real, "real"),
+      (Self::Boolean, "boolean"),
+      (Self::String, "string"),
+      (Self::Glyph, "glyph"),
     ]
   }
 
-  pub fn primitive_mangle(&self) -> Option<String> {
-    Some(mangle_builtin(match self {
-      Type::Unit => "unit",
-      Type::Integer => "integer",
-      Type::Real => "real",
-      Type::Boolean => "boolean",
-      Type::String => "string",
-      Type::Glyph => "glyph",
-      _ => return None,
-    }))
+  pub fn func(parameter: Type, returns: Type) -> Type {
+    Type::Function(parameter.into(), returns.into())
   }
 
   pub fn is_subtype(&self, other: &Type) -> bool {
@@ -159,14 +142,8 @@ impl Type {
       Type::Sum(hash_set) => hash_set
         .into_iter()
         .fold(false, |accum, x| accum || x.contains_type_var(tv)),
-      Type::Function {
-        param_types,
-        return_type,
-      } => {
-        param_types
-          .into_iter()
-          .fold(false, |accum, x| accum || x.contains_type_var(tv))
-          || return_type.contains_type_var(tv)
+      Type::Function(a, b) => {
+        a.contains_type_var(tv) || b.contains_type_var(tv)
       },
       _ => false,
     }
@@ -199,14 +176,12 @@ impl Type {
             .collect::<HashSet<_>>(),
         );
       },
-      Type::Function {
-        param_types,
-        return_type,
-      } => {
-        param_types.iter_mut().for_each(|t| t.substitute(tv, type_));
-        return_type.substitute(tv, type_);
+      Type::Function(a, b) => {
+        a.substitute(tv, type_);
+        b.substitute(tv, type_);
       },
       Type::Any
+      | Type::_ClosureCapture
       | Type::Unit
       | Type::Integer
       | Type::Real
@@ -244,7 +219,8 @@ impl PartialEq for Type {
       (t::Any, t::Any) => {
         panic!("Tried to compare ambiguous types")
       },
-      (t::Unit, t::Unit)
+      (t::_ClosureCapture, t::_ClosureCapture)
+      | (t::Unit, t::Unit)
       | (t::Integer, t::Integer)
       | (t::Real, t::Real)
       | (t::Boolean, t::Boolean)
@@ -261,16 +237,7 @@ impl PartialEq for Type {
           member_types: types2,
         },
       ) => names1 == names2 && types1 == types2,
-      (
-        t::Function {
-          param_types: p1,
-          return_type: r1,
-        },
-        t::Function {
-          param_types: p2,
-          return_type: r2,
-        },
-      ) => p1.len() == p2.len() && p1 == p2 && r1 == r2,
+      (t::Function(p1, r1), t::Function(p2, r2)) => p1 == p2 && r1 == r2,
       (t::Product(t1), t::Product(t2)) => t1 == t2,
       (t::Sum(v1), t::Sum(v2)) => v1 == v2,
       (t::TypeVariable(p1), t::TypeVariable(p2)) => p1 == p2,
@@ -292,12 +259,9 @@ impl std::hash::Hash for Type {
         member_names.hash(state);
         member_types.hash(state);
       },
-      Type::Function {
-        param_types,
-        return_type,
-      } => {
-        param_types.hash(state);
-        return_type.hash(state);
+      Type::Function(a, b) => {
+        a.hash(state);
+        b.hash(state);
       },
       Type::Type => "type".hash(state),
       Type::Any => {
@@ -315,6 +279,7 @@ impl std::hash::Hash for Type {
         }
       },
       Type::Unit
+      | Type::_ClosureCapture
       | Type::Integer
       | Type::Real
       | Type::Boolean
@@ -337,6 +302,7 @@ impl std::fmt::Display for Type {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       Type::Any => write!(f, "?"),
+      Type::_ClosureCapture => write!(f, "_ClosureCapture"),
       Type::Unit => write!(f, "()"),
       Type::Integer => write!(f, "integer"),
       Type::Real => write!(f, "real"),
@@ -357,16 +323,7 @@ impl std::fmt::Display for Type {
         write!(f, "struct {{\n{fields}\n}}")
       },
       Type::Type => write!(f, "type"),
-      Type::Function {
-        param_types,
-        return_type,
-      } => match param_types.as_slice() {
-        [] => write!(f, "{} -> {return_type}", Type::Unit,),
-        [t] => write!(f, "{t} -> {return_type}"),
-        _ => {
-          write!(f, "{} -> {return_type}", Type::Product(param_types.clone()))
-        },
-      },
+      Type::Function(a, b) => write!(f, "{} -> {}", a, b),
       Type::TypeVariable(id) => write!(f, "'{id}"),
       Type::Product(items) => write!(
         f,
