@@ -21,8 +21,9 @@ impl FunctionEncoder {
     id
   }
 
-  pub fn get_local(&mut self, mangle: &Mangle) {
-    let local = self.local_names.get(mangle).unwrap().clone();
+  pub fn get_local(&mut self, mangle: impl Into<String>) {
+    let mangle: String = mangle.into();
+    let local = self.local_names.get(&mangle).unwrap().clone();
     self.push(Instruction::LocalGet(local));
   }
 

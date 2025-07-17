@@ -145,20 +145,40 @@ pub fn lower(
     },
     h::Binary { op, left, right } => {
       lower(nodes, left, state, f);
-      lower(nodes, right, state, f);
-      let struct_t = state.get_type_id(
-        &(nodes[left].type_.clone() * nodes[right].type_.clone()),
-        false,
-      );
-      state.func(f).push(i::StructNew(struct_t));
-
+      // Stack: Arg1
       let cid = state.get_type_id(&Type::_ClosureCapture, false);
       state.func(f).push(i::ArrayNewFixed {
         array_type_index: cid,
         array_size: 0,
       });
+      // Stack: Arg1 Capture
       let operator_func = state.get_binary_operator(op);
       state.func(f).push(i::Call(operator_func));
+      // Stack: Closure
+      let closure_type = Type::func(nodes[right].type_.clone(), this_t);
+      let closure_valtype = state.get_valtype(&closure_type, false);
+      let temporary = state.func(f).new_temporary(closure_valtype);
+      state.func(f).push(i::LocalSet(temporary));
+      // Stack: (empty)
+      lower(nodes, right, state, f);
+      // Stack: Arg2
+      state.func(f).push(i::LocalGet(temporary));
+      let closure_type_id = state.get_type_id(&closure_type, false);
+      // Stack: Arg2 Closure
+      state.func(f).push(i::StructGet {
+        struct_type_index: closure_type_id,
+        field_index: 1,
+      });
+      // Stack: Arg2 Capture
+      state.func(f).push(i::LocalGet(temporary));
+      // Stack: Arg2 Capture Closure
+      state.func(f).push(i::StructGet {
+        struct_type_index: closure_type_id,
+        field_index: 0,
+      });
+      // Stack: Arg2 Capture Function
+      let raw_function_type = state.get_type_id(&closure_type, true);
+      state.func(f).push(i::CallRef(raw_function_type));
     },
     h::Unary { op, child } => {
       lower(nodes, child, state, f);

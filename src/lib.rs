@@ -8,6 +8,8 @@ mod lint;
 mod operator;
 mod parse;
 mod semantic;
+#[cfg(test)]
+mod test;
 mod token;
 
 use hlir::*;
@@ -18,44 +20,15 @@ use token::*;
 
 pub use lint::*;
 
-#[cfg(target_family = "wasm")]
-#[wasm_bindgen(module = "/src/abi/element.js")]
-extern "C" {
-  pub fn _compiler_print(s: String);
-  pub fn _compiler_cls();
-  pub fn _compiler_wat(s: String);
-  pub fn _compiler_exec(bytes: Vec<u8>);
-}
-
-#[cfg(not(target_family = "wasm"))]
-pub fn _compiler_print(s: String) {
-  println!("{s}");
-}
-#[cfg(not(target_family = "wasm"))]
-pub fn _compiler_cls() {
-}
-#[cfg(not(target_family = "wasm"))]
-pub fn _compiler_wat(_s: String) {
-}
-#[cfg(not(target_family = "wasm"))]
-pub fn _compiler_exec(bytes: Vec<u8>) {
-  std::fs::write("test.wasm", bytes).unwrap();
-}
-
-pub fn compiler_print(s: impl Into<String>) {
-  _compiler_print(s.into());
-}
-
 pub fn _compile(input: &str) -> Result<Vec<u8>> {
-  _compiler_cls();
   let tokens = tokenize(input.chars())?;
   let parse_tree = parse(tokens)?;
   let mut hlir = build_hlir(parse_tree)?;
   type_solve(&mut hlir)?;
-  println!("# IR");
-  println!("{hlir}");
+  //println!("# IR");
+  //println!("{hlir}");
   let wasm = compile::compile(hlir);
-  println!("# WAT");
+  //println!("# WAT");
   let wat = wasmprinter::print_bytes(&wasm).unwrap();
   println!("{}", wat);
   std::fs::write("test.wat", wat).unwrap();
@@ -67,6 +40,7 @@ pub fn _compile(input: &str) -> Result<Vec<u8>> {
     );
     eprintln!("{e}");
   }
+  println!("Binary size: {:.2} kb", (wasm.len() as f64) / 1024.0);
   Ok(wasm)
 }
 
@@ -75,14 +49,15 @@ pub fn compile(input: &str) {
   match _compile(input) {
     Ok(b) => {
       if b.len() != 0 {
-        _compiler_exec(b);
+        std::fs::write("test.wasm", b).unwrap();
       }
     },
     Err(e) => {
-      compiler_print(
+      println!(
+        "{}",
         "Failed to Compile".apply_style(Color::Red, Attribute::Underline),
       );
-      compiler_print(linter.render(e))
+      println!("{}", linter.render(e))
     },
   };
 }

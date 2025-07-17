@@ -443,7 +443,9 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
             break;
           }
           encountered_dot = true;
-        } else if !(c == '_' || c == 'x' || c.is_ascii_hexdigit()) {
+        } else if !(['_', 'x', 'X', 'o', 'O', 'b', 'B'].contains(&c)
+          || c.is_ascii_hexdigit())
+        {
           break;
         }
         buffer.push(c);

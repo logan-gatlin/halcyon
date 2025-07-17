@@ -153,7 +153,7 @@ help = "An item may only be imported in one place"
 # Type errors
 [4000]
 reason = "Type mismatch"
-help = "Expected `%` here, but found `%`"
+help = "Encountered a type error: `%` ≠ `%`"
 
 [4001]
 reason = "Type mismatch"
