@@ -10,8 +10,22 @@ use crate::{hlir::*, operator::*};
 use function_encoder::*;
 use runtime::*;
 
+#[derive(Debug, Clone)]
+struct Import {
+  major: String,
+  minor: String,
+  entity: EntityType,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum FunctionKind {
+  Native(u32),
+  Import(u32),
+}
+
 pub fn compile(mut hlir: HlIrModule) -> Vec<u8> {
   let mut state = ModuleEncoder::new();
+  state.new_import("sys", "print_integer", FuncType::new([ValType::I32], []));
   state.binary_operator_map = make_binary_operators(&mut state);
   state.unary_operator_map = make_unary_ops(&mut state);
   state.builtin_map = make_builtins(&mut state);
@@ -28,12 +42,14 @@ enum RegisteredType {
   Struct(Vec<StorageType>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 struct ModuleEncoder {
   type_map: HashMap<Type, u32>,
   raw_type_map: HashMap<Type, u32>,
+  import_section: Vec<Import>,
   type_section: Vec<RegisteredType>,
   function_section: Vec<u32>,
+  elements_section: Vec<FunctionKind>,
   code_section: Vec<FunctionEncoder>,
   builtin_map: HashMap<Mangle, (Type, u32)>,
   binary_operator_map: HashMap<BinaryOp, u32>,
@@ -42,16 +58,26 @@ struct ModuleEncoder {
 
 impl ModuleEncoder {
   pub fn new() -> Self {
-    Self {
-      type_map: HashMap::new(),
-      raw_type_map: HashMap::new(),
-      type_section: vec![],
-      function_section: vec![],
-      code_section: vec![],
-      builtin_map: HashMap::new(),
-      binary_operator_map: HashMap::new(),
-      unary_operator_map: HashMap::new(),
-    }
+    Self::default()
+  }
+
+  pub fn new_import(
+    &mut self,
+    major: impl Into<String>,
+    minor: impl Into<String>,
+    ft: FuncType,
+  ) -> u32 {
+    let type_id = self.type_section.len() as u32;
+    self.type_section.push(RegisteredType::Function(ft));
+    let import_id = self.import_section.len() as u32;
+    self.import_section.push(Import {
+      major: major.into(),
+      minor: minor.into(),
+      entity: EntityType::Function(type_id),
+    });
+    let element_id = self.elements_section.len() as u32;
+    self.elements_section.push(FunctionKind::Import(import_id));
+    element_id
   }
 
   pub fn get_unary_operator(&self, op: UnaryOp) -> u32 {
@@ -67,7 +93,9 @@ impl ModuleEncoder {
       self.func(current_function).get_local(mangle);
     } else {
       let (type_, func) = self.builtin_map.get(mangle).unwrap().clone();
-      self.func(current_function).push(Instruction::RefFunc(func));
+      self
+        .func(current_function)
+        .push(Instruction::I32Const(func as i32));
       let closure_t = self.get_type_id(&Type::_ClosureCapture, false);
       self
         .func(current_function)
@@ -83,12 +111,17 @@ impl ModuleEncoder {
   }
 
   pub fn func(&mut self, index: u32) -> &mut FunctionEncoder {
+    let FunctionKind::Native(index) = self.elements_section[index as usize] else {
+      panic!()
+    };
     &mut self.code_section[index as usize]
   }
 
   pub fn encode(self, main_func: u32) -> Vec<u8> {
+    let FunctionKind::Native(main_func) = self.elements_section[main_func as usize] else {
+      panic!()
+    };
     let mut name_section = NameSection::new();
-
     name_section.types(
       &self
         .type_map
@@ -119,15 +152,44 @@ impl ModuleEncoder {
           indirect_map
         }),
     );
-    name_section.labels(&IndirectNameMap::new());
 
+    let no_imports = self.import_section.len() as u32;
     let no_funcs = self.function_section.len() as u32;
+
+    let elements_section = ElementSection::new()
+      .segment(ElementSegment {
+        mode: ElementMode::Active {
+          table: None,
+          offset: &ConstExpr::i32_const(0),
+        },
+        elements: Elements::Functions(std::borrow::Cow::from(
+          &self
+            .elements_section
+            .clone()
+            .into_iter()
+            .map(|e| match e {
+              FunctionKind::Native(f) => f + no_imports,
+              FunctionKind::Import(f) => f,
+            })
+            .collect::<Vec<_>>(),
+        )),
+      })
+      .clone();
+
     Module::new()
       .section(&name_section)
       // Type section
       .section(&self.make_type_section())
       // Import section
-      //.section(&import_section)
+      .section(
+        &*self
+          .import_section
+          .clone()
+          .into_iter()
+          .fold(&mut ImportSection::new(), |section, import| {
+            section.import(&import.major, &import.minor, import.entity)
+          }),
+      )
       // Function section
       .section(
         &*self
@@ -139,24 +201,16 @@ impl ModuleEncoder {
       .section(TableSection::new().table(TableType {
         element_type: RefType::FUNCREF,
         table64: false,
-        minimum: no_funcs as u64,
-        maximum: Some(no_funcs as u64),
+        minimum: (no_funcs + no_imports) as u64,
+        maximum: Some((no_funcs + no_imports) as u64),
         shared: false,
       }))
       // Start section
       .section(&StartSection {
-        function_index: main_func,
+        function_index: (main_func + no_imports),
       })
       // Elements
-      .section(ElementSection::new().segment(ElementSegment {
-        mode: ElementMode::Active {
-          table: None,
-          offset: &ConstExpr::i32_const(0),
-        },
-        elements: Elements::Functions(std::borrow::Cow::from(
-          &(0..no_funcs).into_iter().collect::<Vec<_>>(),
-        )),
-      }))
+      .section(&elements_section)
       // Code section
       .section(
         &*self
@@ -174,16 +228,14 @@ impl ModuleEncoder {
     for t in &self.type_section {
       match t {
         RegisteredType::Function(func_type) => ts.ty().func_type(func_type),
-        RegisteredType::Array(storage_type) => {
-          ts.ty().array(storage_type, true)
-        },
+        RegisteredType::Array(storage_type) => ts.ty().array(storage_type, true),
         RegisteredType::Struct(storage_types) => {
           ts.ty()
             .struct_(storage_types.into_iter().map(|t| FieldType {
               element_type: *t,
               mutable: false,
             }))
-        },
+        }
       }
     }
     ts
@@ -237,25 +289,17 @@ impl ModuleEncoder {
     let rt = match t {
       Type::_ClosureCapture => {
         RegisteredType::Array(StorageType::Val(ValType::Ref(RefType::ANYREF)))
-      },
+      }
       Type::Any => panic!(),
       Type::TypeVariable(_) => {
         return StorageType::Val(ValType::Ref(RefType::ANYREF));
-      },
+      }
       Type::Unit => RegisteredType::Struct(vec![]),
-      Type::Integer => {
-        RegisteredType::Struct(vec![StorageType::Val(ValType::I64)])
-      },
-      Type::Real => {
-        RegisteredType::Struct(vec![StorageType::Val(ValType::F64)])
-      },
-      Type::Boolean => {
-        RegisteredType::Struct(vec![StorageType::Val(ValType::I32)])
-      },
+      Type::Integer => RegisteredType::Struct(vec![StorageType::Val(ValType::I64)]),
+      Type::Real => RegisteredType::Struct(vec![StorageType::Val(ValType::F64)]),
+      Type::Boolean => RegisteredType::Struct(vec![StorageType::Val(ValType::I32)]),
       Type::String => RegisteredType::Array(StorageType::I8),
-      Type::Glyph => {
-        RegisteredType::Struct(vec![StorageType::Val(ValType::I32)])
-      },
+      Type::Glyph => RegisteredType::Struct(vec![StorageType::Val(ValType::I32)]),
       Type::Struct { member_types, .. } => RegisteredType::Struct(
         member_types
           .into_iter()
@@ -263,10 +307,11 @@ impl ModuleEncoder {
           .collect(),
       ),
       Type::Function(_, _) if !raw => {
-        let raw_func_type = self.get_storage_type(t, true);
+        //let raw_func_type = self.get_storage_type(t, true);
+        let raw_func_type = StorageType::Val(ValType::I32);
         let capture_type = self.get_storage_type(&Type::_ClosureCapture, false);
         RegisteredType::Struct(vec![raw_func_type, capture_type])
-      },
+      }
       Type::Function(a, b) => RegisteredType::Function(FuncType::new(
         [
           self.get_valtype(a, false),

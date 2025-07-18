@@ -37,8 +37,7 @@ pub fn _compile(input: &str) -> Result<Vec<u8>> {
   if let Err(e) = wasmparser::validate(&wasm) {
     eprintln!(
       "{}",
-      "# !!! VALIDATION ERROR !!!"
-        .apply_style(Color::Red, Attribute::Underline)
+      "# !!! VALIDATION ERROR !!!".apply_style(Color::Red, Attribute::Underline)
     );
     eprintln!("{e}");
     return Err(lint_nospan(CompilerBug::FailedValidation));
@@ -58,20 +57,27 @@ pub fn _compile(input: &str) -> Result<Vec<u8>> {
     )
     .apply_style(Color::Green, Attribute::Bold)
   );
-
   let mut config = wasmtime::Config::default();
   config.wasm_gc(true);
   config.wasm_function_references(true);
   let engine = wasmtime::Engine::new(&config).unwrap();
   let module = wasmtime::Module::new(&engine, &wasm).unwrap();
   let mut linker = wasmtime::Linker::new(&engine);
+  linker
+    .func_wrap(
+      "sys",
+      "print_integer",
+      |caller: wasmtime::Caller<'_, ()>, num: i32| {
+        println!("WASM: {num}");
+      },
+    )
+    .unwrap();
   let mut store = wasmtime::Store::new(&engine, ());
   let instance = linker.instantiate(&mut store, &module).unwrap();
   println!(
     "{}",
     "Executed without errors".apply_style(Color::Green, Attribute::Bold)
   );
-
   Ok(wasm)
 }
 
@@ -82,13 +88,13 @@ pub fn compile(input: &str) {
       if b.len() != 0 {
         std::fs::write("test.wasm", b).unwrap();
       }
-    },
+    }
     Err(e) => {
       println!(
         "{}",
         "Failed to Compile".apply_style(Color::Red, Attribute::Underline),
       );
       println!("{}", linter.render(e))
-    },
+    }
   };
 }
