@@ -19,6 +19,14 @@ pub fn expression(
       span,
       &[op.to_string()],
     ))?;
+    let op =
+      if let (UnaryOp::Minus, ExpressionKind::Literal(Literal::Real(_))) =
+        (op, &operand.kind)
+      {
+        UnaryOp::MinusDot
+      } else {
+        op
+      };
     Expression {
       span: span + operand.span,
       kind: e::Unary {
@@ -59,26 +67,6 @@ pub fn expression(
           op,
           left: current.into(),
           right: rhs.into(),
-        },
-      };
-    }
-    // Unary postfix
-    else if let Ok(op) = UnaryOp::try_from(&next.0) {
-      let new_precedence = op.precedence();
-      if ((op.assoc() == LEFT_ASSOC) && new_precedence <= precedence)
-        || (new_precedence < precedence)
-      {
-        return Ok(Some(current));
-      }
-      if op.assoc() == LEFT_ASSOC {
-        return Err(lint(ParseLint::BadPrefix, next.1, &[op.to_string()]));
-      }
-      skip(iter, 1);
-      current = Expression {
-        span: span + current.span,
-        kind: e::Unary {
-          op,
-          child: current.into(),
         },
       };
     }

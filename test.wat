@@ -1,1019 +1,2227 @@
 (module
-  (type (;0;) (struct (field i64)))
-  (type (;1;) (array (mut anyref)))
-  (type (;2;) (func (param (ref 0) (ref 1)) (result (ref 0))))
-  (type (;3;) (struct (field (ref 2)) (field (ref 1))))
-  (type (;4;) (func (param (ref 0) (ref 1)) (result (ref 3))))
-  (type (;5;) (struct (field f64)))
-  (type (;6;) (func (param (ref 5) (ref 1)) (result (ref 5))))
-  (type (;7;) (struct (field (ref 6)) (field (ref 1))))
-  (type (;8;) (func (param (ref 5) (ref 1)) (result (ref 7))))
-  (type (;9;) (struct (field i32)))
-  (type (;10;) (func (param (ref 9) (ref 1)) (result (ref 9))))
-  (type (;11;) (struct (field (ref 10)) (field (ref 1))))
-  (type (;12;) (func (param (ref 9) (ref 1)) (result (ref 11))))
-  (type (;13;) (struct (field i32)))
-  (type (;14;) (struct))
-  (type (;15;) (array (mut i8)))
-  (type (;16;) (func (param anyref (ref 1)) (result (ref 9))))
-  (type (;17;) (struct (field (ref 16)) (field (ref 1))))
-  (type (;18;) (func (param anyref (ref 1)) (result (ref 17))))
-  (type (;19;) (func))
-  (type (;20;) (func (param (ref 14) (ref 1)) (result (ref 14))))
-  (type (;21;) (struct (field (ref 20)) (field (ref 1))))
-  (type (;22;) (struct (field (ref 4)) (field (ref 1))))
-  (type (;23;) (func (param (ref 0) (ref 1)) (result (ref 22))))
-  (type (;24;) (struct (field (ref 23)) (field (ref 1))))
-  (type (;25;) (func (param anyref (ref 1)) (result (ref 14))))
-  (type (;26;) (struct (field (ref 25)) (field (ref 1))))
-  (type (;27;) (func (param anyref (ref 1)) (result (ref 26))))
-  (type (;28;) (struct (field (ref 27)) (field (ref 1))))
-  (type (;29;) (func (param anyref (ref 1)) (result (ref 28))))
-  (type (;30;) (struct (field (ref 29)) (field (ref 1))))
-  (type (;31;) (func (param anyref (ref 1)) (result (ref 30))))
-  (type (;32;) (struct (field (ref 31)) (field (ref 1))))
-  (type (;33;) (func (param anyref (ref 1)) (result (ref 32))))
-  (type (;34;) (struct (field (ref 33)) (field (ref 1))))
-  (type (;35;) (func (param anyref (ref 1)) (result (ref 34))))
-  (type (;36;) (struct (field (ref 35)) (field (ref 1))))
-  (type (;37;) (func (param anyref (ref 1)) (result (ref 36))))
-  (type (;38;) (struct (field (ref 37)) (field (ref 1))))
-  (type (;39;) (func (param anyref (ref 1)) (result (ref 38))))
-  (type (;40;) (struct (field (ref 39)) (field (ref 1))))
-  (type (;41;) (func (param anyref (ref 1)) (result (ref 40))))
-  (type (;42;) (struct (field (ref 41)) (field (ref 1))))
-  (type (;43;) (func (param anyref (ref 1)) (result (ref 42))))
-  (type (;44;) (struct (field (ref 43)) (field (ref 1))))
-  (type (;45;) (func (param anyref (ref 1)) (result (ref 44))))
-  (type (;46;) (struct (field (ref 45)) (field (ref 1))))
-  (type (;47;) (func (param anyref (ref 1)) (result (ref 46))))
-  (type (;48;) (struct (field (ref 47)) (field (ref 1))))
-  (type (;49;) (func (param anyref (ref 1)) (result (ref 48))))
-  (type (;50;) (struct (field (ref 49)) (field (ref 1))))
-  (type (;51;) (func (param anyref (ref 1)) (result (ref 50))))
-  (type (;52;) (struct (field (ref 51)) (field (ref 1))))
-  (type (;53;) (func (param anyref (ref 1)) (result (ref 52))))
-  (type (;54;) (struct (field (ref 53)) (field (ref 1))))
-  (type (;55;) (func (param anyref (ref 1)) (result (ref 54))))
-  (type (;56;) (struct (field (ref 55)) (field (ref 1))))
-  (type (;57;) (func (param anyref (ref 1)) (result (ref 56))))
-  (type (;58;) (struct (field (ref 57)) (field (ref 1))))
-  (type (;59;) (func (param anyref (ref 1)) (result (ref 58))))
-  (type (;60;) (struct (field (ref 59)) (field (ref 1))))
-  (type (;61;) (func (param anyref (ref 1)) (result (ref 60))))
-  (type (;62;) (struct (field (ref 61)) (field (ref 1))))
-  (type (;63;) (func (param anyref (ref 1)) (result (ref 62))))
-  (type (;64;) (struct (field (ref 63)) (field (ref 1))))
-  (type (;65;) (func (param anyref (ref 1)) (result (ref 64))))
-  (type (;66;) (struct (field (ref 65)) (field (ref 1))))
-  (type (;67;) (func (param anyref (ref 1)) (result (ref 66))))
-  (type (;68;) (struct (field (ref 67)) (field (ref 1))))
-  (type (;69;) (func (param anyref (ref 1)) (result (ref 68))))
-  (type (;70;) (struct (field (ref 69)) (field (ref 1))))
-  (type (;71;) (func (param anyref (ref 1)) (result (ref 70))))
-  (type (;72;) (struct (field (ref 71)) (field (ref 1))))
-  (type (;73;) (func (param anyref (ref 1)) (result (ref 72))))
-  (type (;74;) (struct (field (ref 73)) (field (ref 1))))
-  (type (;75;) (func (param anyref (ref 1)) (result (ref 74))))
-  (type (;76;) (struct (field (ref 75)) (field (ref 1))))
-  (table (;0;) 70 70 funcref)
-  (start 36)
-  (elem (;0;) (i32.const 0) func 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69)
-  (func (;0;) (type 2) (param (ref 0) (ref 1)) (result (ref 0))
-    (local (ref 0))
+  (type $integer (;0;) (struct (field i64)))
+  (type $capture (;1;) (array (mut anyref)))
+  (type $"(raw) integer -> integer" (;2;) (func (param (ref $integer) (ref $capture)) (result (ref $integer))))
+  (type $"integer -> integer" (;3;) (struct (field (ref $"(raw) integer -> integer")) (field (ref $capture))))
+  (type $"(raw) integer -> integer -> integer" (;4;) (func (param (ref $integer) (ref $capture)) (result (ref $"integer -> integer"))))
+  (type $real (;5;) (struct (field f64)))
+  (type $"(raw) real -> real" (;6;) (func (param (ref $real) (ref $capture)) (result (ref $real))))
+  (type $"real -> real" (;7;) (struct (field (ref $"(raw) real -> real")) (field (ref $capture))))
+  (type $"(raw) real -> real -> real" (;8;) (func (param (ref $real) (ref $capture)) (result (ref $"real -> real"))))
+  (type $boolean (;9;) (struct (field i32)))
+  (type $"(raw) boolean -> boolean" (;10;) (func (param (ref $boolean) (ref $capture)) (result (ref $boolean))))
+  (type $"boolean -> boolean" (;11;) (struct (field (ref $"(raw) boolean -> boolean")) (field (ref $capture))))
+  (type $"(raw) boolean -> boolean -> boolean" (;12;) (func (param (ref $boolean) (ref $capture)) (result (ref $"boolean -> boolean"))))
+  (type $glyph (;13;) (struct (field i32)))
+  (type $"()" (;14;) (struct))
+  (type $string (;15;) (array (mut i8)))
+  (type $"(raw) '0 -> boolean" (;16;) (func (param anyref (ref $capture)) (result (ref $boolean))))
+  (type $"'0 -> boolean" (;17;) (struct (field (ref $"(raw) '0 -> boolean")) (field (ref $capture))))
+  (type $"(raw) '0 -> '0 -> boolean" (;18;) (func (param anyref (ref $capture)) (result (ref $"'0 -> boolean"))))
+  (type $"(raw) boolean -> ()" (;19;) (func (param (ref $boolean) (ref $capture)) (result (ref $"()"))))
+  (type (;20;) (func))
+  (type $"boolean -> ()" (;21;) (struct (field (ref $"(raw) boolean -> ()")) (field (ref $capture))))
+  (table (;0;) 41 41 funcref)
+  (start 40)
+  (elem (;0;) (i32.const 0) func 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40)
+  (func (;0;) (type $"(raw) integer -> integer") (param $b (ref $integer)) (param (ref $capture)) (result (ref $integer))
+    (local $a (ref $integer))
     local.get 1
     i32.const 0
-    array.get 1
-    ref.cast (ref 0)
-    local.set 2
-    local.get 2
-    struct.get 0 0
-    local.get 0
-    struct.get 0 0
+    array.get $capture
+    ref.cast (ref $integer)
+    local.set $a
+    local.get $a
+    struct.get $integer 0
+    local.get $b
+    struct.get $integer 0
     i64.add
-    struct.new 0
+    struct.new $integer
   )
-  (func (;1;) (type 4) (param (ref 0) (ref 1)) (result (ref 3))
+  (func (;1;) (type $"(raw) integer -> integer -> integer") (param $a (ref $integer)) (param (ref $capture)) (result (ref $"integer -> integer"))
     ref.func 0
-    local.get 0
-    array.new_fixed 1 1
-    struct.new 3
+    local.get $a
+    array.new_fixed $capture 1
+    struct.new $"integer -> integer"
   )
-  (func (;2;) (type 2) (param (ref 0) (ref 1)) (result (ref 0))
-    (local (ref 0))
+  (func (;2;) (type $"(raw) integer -> integer") (param $b (ref $integer)) (param (ref $capture)) (result (ref $integer))
+    (local $a (ref $integer))
     local.get 1
     i32.const 0
-    array.get 1
-    ref.cast (ref 0)
-    local.set 2
-    local.get 2
-    struct.get 0 0
-    local.get 0
-    struct.get 0 0
+    array.get $capture
+    ref.cast (ref $integer)
+    local.set $a
+    local.get $a
+    struct.get $integer 0
+    local.get $b
+    struct.get $integer 0
     i64.sub
-    struct.new 0
+    struct.new $integer
   )
-  (func (;3;) (type 4) (param (ref 0) (ref 1)) (result (ref 3))
+  (func (;3;) (type $"(raw) integer -> integer -> integer") (param $a (ref $integer)) (param (ref $capture)) (result (ref $"integer -> integer"))
     ref.func 2
-    local.get 0
-    array.new_fixed 1 1
-    struct.new 3
+    local.get $a
+    array.new_fixed $capture 1
+    struct.new $"integer -> integer"
   )
-  (func (;4;) (type 2) (param (ref 0) (ref 1)) (result (ref 0))
-    (local (ref 0))
+  (func (;4;) (type $"(raw) integer -> integer") (param $b (ref $integer)) (param (ref $capture)) (result (ref $integer))
+    (local $a (ref $integer))
     local.get 1
     i32.const 0
-    array.get 1
-    ref.cast (ref 0)
-    local.set 2
-    local.get 2
-    struct.get 0 0
-    local.get 0
-    struct.get 0 0
+    array.get $capture
+    ref.cast (ref $integer)
+    local.set $a
+    local.get $a
+    struct.get $integer 0
+    local.get $b
+    struct.get $integer 0
     i64.mul
-    struct.new 0
+    struct.new $integer
   )
-  (func (;5;) (type 4) (param (ref 0) (ref 1)) (result (ref 3))
+  (func (;5;) (type $"(raw) integer -> integer -> integer") (param $a (ref $integer)) (param (ref $capture)) (result (ref $"integer -> integer"))
     ref.func 4
-    local.get 0
-    array.new_fixed 1 1
-    struct.new 3
+    local.get $a
+    array.new_fixed $capture 1
+    struct.new $"integer -> integer"
   )
-  (func (;6;) (type 2) (param (ref 0) (ref 1)) (result (ref 0))
-    (local (ref 0))
+  (func (;6;) (type $"(raw) integer -> integer") (param $b (ref $integer)) (param (ref $capture)) (result (ref $integer))
+    (local $a (ref $integer))
     local.get 1
     i32.const 0
-    array.get 1
-    ref.cast (ref 0)
-    local.set 2
-    local.get 2
-    struct.get 0 0
-    local.get 0
-    struct.get 0 0
+    array.get $capture
+    ref.cast (ref $integer)
+    local.set $a
+    local.get $a
+    struct.get $integer 0
+    local.get $b
+    struct.get $integer 0
     i64.div_s
-    struct.new 0
+    struct.new $integer
   )
-  (func (;7;) (type 4) (param (ref 0) (ref 1)) (result (ref 3))
+  (func (;7;) (type $"(raw) integer -> integer -> integer") (param $a (ref $integer)) (param (ref $capture)) (result (ref $"integer -> integer"))
     ref.func 6
-    local.get 0
-    array.new_fixed 1 1
-    struct.new 3
+    local.get $a
+    array.new_fixed $capture 1
+    struct.new $"integer -> integer"
   )
-  (func (;8;) (type 2) (param (ref 0) (ref 1)) (result (ref 0))
-    (local (ref 0))
+  (func (;8;) (type $"(raw) integer -> integer") (param $b (ref $integer)) (param (ref $capture)) (result (ref $integer))
+    (local $a (ref $integer))
     local.get 1
     i32.const 0
-    array.get 1
-    ref.cast (ref 0)
-    local.set 2
-    local.get 2
-    struct.get 0 0
-    local.get 0
-    struct.get 0 0
+    array.get $capture
+    ref.cast (ref $integer)
+    local.set $a
+    local.get $a
+    struct.get $integer 0
+    local.get $b
+    struct.get $integer 0
     i64.rem_s
-    struct.new 0
+    struct.new $integer
   )
-  (func (;9;) (type 4) (param (ref 0) (ref 1)) (result (ref 3))
+  (func (;9;) (type $"(raw) integer -> integer -> integer") (param $a (ref $integer)) (param (ref $capture)) (result (ref $"integer -> integer"))
     ref.func 8
-    local.get 0
-    array.new_fixed 1 1
-    struct.new 3
+    local.get $a
+    array.new_fixed $capture 1
+    struct.new $"integer -> integer"
   )
-  (func (;10;) (type 6) (param (ref 5) (ref 1)) (result (ref 5))
-    (local (ref 5))
+  (func (;10;) (type $"(raw) real -> real") (param $b (ref $real)) (param (ref $capture)) (result (ref $real))
+    (local $a (ref $real))
     local.get 1
     i32.const 0
-    array.get 1
-    ref.cast (ref 5)
-    local.set 2
-    local.get 2
-    struct.get 5 0
-    local.get 0
-    struct.get 5 0
+    array.get $capture
+    ref.cast (ref $real)
+    local.set $a
+    local.get $a
+    struct.get $real 0
+    local.get $b
+    struct.get $real 0
     f64.add
-    struct.new 5
+    struct.new $real
   )
-  (func (;11;) (type 8) (param (ref 5) (ref 1)) (result (ref 7))
+  (func (;11;) (type $"(raw) real -> real -> real") (param $a (ref $real)) (param (ref $capture)) (result (ref $"real -> real"))
     ref.func 10
-    local.get 0
-    array.new_fixed 1 1
-    struct.new 7
+    local.get $a
+    array.new_fixed $capture 1
+    struct.new $"real -> real"
   )
-  (func (;12;) (type 6) (param (ref 5) (ref 1)) (result (ref 5))
-    (local (ref 5))
+  (func (;12;) (type $"(raw) real -> real") (param $b (ref $real)) (param (ref $capture)) (result (ref $real))
+    (local $a (ref $real))
     local.get 1
     i32.const 0
-    array.get 1
-    ref.cast (ref 5)
-    local.set 2
-    local.get 2
-    struct.get 5 0
-    local.get 0
-    struct.get 5 0
+    array.get $capture
+    ref.cast (ref $real)
+    local.set $a
+    local.get $a
+    struct.get $real 0
+    local.get $b
+    struct.get $real 0
     f64.sub
-    struct.new 5
+    struct.new $real
   )
-  (func (;13;) (type 8) (param (ref 5) (ref 1)) (result (ref 7))
+  (func (;13;) (type $"(raw) real -> real -> real") (param $a (ref $real)) (param (ref $capture)) (result (ref $"real -> real"))
     ref.func 12
-    local.get 0
-    array.new_fixed 1 1
-    struct.new 7
+    local.get $a
+    array.new_fixed $capture 1
+    struct.new $"real -> real"
   )
-  (func (;14;) (type 6) (param (ref 5) (ref 1)) (result (ref 5))
-    (local (ref 5))
+  (func (;14;) (type $"(raw) real -> real") (param $b (ref $real)) (param (ref $capture)) (result (ref $real))
+    (local $a (ref $real))
     local.get 1
     i32.const 0
-    array.get 1
-    ref.cast (ref 5)
-    local.set 2
-    local.get 2
-    struct.get 5 0
-    local.get 0
-    struct.get 5 0
+    array.get $capture
+    ref.cast (ref $real)
+    local.set $a
+    local.get $a
+    struct.get $real 0
+    local.get $b
+    struct.get $real 0
     f64.mul
-    struct.new 5
+    struct.new $real
   )
-  (func (;15;) (type 8) (param (ref 5) (ref 1)) (result (ref 7))
+  (func (;15;) (type $"(raw) real -> real -> real") (param $a (ref $real)) (param (ref $capture)) (result (ref $"real -> real"))
     ref.func 14
-    local.get 0
-    array.new_fixed 1 1
-    struct.new 7
+    local.get $a
+    array.new_fixed $capture 1
+    struct.new $"real -> real"
   )
-  (func (;16;) (type 6) (param (ref 5) (ref 1)) (result (ref 5))
-    (local (ref 5))
+  (func (;16;) (type $"(raw) real -> real") (param $b (ref $real)) (param (ref $capture)) (result (ref $real))
+    (local $a (ref $real))
     local.get 1
     i32.const 0
-    array.get 1
-    ref.cast (ref 5)
-    local.set 2
-    local.get 2
-    struct.get 5 0
-    local.get 0
-    struct.get 5 0
+    array.get $capture
+    ref.cast (ref $real)
+    local.set $a
+    local.get $a
+    struct.get $real 0
+    local.get $b
+    struct.get $real 0
     f64.div
-    struct.new 5
+    struct.new $real
   )
-  (func (;17;) (type 8) (param (ref 5) (ref 1)) (result (ref 7))
+  (func (;17;) (type $"(raw) real -> real -> real") (param $a (ref $real)) (param (ref $capture)) (result (ref $"real -> real"))
     ref.func 16
-    local.get 0
-    array.new_fixed 1 1
-    struct.new 7
+    local.get $a
+    array.new_fixed $capture 1
+    struct.new $"real -> real"
   )
-  (func (;18;) (type 10) (param (ref 9) (ref 1)) (result (ref 9))
-    (local (ref 9))
+  (func (;18;) (type $"(raw) boolean -> boolean") (param $b (ref $boolean)) (param (ref $capture)) (result (ref $boolean))
+    (local $a (ref $boolean))
     local.get 1
     i32.const 0
-    array.get 1
-    ref.cast (ref 9)
-    local.set 2
-    local.get 2
-    struct.get 9 0
-    local.get 0
-    struct.get 9 0
+    array.get $capture
+    ref.cast (ref $boolean)
+    local.set $a
+    local.get $a
+    struct.get $boolean 0
+    local.get $b
+    struct.get $boolean 0
     i32.and
-    struct.new 9
+    struct.new $boolean
   )
-  (func (;19;) (type 12) (param (ref 9) (ref 1)) (result (ref 11))
+  (func (;19;) (type $"(raw) boolean -> boolean -> boolean") (param $a (ref $boolean)) (param (ref $capture)) (result (ref $"boolean -> boolean"))
     ref.func 18
-    local.get 0
-    array.new_fixed 1 1
-    struct.new 11
+    local.get $a
+    array.new_fixed $capture 1
+    struct.new $"boolean -> boolean"
   )
-  (func (;20;) (type 10) (param (ref 9) (ref 1)) (result (ref 9))
-    (local (ref 9))
+  (func (;20;) (type $"(raw) boolean -> boolean") (param $b (ref $boolean)) (param (ref $capture)) (result (ref $boolean))
+    (local $a (ref $boolean))
     local.get 1
     i32.const 0
-    array.get 1
-    ref.cast (ref 9)
-    local.set 2
-    local.get 2
-    struct.get 9 0
-    local.get 0
-    struct.get 9 0
+    array.get $capture
+    ref.cast (ref $boolean)
+    local.set $a
+    local.get $a
+    struct.get $boolean 0
+    local.get $b
+    struct.get $boolean 0
     i32.or
-    struct.new 9
+    struct.new $boolean
   )
-  (func (;21;) (type 12) (param (ref 9) (ref 1)) (result (ref 11))
+  (func (;21;) (type $"(raw) boolean -> boolean -> boolean") (param $a (ref $boolean)) (param (ref $capture)) (result (ref $"boolean -> boolean"))
     ref.func 20
-    local.get 0
-    array.new_fixed 1 1
-    struct.new 11
+    local.get $a
+    array.new_fixed $capture 1
+    struct.new $"boolean -> boolean"
   )
-  (func (;22;) (type 10) (param (ref 9) (ref 1)) (result (ref 9))
-    (local (ref 9))
+  (func (;22;) (type $"(raw) boolean -> boolean") (param $b (ref $boolean)) (param (ref $capture)) (result (ref $boolean))
+    (local $a (ref $boolean))
     local.get 1
     i32.const 0
-    array.get 1
-    ref.cast (ref 9)
-    local.set 2
-    local.get 2
-    struct.get 9 0
-    local.get 0
-    struct.get 9 0
+    array.get $capture
+    ref.cast (ref $boolean)
+    local.set $a
+    local.get $a
+    struct.get $boolean 0
+    local.get $b
+    struct.get $boolean 0
     i32.xor
-    struct.new 9
+    struct.new $boolean
   )
-  (func (;23;) (type 12) (param (ref 9) (ref 1)) (result (ref 11))
+  (func (;23;) (type $"(raw) boolean -> boolean -> boolean") (param $a (ref $boolean)) (param (ref $capture)) (result (ref $"boolean -> boolean"))
     ref.func 22
-    local.get 0
-    array.new_fixed 1 1
-    struct.new 11
+    local.get $a
+    array.new_fixed $capture 1
+    struct.new $"boolean -> boolean"
   )
-  (func (;24;) (type 16) (param anyref (ref 1)) (result (ref 9))
-    (local anyref)
+  (func (;24;) (type $"(raw) '0 -> boolean") (param $b anyref) (param (ref $capture)) (result (ref $boolean))
+    (local $a anyref) (local i32) (local $index i32)
     local.get 1
     i32.const 0
-    array.get 1
+    array.get $capture
     ref.cast (ref any)
-    local.set 2
+    local.set $a
     block (result anyref) ;; label = @1
       block (result anyref) ;; label = @2
         block (result anyref) ;; label = @3
           block (result anyref) ;; label = @4
             block (result anyref) ;; label = @5
-              local.get 2
-              br_on_cast 0 (;@5;) anyref (ref 0)
-              br_on_cast 1 (;@4;) anyref (ref 5)
-              br_on_cast 2 (;@3;) anyref (ref 9)
-              br_on_cast 3 (;@2;) anyref (ref 13)
-              br_on_cast 4 (;@1;) anyref (ref 14)
-              unreachable
+              block (result anyref) ;; label = @6
+                local.get $a
+                br_on_cast 0 (;@6;) anyref (ref $integer)
+                br_on_cast 1 (;@5;) anyref (ref $real)
+                br_on_cast 2 (;@4;) anyref (ref $boolean)
+                br_on_cast 3 (;@3;) anyref (ref $glyph)
+                br_on_cast 4 (;@2;) anyref (ref $"()")
+                br_on_cast 5 (;@1;) anyref (ref $string)
+                unreachable
+              end
+              ref.cast (ref $integer)
+              struct.get $integer 0
+              local.get $b
+              ref.cast (ref $integer)
+              struct.get $integer 0
+              i64.eq
+              struct.new $boolean
               return
             end
-            ref.cast (ref 0)
-            struct.get 0 0
-            local.get 0
-            ref.cast (ref 0)
-            struct.get 0 0
-            i64.eq
-            struct.new 9
+            ref.cast (ref $real)
+            struct.get $real 0
+            local.get $b
+            ref.cast (ref $real)
+            struct.get $real 0
+            f64.eq
+            struct.new $boolean
             return
           end
-          ref.cast (ref 5)
-          struct.get 5 0
-          local.get 0
-          ref.cast (ref 5)
-          struct.get 5 0
-          f64.eq
-          struct.new 9
+          ref.cast (ref $boolean)
+          struct.get $boolean 0
+          local.get $b
+          ref.cast (ref $boolean)
+          struct.get $boolean 0
+          i32.eq
+          struct.new $boolean
           return
         end
-        ref.cast (ref 9)
-        struct.get 9 0
-        local.get 0
-        ref.cast (ref 9)
-        struct.get 9 0
+        ref.cast (ref $glyph)
+        struct.get $glyph 0
+        local.get $b
+        ref.cast (ref $glyph)
+        struct.get $glyph 0
         i32.eq
-        struct.new 9
+        struct.new $boolean
         return
       end
-      ref.cast (ref 13)
-      struct.get 13 0
-      local.get 0
-      ref.cast (ref 13)
-      struct.get 13 0
-      i32.eq
-      struct.new 9
+      i32.const 1
+      struct.new $boolean
       return
     end
-    i32.const 1
-    struct.new 9
-    return
-  )
-  (func (;25;) (type 18) (param anyref (ref 1)) (result (ref 17))
-    ref.func 24
-    local.get 0
-    array.new_fixed 1 1
-    struct.new 17
-  )
-  (func (;26;) (type 16) (param anyref (ref 1)) (result (ref 9))
-    (local anyref)
-    local.get 1
+    ref.cast (ref $string)
+    array.len
+    local.get $b
+    ref.cast (ref $string)
+    array.len
+    i32.gt_u
+    if ;; label = @1
+      i32.const 0
+      struct.new $boolean
+      return
+    end
+    local.get $a
+    ref.cast (ref $string)
+    array.len
+    local.get $b
+    ref.cast (ref $string)
+    array.len
+    i32.lt_u
+    if ;; label = @1
+      i32.const 0
+      struct.new $boolean
+      return
+    end
     i32.const 0
-    array.get 1
-    ref.cast (ref any)
-    local.set 2
-    block (result anyref) ;; label = @1
-      block (result anyref) ;; label = @2
-        block (result anyref) ;; label = @3
-          block (result anyref) ;; label = @4
-            block (result anyref) ;; label = @5
-              local.get 2
-              br_on_cast 0 (;@5;) anyref (ref 0)
-              br_on_cast 1 (;@4;) anyref (ref 5)
-              br_on_cast 2 (;@3;) anyref (ref 9)
-              br_on_cast 3 (;@2;) anyref (ref 13)
-              br_on_cast 4 (;@1;) anyref (ref 14)
-              unreachable
-              return
-            end
-            ref.cast (ref 0)
-            struct.get 0 0
-            local.get 0
-            ref.cast (ref 0)
-            struct.get 0 0
-            i64.ne
-            struct.new 9
-            return
-          end
-          ref.cast (ref 5)
-          struct.get 5 0
-          local.get 0
-          ref.cast (ref 5)
-          struct.get 5 0
-          f64.ne
-          struct.new 9
-          return
-        end
-        ref.cast (ref 9)
-        struct.get 9 0
-        local.get 0
-        ref.cast (ref 9)
-        struct.get 9 0
-        i32.ne
-        struct.new 9
-        return
-      end
-      ref.cast (ref 13)
-      struct.get 13 0
-      local.get 0
-      ref.cast (ref 13)
-      struct.get 13 0
+    local.set 3
+    local.get $a
+    ref.cast (ref $string)
+    array.len
+    local.set $index
+    loop ;; label = @1
+      local.get $a
+      ref.cast (ref $string)
+      local.get 3
+      array.get_u $string
+      local.get $b
+      ref.cast (ref $string)
+      local.get 3
+      array.get_u $string
       i32.ne
-      struct.new 9
-      return
-    end
-    i32.const 0
-    struct.new 9
-    return
-  )
-  (func (;27;) (type 18) (param anyref (ref 1)) (result (ref 17))
-    ref.func 26
-    local.get 0
-    array.new_fixed 1 1
-    struct.new 17
-  )
-  (func (;28;) (type 16) (param anyref (ref 1)) (result (ref 9))
-    (local anyref)
-    local.get 1
-    i32.const 0
-    array.get 1
-    ref.cast (ref any)
-    local.set 2
-    block (result anyref) ;; label = @1
-      block (result anyref) ;; label = @2
-        block (result anyref) ;; label = @3
-          block (result anyref) ;; label = @4
-            block (result anyref) ;; label = @5
-              local.get 2
-              br_on_cast 0 (;@5;) anyref (ref 0)
-              br_on_cast 1 (;@4;) anyref (ref 5)
-              br_on_cast 2 (;@3;) anyref (ref 9)
-              br_on_cast 3 (;@2;) anyref (ref 13)
-              br_on_cast 4 (;@1;) anyref (ref 14)
-              unreachable
-              return
-            end
-            ref.cast (ref 0)
-            struct.get 0 0
-            local.get 0
-            ref.cast (ref 0)
-            struct.get 0 0
-            i64.le_s
-            struct.new 9
-            return
-          end
-          ref.cast (ref 5)
-          struct.get 5 0
-          local.get 0
-          ref.cast (ref 5)
-          struct.get 5 0
-          f64.le
-          struct.new 9
-          return
-        end
-        ref.cast (ref 9)
-        struct.get 9 0
-        local.get 0
-        ref.cast (ref 9)
-        struct.get 9 0
-        i32.le_u
-        struct.new 9
+      if ;; label = @2
+        i32.const 0
+        struct.new $boolean
         return
       end
-      ref.cast (ref 13)
-      struct.get 13 0
-      local.get 0
-      ref.cast (ref 13)
-      struct.get 13 0
-      i32.le_u
-      struct.new 9
-      return
-    end
-    i32.const 1
-    struct.new 9
-    return
-  )
-  (func (;29;) (type 18) (param anyref (ref 1)) (result (ref 17))
-    ref.func 28
-    local.get 0
-    array.new_fixed 1 1
-    struct.new 17
-  )
-  (func (;30;) (type 16) (param anyref (ref 1)) (result (ref 9))
-    (local anyref)
-    local.get 1
-    i32.const 0
-    array.get 1
-    ref.cast (ref any)
-    local.set 2
-    block (result anyref) ;; label = @1
-      block (result anyref) ;; label = @2
-        block (result anyref) ;; label = @3
-          block (result anyref) ;; label = @4
-            block (result anyref) ;; label = @5
-              local.get 2
-              br_on_cast 0 (;@5;) anyref (ref 0)
-              br_on_cast 1 (;@4;) anyref (ref 5)
-              br_on_cast 2 (;@3;) anyref (ref 9)
-              br_on_cast 3 (;@2;) anyref (ref 13)
-              br_on_cast 4 (;@1;) anyref (ref 14)
-              unreachable
-              return
-            end
-            ref.cast (ref 0)
-            struct.get 0 0
-            local.get 0
-            ref.cast (ref 0)
-            struct.get 0 0
-            i64.ge_s
-            struct.new 9
-            return
-          end
-          ref.cast (ref 5)
-          struct.get 5 0
-          local.get 0
-          ref.cast (ref 5)
-          struct.get 5 0
-          f64.ge
-          struct.new 9
-          return
-        end
-        ref.cast (ref 9)
-        struct.get 9 0
-        local.get 0
-        ref.cast (ref 9)
-        struct.get 9 0
-        i32.ge_u
-        struct.new 9
-        return
-      end
-      ref.cast (ref 13)
-      struct.get 13 0
-      local.get 0
-      ref.cast (ref 13)
-      struct.get 13 0
-      i32.ge_u
-      struct.new 9
-      return
-    end
-    i32.const 1
-    struct.new 9
-    return
-  )
-  (func (;31;) (type 18) (param anyref (ref 1)) (result (ref 17))
-    ref.func 30
-    local.get 0
-    array.new_fixed 1 1
-    struct.new 17
-  )
-  (func (;32;) (type 16) (param anyref (ref 1)) (result (ref 9))
-    (local anyref)
-    local.get 1
-    i32.const 0
-    array.get 1
-    ref.cast (ref any)
-    local.set 2
-    block (result anyref) ;; label = @1
-      block (result anyref) ;; label = @2
-        block (result anyref) ;; label = @3
-          block (result anyref) ;; label = @4
-            block (result anyref) ;; label = @5
-              local.get 2
-              br_on_cast 0 (;@5;) anyref (ref 0)
-              br_on_cast 1 (;@4;) anyref (ref 5)
-              br_on_cast 2 (;@3;) anyref (ref 9)
-              br_on_cast 3 (;@2;) anyref (ref 13)
-              br_on_cast 4 (;@1;) anyref (ref 14)
-              unreachable
-              return
-            end
-            ref.cast (ref 0)
-            struct.get 0 0
-            local.get 0
-            ref.cast (ref 0)
-            struct.get 0 0
-            i64.lt_s
-            struct.new 9
-            return
-          end
-          ref.cast (ref 5)
-          struct.get 5 0
-          local.get 0
-          ref.cast (ref 5)
-          struct.get 5 0
-          f64.lt
-          struct.new 9
-          return
-        end
-        ref.cast (ref 9)
-        struct.get 9 0
-        local.get 0
-        ref.cast (ref 9)
-        struct.get 9 0
-        i32.lt_u
-        struct.new 9
-        return
-      end
-      ref.cast (ref 13)
-      struct.get 13 0
-      local.get 0
-      ref.cast (ref 13)
-      struct.get 13 0
+      local.get 3
+      i32.const 1
+      i32.add
+      local.tee 3
+      local.get $index
       i32.lt_u
-      struct.new 9
-      return
+      br_if 0 (;@1;)
     end
-    i32.const 0
-    struct.new 9
+    i32.const 1
+    struct.new $boolean
     return
   )
-  (func (;33;) (type 18) (param anyref (ref 1)) (result (ref 17))
-    ref.func 32
-    local.get 0
-    array.new_fixed 1 1
-    struct.new 17
+  (func (;25;) (type $"(raw) '0 -> '0 -> boolean") (param $a anyref) (param (ref $capture)) (result (ref $"'0 -> boolean"))
+    ref.func 24
+    local.get $a
+    array.new_fixed $capture 1
+    struct.new $"'0 -> boolean"
   )
-  (func (;34;) (type 16) (param anyref (ref 1)) (result (ref 9))
-    (local anyref)
+  (func (;26;) (type $"(raw) '0 -> boolean") (param $b anyref) (param (ref $capture)) (result (ref $boolean))
+    (local $a anyref) (local i32) (local $index i32)
     local.get 1
     i32.const 0
-    array.get 1
+    array.get $capture
     ref.cast (ref any)
-    local.set 2
+    local.set $a
     block (result anyref) ;; label = @1
       block (result anyref) ;; label = @2
         block (result anyref) ;; label = @3
           block (result anyref) ;; label = @4
             block (result anyref) ;; label = @5
-              local.get 2
-              br_on_cast 0 (;@5;) anyref (ref 0)
-              br_on_cast 1 (;@4;) anyref (ref 5)
-              br_on_cast 2 (;@3;) anyref (ref 9)
-              br_on_cast 3 (;@2;) anyref (ref 13)
-              br_on_cast 4 (;@1;) anyref (ref 14)
-              unreachable
+              block (result anyref) ;; label = @6
+                local.get $a
+                br_on_cast 0 (;@6;) anyref (ref $integer)
+                br_on_cast 1 (;@5;) anyref (ref $real)
+                br_on_cast 2 (;@4;) anyref (ref $boolean)
+                br_on_cast 3 (;@3;) anyref (ref $glyph)
+                br_on_cast 4 (;@2;) anyref (ref $"()")
+                br_on_cast 5 (;@1;) anyref (ref $string)
+                unreachable
+              end
+              ref.cast (ref $integer)
+              struct.get $integer 0
+              local.get $b
+              ref.cast (ref $integer)
+              struct.get $integer 0
+              i64.ne
+              struct.new $boolean
               return
             end
-            ref.cast (ref 0)
-            struct.get 0 0
-            local.get 0
-            ref.cast (ref 0)
-            struct.get 0 0
-            i64.gt_s
-            struct.new 9
+            ref.cast (ref $real)
+            struct.get $real 0
+            local.get $b
+            ref.cast (ref $real)
+            struct.get $real 0
+            f64.ne
+            struct.new $boolean
             return
           end
-          ref.cast (ref 5)
-          struct.get 5 0
-          local.get 0
-          ref.cast (ref 5)
-          struct.get 5 0
-          f64.gt
-          struct.new 9
+          ref.cast (ref $boolean)
+          struct.get $boolean 0
+          local.get $b
+          ref.cast (ref $boolean)
+          struct.get $boolean 0
+          i32.ne
+          struct.new $boolean
           return
         end
-        ref.cast (ref 9)
-        struct.get 9 0
-        local.get 0
-        ref.cast (ref 9)
-        struct.get 9 0
-        i32.gt_u
-        struct.new 9
+        ref.cast (ref $glyph)
+        struct.get $glyph 0
+        local.get $b
+        ref.cast (ref $glyph)
+        struct.get $glyph 0
+        i32.ne
+        struct.new $boolean
         return
       end
-      ref.cast (ref 13)
-      struct.get 13 0
-      local.get 0
-      ref.cast (ref 13)
-      struct.get 13 0
-      i32.gt_u
-      struct.new 9
+      i32.const 0
+      struct.new $boolean
+      return
+    end
+    ref.cast (ref $string)
+    array.len
+    local.get $b
+    ref.cast (ref $string)
+    array.len
+    i32.gt_u
+    if ;; label = @1
+      i32.const 1
+      struct.new $boolean
+      return
+    end
+    local.get $a
+    ref.cast (ref $string)
+    array.len
+    local.get $b
+    ref.cast (ref $string)
+    array.len
+    i32.lt_u
+    if ;; label = @1
+      i32.const 1
+      struct.new $boolean
       return
     end
     i32.const 0
-    struct.new 9
+    local.set 3
+    local.get $a
+    ref.cast (ref $string)
+    array.len
+    local.set $index
+    loop ;; label = @1
+      local.get $a
+      ref.cast (ref $string)
+      local.get 3
+      array.get_u $string
+      local.get $b
+      ref.cast (ref $string)
+      local.get 3
+      array.get_u $string
+      i32.eq
+      if ;; label = @2
+        i32.const 0
+        struct.new $boolean
+        return
+      end
+      local.get 3
+      i32.const 1
+      i32.add
+      local.tee 3
+      local.get $index
+      i32.lt_u
+      br_if 0 (;@1;)
+    end
+    i32.const 1
+    struct.new $boolean
     return
   )
-  (func (;35;) (type 18) (param anyref (ref 1)) (result (ref 17))
-    ref.func 34
-    local.get 0
-    array.new_fixed 1 1
-    struct.new 17
+  (func (;27;) (type $"(raw) '0 -> '0 -> boolean") (param $a anyref) (param (ref $capture)) (result (ref $"'0 -> boolean"))
+    ref.func 26
+    local.get $a
+    array.new_fixed $capture 1
+    struct.new $"'0 -> boolean"
   )
-  (func (;36;) (type 19)
-    (local (ref 21) (ref 3) (ref 22) (ref 24) anyref)
-    ref.func 37
-    array.new_fixed 1 0
-    struct.new 21
-    local.set 0
-    struct.new 14
-    local.get 0
-    struct.get 21 1
-    local.get 0
-    struct.get 21 0
-    call_ref 20
-    drop
-    ref.func 38
-    array.new_fixed 1 0
-    struct.new 22
-    drop
-    ref.func 40
-    array.new_fixed 1 0
-    struct.new 24
+  (func (;28;) (type $"(raw) '0 -> boolean") (param $b anyref) (param (ref $capture)) (result (ref $boolean))
+    (local $a anyref) (local i32) (local $index i32)
+    local.get 1
+    i32.const 0
+    array.get $capture
+    ref.cast (ref any)
+    local.set $a
+    block (result anyref) ;; label = @1
+      block (result anyref) ;; label = @2
+        block (result anyref) ;; label = @3
+          block (result anyref) ;; label = @4
+            block (result anyref) ;; label = @5
+              block (result anyref) ;; label = @6
+                local.get $a
+                br_on_cast 0 (;@6;) anyref (ref $integer)
+                br_on_cast 1 (;@5;) anyref (ref $real)
+                br_on_cast 2 (;@4;) anyref (ref $boolean)
+                br_on_cast 3 (;@3;) anyref (ref $glyph)
+                br_on_cast 4 (;@2;) anyref (ref $"()")
+                br_on_cast 5 (;@1;) anyref (ref $string)
+                unreachable
+              end
+              ref.cast (ref $integer)
+              struct.get $integer 0
+              local.get $b
+              ref.cast (ref $integer)
+              struct.get $integer 0
+              i64.le_s
+              struct.new $boolean
+              return
+            end
+            ref.cast (ref $real)
+            struct.get $real 0
+            local.get $b
+            ref.cast (ref $real)
+            struct.get $real 0
+            f64.le
+            struct.new $boolean
+            return
+          end
+          ref.cast (ref $boolean)
+          struct.get $boolean 0
+          local.get $b
+          ref.cast (ref $boolean)
+          struct.get $boolean 0
+          i32.le_u
+          struct.new $boolean
+          return
+        end
+        ref.cast (ref $glyph)
+        struct.get $glyph 0
+        local.get $b
+        ref.cast (ref $glyph)
+        struct.get $glyph 0
+        i32.le_u
+        struct.new $boolean
+        return
+      end
+      i32.const 1
+      struct.new $boolean
+      return
+    end
+    ref.cast (ref $string)
+    array.len
+    local.get $b
+    ref.cast (ref $string)
+    array.len
+    i32.gt_u
+    if ;; label = @1
+      i32.const 0
+      struct.new $boolean
+      return
+    end
+    local.get $a
+    ref.cast (ref $string)
+    array.len
+    local.get $b
+    ref.cast (ref $string)
+    array.len
+    i32.lt_u
+    if ;; label = @1
+      i32.const 1
+      struct.new $boolean
+      return
+    end
+    i32.const 0
     local.set 3
-    i64.const 1
-    struct.new 0
-    local.get 3
-    struct.get 24 1
-    local.get 3
-    struct.get 24 0
-    call_ref 23
-    local.set 2
-    i64.const 2
-    struct.new 0
-    local.get 2
-    struct.get 22 1
-    local.get 2
-    struct.get 22 0
-    call_ref 4
-    local.set 1
-    i64.const 3
-    struct.new 0
-    local.get 1
-    struct.get 3 1
-    local.get 1
-    struct.get 3 0
-    call_ref 2
-    drop
-    i64.const 1
-    struct.new 0
-    local.set 4
-    ref.func 43
-    local.get 4
-    ref.cast (ref any)
-    array.new_fixed 1 1
-    struct.new 3
-    drop
-    ref.func 44
-    array.new_fixed 1 0
-    struct.new 76
-    drop
-  )
-  (func (;37;) (type 20) (param (ref 14) (ref 1)) (result (ref 14))
-    local.get 0
-    ref.cast (ref 14)
-  )
-  (func (;38;) (type 4) (param (ref 0) (ref 1)) (result (ref 3))
-    ref.func 39
-    local.get 0
-    ref.cast (ref any)
-    array.new_fixed 1 1
-    struct.new 3
-  )
-  (func (;39;) (type 2) (param (ref 0) (ref 1)) (result (ref 0))
-    (local (ref 0) (ref 3))
-    local.get 1
-    i32.const 0
-    array.get 1
-    ref.cast (ref 0)
-    local.set 2
-    local.get 2
-    ref.cast (ref 0)
-    array.new_fixed 1 0
-    call 1
-    local.set 3
-    local.get 0
-    ref.cast (ref 0)
-    local.get 3
-    struct.get 3 1
-    local.get 3
-    struct.get 3 0
-    call_ref 2
-  )
-  (func (;40;) (type 23) (param (ref 0) (ref 1)) (result (ref 22))
-    ref.func 41
-    local.get 0
-    ref.cast (ref any)
-    array.new_fixed 1 1
-    struct.new 22
-  )
-  (func (;41;) (type 4) (param (ref 0) (ref 1)) (result (ref 3))
-    (local (ref 0))
-    local.get 1
-    i32.const 0
-    array.get 1
-    ref.cast (ref 0)
-    local.set 2
-    ref.func 42
-    local.get 2
-    ref.cast (ref any)
-    local.get 0
-    ref.cast (ref any)
-    array.new_fixed 1 2
-    struct.new 3
-  )
-  (func (;42;) (type 2) (param (ref 0) (ref 1)) (result (ref 0))
-    (local (ref 0) (ref 0) (ref 3) (ref 3))
-    local.get 1
-    i32.const 0
-    array.get 1
-    ref.cast (ref 0)
-    local.set 2
-    local.get 1
+    local.get $a
+    ref.cast (ref $string)
+    array.len
+    local.set $index
+    loop ;; label = @1
+      local.get $a
+      ref.cast (ref $string)
+      local.get 3
+      array.get_u $string
+      local.get $b
+      ref.cast (ref $string)
+      local.get 3
+      array.get_u $string
+      i32.gt_u
+      if ;; label = @2
+        i32.const 0
+        struct.new $boolean
+        return
+      end
+      local.get 3
+      i32.const 1
+      i32.add
+      local.tee 3
+      local.get $index
+      i32.lt_u
+      br_if 0 (;@1;)
+    end
     i32.const 1
-    array.get 1
-    ref.cast (ref 0)
-    local.set 3
-    local.get 2
-    ref.cast (ref 0)
-    array.new_fixed 1 0
-    call 1
-    local.set 4
-    local.get 3
-    ref.cast (ref 0)
-    local.get 4
-    struct.get 3 1
-    local.get 4
-    struct.get 3 0
-    call_ref 2
-    array.new_fixed 1 0
-    call 1
-    local.set 5
-    local.get 0
-    ref.cast (ref 0)
-    local.get 5
-    struct.get 3 1
-    local.get 5
-    struct.get 3 0
-    call_ref 2
+    struct.new $boolean
+    return
   )
-  (func (;43;) (type 2) (param (ref 0) (ref 1)) (result (ref 0))
-    (local (ref 0) (ref 3))
+  (func (;29;) (type $"(raw) '0 -> '0 -> boolean") (param $a anyref) (param (ref $capture)) (result (ref $"'0 -> boolean"))
+    ref.func 28
+    local.get $a
+    array.new_fixed $capture 1
+    struct.new $"'0 -> boolean"
+  )
+  (func (;30;) (type $"(raw) '0 -> boolean") (param $b anyref) (param (ref $capture)) (result (ref $boolean))
+    (local $a anyref) (local i32) (local $index i32)
     local.get 1
     i32.const 0
-    array.get 1
-    ref.cast (ref 0)
-    local.set 2
-    local.get 2
-    ref.cast (ref 0)
-    array.new_fixed 1 0
-    call 1
+    array.get $capture
+    ref.cast (ref any)
+    local.set $a
+    block (result anyref) ;; label = @1
+      block (result anyref) ;; label = @2
+        block (result anyref) ;; label = @3
+          block (result anyref) ;; label = @4
+            block (result anyref) ;; label = @5
+              block (result anyref) ;; label = @6
+                local.get $a
+                br_on_cast 0 (;@6;) anyref (ref $integer)
+                br_on_cast 1 (;@5;) anyref (ref $real)
+                br_on_cast 2 (;@4;) anyref (ref $boolean)
+                br_on_cast 3 (;@3;) anyref (ref $glyph)
+                br_on_cast 4 (;@2;) anyref (ref $"()")
+                br_on_cast 5 (;@1;) anyref (ref $string)
+                unreachable
+              end
+              ref.cast (ref $integer)
+              struct.get $integer 0
+              local.get $b
+              ref.cast (ref $integer)
+              struct.get $integer 0
+              i64.ge_s
+              struct.new $boolean
+              return
+            end
+            ref.cast (ref $real)
+            struct.get $real 0
+            local.get $b
+            ref.cast (ref $real)
+            struct.get $real 0
+            f64.ge
+            struct.new $boolean
+            return
+          end
+          ref.cast (ref $boolean)
+          struct.get $boolean 0
+          local.get $b
+          ref.cast (ref $boolean)
+          struct.get $boolean 0
+          i32.ge_u
+          struct.new $boolean
+          return
+        end
+        ref.cast (ref $glyph)
+        struct.get $glyph 0
+        local.get $b
+        ref.cast (ref $glyph)
+        struct.get $glyph 0
+        i32.ge_u
+        struct.new $boolean
+        return
+      end
+      i32.const 1
+      struct.new $boolean
+      return
+    end
+    ref.cast (ref $string)
+    array.len
+    local.get $b
+    ref.cast (ref $string)
+    array.len
+    i32.gt_u
+    if ;; label = @1
+      i32.const 1
+      struct.new $boolean
+      return
+    end
+    local.get $a
+    ref.cast (ref $string)
+    array.len
+    local.get $b
+    ref.cast (ref $string)
+    array.len
+    i32.lt_u
+    if ;; label = @1
+      i32.const 0
+      struct.new $boolean
+      return
+    end
+    i32.const 0
     local.set 3
+    local.get $a
+    ref.cast (ref $string)
+    array.len
+    local.set $index
+    loop ;; label = @1
+      local.get $a
+      ref.cast (ref $string)
+      local.get 3
+      array.get_u $string
+      local.get $b
+      ref.cast (ref $string)
+      local.get 3
+      array.get_u $string
+      i32.lt_u
+      if ;; label = @2
+        i32.const 0
+        struct.new $boolean
+        return
+      end
+      local.get 3
+      i32.const 1
+      i32.add
+      local.tee 3
+      local.get $index
+      i32.lt_u
+      br_if 0 (;@1;)
+    end
+    i32.const 1
+    struct.new $boolean
+    return
+  )
+  (func (;31;) (type $"(raw) '0 -> '0 -> boolean") (param $a anyref) (param (ref $capture)) (result (ref $"'0 -> boolean"))
+    ref.func 30
+    local.get $a
+    array.new_fixed $capture 1
+    struct.new $"'0 -> boolean"
+  )
+  (func (;32;) (type $"(raw) '0 -> boolean") (param $b anyref) (param (ref $capture)) (result (ref $boolean))
+    (local $a anyref) (local i32) (local $index i32)
+    local.get 1
+    i32.const 0
+    array.get $capture
+    ref.cast (ref any)
+    local.set $a
+    block (result anyref) ;; label = @1
+      block (result anyref) ;; label = @2
+        block (result anyref) ;; label = @3
+          block (result anyref) ;; label = @4
+            block (result anyref) ;; label = @5
+              block (result anyref) ;; label = @6
+                local.get $a
+                br_on_cast 0 (;@6;) anyref (ref $integer)
+                br_on_cast 1 (;@5;) anyref (ref $real)
+                br_on_cast 2 (;@4;) anyref (ref $boolean)
+                br_on_cast 3 (;@3;) anyref (ref $glyph)
+                br_on_cast 4 (;@2;) anyref (ref $"()")
+                br_on_cast 5 (;@1;) anyref (ref $string)
+                unreachable
+              end
+              ref.cast (ref $integer)
+              struct.get $integer 0
+              local.get $b
+              ref.cast (ref $integer)
+              struct.get $integer 0
+              i64.lt_s
+              struct.new $boolean
+              return
+            end
+            ref.cast (ref $real)
+            struct.get $real 0
+            local.get $b
+            ref.cast (ref $real)
+            struct.get $real 0
+            f64.lt
+            struct.new $boolean
+            return
+          end
+          ref.cast (ref $boolean)
+          struct.get $boolean 0
+          local.get $b
+          ref.cast (ref $boolean)
+          struct.get $boolean 0
+          i32.lt_u
+          struct.new $boolean
+          return
+        end
+        ref.cast (ref $glyph)
+        struct.get $glyph 0
+        local.get $b
+        ref.cast (ref $glyph)
+        struct.get $glyph 0
+        i32.lt_u
+        struct.new $boolean
+        return
+      end
+      i32.const 0
+      struct.new $boolean
+      return
+    end
+    ref.cast (ref $string)
+    array.len
+    local.get $b
+    ref.cast (ref $string)
+    array.len
+    i32.gt_u
+    if ;; label = @1
+      i32.const 0
+      struct.new $boolean
+      return
+    end
+    local.get $a
+    ref.cast (ref $string)
+    array.len
+    local.get $b
+    ref.cast (ref $string)
+    array.len
+    i32.lt_u
+    if ;; label = @1
+      i32.const 1
+      struct.new $boolean
+      return
+    end
+    i32.const 0
+    local.set 3
+    local.get $a
+    ref.cast (ref $string)
+    array.len
+    local.set $index
+    loop ;; label = @1
+      local.get $a
+      ref.cast (ref $string)
+      local.get 3
+      array.get_u $string
+      local.get $b
+      ref.cast (ref $string)
+      local.get 3
+      array.get_u $string
+      i32.ge_u
+      if ;; label = @2
+        i32.const 0
+        struct.new $boolean
+        return
+      end
+      local.get 3
+      i32.const 1
+      i32.add
+      local.tee 3
+      local.get $index
+      i32.lt_u
+      br_if 0 (;@1;)
+    end
+    i32.const 1
+    struct.new $boolean
+    return
+  )
+  (func (;33;) (type $"(raw) '0 -> '0 -> boolean") (param $a anyref) (param (ref $capture)) (result (ref $"'0 -> boolean"))
+    ref.func 32
+    local.get $a
+    array.new_fixed $capture 1
+    struct.new $"'0 -> boolean"
+  )
+  (func (;34;) (type $"(raw) '0 -> boolean") (param $b anyref) (param (ref $capture)) (result (ref $boolean))
+    (local $a anyref) (local i32) (local $index i32)
+    local.get 1
+    i32.const 0
+    array.get $capture
+    ref.cast (ref any)
+    local.set $a
+    block (result anyref) ;; label = @1
+      block (result anyref) ;; label = @2
+        block (result anyref) ;; label = @3
+          block (result anyref) ;; label = @4
+            block (result anyref) ;; label = @5
+              block (result anyref) ;; label = @6
+                local.get $a
+                br_on_cast 0 (;@6;) anyref (ref $integer)
+                br_on_cast 1 (;@5;) anyref (ref $real)
+                br_on_cast 2 (;@4;) anyref (ref $boolean)
+                br_on_cast 3 (;@3;) anyref (ref $glyph)
+                br_on_cast 4 (;@2;) anyref (ref $"()")
+                br_on_cast 5 (;@1;) anyref (ref $string)
+                unreachable
+              end
+              ref.cast (ref $integer)
+              struct.get $integer 0
+              local.get $b
+              ref.cast (ref $integer)
+              struct.get $integer 0
+              i64.gt_s
+              struct.new $boolean
+              return
+            end
+            ref.cast (ref $real)
+            struct.get $real 0
+            local.get $b
+            ref.cast (ref $real)
+            struct.get $real 0
+            f64.gt
+            struct.new $boolean
+            return
+          end
+          ref.cast (ref $boolean)
+          struct.get $boolean 0
+          local.get $b
+          ref.cast (ref $boolean)
+          struct.get $boolean 0
+          i32.gt_u
+          struct.new $boolean
+          return
+        end
+        ref.cast (ref $glyph)
+        struct.get $glyph 0
+        local.get $b
+        ref.cast (ref $glyph)
+        struct.get $glyph 0
+        i32.gt_u
+        struct.new $boolean
+        return
+      end
+      i32.const 0
+      struct.new $boolean
+      return
+    end
+    ref.cast (ref $string)
+    array.len
+    local.get $b
+    ref.cast (ref $string)
+    array.len
+    i32.gt_u
+    if ;; label = @1
+      i32.const 1
+      struct.new $boolean
+      return
+    end
+    local.get $a
+    ref.cast (ref $string)
+    array.len
+    local.get $b
+    ref.cast (ref $string)
+    array.len
+    i32.lt_u
+    if ;; label = @1
+      i32.const 0
+      struct.new $boolean
+      return
+    end
+    i32.const 0
+    local.set 3
+    local.get $a
+    ref.cast (ref $string)
+    array.len
+    local.set $index
+    loop ;; label = @1
+      local.get $a
+      ref.cast (ref $string)
+      local.get 3
+      array.get_u $string
+      local.get $b
+      ref.cast (ref $string)
+      local.get 3
+      array.get_u $string
+      i32.le_u
+      if ;; label = @2
+        i32.const 0
+        struct.new $boolean
+        return
+      end
+      local.get 3
+      i32.const 1
+      i32.add
+      local.tee 3
+      local.get $index
+      i32.lt_u
+      br_if 0 (;@1;)
+    end
+    i32.const 1
+    struct.new $boolean
+    return
+  )
+  (func (;35;) (type $"(raw) '0 -> '0 -> boolean") (param $a anyref) (param (ref $capture)) (result (ref $"'0 -> boolean"))
+    ref.func 34
+    local.get $a
+    array.new_fixed $capture 1
+    struct.new $"'0 -> boolean"
+  )
+  (func (;36;) (type $"(raw) integer -> integer") (param $a (ref $integer)) (param (ref $capture)) (result (ref $integer))
+    i64.const 0
+    local.get $a
+    struct.get $integer 0
+    i64.sub
+    struct.new $integer
+  )
+  (func (;37;) (type $"(raw) real -> real") (param $a (ref $real)) (param (ref $capture)) (result (ref $real))
+    local.get $a
+    struct.get $real 0
+    f64.neg
+    struct.new $real
+  )
+  (func (;38;) (type $"(raw) boolean -> boolean") (param $a (ref $boolean)) (param (ref $capture)) (result (ref $boolean))
+    local.get $a
+    struct.get $boolean 0
+    i32.eqz
+    struct.new $boolean
+  )
+  (func (;39;) (type $"(raw) boolean -> ()") (param $a (ref $boolean)) (param (ref $capture)) (result (ref $"()"))
+    local.get $a
+    struct.get $boolean 0
+    i32.eqz
+    if ;; label = @1
+      unreachable
+    end
+    struct.new $"()"
+  )
+  (func (;40;) (type 20)
+    (local (ref $"boolean -> ()") (ref $"boolean -> ()") (ref $"boolean -> ()") (ref $"'0 -> boolean") (ref $"integer -> integer") (ref $"boolean -> ()") (ref $"'0 -> boolean") (ref $"real -> real") (ref $"boolean -> ()") (ref $"'0 -> boolean") (ref $"real -> real") (ref $"boolean -> ()") (ref $"integer -> integer") (ref $"'0 -> boolean") (ref $"boolean -> ()") (ref $"integer -> integer") (ref $"'0 -> boolean") (ref $"boolean -> ()") (ref $"integer -> integer") (ref $"'0 -> boolean") (ref $"boolean -> ()") (ref $"integer -> integer") (ref $"'0 -> boolean") (ref $"boolean -> ()") (ref $"integer -> integer") (ref $"'0 -> boolean") (ref $"boolean -> ()") (ref $"real -> real") (ref $"'0 -> boolean") (ref $"boolean -> ()") (ref $"real -> real") (ref $"'0 -> boolean") (ref $"boolean -> ()") (ref $"real -> real") (ref $"'0 -> boolean") (ref $"boolean -> ()") (ref $"real -> real") (ref $"'0 -> boolean") (ref $"boolean -> ()") (ref $"boolean -> boolean") (ref $"boolean -> ()") (ref $"boolean -> boolean") (ref $"boolean -> ()") (ref $"boolean -> boolean") (ref $"boolean -> ()") (ref $"'0 -> boolean") (ref $"'0 -> boolean") (ref $"boolean -> ()") (ref $"'0 -> boolean") (ref $"'0 -> boolean") (ref $"boolean -> ()") (ref $"'0 -> boolean") (ref $"'0 -> boolean") (ref $"boolean -> ()") (ref $"'0 -> boolean") (ref $"'0 -> boolean") (ref $"boolean -> ()") (ref $"'0 -> boolean") (ref $"'0 -> boolean") (ref $"boolean -> ()") (ref $"'0 -> boolean") (ref $"'0 -> boolean") (ref $"boolean -> ()") (ref $"'0 -> boolean") (ref $"boolean -> ()") (ref $"'0 -> boolean") (ref $"boolean -> ()") (ref $"'0 -> boolean") (ref $"boolean -> ()") (ref $"'0 -> boolean") (ref $"boolean -> ()") (ref $"'0 -> boolean") (ref $"boolean -> ()") (ref $"'0 -> boolean") (ref $"boolean -> ()") (ref $"'0 -> boolean") (ref $"boolean -> ()") (ref $"'0 -> boolean") (ref $"boolean -> ()") (ref $"'0 -> boolean") (ref $"boolean -> ()") (ref $"'0 -> boolean") (ref $"boolean -> ()") (ref $"'0 -> boolean") (ref $"boolean -> ()") (ref $"'0 -> boolean") (ref $"boolean -> ()") (ref $"'0 -> boolean") (ref $"boolean -> ()") (ref $"'0 -> boolean") (ref $"boolean -> ()") (ref $"'0 -> boolean") (ref $"boolean -> ()") (ref $"'0 -> boolean") (ref $"boolean -> ()") (ref $"'0 -> boolean") (ref $"boolean -> ()") (ref $"'0 -> boolean") (ref $"boolean -> ()") (ref $"'0 -> boolean") (ref $"boolean -> ()") (ref $"'0 -> boolean"))
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 0
+    i32.const 0
+    struct.new $boolean
+    array.new_fixed $capture 0
+    call 38
     local.get 0
-    ref.cast (ref 0)
+    struct.get $"boolean -> ()" 1
+    local.get 0
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 1
+    i32.const 0
+    struct.new $boolean
+    array.new_fixed $capture 0
+    call 38
+    array.new_fixed $capture 0
+    call 38
+    array.new_fixed $capture 0
+    call 38
+    local.get 1
+    struct.get $"boolean -> ()" 1
+    local.get 1
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 2
+    i64.const 1
+    struct.new $integer
+    array.new_fixed $capture 0
+    call 36
+    array.new_fixed $capture 0
+    call 25
+    local.set 3
+    i64.const 0
+    struct.new $integer
+    array.new_fixed $capture 0
+    call 3
+    local.set 4
+    i64.const 1
+    struct.new $integer
+    local.get 4
+    struct.get $"integer -> integer" 1
+    local.get 4
+    struct.get $"integer -> integer" 0
+    call_ref $"(raw) integer -> integer"
     local.get 3
-    struct.get 3 1
+    struct.get $"'0 -> boolean" 1
     local.get 3
-    struct.get 3 0
-    call_ref 2
-  )
-  (func (;44;) (type 75) (param anyref (ref 1)) (result (ref 74))
-    ref.func 45
-    array.new_fixed 1 0
-    struct.new 74
-  )
-  (func (;45;) (type 73) (param anyref (ref 1)) (result (ref 72))
-    ref.func 46
-    array.new_fixed 1 0
-    struct.new 72
-  )
-  (func (;46;) (type 71) (param anyref (ref 1)) (result (ref 70))
-    ref.func 47
-    array.new_fixed 1 0
-    struct.new 70
-  )
-  (func (;47;) (type 69) (param anyref (ref 1)) (result (ref 68))
-    ref.func 48
-    array.new_fixed 1 0
-    struct.new 68
-  )
-  (func (;48;) (type 67) (param anyref (ref 1)) (result (ref 66))
-    ref.func 49
-    array.new_fixed 1 0
-    struct.new 66
-  )
-  (func (;49;) (type 65) (param anyref (ref 1)) (result (ref 64))
-    ref.func 50
-    array.new_fixed 1 0
-    struct.new 64
-  )
-  (func (;50;) (type 63) (param anyref (ref 1)) (result (ref 62))
-    ref.func 51
-    array.new_fixed 1 0
-    struct.new 62
-  )
-  (func (;51;) (type 61) (param anyref (ref 1)) (result (ref 60))
-    ref.func 52
-    array.new_fixed 1 0
-    struct.new 60
-  )
-  (func (;52;) (type 59) (param anyref (ref 1)) (result (ref 58))
-    ref.func 53
-    array.new_fixed 1 0
-    struct.new 58
-  )
-  (func (;53;) (type 57) (param anyref (ref 1)) (result (ref 56))
-    ref.func 54
-    array.new_fixed 1 0
-    struct.new 56
-  )
-  (func (;54;) (type 55) (param anyref (ref 1)) (result (ref 54))
-    ref.func 55
-    array.new_fixed 1 0
-    struct.new 54
-  )
-  (func (;55;) (type 53) (param anyref (ref 1)) (result (ref 52))
-    ref.func 56
-    array.new_fixed 1 0
-    struct.new 52
-  )
-  (func (;56;) (type 51) (param anyref (ref 1)) (result (ref 50))
-    ref.func 57
-    array.new_fixed 1 0
-    struct.new 50
-  )
-  (func (;57;) (type 49) (param anyref (ref 1)) (result (ref 48))
-    ref.func 58
-    array.new_fixed 1 0
-    struct.new 48
-  )
-  (func (;58;) (type 47) (param anyref (ref 1)) (result (ref 46))
-    ref.func 59
-    array.new_fixed 1 0
-    struct.new 46
-  )
-  (func (;59;) (type 45) (param anyref (ref 1)) (result (ref 44))
-    ref.func 60
-    array.new_fixed 1 0
-    struct.new 44
-  )
-  (func (;60;) (type 43) (param anyref (ref 1)) (result (ref 42))
-    ref.func 61
-    array.new_fixed 1 0
-    struct.new 42
-  )
-  (func (;61;) (type 41) (param anyref (ref 1)) (result (ref 40))
-    ref.func 62
-    array.new_fixed 1 0
-    struct.new 40
-  )
-  (func (;62;) (type 39) (param anyref (ref 1)) (result (ref 38))
-    ref.func 63
-    array.new_fixed 1 0
-    struct.new 38
-  )
-  (func (;63;) (type 37) (param anyref (ref 1)) (result (ref 36))
-    ref.func 64
-    array.new_fixed 1 0
-    struct.new 36
-  )
-  (func (;64;) (type 35) (param anyref (ref 1)) (result (ref 34))
-    ref.func 65
-    array.new_fixed 1 0
-    struct.new 34
-  )
-  (func (;65;) (type 33) (param anyref (ref 1)) (result (ref 32))
-    ref.func 66
-    array.new_fixed 1 0
-    struct.new 32
-  )
-  (func (;66;) (type 31) (param anyref (ref 1)) (result (ref 30))
-    ref.func 67
-    array.new_fixed 1 0
-    struct.new 30
-  )
-  (func (;67;) (type 29) (param anyref (ref 1)) (result (ref 28))
-    ref.func 68
-    array.new_fixed 1 0
-    struct.new 28
-  )
-  (func (;68;) (type 27) (param anyref (ref 1)) (result (ref 26))
-    ref.func 69
-    array.new_fixed 1 0
-    struct.new 26
-  )
-  (func (;69;) (type 25) (param anyref (ref 1)) (result (ref 14))
-    struct.new 14
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    local.get 2
+    struct.get $"boolean -> ()" 1
+    local.get 2
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 5
+    f64.const 0x1p+0 (;=1;)
+    struct.new $real
+    array.new_fixed $capture 0
+    call 37
+    array.new_fixed $capture 0
+    call 25
+    local.set 6
+    f64.const 0x0p+0 (;=0;)
+    struct.new $real
+    array.new_fixed $capture 0
+    call 13
+    local.set 7
+    f64.const 0x1p+0 (;=1;)
+    struct.new $real
+    local.get 7
+    struct.get $"real -> real" 1
+    local.get 7
+    struct.get $"real -> real" 0
+    call_ref $"(raw) real -> real"
+    local.get 6
+    struct.get $"'0 -> boolean" 1
+    local.get 6
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    local.get 5
+    struct.get $"boolean -> ()" 1
+    local.get 5
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 8
+    f64.const 0x1p+0 (;=1;)
+    struct.new $real
+    array.new_fixed $capture 0
+    call 37
+    array.new_fixed $capture 0
+    call 25
+    local.set 9
+    f64.const 0x0p+0 (;=0;)
+    struct.new $real
+    array.new_fixed $capture 0
+    call 13
+    local.set 10
+    f64.const 0x1p+0 (;=1;)
+    struct.new $real
+    local.get 10
+    struct.get $"real -> real" 1
+    local.get 10
+    struct.get $"real -> real" 0
+    call_ref $"(raw) real -> real"
+    local.get 9
+    struct.get $"'0 -> boolean" 1
+    local.get 9
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    local.get 8
+    struct.get $"boolean -> ()" 1
+    local.get 8
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 11
+    i64.const 1
+    struct.new $integer
+    array.new_fixed $capture 0
+    call 1
+    local.set 12
+    i64.const 2
+    struct.new $integer
+    local.get 12
+    struct.get $"integer -> integer" 1
+    local.get 12
+    struct.get $"integer -> integer" 0
+    call_ref $"(raw) integer -> integer"
+    array.new_fixed $capture 0
+    call 25
+    local.set 13
+    i64.const 3
+    struct.new $integer
+    local.get 13
+    struct.get $"'0 -> boolean" 1
+    local.get 13
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    local.get 11
+    struct.get $"boolean -> ()" 1
+    local.get 11
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 14
+    i64.const 1
+    struct.new $integer
+    array.new_fixed $capture 0
+    call 3
+    local.set 15
+    i64.const 2
+    struct.new $integer
+    local.get 15
+    struct.get $"integer -> integer" 1
+    local.get 15
+    struct.get $"integer -> integer" 0
+    call_ref $"(raw) integer -> integer"
+    array.new_fixed $capture 0
+    call 25
+    local.set 16
+    i64.const 1
+    struct.new $integer
+    array.new_fixed $capture 0
+    call 36
+    local.get 16
+    struct.get $"'0 -> boolean" 1
+    local.get 16
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    local.get 14
+    struct.get $"boolean -> ()" 1
+    local.get 14
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 17
+    i64.const 1
+    struct.new $integer
+    array.new_fixed $capture 0
+    call 5
+    local.set 18
+    i64.const 2
+    struct.new $integer
+    local.get 18
+    struct.get $"integer -> integer" 1
+    local.get 18
+    struct.get $"integer -> integer" 0
+    call_ref $"(raw) integer -> integer"
+    array.new_fixed $capture 0
+    call 25
+    local.set 19
+    i64.const 2
+    struct.new $integer
+    local.get 19
+    struct.get $"'0 -> boolean" 1
+    local.get 19
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    local.get 17
+    struct.get $"boolean -> ()" 1
+    local.get 17
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 20
+    i64.const 1
+    struct.new $integer
+    array.new_fixed $capture 0
+    call 7
+    local.set 21
+    i64.const 2
+    struct.new $integer
+    local.get 21
+    struct.get $"integer -> integer" 1
+    local.get 21
+    struct.get $"integer -> integer" 0
+    call_ref $"(raw) integer -> integer"
+    array.new_fixed $capture 0
+    call 25
+    local.set 22
+    i64.const 0
+    struct.new $integer
+    local.get 22
+    struct.get $"'0 -> boolean" 1
+    local.get 22
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    local.get 20
+    struct.get $"boolean -> ()" 1
+    local.get 20
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 23
+    i64.const 1
+    struct.new $integer
+    array.new_fixed $capture 0
+    call 9
+    local.set 24
+    i64.const 2
+    struct.new $integer
+    local.get 24
+    struct.get $"integer -> integer" 1
+    local.get 24
+    struct.get $"integer -> integer" 0
+    call_ref $"(raw) integer -> integer"
+    array.new_fixed $capture 0
+    call 25
+    local.set 25
+    i64.const 1
+    struct.new $integer
+    local.get 25
+    struct.get $"'0 -> boolean" 1
+    local.get 25
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    local.get 23
+    struct.get $"boolean -> ()" 1
+    local.get 23
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 26
+    f64.const 0x1p+0 (;=1;)
+    struct.new $real
+    array.new_fixed $capture 0
+    call 11
+    local.set 27
+    f64.const 0x1p+1 (;=2;)
+    struct.new $real
+    local.get 27
+    struct.get $"real -> real" 1
+    local.get 27
+    struct.get $"real -> real" 0
+    call_ref $"(raw) real -> real"
+    array.new_fixed $capture 0
+    call 25
+    local.set 28
+    f64.const 0x1.8p+1 (;=3;)
+    struct.new $real
+    local.get 28
+    struct.get $"'0 -> boolean" 1
+    local.get 28
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    local.get 26
+    struct.get $"boolean -> ()" 1
+    local.get 26
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 29
+    f64.const 0x1p+1 (;=2;)
+    struct.new $real
+    array.new_fixed $capture 0
+    call 13
+    local.set 30
+    f64.const 0x1p+0 (;=1;)
+    struct.new $real
+    local.get 30
+    struct.get $"real -> real" 1
+    local.get 30
+    struct.get $"real -> real" 0
+    call_ref $"(raw) real -> real"
+    array.new_fixed $capture 0
+    call 25
+    local.set 31
+    f64.const 0x1p+0 (;=1;)
+    struct.new $real
+    local.get 31
+    struct.get $"'0 -> boolean" 1
+    local.get 31
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    local.get 29
+    struct.get $"boolean -> ()" 1
+    local.get 29
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 32
+    f64.const 0x1p+0 (;=1;)
+    struct.new $real
+    array.new_fixed $capture 0
+    call 15
+    local.set 33
+    f64.const 0x1p+1 (;=2;)
+    struct.new $real
+    local.get 33
+    struct.get $"real -> real" 1
+    local.get 33
+    struct.get $"real -> real" 0
+    call_ref $"(raw) real -> real"
+    array.new_fixed $capture 0
+    call 25
+    local.set 34
+    f64.const 0x1p+1 (;=2;)
+    struct.new $real
+    local.get 34
+    struct.get $"'0 -> boolean" 1
+    local.get 34
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    local.get 32
+    struct.get $"boolean -> ()" 1
+    local.get 32
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 35
+    f64.const 0x1p+0 (;=1;)
+    struct.new $real
+    array.new_fixed $capture 0
+    call 17
+    local.set 36
+    f64.const 0x1p+1 (;=2;)
+    struct.new $real
+    local.get 36
+    struct.get $"real -> real" 1
+    local.get 36
+    struct.get $"real -> real" 0
+    call_ref $"(raw) real -> real"
+    array.new_fixed $capture 0
+    call 25
+    local.set 37
+    f64.const 0x1p-1 (;=0.5;)
+    struct.new $real
+    local.get 37
+    struct.get $"'0 -> boolean" 1
+    local.get 37
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    local.get 35
+    struct.get $"boolean -> ()" 1
+    local.get 35
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 38
+    i32.const 1
+    struct.new $boolean
+    array.new_fixed $capture 0
+    call 19
+    local.set 39
+    i32.const 1
+    struct.new $boolean
+    local.get 39
+    struct.get $"boolean -> boolean" 1
+    local.get 39
+    struct.get $"boolean -> boolean" 0
+    call_ref $"(raw) boolean -> boolean"
+    local.get 38
+    struct.get $"boolean -> ()" 1
+    local.get 38
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 40
+    i32.const 1
+    struct.new $boolean
+    array.new_fixed $capture 0
+    call 21
+    local.set 41
+    i32.const 0
+    struct.new $boolean
+    local.get 41
+    struct.get $"boolean -> boolean" 1
+    local.get 41
+    struct.get $"boolean -> boolean" 0
+    call_ref $"(raw) boolean -> boolean"
+    local.get 40
+    struct.get $"boolean -> ()" 1
+    local.get 40
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 42
+    i32.const 1
+    struct.new $boolean
+    array.new_fixed $capture 0
+    call 23
+    local.set 43
+    i32.const 0
+    struct.new $boolean
+    local.get 43
+    struct.get $"boolean -> boolean" 1
+    local.get 43
+    struct.get $"boolean -> boolean" 0
+    call_ref $"(raw) boolean -> boolean"
+    local.get 42
+    struct.get $"boolean -> ()" 1
+    local.get 42
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 44
+    struct.new $"()"
+    array.new_fixed $capture 0
+    call 25
+    local.set 45
+    struct.new $"()"
+    local.get 45
+    struct.get $"'0 -> boolean" 1
+    local.get 45
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    array.new_fixed $capture 0
+    call 25
+    local.set 46
+    i32.const 1
+    struct.new $boolean
+    local.get 46
+    struct.get $"'0 -> boolean" 1
+    local.get 46
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    local.get 44
+    struct.get $"boolean -> ()" 1
+    local.get 44
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 47
+    struct.new $"()"
+    array.new_fixed $capture 0
+    call 27
+    local.set 48
+    struct.new $"()"
+    local.get 48
+    struct.get $"'0 -> boolean" 1
+    local.get 48
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    array.new_fixed $capture 0
+    call 25
+    local.set 49
+    i32.const 0
+    struct.new $boolean
+    local.get 49
+    struct.get $"'0 -> boolean" 1
+    local.get 49
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    local.get 47
+    struct.get $"boolean -> ()" 1
+    local.get 47
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 50
+    struct.new $"()"
+    array.new_fixed $capture 0
+    call 29
+    local.set 51
+    struct.new $"()"
+    local.get 51
+    struct.get $"'0 -> boolean" 1
+    local.get 51
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    array.new_fixed $capture 0
+    call 25
+    local.set 52
+    i32.const 1
+    struct.new $boolean
+    local.get 52
+    struct.get $"'0 -> boolean" 1
+    local.get 52
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    local.get 50
+    struct.get $"boolean -> ()" 1
+    local.get 50
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 53
+    struct.new $"()"
+    array.new_fixed $capture 0
+    call 31
+    local.set 54
+    struct.new $"()"
+    local.get 54
+    struct.get $"'0 -> boolean" 1
+    local.get 54
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    array.new_fixed $capture 0
+    call 25
+    local.set 55
+    i32.const 1
+    struct.new $boolean
+    local.get 55
+    struct.get $"'0 -> boolean" 1
+    local.get 55
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    local.get 53
+    struct.get $"boolean -> ()" 1
+    local.get 53
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 56
+    struct.new $"()"
+    array.new_fixed $capture 0
+    call 33
+    local.set 57
+    struct.new $"()"
+    local.get 57
+    struct.get $"'0 -> boolean" 1
+    local.get 57
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    array.new_fixed $capture 0
+    call 25
+    local.set 58
+    i32.const 0
+    struct.new $boolean
+    local.get 58
+    struct.get $"'0 -> boolean" 1
+    local.get 58
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    local.get 56
+    struct.get $"boolean -> ()" 1
+    local.get 56
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 59
+    struct.new $"()"
+    array.new_fixed $capture 0
+    call 35
+    local.set 60
+    struct.new $"()"
+    local.get 60
+    struct.get $"'0 -> boolean" 1
+    local.get 60
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    array.new_fixed $capture 0
+    call 25
+    local.set 61
+    i32.const 0
+    struct.new $boolean
+    local.get 61
+    struct.get $"'0 -> boolean" 1
+    local.get 61
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    local.get 59
+    struct.get $"boolean -> ()" 1
+    local.get 59
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 62
+    i32.const 1
+    struct.new $boolean
+    array.new_fixed $capture 0
+    call 25
+    local.set 63
+    i32.const 1
+    struct.new $boolean
+    local.get 63
+    struct.get $"'0 -> boolean" 1
+    local.get 63
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    local.get 62
+    struct.get $"boolean -> ()" 1
+    local.get 62
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 64
+    i32.const 1
+    struct.new $boolean
+    array.new_fixed $capture 0
+    call 27
+    local.set 65
+    i32.const 0
+    struct.new $boolean
+    local.get 65
+    struct.get $"'0 -> boolean" 1
+    local.get 65
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    local.get 64
+    struct.get $"boolean -> ()" 1
+    local.get 64
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 66
+    i32.const 0
+    struct.new $boolean
+    array.new_fixed $capture 0
+    call 29
+    local.set 67
+    i32.const 1
+    struct.new $boolean
+    local.get 67
+    struct.get $"'0 -> boolean" 1
+    local.get 67
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    local.get 66
+    struct.get $"boolean -> ()" 1
+    local.get 66
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 68
+    i32.const 1
+    struct.new $boolean
+    array.new_fixed $capture 0
+    call 31
+    local.set 69
+    i32.const 0
+    struct.new $boolean
+    local.get 69
+    struct.get $"'0 -> boolean" 1
+    local.get 69
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    local.get 68
+    struct.get $"boolean -> ()" 1
+    local.get 68
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 70
+    i32.const 0
+    struct.new $boolean
+    array.new_fixed $capture 0
+    call 33
+    local.set 71
+    i32.const 1
+    struct.new $boolean
+    local.get 71
+    struct.get $"'0 -> boolean" 1
+    local.get 71
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    local.get 70
+    struct.get $"boolean -> ()" 1
+    local.get 70
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 72
+    i32.const 1
+    struct.new $boolean
+    array.new_fixed $capture 0
+    call 35
+    local.set 73
+    i32.const 0
+    struct.new $boolean
+    local.get 73
+    struct.get $"'0 -> boolean" 1
+    local.get 73
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    local.get 72
+    struct.get $"boolean -> ()" 1
+    local.get 72
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 74
+    i32.const 97
+    struct.new $glyph
+    array.new_fixed $capture 0
+    call 25
+    local.set 75
+    i32.const 97
+    struct.new $glyph
+    local.get 75
+    struct.get $"'0 -> boolean" 1
+    local.get 75
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    local.get 74
+    struct.get $"boolean -> ()" 1
+    local.get 74
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 76
+    i32.const 97
+    struct.new $glyph
+    array.new_fixed $capture 0
+    call 27
+    local.set 77
+    i32.const 98
+    struct.new $glyph
+    local.get 77
+    struct.get $"'0 -> boolean" 1
+    local.get 77
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    local.get 76
+    struct.get $"boolean -> ()" 1
+    local.get 76
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 78
+    i32.const 97
+    struct.new $glyph
+    array.new_fixed $capture 0
+    call 29
+    local.set 79
+    i32.const 98
+    struct.new $glyph
+    local.get 79
+    struct.get $"'0 -> boolean" 1
+    local.get 79
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    local.get 78
+    struct.get $"boolean -> ()" 1
+    local.get 78
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 80
+    i32.const 98
+    struct.new $glyph
+    array.new_fixed $capture 0
+    call 31
+    local.set 81
+    i32.const 97
+    struct.new $glyph
+    local.get 81
+    struct.get $"'0 -> boolean" 1
+    local.get 81
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    local.get 80
+    struct.get $"boolean -> ()" 1
+    local.get 80
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 82
+    i32.const 97
+    struct.new $glyph
+    array.new_fixed $capture 0
+    call 33
+    local.set 83
+    i32.const 98
+    struct.new $glyph
+    local.get 83
+    struct.get $"'0 -> boolean" 1
+    local.get 83
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    local.get 82
+    struct.get $"boolean -> ()" 1
+    local.get 82
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 84
+    i32.const 98
+    struct.new $glyph
+    array.new_fixed $capture 0
+    call 35
+    local.set 85
+    i32.const 97
+    struct.new $glyph
+    local.get 85
+    struct.get $"'0 -> boolean" 1
+    local.get 85
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    local.get 84
+    struct.get $"boolean -> ()" 1
+    local.get 84
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 86
+    i32.const 97
+    i32.const 98
+    i32.const 99
+    array.new_fixed $string 3
+    array.new_fixed $capture 0
+    call 25
+    local.set 87
+    i32.const 97
+    i32.const 98
+    i32.const 99
+    array.new_fixed $string 3
+    local.get 87
+    struct.get $"'0 -> boolean" 1
+    local.get 87
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    local.get 86
+    struct.get $"boolean -> ()" 1
+    local.get 86
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 88
+    i32.const 97
+    i32.const 98
+    i32.const 99
+    array.new_fixed $string 3
+    array.new_fixed $capture 0
+    call 27
+    local.set 89
+    i32.const 100
+    i32.const 101
+    i32.const 102
+    array.new_fixed $string 3
+    local.get 89
+    struct.get $"'0 -> boolean" 1
+    local.get 89
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    local.get 88
+    struct.get $"boolean -> ()" 1
+    local.get 88
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 90
+    i32.const 97
+    i32.const 98
+    i32.const 99
+    array.new_fixed $string 3
+    array.new_fixed $capture 0
+    call 29
+    local.set 91
+    i32.const 100
+    i32.const 101
+    i32.const 102
+    array.new_fixed $string 3
+    local.get 91
+    struct.get $"'0 -> boolean" 1
+    local.get 91
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    local.get 90
+    struct.get $"boolean -> ()" 1
+    local.get 90
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 92
+    i32.const 100
+    i32.const 101
+    i32.const 102
+    array.new_fixed $string 3
+    array.new_fixed $capture 0
+    call 31
+    local.set 93
+    i32.const 97
+    i32.const 98
+    i32.const 99
+    array.new_fixed $string 3
+    local.get 93
+    struct.get $"'0 -> boolean" 1
+    local.get 93
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    local.get 92
+    struct.get $"boolean -> ()" 1
+    local.get 92
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 94
+    i32.const 97
+    i32.const 98
+    i32.const 99
+    array.new_fixed $string 3
+    array.new_fixed $capture 0
+    call 29
+    local.set 95
+    i32.const 97
+    i32.const 98
+    i32.const 99
+    array.new_fixed $string 3
+    local.get 95
+    struct.get $"'0 -> boolean" 1
+    local.get 95
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    local.get 94
+    struct.get $"boolean -> ()" 1
+    local.get 94
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 96
+    i32.const 97
+    i32.const 98
+    i32.const 99
+    array.new_fixed $string 3
+    array.new_fixed $capture 0
+    call 31
+    local.set 97
+    i32.const 97
+    i32.const 98
+    i32.const 99
+    array.new_fixed $string 3
+    local.get 97
+    struct.get $"'0 -> boolean" 1
+    local.get 97
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    local.get 96
+    struct.get $"boolean -> ()" 1
+    local.get 96
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 98
+    i32.const 97
+    i32.const 98
+    i32.const 99
+    array.new_fixed $string 3
+    array.new_fixed $capture 0
+    call 33
+    local.set 99
+    i32.const 100
+    i32.const 101
+    i32.const 102
+    array.new_fixed $string 3
+    local.get 99
+    struct.get $"'0 -> boolean" 1
+    local.get 99
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    local.get 98
+    struct.get $"boolean -> ()" 1
+    local.get 98
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
+    ref.func 39
+    array.new_fixed $capture 0
+    struct.new $"boolean -> ()"
+    ref.cast (ref $"boolean -> ()")
+    local.set 100
+    i32.const 100
+    i32.const 101
+    i32.const 102
+    array.new_fixed $string 3
+    array.new_fixed $capture 0
+    call 35
+    local.set 101
+    i32.const 97
+    i32.const 98
+    i32.const 99
+    array.new_fixed $string 3
+    local.get 101
+    struct.get $"'0 -> boolean" 1
+    local.get 101
+    struct.get $"'0 -> boolean" 0
+    call_ref $"(raw) '0 -> boolean"
+    local.get 100
+    struct.get $"boolean -> ()" 1
+    local.get 100
+    struct.get $"boolean -> ()" 0
+    call_ref $"(raw) boolean -> ()"
+    drop
   )
 )

@@ -76,7 +76,14 @@ impl HlIrModule {
       } => sexpr(
         "function",
         [
-          Some(sexpr("argument", [parameter_name.as_str().into()])),
+          Some(sexpr(
+            "argument",
+            [parameter_name
+              .clone()
+              .unwrap_or("()".into())
+              .as_str()
+              .into()],
+          )),
           if captures.len() == 0 {
             None
           } else {

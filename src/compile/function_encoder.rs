@@ -21,6 +21,16 @@ impl FunctionEncoder {
     id
   }
 
+  pub fn get_local_id(&mut self, mangle: impl Into<String>) -> u32 {
+    let mangle: String = mangle.into();
+    self.local_names.get(&mangle).unwrap().clone()
+  }
+
+  pub fn has_local(&self, mangle: impl Into<String>) -> bool {
+    let mangle: String = mangle.into();
+    self.local_names.contains_key(&mangle)
+  }
+
   pub fn get_local(&mut self, mangle: impl Into<String>) {
     let mangle: String = mangle.into();
     let local = self.local_names.get(&mangle).unwrap().clone();
@@ -39,6 +49,16 @@ impl FunctionEncoder {
 
   pub fn extend(&mut self, other: &[Instruction<'static>]) {
     self.instrs.extend_from_slice(other);
+  }
+
+  pub fn encode_name_map(&self) -> NameMap {
+    self
+      .local_names
+      .iter()
+      .fold(NameMap::new(), |mut map, (name, id)| {
+        map.append(*id, name);
+        map
+      })
   }
 
   pub fn encode(self) -> Function {

@@ -539,9 +539,11 @@ fn bake_string(s: &str, mut span: Span) -> Result<String> {
       Some(c) => c,
       None => break,
     };
+    println!("{c} {span:?}");
     if c == '\\' {
       let (escape, length) = parse_single_escape(&mut iter, span)?;
-      span.start += length;
+      println!("+{length}");
+      span.start += length + 1;
       baked.push(escape);
     } else {
       span.start += c.len_utf8();
@@ -563,7 +565,7 @@ fn parse_single_escape(
     Some('t') => ('\t', 1),   // Tab
     Some('b') => ('\x08', 1), // Backspace
     Some('\\') => ('\\', 1),  // Backslash
-    Some('\0') => ('\0', 1),  // Null
+    Some('0') => ('\0', 1),   // Null
     Some('"') => ('\"', 1),   // Double quote
     Some('\'') => ('\'', 1),  // Single quote
     Some('x') => (parse_byte_escape(iter, span)?, 2), // Byte escape

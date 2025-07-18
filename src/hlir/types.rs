@@ -291,18 +291,11 @@ impl std::hash::Hash for Type {
   }
 }
 
-fn indent(s: String) -> String {
-  s.lines()
-    .map(|l| format!("    {l}"))
-    .collect::<Vec<_>>()
-    .join("\n")
-}
-
 impl std::fmt::Display for Type {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       Type::Any => write!(f, "?"),
-      Type::_ClosureCapture => write!(f, "_ClosureCapture"),
+      Type::_ClosureCapture => write!(f, "capture"),
       Type::Unit => write!(f, "()"),
       Type::Integer => write!(f, "integer"),
       Type::Real => write!(f, "real"),
@@ -318,9 +311,8 @@ impl std::fmt::Display for Type {
           .zip(member_types.into_iter())
           .map(|(name, type_)| format!("{name}: {type_}"))
           .collect::<Vec<_>>()
-          .join(",\n");
-        let fields = indent(fields);
-        write!(f, "struct {{\n{fields}\n}}")
+          .join(", ");
+        write!(f, "struct {{ {fields} }}")
       },
       Type::Type => write!(f, "type"),
       Type::Function(a, b) => write!(f, "{} -> {}", a, b),

@@ -146,15 +146,21 @@ pub fn type_inference(
     },
     h::FunctionDef {
       parameter_name,
-      parameter_type: parameter_types,
+      parameter_type,
       body,
       ..
     } => {
-      let parameter_type = match parameter_types {
-        Some(n) => parse_type(nodes, n, environment)?,
-        None => environment.fresh_type_var(),
+      let parameter_type = match (&parameter_name, parameter_type) {
+        (Some(_), Some(type_)) => parse_type(nodes, type_, environment)?,
+        (None, None) => Type::Unit,
+        (Some(_), None) => environment.fresh_type_var(),
+        (None, Some(_)) => panic!(),
       };
-      environment.insert_type(parameter_name, parameter_type.clone(), false);
+      environment.insert_type(
+        parameter_name.unwrap_or("()".into()),
+        parameter_type.clone(),
+        false,
+      );
       let return_type = type_inference(nodes, body, environment, constraints)?;
       Type::Function(parameter_type.into(), return_type.into())
     },

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use super::*;
-use crate::{lint::*, parse::*};
+use crate::{builtin::Builtin, lint::*, parse::*};
 
 #[derive(Debug, Clone)]
 struct Scope {
@@ -25,6 +25,9 @@ impl NameSpace {
     let mut builtins = HashMap::new();
     Type::primitives().into_iter().for_each(|(_, name)| {
       builtins.insert(name.to_string(), mangle_builtin(name));
+    });
+    Builtin::ALL.into_iter().for_each(|bt| {
+      builtins.insert(bt.to_string(), bt.get_mangle());
     });
     Self {
       name_table: HashMap::new(),
@@ -190,7 +193,19 @@ fn expr(
       body,
     } => {
       if arguments.len() == 0 {
-        todo!()
+        ns.new_func();
+        let parameter_span = span;
+        let body = expr(module, ns, *body)?;
+        let captures = ns.end_func();
+        let capture_types = vec![Type::Any; captures.len()];
+        h::FunctionDef {
+          parameter_name: None,
+          parameter_span,
+          parameter_type: None,
+          captures,
+          capture_types,
+          body,
+        }
       } else {
         ns.new_func();
         let (argument, new_arguments) = arguments.split_first().unwrap();
@@ -227,7 +242,7 @@ fn expr(
         let captures = ns.end_func();
         let capture_types = vec![Type::Any; captures.len()];
         h::FunctionDef {
-          parameter_name,
+          parameter_name: Some(parameter_name),
           parameter_span,
           parameter_type,
           captures,

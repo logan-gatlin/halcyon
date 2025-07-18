@@ -1,5 +1,5 @@
 //pub mod assembly;
-use crate::token::*;
+use crate::{hlir::Type, token::*};
 
 pub type Precedence = usize;
 
@@ -81,4 +81,65 @@ op! {
   Minus, 15, LEFT_ASSOC;
   MinusDot, 15, LEFT_ASSOC;
   Not, 15, LEFT_ASSOC;
+}
+
+impl BinaryOp {
+  pub const POLYMORPHIC: [Self; 6] = [
+    Self::DoubleEqual,
+    Self::BangEqual,
+    Self::LessEqual,
+    Self::GreaterEqual,
+    Self::Less,
+    Self::Greater,
+  ];
+
+  pub fn get_curry_type(&self) -> Type {
+    let Type::Function(_, box Type::Function(a, b)) = self.get_type() else {
+      panic!()
+    };
+    Type::Function(a, b)
+  }
+
+  pub fn get_type(&self) -> Type {
+    use Type as t;
+    let f = |t: Type, r: Type| Type::func(t.clone(), Type::func(t, r));
+    match self {
+      BinaryOp::Minus => f(t::Integer, t::Integer),
+      BinaryOp::Plus => f(t::Integer, t::Integer),
+      BinaryOp::Star => f(t::Integer, t::Integer),
+      BinaryOp::Slash => f(t::Integer, t::Integer),
+      BinaryOp::Percent => f(t::Integer, t::Integer),
+      BinaryOp::StarDot => f(t::Real, t::Real),
+      BinaryOp::SlashDot => f(t::Real, t::Real),
+      BinaryOp::PlusDot => f(t::Real, t::Real),
+      BinaryOp::MinusDot => f(t::Real, t::Real),
+      BinaryOp::Xor => f(t::Boolean, t::Boolean),
+      BinaryOp::Or => f(t::Boolean, t::Boolean),
+      BinaryOp::And => f(t::Boolean, t::Boolean),
+      BinaryOp::DoubleEqual => f(t::TypeVariable(0), Type::Boolean),
+      BinaryOp::BangEqual => f(t::TypeVariable(0), Type::Boolean),
+      BinaryOp::Less => f(t::TypeVariable(0), Type::Boolean),
+      BinaryOp::LessEqual => f(t::TypeVariable(0), Type::Boolean),
+      BinaryOp::Greater => f(t::TypeVariable(0), Type::Boolean),
+      BinaryOp::GreaterEqual => f(t::TypeVariable(0), Type::Boolean),
+      BinaryOp::Arrow => f(t::Type, t::Type),
+      BinaryOp::Semicolon => t::func(
+        Type::TypeVariable(0),
+        Type::func(Type::TypeVariable(1), Type::TypeVariable(1)),
+      ),
+      BinaryOp::Dot => todo!(),
+      BinaryOp::Comma => todo!(),
+      BinaryOp::Apply => todo!(),
+    }
+  }
+}
+
+impl UnaryOp {
+  pub fn get_type(&self) -> Type {
+    match self {
+      UnaryOp::Minus => Type::func(Type::Integer, Type::Integer),
+      UnaryOp::MinusDot => Type::func(Type::Real, Type::Real),
+      UnaryOp::Not => Type::func(Type::Boolean, Type::Boolean),
+    }
+  }
 }

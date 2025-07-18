@@ -112,7 +112,7 @@ pub fn lower(
     },
     h::Immediate(const_value) => unwrap_const(const_value, f, state),
     h::Identifier(mangle) => {
-      state.func(f).get_local(&mangle);
+      state.get_symbol(f, &mangle);
       cast(state, f, &this_t);
     },
     h::Tuple(items)
@@ -155,7 +155,12 @@ pub fn lower(
       let operator_func = state.get_binary_operator(op);
       state.func(f).push(i::Call(operator_func));
       // Stack: Closure
-      let closure_type = Type::func(nodes[right].type_.clone(), this_t);
+      let closure_type = if BinaryOp::POLYMORPHIC.contains(&op) {
+        Type::func(Type::TypeVariable(0), this_t)
+      } else {
+        Type::func(nodes[right].type_.clone(), this_t)
+      };
+
       let closure_valtype = state.get_valtype(&closure_type, false);
       let temporary = state.func(f).new_temporary(closure_valtype);
       state.func(f).push(i::LocalSet(temporary));
@@ -182,10 +187,13 @@ pub fn lower(
     },
     h::Unary { op, child } => {
       lower(nodes, child, state, f);
-      let child_t = &nodes[child].type_;
       let operator_func = state.get_unary_operator(op);
+      let closure_t = state.get_type_id(&Type::_ClosureCapture, false);
+      state.func(f).push(Instruction::ArrayNewFixed {
+        array_type_index: closure_t,
+        array_size: 0,
+      });
       state.func(f).push(i::Call(operator_func));
-      todo!()
     },
     h::If {
       predicate,
@@ -193,6 +201,11 @@ pub fn lower(
       else_,
     } => {
       lower(nodes, predicate, state, f);
+      let boolean_type_id = state.get_type_id(&Type::Boolean, false);
+      state.func(f).push(i::StructGet {
+        struct_type_index: boolean_type_id,
+        field_index: 0,
+      });
       let block_type = BlockType::Result(state.get_valtype(&this_t, false));
       state.func(f).push(i::If(block_type));
       lower(nodes, then, state, f);
@@ -211,7 +224,7 @@ pub fn lower(
     } => {
       let new_func = state.new_function(
         &this_t,
-        parameter_name,
+        parameter_name.unwrap_or("unit".into()),
         captures.clone(),
         capture_types.clone(),
       );

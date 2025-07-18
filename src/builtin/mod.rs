@@ -4,35 +4,31 @@ use crate::hlir::{Mangle, Type, mangle_builtin};
 
 #[derive(Debug, Clone, Copy)]
 pub enum Builtin {
-  Println,
+  Assert,
 }
 
 impl std::fmt::Display for Builtin {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "{self:?}")
+    write!(
+      f,
+      "{}",
+      match self {
+        Builtin::Assert => "assert",
+      }
+    )
   }
 }
 
 impl Builtin {
-  pub const ALL: [Self; 1] = [Self::Println];
+  pub const ALL: [Self; 1] = [Self::Assert];
 
-  pub fn name_to_mangle() -> HashMap<String, Mangle> {
-    Self::ALL
-      .into_iter()
-      .map(|bt| (format!("{bt}"), mangle_builtin(bt)))
-      .collect()
+  pub fn get_mangle(&self) -> String {
+    mangle_builtin(self)
   }
 
   pub fn get_type(&self) -> Type {
     match self {
-      Self::Println => Type::func(Type::String, Type::Unit),
+      Self::Assert => Type::func(Type::Boolean, Type::Unit),
     }
-  }
-
-  pub fn mangle_to_type() -> HashMap<Mangle, Type> {
-    Self::ALL
-      .into_iter()
-      .map(|bt| (mangle_builtin(bt), bt.get_type()))
-      .collect()
   }
 }

@@ -6,7 +6,7 @@ use unification::*;
 
 use std::collections::{HashMap, HashSet};
 
-use crate::{hlir::*, lint::*, operator::*};
+use crate::{builtin::Builtin, hlir::*, lint::*, operator::*};
 
 pub struct Environment {
   let_bound_map: HashMap<Mangle, bool>,
@@ -25,6 +25,11 @@ impl Environment {
       let_bound_map.insert(mangle.clone(), false);
       type_map.insert(mangle.clone(), Type::Type);
       value_map.insert(mangle.clone(), ConstValue::Type(prim));
+    });
+    Builtin::ALL.into_iter().for_each(|bt| {
+      let mangle = bt.get_mangle();
+      let_bound_map.insert(mangle.clone(), true);
+      type_map.insert(mangle.clone(), bt.get_type());
     });
     Self {
       let_bound_map,

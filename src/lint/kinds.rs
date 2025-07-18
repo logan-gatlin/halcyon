@@ -8,7 +8,7 @@ macro_rules! convert {
   };
 }
 
-convert!(TokenLint, ParseLint, NameLint, TypeLint);
+convert!(TokenLint, ParseLint, NameLint, TypeLint, CompilerBug);
 
 #[repr(usize)]
 pub enum TokenLint {
@@ -66,4 +66,9 @@ pub enum TypeLint {
   UnaryOpUndefined = 4013,
   NotAType = 4014,
   NotAvailable = 4015,
+}
+
+#[repr(usize)]
+pub enum CompilerBug {
+  FailedValidation = 9000,
 }

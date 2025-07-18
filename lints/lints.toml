@@ -214,3 +214,8 @@ help = "This expression is not supported inside a type"
 [4015]
 reason = "Not available during compilation"
 help = "This expression relies on information not available during compilation"
+
+# Compiler bug
+[9000]
+reason = "(COMPILER BUG) WAT failed validation"
+help = "The generated assembly failed a validation check"

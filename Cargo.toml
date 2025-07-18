@@ -8,9 +8,10 @@ wasm-encoder = "0.233"
 punycode = "0.4"
 wasm-bindgen = "0.2"
 multipeek = "0.1"
-toml = "0.8"
-wasmparser = "0.235"
+toml = {version = "0.9", default-features = false, features = ["parse", "serde"]}
+wasmparser = {version = "0.235", default-features = false, features = ["validate", "std"]}
 wasmprinter = "0.235"
+wasmtime = {version = "34.0", default-features = false, features = ["runtime", "cranelift", "gc", "gc-drc"]}
 
 [profile.release]
 strip = true

@@ -70,7 +70,7 @@ pub enum HlIrKind {
     child: IrPtr,
   },
   FunctionDef {
-    parameter_name: Mangle,
+    parameter_name: Option<Mangle>,
     parameter_span: Span,
     parameter_type: Option<IrPtr>,
     captures: Vec<Mangle>,

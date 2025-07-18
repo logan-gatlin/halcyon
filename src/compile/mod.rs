@@ -13,6 +13,8 @@ use runtime::*;
 pub fn compile(mut hlir: HlIrModule) -> Vec<u8> {
   let mut state = ModuleEncoder::new();
   state.binary_operator_map = make_binary_operators(&mut state);
+  state.unary_operator_map = make_unary_ops(&mut state);
+  state.builtin_map = make_builtins(&mut state);
   let main = state.new_main_function();
   lower::lower(&mut hlir, 0, &mut state, main);
   state.func(main).push(Instruction::Drop);
@@ -33,6 +35,7 @@ struct ModuleEncoder {
   type_section: Vec<RegisteredType>,
   function_section: Vec<u32>,
   code_section: Vec<FunctionEncoder>,
+  builtin_map: HashMap<Mangle, (Type, u32)>,
   binary_operator_map: HashMap<BinaryOp, u32>,
   unary_operator_map: HashMap<UnaryOp, u32>,
 }
@@ -45,6 +48,7 @@ impl ModuleEncoder {
       type_section: vec![],
       function_section: vec![],
       code_section: vec![],
+      builtin_map: HashMap::new(),
       binary_operator_map: HashMap::new(),
       unary_operator_map: HashMap::new(),
     }
@@ -58,13 +62,68 @@ impl ModuleEncoder {
     self.binary_operator_map.get(&op).unwrap().clone()
   }
 
+  pub fn get_symbol(&mut self, current_function: u32, mangle: &Mangle) {
+    if self.func(current_function).has_local(mangle) {
+      self.func(current_function).get_local(mangle);
+    } else {
+      let (type_, func) = self.builtin_map.get(mangle).unwrap().clone();
+      self.func(current_function).push(Instruction::RefFunc(func));
+      let closure_t = self.get_type_id(&Type::_ClosureCapture, false);
+      self
+        .func(current_function)
+        .push(Instruction::ArrayNewFixed {
+          array_type_index: closure_t,
+          array_size: 0,
+        });
+      let builtin_t = self.get_type_id(&type_, false);
+      self
+        .func(current_function)
+        .push(Instruction::StructNew(builtin_t));
+    }
+  }
+
   pub fn func(&mut self, index: u32) -> &mut FunctionEncoder {
     &mut self.code_section[index as usize]
   }
 
   pub fn encode(self, main_func: u32) -> Vec<u8> {
+    let mut name_section = NameSection::new();
+
+    name_section.types(
+      &self
+        .type_map
+        .clone()
+        .into_iter()
+        .map(|(type_, id)| (id, format!("{type_}")))
+        .chain(
+          self
+            .raw_type_map
+            .clone()
+            .into_iter()
+            .map(|(type_, id)| (id, format!("(raw) {type_}"))),
+        )
+        .fold(NameMap::new(), |mut names, (id, type_)| {
+          names.append(id, &type_);
+          names
+        }),
+    );
+    name_section.locals(
+      &self
+        .code_section
+        .clone()
+        .into_iter()
+        .enumerate()
+        .map(|(id, code)| (id, code.encode_name_map()))
+        .fold(IndirectNameMap::new(), |mut indirect_map, (id, map)| {
+          indirect_map.append(id as u32, &map);
+          indirect_map
+        }),
+    );
+    name_section.labels(&IndirectNameMap::new());
+
     let no_funcs = self.function_section.len() as u32;
     Module::new()
+      .section(&name_section)
       // Type section
       .section(&self.make_type_section())
       // Import section
