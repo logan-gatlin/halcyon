@@ -67,9 +67,11 @@ impl Environment {
           map.insert(*tv, new_tv);
         }
       },
+      /*
       Type::Sum(hash_set) => hash_set
         .into_iter()
         .for_each(|t| self.map_fresh_type_variables(t, map)),
+      */
       Type::Product(items)
       | Type::Struct {
         member_types: items,
@@ -159,9 +161,11 @@ pub fn parse_type(
         .try_collect()?,
     },
     Binary { op, left, right } => match op {
+      /*
       BinaryOp::Plus => {
         parse_type(nodes, *left, env)? + parse_type(nodes, *right, env)?
       },
+      */
       BinaryOp::Star => {
         parse_type(nodes, *left, env)? * parse_type(nodes, *right, env)?
       },

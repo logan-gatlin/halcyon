@@ -1,59 +1,5 @@
 use super::*;
 
-fn unwrap_const(c: ConstValue, f: u32, state: &mut ModuleEncoder) {
-  use Instruction as i;
-  match c {
-    ConstValue::Unit => {
-      let tid = state.get_type_id(&Type::Unit, false);
-      state.func(f).push(i::StructNew(tid));
-    }
-    ConstValue::Integer(i) => {
-      state.func(f).push(i::I64Const(i));
-      let tid = state.get_type_id(&Type::Integer, false);
-      state.func(f).push(i::StructNew(tid));
-    }
-    ConstValue::Real(r) => {
-      state.func(f).push(i::F64Const((r).into()));
-      let tid = state.get_type_id(&Type::Real, false);
-      state.func(f).push(i::StructNew(tid));
-    }
-    ConstValue::Boolean(b) => {
-      state.func(f).push(i::I32Const(b as i32));
-      let tid = state.get_type_id(&Type::Boolean, false);
-      state.func(f).push(i::StructNew(tid));
-    }
-    ConstValue::String(s) => {
-      for b in s.bytes() {
-        state.func(f).push(i::I32Const(b as i32));
-      }
-      let array_type_index = state.get_type_id(&Type::String, false) as u32;
-      state.func(f).push(i::ArrayNewFixed {
-        array_type_index,
-        array_size: s.len() as u32,
-      });
-    }
-    ConstValue::Glyph(g) => {
-      state.func(f).push(i::I32Const(g as i32));
-      let tid = state.get_type_id(&Type::Glyph, false);
-      state.func(f).push(i::StructNew(tid));
-    }
-    ConstValue::Tuple {
-      members: values,
-      type_id,
-    }
-    | ConstValue::StructLiteral {
-      member_values: values,
-      type_id,
-      ..
-    } => {
-      values.into_iter().for_each(|v| unwrap_const(v, f, state));
-      state.func(f).push(i::StructNew(type_id));
-    }
-    ConstValue::Type(_) => todo!(),
-    ConstValue::Function { .. } => todo!(),
-  }
-}
-
 fn cast(state: &mut ModuleEncoder, f: u32, to: &Type) {
   if let Type::TypeVariable(_) = to {
     cast_any(state, f);
@@ -71,8 +17,12 @@ fn cast_any(state: &mut ModuleEncoder, f: u32) {
     .push(Instruction::RefCastNonNull(HeapType::ANY));
 }
 
-pub fn lower(nodes: &mut HlIrModule, ptr: IrPtr, state: &mut ModuleEncoder, f: u32) {
-  use Instruction as i;
+pub fn lower(
+  nodes: &mut HlIrModule,
+  ptr: IrPtr,
+  state: &mut ModuleEncoder,
+  f: u32,
+) {
   let nk = nodes[ptr].kind.clone();
   let this_t = nodes[ptr].type_.clone();
   use HlIrKind as h;
@@ -84,7 +34,7 @@ pub fn lower(nodes: &mut HlIrModule, ptr: IrPtr, state: &mut ModuleEncoder, f: u
       if let Some(in_) = in_ {
         lower(nodes, in_, state, f);
       }
-    }
+    },
     h::Declaration {
       assignee,
       is_type: false,
@@ -96,18 +46,18 @@ pub fn lower(nodes: &mut HlIrModule, ptr: IrPtr, state: &mut ModuleEncoder, f: u
         .func(f)
         .new_local(assignee, ValType::Ref(RefType::ANYREF));
       lower(nodes, value, state, f);
-      state.func(f).push(i::LocalSet(local));
+      state.push(f, LocalSet(local));
       if let Some(in_) = in_ {
         lower(nodes, in_, state, f);
       } else {
-        unwrap_const(ConstValue::Unit, f, state);
+        state.push_constant(f, ConstValue::Unit);
       }
-    }
-    h::Immediate(const_value) => unwrap_const(const_value, f, state),
+    },
+    h::Immediate(const_value) => state.push_constant(f, const_value),
     h::Identifier(mangle) => {
       state.get_symbol(f, &mangle);
       cast(state, f, &this_t);
-    }
+    },
     h::Tuple(items)
     | h::StructLiteral {
       field_values: items,
@@ -115,107 +65,99 @@ pub fn lower(nodes: &mut HlIrModule, ptr: IrPtr, state: &mut ModuleEncoder, f: u
     } => {
       items.into_iter().for_each(|i| lower(nodes, i, state, f));
       let tid = state.get_type_id(&this_t, false);
-      state.func(f).push(i::StructNew(tid));
-    }
+      state.push(f, StructNew(tid));
+    },
     h::Field { of, index } => {
       lower(nodes, of, state, f);
       let struct_t = &nodes[of].type_;
       let field_id = struct_t.field_index(&index).unwrap();
       let struct_t = state.get_type_id(&struct_t, false);
-      state.func(f).push(i::StructGet {
-        struct_type_index: struct_t,
-        field_index: field_id,
-      })
-    }
+      state.push(
+        f,
+        StructGet {
+          struct_type_index: struct_t,
+          field_index: field_id,
+        },
+      )
+    },
     h::Binary {
       op: BinaryOp::Semicolon,
       left,
       right,
     } => {
       lower(nodes, left, state, f);
-      state.func(f).push(i::Drop);
+      state.push(f, Drop);
       lower(nodes, right, state, f);
-    }
+    },
     h::Binary { op, left, right } => {
       lower(nodes, left, state, f);
       // Stack: Arg1
-      let cid = state.get_type_id(&Type::_ClosureCapture, false);
-      state.func(f).push(i::ArrayNewFixed {
-        array_type_index: cid,
-        array_size: 0,
-      });
+      state.new_capture(f, 0);
       // Stack: Arg1 Capture
-      let operator_func = state.get_binary_operator(op);
-      let operator_type = state.get_type_id(&op.get_type(), true);
-      state.func(f).push(i::I32Const(operator_func as i32));
-      state.func(f).push(i::CallIndirect {
-        type_index: operator_type,
-        table_index: 0,
-      });
+      let op_function = state.get_binary_operator(op);
+      state.call_raw_function(f, op_function, &op.get_type());
       // Stack: Closure
-      let closure_type = if BinaryOp::POLYMORPHIC.contains(&op) {
-        Type::func(Type::TypeVariable(0), this_t)
-      } else {
-        Type::func(nodes[right].type_.clone(), this_t)
-      };
-
+      let closure_type = op.get_curry_type();
       let closure_valtype = state.get_valtype(&closure_type, false);
       let temporary = state.func(f).new_temporary(closure_valtype);
-      state.func(f).push(i::LocalSet(temporary));
+      state.push(f, LocalSet(temporary));
       // Stack: (empty)
       lower(nodes, right, state, f);
       // Stack: Arg2
-      state.func(f).push(i::LocalGet(temporary));
+      state.push(f, LocalGet(temporary));
       let closure_type_id = state.get_type_id(&closure_type, false);
       // Stack: Arg2 Closure
-      state.func(f).push(i::StructGet {
-        struct_type_index: closure_type_id,
-        field_index: 1,
-      });
+      state.push(
+        f,
+        StructGet {
+          struct_type_index: closure_type_id,
+          field_index: 1,
+        },
+      );
       // Stack: Arg2 Capture
-      state.func(f).push(i::LocalGet(temporary));
+      state.push(f, LocalGet(temporary));
       // Stack: Arg2 Capture Closure
-      state.func(f).push(i::StructGet {
-        struct_type_index: closure_type_id,
-        field_index: 0,
-      });
+      state.push(
+        f,
+        StructGet {
+          struct_type_index: closure_type_id,
+          field_index: 0,
+        },
+      );
       // Stack: Arg2 Capture Function
       let raw_function_type = state.get_type_id(&closure_type, true);
-      state.func(f).push(i::CallIndirect {
-        type_index: raw_function_type,
-        table_index: 0,
-      });
-    }
+      state.push(
+        f,
+        CallIndirect {
+          type_index: raw_function_type,
+          table_index: 0,
+        },
+      );
+    },
     h::Unary { op, child } => {
       lower(nodes, child, state, f);
+      state.new_capture(f, 0);
       let operator_func = state.get_unary_operator(op);
-      let closure_t = state.get_type_id(&Type::_ClosureCapture, false);
-      state.func(f).push(Instruction::ArrayNewFixed {
-        array_type_index: closure_t,
-        array_size: 0,
-      });
-      state.func(f).push(i::Call(operator_func));
-    }
+      state.call_raw_function(f, operator_func, &op.get_type());
+    },
     h::If {
       predicate,
       then,
       else_,
     } => {
       lower(nodes, predicate, state, f);
-      let boolean_type_id = state.get_type_id(&Type::Boolean, false);
-      state.func(f).push(i::StructGet {
-        struct_type_index: boolean_type_id,
-        field_index: 0,
-      });
+      state.unwrap_primitive(f, &Type::Boolean);
       let block_type = BlockType::Result(state.get_valtype(&this_t, false));
-      state.func(f).push(i::If(block_type));
+      state.push(f, If(block_type));
       lower(nodes, then, state, f);
+      state.push(f, Else);
       if let Some(else_) = else_ {
-        state.func(f).push(i::Else);
         lower(nodes, else_, state, f);
+      } else {
+        state.push_constant(f, ConstValue::Unit);
       }
-      state.func(f).push(i::End);
-    }
+      state.push(f, End);
+    },
     h::FunctionDef {
       parameter_name,
       body,
@@ -230,47 +172,52 @@ pub fn lower(nodes: &mut HlIrModule, ptr: IrPtr, state: &mut ModuleEncoder, f: u
         capture_types.clone(),
       );
       lower(nodes, body, state, new_func);
-      state.func(f).push(i::I32Const(new_func as i32));
+      state.push(f, I32Const(new_func as i32));
       // Push all captures
       for c in &captures {
         state.func(f).get_local(c);
         cast_any(state, f);
       }
-      let array_type_index = state.get_type_id(&Type::_ClosureCapture, false);
-      state.func(f).push(i::ArrayNewFixed {
-        array_type_index,
-        array_size: captures.len() as u32,
-      });
-      let tid = state.get_type_id(&this_t, false);
-      state.func(f).push(i::StructNew(tid));
-    }
+      state.new_capture(f, captures.len() as u32);
+      state.new_struct(f, &this_t);
+    },
     h::FunctionCall {
       callee,
       argument: arguments,
       ..
     } => {
       let callee_type = state.get_valtype(&nodes[callee].type_, false);
-      let callee_type_id = state.get_type_id(&nodes[callee].type_.clone(), false);
+      let callee_type_id =
+        state.get_type_id(&nodes[callee].type_.clone(), false);
       let callee_raw_type_id = state.get_type_id(&nodes[callee].type_, true);
       let function_temporary = state.func(f).new_temporary(callee_type);
       lower(nodes, callee, state, f);
-      state.func(f).push(i::LocalSet(function_temporary));
+      state.push(f, LocalSet(function_temporary));
       lower(nodes, arguments, state, f);
-      state.func(f).push(i::LocalGet(function_temporary));
-      state.func(f).push(i::StructGet {
-        struct_type_index: callee_type_id,
-        field_index: 1,
-      });
-      state.func(f).push(i::LocalGet(function_temporary));
-      state.func(f).push(i::StructGet {
-        struct_type_index: callee_type_id,
-        field_index: 0,
-      });
-      state.func(f).push(i::CallIndirect {
-        type_index: callee_raw_type_id,
-        table_index: 0,
-      });
-    }
+      state.push(f, LocalGet(function_temporary));
+      state.push(
+        f,
+        StructGet {
+          struct_type_index: callee_type_id,
+          field_index: 1,
+        },
+      );
+      state.push(f, LocalGet(function_temporary));
+      state.push(
+        f,
+        StructGet {
+          struct_type_index: callee_type_id,
+          field_index: 0,
+        },
+      );
+      state.push(
+        f,
+        CallIndirect {
+          type_index: callee_raw_type_id,
+          table_index: 0,
+        },
+      );
+    },
     h::StructDef { .. } => todo!(),
   }
 }

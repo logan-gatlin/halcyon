@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 pub type TypeVariable = usize;
 
 #[derive(Debug, Clone)]
@@ -29,8 +27,6 @@ pub enum Type {
   },
   /// Tuple
   Product(Vec<Type>),
-  /// Variant or enum
-  Sum(HashSet<Type>),
   /// Function type
   Function(Box<Type>, Box<Type>),
   /// Placeholder until arrays are implemented, so I can
@@ -38,6 +34,7 @@ pub enum Type {
   _ClosureCapture,
 }
 
+/*
 impl std::ops::Add for Type {
   type Output = Type;
 
@@ -60,6 +57,7 @@ impl std::ops::Add for Type {
     }
   }
 }
+*/
 
 impl std::ops::Mul for Type {
   type Output = Type;
@@ -139,9 +137,11 @@ impl Type {
       Type::Product(items) => items
         .into_iter()
         .fold(false, |accum, x| accum || x.contains_type_var(tv)),
+      /*
       Type::Sum(hash_set) => hash_set
         .into_iter()
         .fold(false, |accum, x| accum || x.contains_type_var(tv)),
+      */
       Type::Function(a, b) => {
         a.contains_type_var(tv) || b.contains_type_var(tv)
       },
@@ -164,6 +164,7 @@ impl Type {
       Type::Product(items) => {
         items.iter_mut().for_each(|i| i.substitute(tv, type_))
       },
+      /*
       Type::Sum(hash_set) => {
         *self = Type::Sum(
           hash_set
@@ -176,6 +177,7 @@ impl Type {
             .collect::<HashSet<_>>(),
         );
       },
+      */
       Type::Function(a, b) => {
         a.substitute(tv, type_);
         b.substitute(tv, type_);
@@ -239,7 +241,7 @@ impl PartialEq for Type {
       ) => names1 == names2 && types1 == types2,
       (t::Function(p1, r1), t::Function(p2, r2)) => p1 == p2 && r1 == r2,
       (t::Product(t1), t::Product(t2)) => t1 == t2,
-      (t::Sum(v1), t::Sum(v2)) => v1 == v2,
+      //(t::Sum(v1), t::Sum(v2)) => v1 == v2,
       (t::TypeVariable(p1), t::TypeVariable(p2)) => p1 == p2,
       _ => false,
     }
@@ -267,7 +269,6 @@ impl std::hash::Hash for Type {
       Type::Any => {
         "any".hash(state);
       },
-      Type::Sum(_) => todo!(),
       Type::TypeVariable(id) => {
         "poly".hash(state);
         id.hash(state);
@@ -326,6 +327,7 @@ impl std::fmt::Display for Type {
           .collect::<Vec<_>>()
           .join(" * ")
       ),
+      /*
       Type::Sum(items) => {
         write!(
           f,
@@ -337,6 +339,7 @@ impl std::fmt::Display for Type {
             .join(" + ")
         )
       },
+      */
     }
   }
 }

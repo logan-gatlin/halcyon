@@ -19,19 +19,9 @@ macro_rules! test {
             panic!();
           }
         };
-        /*
-        let mut config = wasmtime::Config::default();
-        config.wasm_gc(true);
-        config.wasm_function_references(true);
-        let engine = wasmtime::Engine::new(&config).unwrap();
-        let module = wasmtime::Module::new(&engine, &wasm).unwrap();
-        let linker = wasmtime::Linker::new(&engine);
-        let mut store = wasmtime::Store::new(&engine, ());
-        let _instance = linker.instantiate(&mut store, &module).unwrap();
-        */
       }
     )*
   }
 }
 
-test!(literals, operators, function);
+test!(literals, operators, function, control_flow);
