@@ -29,7 +29,7 @@ pub fn compile(mut hlir: HlIrModule) -> Vec<u8> {
   let mut state = ModuleEncoder::new();
   let main = state.new_main_function();
   lower::lower(&mut hlir, 0, &mut state, main);
-  state.func(main).push(Instruction::Drop);
+  state.push(main, Instruction::Drop);
   state.encode(main)
 }
 
@@ -60,30 +60,32 @@ impl ModuleEncoder {
   }
 
   pub fn encode(self, main_func: u32) -> Vec<u8> {
-    let FunctionKind::Native(main_func) =
-      self.elements_section[main_func as usize]
-    else {
+    let FunctionKind::Native(main_func) = self.elements_section[main_func as usize] else {
       panic!()
     };
+
     let mut name_section = NameSection::new();
-    name_section.types(
-      &self
-        .type_map
-        .clone()
-        .into_iter()
-        .map(|(type_, id)| (id, format!("{type_}")))
-        .chain(
-          self
-            .raw_type_map
-            .clone()
-            .into_iter()
-            .map(|(type_, id)| (id, format!("(raw) {type_}"))),
-        )
-        .fold(NameMap::new(), |mut names, (id, type_)| {
-          names.append(id, &type_);
-          names
-        }),
-    );
+    let mut type_names_map = self
+      .type_map
+      .clone()
+      .into_iter()
+      .map(|(type_, id)| (id, format!("{type_}")))
+      .chain(
+        self
+          .raw_type_map
+          .clone()
+          .into_iter()
+          .map(|(type_, id)| (id, format!("(raw) {type_}"))),
+      )
+      .collect::<Vec<_>>();
+    type_names_map.sort_by(|(id1, _), (id2, _)| id1.cmp(&id2));
+    name_section.types(&type_names_map.into_iter().fold(
+      NameMap::new(),
+      |mut names, (id, type_)| {
+        names.append(id, &type_);
+        names
+      },
+    ));
     name_section.locals(
       &self
         .code_section
@@ -132,13 +134,18 @@ impl ModuleEncoder {
           .into_iter()
           .fold(&mut ImportSection::new(), |section, import| {
             section.import(&import.major, &import.minor, import.entity)
-          }).import("sys", "memory", EntityType::Memory(MemoryType {
-            minimum: 1,
-            maximum: None,
-            memory64: false,
-            shared: false,
-            page_size_log2: None,
-        })),
+          })
+          .import(
+            "sys",
+            "memory",
+            EntityType::Memory(MemoryType {
+              minimum: 1,
+              maximum: None,
+              memory64: false,
+              shared: false,
+              page_size_log2: None,
+            }),
+          ),
       )
       // Function section
       .section(
@@ -178,16 +185,14 @@ impl ModuleEncoder {
     for t in &self.type_section {
       match t {
         RegisteredType::Function(func_type) => ts.ty().func_type(func_type),
-        RegisteredType::Array(storage_type) => {
-          ts.ty().array(storage_type, true)
-        },
+        RegisteredType::Array(storage_type) => ts.ty().array(storage_type, true),
         RegisteredType::Struct(storage_types) => {
           ts.ty()
             .struct_(storage_types.into_iter().map(|t| FieldType {
               element_type: *t,
               mutable: false,
             }))
-        },
+        }
       }
     }
     ts
@@ -241,25 +246,17 @@ impl ModuleEncoder {
     let rt = match t {
       Type::_ClosureCapture => {
         RegisteredType::Array(StorageType::Val(ValType::Ref(RefType::ANYREF)))
-      },
+      }
       Type::Any => panic!(),
       Type::TypeVariable(_) => {
         return StorageType::Val(ValType::Ref(RefType::ANYREF));
-      },
+      }
       Type::Unit => RegisteredType::Struct(vec![]),
-      Type::Integer => {
-        RegisteredType::Struct(vec![StorageType::Val(ValType::I64)])
-      },
-      Type::Real => {
-        RegisteredType::Struct(vec![StorageType::Val(ValType::F64)])
-      },
-      Type::Boolean => {
-        RegisteredType::Struct(vec![StorageType::Val(ValType::I32)])
-      },
+      Type::Integer => RegisteredType::Struct(vec![StorageType::Val(ValType::I64)]),
+      Type::Real => RegisteredType::Struct(vec![StorageType::Val(ValType::F64)]),
+      Type::Boolean => RegisteredType::Struct(vec![StorageType::Val(ValType::I32)]),
       Type::String => RegisteredType::Array(StorageType::I8),
-      Type::Glyph => {
-        RegisteredType::Struct(vec![StorageType::Val(ValType::I32)])
-      },
+      Type::Glyph => RegisteredType::Struct(vec![StorageType::Val(ValType::I32)]),
       Type::Struct { member_types, .. } => RegisteredType::Struct(
         member_types
           .into_iter()
@@ -271,7 +268,7 @@ impl ModuleEncoder {
         let raw_func_type = StorageType::Val(ValType::I32);
         let capture_type = self.get_storage_type(&Type::_ClosureCapture, false);
         RegisteredType::Struct(vec![raw_func_type, capture_type])
-      },
+      }
       Type::Function(a, b) => RegisteredType::Function(FuncType::new(
         [
           self.get_valtype(a, false),

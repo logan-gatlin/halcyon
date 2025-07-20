@@ -43,7 +43,7 @@ impl FunctionEncoder {
     id
   }
 
-  pub fn push(&mut self, instr: Instruction<'static>) {
+  fn push(&mut self, instr: Instruction<'static>) {
     self.instrs.push(instr);
   }
 
@@ -135,6 +135,10 @@ impl ModuleEncoder {
     let element_id = self.elements_section.len() as u32;
     self.elements_section.push(FunctionKind::Native(code_id));
     element_id
+  }
+
+  pub fn push(&mut self, function: u32, instruction: Instruction<'static>) {
+    self.func(function).push(instruction);
   }
 
   pub fn new_curried_function(

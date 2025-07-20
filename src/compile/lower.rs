@@ -5,24 +5,15 @@ fn cast(state: &mut ModuleEncoder, f: u32, to: &Type) {
     cast_any(state, f);
   } else {
     let type_id = state.get_type_id(to, false);
-    state
-      .func(f)
-      .push(Instruction::RefCastNonNull(HeapType::Concrete(type_id)));
+    state.push(f, Instruction::RefCastNonNull(HeapType::Concrete(type_id)));
   }
 }
 
 fn cast_any(state: &mut ModuleEncoder, f: u32) {
-  state
-    .func(f)
-    .push(Instruction::RefCastNonNull(HeapType::ANY));
+  state.push(f, Instruction::RefCastNonNull(HeapType::ANY));
 }
 
-pub fn lower(
-  nodes: &mut HlIrModule,
-  ptr: IrPtr,
-  state: &mut ModuleEncoder,
-  f: u32,
-) {
+pub fn lower(nodes: &mut HlIrModule, ptr: IrPtr, state: &mut ModuleEncoder, f: u32) {
   let nk = nodes[ptr].kind.clone();
   let this_t = nodes[ptr].type_.clone();
   use HlIrKind as h;
@@ -34,7 +25,7 @@ pub fn lower(
       if let Some(in_) = in_ {
         lower(nodes, in_, state, f);
       }
-    },
+    }
     h::Declaration {
       assignee,
       is_type: false,
@@ -52,12 +43,12 @@ pub fn lower(
       } else {
         state.push_constant(f, ConstValue::Unit);
       }
-    },
+    }
     h::Immediate(const_value) => state.push_constant(f, const_value),
     h::Identifier(mangle) => {
       state.get_symbol(f, &mangle);
       cast(state, f, &this_t);
-    },
+    }
     h::Tuple(items)
     | h::StructLiteral {
       field_values: items,
@@ -66,7 +57,7 @@ pub fn lower(
       items.into_iter().for_each(|i| lower(nodes, i, state, f));
       let tid = state.get_type_id(&this_t, false);
       state.push(f, StructNew(tid));
-    },
+    }
     h::Field { of, index } => {
       lower(nodes, of, state, f);
       let struct_t = &nodes[of].type_;
@@ -79,7 +70,7 @@ pub fn lower(
           field_index: field_id,
         },
       )
-    },
+    }
     h::Binary {
       op: BinaryOp::Semicolon,
       left,
@@ -88,7 +79,7 @@ pub fn lower(
       lower(nodes, left, state, f);
       state.push(f, Drop);
       lower(nodes, right, state, f);
-    },
+    }
     h::Binary { op, left, right } => {
       lower(nodes, left, state, f);
       // Stack: Arg1
@@ -133,13 +124,13 @@ pub fn lower(
           table_index: 0,
         },
       );
-    },
+    }
     h::Unary { op, child } => {
       lower(nodes, child, state, f);
       state.new_capture(f, 0);
       let operator_func = state.get_unary_operator(op);
       state.call_raw_function(f, operator_func, &op.get_type());
-    },
+    }
     h::If {
       predicate,
       then,
@@ -157,7 +148,7 @@ pub fn lower(
         state.push_constant(f, ConstValue::Unit);
       }
       state.push(f, End);
-    },
+    }
     h::FunctionDef {
       parameter_name,
       body,
@@ -180,15 +171,14 @@ pub fn lower(
       }
       state.new_capture(f, captures.len() as u32);
       state.new_struct(f, &this_t);
-    },
+    }
     h::FunctionCall {
       callee,
       argument: arguments,
       ..
     } => {
       let callee_type = state.get_valtype(&nodes[callee].type_, false);
-      let callee_type_id =
-        state.get_type_id(&nodes[callee].type_.clone(), false);
+      let callee_type_id = state.get_type_id(&nodes[callee].type_.clone(), false);
       let callee_raw_type_id = state.get_type_id(&nodes[callee].type_, true);
       let function_temporary = state.func(f).new_temporary(callee_type);
       lower(nodes, callee, state, f);
@@ -217,7 +207,7 @@ pub fn lower(
           table_index: 0,
         },
       );
-    },
+    }
     h::StructDef { .. } => todo!(),
   }
 }

@@ -82,19 +82,13 @@ impl ModuleEncoder {
   }
 
   pub fn func(&mut self, index: u32) -> &mut FunctionEncoder {
-    let FunctionKind::Native(index) = self.elements_section[index as usize]
-    else {
+    let FunctionKind::Native(index) = self.elements_section[index as usize] else {
       panic!()
     };
     &mut self.code_section[index as usize]
   }
 
-  pub fn call_raw_function(
-    &mut self,
-    function: u32,
-    callee_id: u32,
-    callee_type: &Type,
-  ) {
+  pub fn call_raw_function(&mut self, function: u32, callee_id: u32, callee_type: &Type) {
     self.push(function, I32Const(callee_id as i32));
     let callee_type = self.get_type_id(callee_type, true);
     self.push(
@@ -106,31 +100,27 @@ impl ModuleEncoder {
     );
   }
 
-  pub fn push(&mut self, function: u32, instruction: Instruction<'static>) {
-    self.func(function).push(instruction);
-  }
-
   pub fn push_constant(&mut self, function: u32, c: ConstValue) {
     match c {
       ConstValue::Unit => {
         let tid = self.get_type_id(&Type::Unit, false);
         self.push(function, StructNew(tid));
-      },
+      }
       ConstValue::Integer(i) => {
         self.push(function, I64Const(i));
         let tid = self.get_type_id(&Type::Integer, false);
         self.push(function, StructNew(tid));
-      },
+      }
       ConstValue::Real(r) => {
         self.push(function, F64Const((r).into()));
         let tid = self.get_type_id(&Type::Real, false);
         self.push(function, StructNew(tid));
-      },
+      }
       ConstValue::Boolean(b) => {
         self.push(function, I32Const(b as i32));
         let tid = self.get_type_id(&Type::Boolean, false);
         self.push(function, StructNew(tid));
-      },
+      }
       ConstValue::String(s) => {
         for b in s.bytes() {
           self.push(function, I32Const(b as i32));
@@ -143,12 +133,12 @@ impl ModuleEncoder {
             array_size: s.len() as u32,
           },
         );
-      },
+      }
       ConstValue::Glyph(g) => {
         self.push(function, I32Const(g as i32));
         let tid = self.get_type_id(&Type::Glyph, false);
         self.push(function, StructNew(tid));
-      },
+      }
       ConstValue::Tuple {
         members: values,
         type_id,
@@ -162,7 +152,7 @@ impl ModuleEncoder {
           .into_iter()
           .for_each(|v| self.push_constant(function, v));
         self.push(function, StructNew(type_id));
-      },
+      }
       ConstValue::Type(_) => todo!(),
       ConstValue::Function { .. } => todo!(),
     }
@@ -170,11 +160,7 @@ impl ModuleEncoder {
 
   pub fn unwrap_primitive(&mut self, function: u32, type_: &Type) {
     match type_ {
-      Type::Integer
-      | Type::Real
-      | Type::Boolean
-      | Type::String
-      | Type::Glyph => {
+      Type::Integer | Type::Real | Type::Boolean | Type::String | Type::Glyph => {
         let type_id = self.get_type_id(type_, false);
         self.push(
           function,
@@ -183,7 +169,7 @@ impl ModuleEncoder {
             field_index: 0,
           },
         );
-      },
+      }
       _ => todo!(),
     }
   }

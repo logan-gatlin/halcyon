@@ -218,4 +218,5 @@ help = "This expression relies on information not available during compilation"
 # Compiler bug
 [9000]
 reason = "(COMPILER BUG) WAT failed validation"
-help = "The generated assembly failed a validation check"
+help = """The generated assembly failed a validation check with reason:
+%"""
