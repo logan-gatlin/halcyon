@@ -1,9 +1,8 @@
 #![feature(generic_const_exprs, iterator_try_collect, box_patterns)]
 #![allow(incomplete_features)]
-
 mod builtin;
 mod compile;
-mod hlir;
+mod ir;
 mod linking;
 mod lint;
 mod operator;
@@ -13,7 +12,7 @@ mod semantic;
 mod test;
 mod token;
 
-use hlir::*;
+use ir::*;
 use lint::render::Linter;
 use parse::*;
 use semantic::*;
@@ -37,6 +36,9 @@ pub fn _compile(input: &str) -> Result<Vec<u8>> {
   let start_compile_time = std::time::Instant::now();
   let tokens = tokenize(input.chars())?;
   let parse_tree = parse(tokens)?;
+  println!("{parse_tree:#?}");
+  /*
+  let parse_tree = parse(tokens)?;
   let mut hlir = build_hlir(parse_tree)?;
   type_solve(&mut hlir)?;
   let wasm = compile::compile(hlir);
@@ -47,6 +49,8 @@ pub fn _compile(input: &str) -> Result<Vec<u8>> {
     span: None,
   })?;
   Ok(wasm)
+  */
+  todo!()
 }
 
 pub fn compile(input: &str) {
@@ -56,13 +60,13 @@ pub fn compile(input: &str) {
       if b.len() != 0 {
         std::fs::write("test.wasm", b).unwrap();
       }
-    }
+    },
     Err(e) => {
       println!(
         "{}",
         "Failed to Compile".apply_style(Color::Red, Attribute::Underline),
       );
       println!("{}", linter.render(e))
-    }
+    },
   };
 }

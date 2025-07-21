@@ -203,7 +203,7 @@ impl Default for Type {
 
 impl PartialOrd for Type {
   fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-    use crate::hlir::Type::*;
+    use crate::ir::Type::*;
     use std::cmp::Ordering::*;
     Some(match (self, other) {
       (Any, Any) => Equal,

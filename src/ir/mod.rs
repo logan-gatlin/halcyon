@@ -1,11 +1,11 @@
-mod build_hlir;
+mod build_ir;
 pub mod constant;
 pub mod printing;
 pub mod types;
 
 use crate::{lint::*, operator::*};
 
-pub use build_hlir::*;
+pub use build_ir::*;
 pub use constant::*;
 pub use types::*;
 
@@ -37,7 +37,7 @@ pub fn mangle_builtin(name: impl std::fmt::Display) -> Mangle {
 }
 
 #[derive(Debug, Clone)]
-pub enum HlIrKind {
+pub enum IrKind {
   Declaration {
     assignee: Mangle,
     is_type: bool,
@@ -89,22 +89,22 @@ pub enum HlIrKind {
 }
 
 #[derive(Debug, Clone)]
-pub struct HlIrNode {
-  pub kind: HlIrKind,
+pub struct IrNode {
+  pub kind: IrKind,
   pub span: Span,
   pub type_: Type,
 }
 
 #[derive(Debug, Clone)]
-pub struct HlIrModule {
-  pub nodes: Vec<HlIrNode>,
+pub struct IrModule {
+  pub nodes: Vec<IrNode>,
 }
 
-impl HlIrModule {
+impl IrModule {
   pub fn ir_range(&self, start: IrPtr) -> std::ops::Range<IrPtr> {
     let mut current = start;
     loop {
-      use HlIrKind::*;
+      use IrKind::*;
       current = *match &self[current].kind {
         Declaration { value, in_, .. } => {
           if let Some(in_) = in_ {
@@ -149,15 +149,15 @@ impl HlIrModule {
   }
 }
 
-impl std::ops::Index<usize> for HlIrModule {
-  type Output = HlIrNode;
+impl std::ops::Index<usize> for IrModule {
+  type Output = IrNode;
 
   fn index(&self, index: usize) -> &Self::Output {
     &self.nodes[index]
   }
 }
 
-impl std::ops::IndexMut<usize> for HlIrModule {
+impl std::ops::IndexMut<usize> for IrModule {
   fn index_mut(&mut self, index: usize) -> &mut Self::Output {
     &mut self.nodes[index]
   }

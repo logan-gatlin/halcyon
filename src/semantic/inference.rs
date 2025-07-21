@@ -1,12 +1,12 @@
 use super::*;
 
 pub fn type_inference(
-  nodes: &mut HlIrModule,
+  nodes: &mut IrModule,
   ptr: IrPtr,
   environment: &mut Environment,
   constraints: &mut Vec<TypeConstraint>,
 ) -> Result<Type> {
-  use HlIrKind as h;
+  use IrKind as h;
   use TypeConstraint as tc;
   let span = nodes[ptr].span;
   let type_ = match nodes[ptr].kind.clone() {

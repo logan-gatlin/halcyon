@@ -18,10 +18,14 @@ pub struct Lint {
   pub span: Option<Span>,
 }
 
-pub fn lint(kind: impl Into<usize>, span: Span, context: &[String]) -> Lint {
+pub fn lint(
+  kind: impl Into<usize>,
+  span: Span,
+  context: impl IntoIterator<Item = String>,
+) -> Lint {
   Lint {
     kind: kind.into(),
-    context: context.to_vec(),
+    context: context.into_iter().collect(),
     span: Some(span),
   }
 }

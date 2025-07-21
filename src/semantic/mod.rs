@@ -6,7 +6,7 @@ use unification::*;
 
 use std::collections::{HashMap, HashSet};
 
-use crate::{builtin::Builtin, hlir::*, lint::*, operator::*};
+use crate::{builtin::Builtin, ir::*, lint::*, operator::*};
 
 pub struct Environment {
   let_bound_map: HashMap<Mangle, bool>,
@@ -129,7 +129,7 @@ impl std::fmt::Display for TypeConstraint {
 #[derive(Debug, Clone)]
 pub struct Substitution(TypeVariable, Type);
 
-pub fn type_solve(module: &mut HlIrModule) -> Result<()> {
+pub fn type_solve(module: &mut IrModule) -> Result<()> {
   let mut env = Environment::new();
   let mut constraints = vec![];
   type_inference(module, 0, &mut env, &mut constraints)?;
@@ -139,12 +139,12 @@ pub fn type_solve(module: &mut HlIrModule) -> Result<()> {
 }
 
 pub fn parse_type(
-  nodes: &HlIrModule,
+  nodes: &IrModule,
   node: IrPtr,
   env: &Environment,
 ) -> Result<Type> {
   let span = nodes[node].span;
-  use HlIrKind::*;
+  use IrKind::*;
   Ok(match &nodes[node].kind {
     Identifier(mangle) => match env.get_value(mangle) {
       Ok(ConstValue::Type(t)) => t.clone(),
@@ -169,10 +169,6 @@ pub fn parse_type(
       BinaryOp::Star => {
         parse_type(nodes, *left, env)? * parse_type(nodes, *right, env)?
       },
-      BinaryOp::Arrow => Type::Function(
-        parse_type(nodes, *left, env)?.into(),
-        parse_type(nodes, *right, env)?.into(),
-      ),
       _ => {
         return Err(lint_nospan(TypeLint::BinaryOpUndefined))
           .context(format!("{op}"))

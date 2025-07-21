@@ -60,7 +60,7 @@ pub fn unification(
 }
 
 pub fn apply_solution(
-  nodes: &mut HlIrModule,
+  nodes: &mut IrModule,
   mut node_ptr: IrPtr,
   solution: Vec<Substitution>,
 ) {
@@ -70,33 +70,33 @@ pub fn apply_solution(
     visited.insert(node_ptr);
     let node = &mut nodes[node_ptr];
     match node.kind.clone() {
-      HlIrKind::Declaration { value, in_, .. } => {
+      IrKind::Declaration { value, in_, .. } => {
         to_visit.push(value);
         if let Some(in_) = in_ {
           to_visit.push(in_);
         }
       },
-      HlIrKind::Immediate(_) => {},
-      HlIrKind::Identifier(_) => {},
-      HlIrKind::Tuple(items) => to_visit.extend_from_slice(&items),
-      HlIrKind::StructDef { field_types, .. } => {
+      IrKind::Immediate(_) => {},
+      IrKind::Identifier(_) => {},
+      IrKind::Tuple(items) => to_visit.extend_from_slice(&items),
+      IrKind::StructDef { field_types, .. } => {
         to_visit.extend_from_slice(&field_types)
       },
-      HlIrKind::StructLiteral { field_values, .. } => {
+      IrKind::StructLiteral { field_values, .. } => {
         to_visit.extend_from_slice(&field_values);
       },
-      HlIrKind::Field { of, .. } => to_visit.push(of),
-      HlIrKind::Binary { left, right, .. } => {
+      IrKind::Field { of, .. } => to_visit.push(of),
+      IrKind::Binary { left, right, .. } => {
         to_visit.push(left);
         to_visit.push(right);
       },
-      HlIrKind::Unary { child, .. } => {
+      IrKind::Unary { child, .. } => {
         to_visit.push(child);
       },
-      HlIrKind::FunctionDef { body, .. } => {
+      IrKind::FunctionDef { body, .. } => {
         to_visit.push(body);
       },
-      HlIrKind::FunctionCall {
+      IrKind::FunctionCall {
         callee,
         argument: arguments,
         ..
@@ -104,7 +104,7 @@ pub fn apply_solution(
         to_visit.push(callee);
         to_visit.push(arguments);
       },
-      HlIrKind::If {
+      IrKind::If {
         predicate,
         then,
         else_,
@@ -129,7 +129,7 @@ pub fn apply_solution(
     solution
       .iter()
       .for_each(|Substitution(tv, t)| nt.substitute(*tv, t));
-    if let HlIrKind::FunctionDef { capture_types, .. } = &mut nodes[n].kind {
+    if let IrKind::FunctionDef { capture_types, .. } = &mut nodes[n].kind {
       capture_types.into_iter().for_each(|old_t| {
         solution.iter().for_each(|Substitution(tv, new_t)| {
           old_t.substitute(*tv, new_t);

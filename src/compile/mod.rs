@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use wasm_encoder::Instruction::*;
 use wasm_encoder::*;
 
-use crate::{builtin::Builtin, hlir::*, operator::*};
+use crate::{builtin::Builtin, ir::*, operator::*};
 
 use function_encoder::*;
 
@@ -25,7 +25,7 @@ enum FunctionKind {
   Import(u32),
 }
 
-pub fn compile(mut hlir: HlIrModule) -> Vec<u8> {
+pub fn compile(mut hlir: IrModule) -> Vec<u8> {
   let mut state = ModuleEncoder::new();
   let main = state.new_main_function();
   lower::lower(&mut hlir, 0, &mut state, main);
@@ -60,7 +60,9 @@ impl ModuleEncoder {
   }
 
   pub fn encode(self, main_func: u32) -> Vec<u8> {
-    let FunctionKind::Native(main_func) = self.elements_section[main_func as usize] else {
+    let FunctionKind::Native(main_func) =
+      self.elements_section[main_func as usize]
+    else {
       panic!()
     };
 
@@ -185,14 +187,16 @@ impl ModuleEncoder {
     for t in &self.type_section {
       match t {
         RegisteredType::Function(func_type) => ts.ty().func_type(func_type),
-        RegisteredType::Array(storage_type) => ts.ty().array(storage_type, true),
+        RegisteredType::Array(storage_type) => {
+          ts.ty().array(storage_type, true)
+        },
         RegisteredType::Struct(storage_types) => {
           ts.ty()
             .struct_(storage_types.into_iter().map(|t| FieldType {
               element_type: *t,
               mutable: false,
             }))
-        }
+        },
       }
     }
     ts
@@ -246,17 +250,25 @@ impl ModuleEncoder {
     let rt = match t {
       Type::_ClosureCapture => {
         RegisteredType::Array(StorageType::Val(ValType::Ref(RefType::ANYREF)))
-      }
+      },
       Type::Any => panic!(),
       Type::TypeVariable(_) => {
         return StorageType::Val(ValType::Ref(RefType::ANYREF));
-      }
+      },
       Type::Unit => RegisteredType::Struct(vec![]),
-      Type::Integer => RegisteredType::Struct(vec![StorageType::Val(ValType::I64)]),
-      Type::Real => RegisteredType::Struct(vec![StorageType::Val(ValType::F64)]),
-      Type::Boolean => RegisteredType::Struct(vec![StorageType::Val(ValType::I32)]),
+      Type::Integer => {
+        RegisteredType::Struct(vec![StorageType::Val(ValType::I64)])
+      },
+      Type::Real => {
+        RegisteredType::Struct(vec![StorageType::Val(ValType::F64)])
+      },
+      Type::Boolean => {
+        RegisteredType::Struct(vec![StorageType::Val(ValType::I32)])
+      },
       Type::String => RegisteredType::Array(StorageType::I8),
-      Type::Glyph => RegisteredType::Struct(vec![StorageType::Val(ValType::I32)]),
+      Type::Glyph => {
+        RegisteredType::Struct(vec![StorageType::Val(ValType::I32)])
+      },
       Type::Struct { member_types, .. } => RegisteredType::Struct(
         member_types
           .into_iter()
@@ -268,7 +280,7 @@ impl ModuleEncoder {
         let raw_func_type = StorageType::Val(ValType::I32);
         let capture_type = self.get_storage_type(&Type::_ClosureCapture, false);
         RegisteredType::Struct(vec![raw_func_type, capture_type])
-      }
+      },
       Type::Function(a, b) => RegisteredType::Function(FuncType::new(
         [
           self.get_valtype(a, false),

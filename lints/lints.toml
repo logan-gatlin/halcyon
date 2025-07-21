@@ -48,65 +48,17 @@ help = """Real numbers may only be written in decimal. A real number must contai
 
 # Parsing errors
 [2000]
-reason = "Missing operand"
-help = "The operator `%` acts on the expression which comes before it. Try placing this operator after an expression"
+reason = "Expected Token"
+help = "Try adding % here"
 
 [2001]
-reason = "Missing operand"
-help = "The operator `%` acts on the expression which comes after it. Try placing this operator before an expression"
+reason = "Expected Token"
+help = "Try adding one of these tokens here: (%) "
 
 [2002]
-reason = "Missing operand"
-help = "The operator `%` acts on the expressions before and after it. Try placing this operator before two expressions"
-
-[2003]
-reason = "Invalid if"
-help = "An `if` expression is written like `if <predicate> then <expression> else <expression>`"
-
-[2004]
-reason = "Invalid loop"
-help = "A `loop` expression is written like `(<name> = <initial_value>) loop ...`"
-
-[2005]
-reason = "Invalid match"
-help = "A `match` expression is written like `<predicate> match | <pattern> then <value> ...`"
-
-[2006]
-reason = "Empty structure"
-help = "A structure must contain at least one field. Consider using unit `()` here instead"
-
-[2007]
-reason = "Empty input"
-help = "A program cannot be empty, there must be at least one expression. You might want to write unit `()` here instead"
-
-[2008]
-reason = "Invalid Structure"
-help = "Structure literals and definitions are written as `{ name = value... }`  `{ name : type... }` respectively"
-
-[2009]
-reason = "Invalid let expression"
-help = "A `let` expression is written as `let <identifier> = <expression>` with an optional `in <expression>`"
-
-[2010]
-reason = "Missing Comma"
-help = "You may have meant to put a comma after this expression"
-
-[2011]
-reason = "Invalid function argument"
-help = "Function arguments may be any number of identifiers: `fn a b c ... => ...`"
-
-[2012]
-reason = "Invalid pattern"
-help = "The pattern for a match expression may be a literal value, a name which captures any value, or a tuple of other patterns"
-
-[2013]
-reason = "Expected expression"
-help = "Expected an expression here, but found '%' instead"
-
-[2014]
-reason = "Invalid directive"
-help = "A directive must have a name and a body inside parenthesis: `#name(...)`"
-
+reason = "Expected Expression"
+help = "An expression should be here"
+ 
 # Name errors
 [3000]
 reason = "Undefined name"

@@ -67,8 +67,11 @@ pub enum TokenKind {
   IntegerLiteral(String, Base),
   RealLiteral(String),
 
+  Module,
+  End,
   Match,
   Let,
+  Type,
   In,
   If,
   Then,
@@ -77,11 +80,9 @@ pub enum TokenKind {
   Or,
   Xor,
   Not,
-  Break,
   True,
   False,
   Fn,
-  Type,
 
   Whitespace(String),
   SmallComment(String),
@@ -154,6 +155,8 @@ impl std::fmt::Display for TokenKind {
         GlyphLiteral(_) => "glyph literal",
         IntegerLiteral(_, _) => "integer literal",
         RealLiteral(_) => "float literal",
+        Module => "module",
+        End => "end",
         Match => "match",
         Let => "let",
         In => "in",
@@ -164,7 +167,6 @@ impl std::fmt::Display for TokenKind {
         Or => "or",
         Xor => "xor",
         Not => "not",
-        Break => "break",
         True => "true",
         False => "false",
         Fn => "fn",
@@ -253,7 +255,7 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
     }
     let current = match self.next_char() {
       Some(std::char::REPLACEMENT_CHARACTER) => {
-        return Err(lint(TokenLint::InvalidInput, position, &[]));
+        return Err(lint(TokenLint::InvalidInput, position, []));
       },
       Some(c) => c,
       None => {
@@ -406,7 +408,7 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
       position.width = buffer.chars().count() + 2;
       let baked = bake_string(&buffer, position)?;
       if baked.len() != 1 {
-        return Err(lint(TokenLint::WrongGlyphSize, position, &[]));
+        return Err(lint(TokenLint::WrongGlyphSize, position, []));
       }
       let kind = GlyphLiteral(
         baked
@@ -491,8 +493,9 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
       let kind = match buffer.as_str() {
         "let" => Let,
         "in" => In,
+        "module" => Module,
+        "end" => End,
         "match" => Match,
-        "break" => Break,
         "if" => If,
         "then" => Then,
         "else" => Else,
@@ -571,7 +574,7 @@ fn parse_single_escape(
     Some('x') => (parse_byte_escape(iter, span)?, 2), // Byte escape
     Some('w') => (parse_wide_escape(iter, span)?, 4), // Wide escape
     _ => {
-      return Err(lint(TokenLint::UnrecognizedEscape, span, &[]));
+      return Err(lint(TokenLint::UnrecognizedEscape, span, []));
     },
   })
 }
@@ -590,7 +593,7 @@ fn parse_byte_escape(
   iter: &mut impl Iterator<Item = char>,
   span: Span,
 ) -> Result<char> {
-  let lint = lint(TokenLint::UnrecognizedEscape, span, &[]);
+  let lint = lint(TokenLint::UnrecognizedEscape, span, []);
   let (b1, b2) = match (iter.next(), iter.next()) {
     (Some(b1), Some(b2)) => (b1.to_ascii_lowercase(), b2.to_ascii_lowercase()),
     _ => {
@@ -608,7 +611,7 @@ fn parse_wide_escape(
   iter: &mut impl Iterator<Item = char>,
   span: Span,
 ) -> Result<char> {
-  let lint = lint(TokenLint::UnrecognizedEscape, span, &[]);
+  let lint = lint(TokenLint::UnrecognizedEscape, span, []);
   let (b1, b2, b3, b4) =
     match (iter.next(), iter.next(), iter.next(), iter.next()) {
       (Some(b1), Some(b2), Some(b3), Some(b4)) => (

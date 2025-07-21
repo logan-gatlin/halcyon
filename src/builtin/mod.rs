@@ -1,6 +1,6 @@
 use std::{cell::OnceCell, collections::HashMap};
 
-use crate::hlir::{Type, mangle_builtin};
+use crate::ir::{Type, mangle_builtin};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Builtin {

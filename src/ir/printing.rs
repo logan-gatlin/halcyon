@@ -1,9 +1,9 @@
 use super::*;
 
-impl HlIrModule {
+impl IrModule {
   fn sexpr(&self, node: IrPtr) -> SExpression {
     let node = &self[node];
-    use HlIrKind as h;
+    use IrKind as h;
     let mut se = match &node.kind {
       h::Declaration {
         assignee,
@@ -144,13 +144,13 @@ impl HlIrModule {
   }
 }
 
-impl std::fmt::Display for HlIrModule {
+impl std::fmt::Display for IrModule {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     write!(f, "{}", self.sexpr(0))
   }
 }
 
-impl Into<SExpression> for &HlIrModule {
+impl Into<SExpression> for &IrModule {
   fn into(self) -> SExpression {
     self.sexpr(0)
   }
