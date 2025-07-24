@@ -1,5 +1,4 @@
-#![feature(generic_const_exprs, iterator_try_collect, box_patterns)]
-#![allow(incomplete_features)]
+#![feature(iterator_try_collect, box_patterns)]
 mod builtin;
 mod compile;
 mod ir;
@@ -12,6 +11,9 @@ mod semantic;
 mod test;
 mod token;
 
+use std::collections::HashMap;
+
+use compile::*;
 use ir::*;
 use lint::render::Linter;
 use parse::*;
@@ -32,41 +34,27 @@ pub fn execute(wasm: Vec<u8>) {
   let _instance = linker.instantiate(&mut store, &module).unwrap();
 }
 
-pub fn _compile(input: &str) -> Result<Vec<u8>> {
-  let start_compile_time = std::time::Instant::now();
-  let tokens = tokenize(input.chars())?;
-  let parse_tree = parse(tokens)?;
-  println!("{parse_tree:#?}");
-  /*
-  let parse_tree = parse(tokens)?;
-  let mut hlir = build_hlir(parse_tree)?;
-  type_solve(&mut hlir)?;
-  let wasm = compile::compile(hlir);
-  let wat = wasmprinter::print_bytes(&wasm).unwrap();
-  wasmparser::validate(&wasm).map_err(|e| Lint {
-    kind: CompilerBug::FailedValidation.into(),
-    context: vec![format!("{e}")],
-    span: None,
-  })?;
-  Ok(wasm)
-  */
-  todo!()
-}
-
 pub fn compile(input: &str) {
   let linter = Linter::new(input.to_string());
-  match _compile(input) {
-    Ok(b) => {
-      if b.len() != 0 {
-        std::fs::write("test.wasm", b).unwrap();
-      }
-    },
-    Err(e) => {
-      println!(
-        "{}",
-        "Failed to Compile".apply_style(Color::Red, Attribute::Underline),
-      );
-      println!("{}", linter.render(e))
-    },
-  };
+  let tokens = tokenize(input.chars()).handle(&linter);
+  let parsed_modules = parse(tokens).handle(&linter);
+  let mut encoder = ModuleEncoder::new();
+  let mut interfaces = HashMap::new();
+  for module in parsed_modules {
+    let mut ir = build_ir(module, &interfaces).handle(&linter);
+    let interface = type_solve(&mut ir).handle(&linter);
+    interfaces.insert(ir.module_name.clone(), interface);
+    encoder.encode_ir(ir);
+  }
+  let wasm = encoder.finish();
+  let wat = wasmprinter::print_bytes(&wasm).unwrap();
+  std::fs::write("demo.wat", wat).unwrap();
+  std::fs::write("demo.wasm", &wasm).unwrap();
+  wasmparser::validate(&wasm)
+    .map_err(|e| Lint {
+      kind: CompilerBug::FailedValidation.into(),
+      context: vec![format!("{e}")],
+      span: None,
+    })
+    .handle(&linter);
 }

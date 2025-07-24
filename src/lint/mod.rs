@@ -9,6 +9,8 @@ pub use kinds::*;
 pub use sexpr::*;
 pub use span::*;
 
+use crate::render::Linter;
+
 pub type Result<T> = std::result::Result<T, Lint>;
 
 #[derive(Clone, Debug)]
@@ -94,6 +96,26 @@ impl<T> WithContext for std::result::Result<T, Lint> {
       Err(mut l) => {
         l.context.push(parameter.into());
         Err(l)
+      },
+    }
+  }
+}
+
+pub trait Handle<T> {
+  fn handle(self, linter: &Linter) -> T;
+}
+
+impl<T> Handle<T> for Result<T> {
+  fn handle(self, linter: &Linter) -> T {
+    match self {
+      Ok(v) => v,
+      Err(e) => {
+        println!(
+          "{}",
+          "Failed to Compile".apply_style(Color::Red, Attribute::Underline),
+        );
+        println!("{}", linter.render(e));
+        panic!();
       },
     }
   }

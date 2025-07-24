@@ -1,7 +1,7 @@
 use super::*;
 
-fn cast(state: &mut ModuleEncoder, f: u32, to: &Type) {
-  if let Type::TypeVariable(_) = to {
+fn cast(state: &mut ModuleEncoder, f: u32, to: &TypeRef) {
+  if let Type::TypeVariable(_) = (*to.borrow()).clone() {
     cast_any(state, f);
   } else {
     let type_id = state.get_type_id(to, false);
@@ -23,20 +23,10 @@ pub fn lower(
   let this_t = nodes[ptr].type_.clone();
   use IrKind as h;
   match nk {
-    // Type declarations don't need to be compiled
-    h::Declaration {
-      is_type: true, in_, ..
-    } => {
-      if let Some(in_) = in_ {
-        lower(nodes, in_, state, f);
-      }
-    },
     h::Declaration {
       assignee,
-      is_type: false,
       value,
       in_,
-      ..
     } => {
       let local = state
         .func(f)
@@ -66,7 +56,7 @@ pub fn lower(
     h::Field { of, index } => {
       lower(nodes, of, state, f);
       let struct_t = &nodes[of].type_;
-      let field_id = struct_t.field_index(&index).unwrap();
+      let field_id = struct_t.borrow().field_index(&index).unwrap();
       let struct_t = state.get_type_id(&struct_t, false);
       state.push(
         f,
@@ -142,7 +132,7 @@ pub fn lower(
       else_,
     } => {
       lower(nodes, predicate, state, f);
-      state.unwrap_primitive(f, &Type::Boolean);
+      state.unwrap_primitive(f, &Type::Boolean.into());
       let block_type = BlockType::Result(state.get_valtype(&this_t, false));
       state.push(f, If(block_type));
       lower(nodes, then, state, f);
@@ -176,6 +166,45 @@ pub fn lower(
       }
       state.new_capture(f, captures.len() as u32);
       state.new_struct(f, &this_t);
+    },
+    h::RecursiveDeclaration {
+      assignee,
+      parameter_name,
+      captures,
+      capture_types,
+      function_type,
+      body,
+      in_,
+      ..
+    } => {
+      // <Copied from FunctionDef>
+      let new_func = state.new_function(
+        &this_t,
+        parameter_name.unwrap_or("unit".into()),
+        captures.clone(),
+        capture_types.clone(),
+      );
+      lower(nodes, body, state, new_func);
+      state.push(f, I32Const(new_func as i32));
+      // Push all captures
+      for c in &captures {
+        state.func(f).get_local(c);
+        cast_any(state, f);
+      }
+      state.new_capture(f, captures.len() as u32);
+      state.new_struct(f, &function_type);
+      // </Copied from FunctionDef>
+      // <Copied from Declaration>
+      let local = state
+        .func(f)
+        .new_local(assignee, ValType::Ref(RefType::ANYREF));
+      state.push(f, LocalSet(local));
+      if let Some(in_) = in_ {
+        lower(nodes, in_, state, f);
+      } else {
+        state.push_constant(f, ConstValue::Unit);
+      }
+      // </Copied from Declaration>
     },
     h::FunctionCall {
       callee,
@@ -214,6 +243,8 @@ pub fn lower(
         },
       );
     },
-    h::StructDef { .. } => todo!(),
+    h::ImportedSymbol(mangle, _) => {
+      state.get_symbol(f, &mangle);
+    },
   }
 }

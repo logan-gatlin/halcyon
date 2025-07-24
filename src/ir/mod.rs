@@ -1,12 +1,18 @@
 mod build_ir;
 pub mod constant;
+mod namespace;
 pub mod printing;
 pub mod types;
 
-use crate::{lint::*, operator::*};
+use std::collections::HashMap;
+
+use crate::{
+  builtin::Builtin, lint::*, operator::*, semantic::ModuleInterface,
+};
 
 pub use build_ir::*;
 pub use constant::*;
+use namespace::*;
 pub use types::*;
 
 pub type IrPtr = usize;
@@ -36,22 +42,37 @@ pub fn mangle_builtin(name: impl std::fmt::Display) -> Mangle {
   format!("_{name}")
 }
 
+pub fn mangle_global(
+  module_path: &[&str],
+  name: impl std::fmt::Display,
+) -> Mangle {
+  let mut path = module_path.to_vec();
+  let name = format!("{name}");
+  path.push(&name);
+  path.join(":")
+}
+
 #[derive(Debug, Clone)]
 pub enum IrKind {
   Declaration {
     assignee: Mangle,
-    is_type: bool,
-    is_recursive: bool,
     value: IrPtr,
+    in_: Option<IrPtr>,
+  },
+  RecursiveDeclaration {
+    assignee: Mangle,
+    parameter_name: Option<Mangle>,
+    parameter_span: Span,
+    parameter_type: Option<TypeRef>,
+    captures: Vec<Mangle>,
+    capture_types: Vec<TypeRef>,
+    function_type: TypeRef,
+    body: IrPtr,
     in_: Option<IrPtr>,
   },
   Immediate(ConstValue),
   Identifier(Mangle),
   Tuple(Vec<IrPtr>),
-  StructDef {
-    field_names: Vec<String>,
-    field_types: Vec<IrPtr>,
-  },
   StructLiteral {
     field_names: Vec<String>,
     field_values: Vec<IrPtr>,
@@ -72,9 +93,9 @@ pub enum IrKind {
   FunctionDef {
     parameter_name: Option<Mangle>,
     parameter_span: Span,
-    parameter_type: Option<IrPtr>,
+    parameter_type: Option<TypeRef>,
     captures: Vec<Mangle>,
-    capture_types: Vec<Type>,
+    capture_types: Vec<TypeRef>,
     body: IrPtr,
   },
   FunctionCall {
@@ -86,17 +107,27 @@ pub enum IrKind {
     then: IrPtr,
     else_: Option<IrPtr>,
   },
+  ImportedSymbol(Mangle, TypeRef),
 }
 
 #[derive(Debug, Clone)]
 pub struct IrNode {
   pub kind: IrKind,
   pub span: Span,
-  pub type_: Type,
+  pub type_: TypeRef,
+}
+
+#[derive(Debug, Clone)]
+pub enum ModuleItem {
+  Let(String, IrPtr),
+  Type(String, TypeRef),
 }
 
 #[derive(Debug, Clone)]
 pub struct IrModule {
+  pub module_name: String,
+  pub universe: HashMap<Mangle, TypeRef>,
+  pub items: Vec<ModuleItem>,
   pub nodes: Vec<IrNode>,
 }
 
@@ -113,14 +144,18 @@ impl IrModule {
             value
           }
         },
+        RecursiveDeclaration { body, in_, .. } => {
+          if let Some(in_) = in_ {
+            in_
+          } else {
+            body
+          }
+        },
         FunctionCall {
           argument: arguments,
           ..
         } => arguments,
-        StructDef {
-          field_types: items, ..
-        }
-        | StructLiteral {
+        StructLiteral {
           field_values: items,
           ..
         }
@@ -142,7 +177,7 @@ impl IrModule {
             then
           }
         },
-        Immediate(_) | Identifier(_) => break,
+        ImportedSymbol(..) | Immediate(..) | Identifier(..) => break,
       }
     }
     start..current
@@ -161,4 +196,18 @@ impl std::ops::IndexMut<usize> for IrModule {
   fn index_mut(&mut self, index: usize) -> &mut Self::Output {
     &mut self.nodes[index]
   }
+}
+
+type FunctionDepth = usize;
+
+#[derive(Debug, Clone)]
+enum Scope {
+  Value {
+    clean: String,
+    old: Option<(Mangle, FunctionDepth)>,
+  },
+  Type {
+    clean: String,
+    old: Option<Mangle>,
+  },
 }

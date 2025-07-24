@@ -19,18 +19,17 @@ struct Import {
   entity: EntityType,
 }
 
+#[derive(Debug, Clone)]
+struct Export {
+  name: String,
+  kind: ExportKind,
+  index: u32,
+}
+
 #[derive(Debug, Clone, Copy)]
 enum FunctionKind {
   Native(u32),
   Import(u32),
-}
-
-pub fn compile(mut hlir: IrModule) -> Vec<u8> {
-  let mut state = ModuleEncoder::new();
-  let main = state.new_main_function();
-  lower::lower(&mut hlir, 0, &mut state, main);
-  state.push(main, Instruction::Drop);
-  state.encode(main)
 }
 
 #[derive(Debug, Clone)]
@@ -41,10 +40,14 @@ enum RegisteredType {
 }
 
 #[derive(Debug, Clone, Default)]
-struct ModuleEncoder {
+pub struct ModuleEncoder {
+  main_fn: u32,
   type_map: HashMap<Type, u32>,
   raw_type_map: HashMap<Type, u32>,
+  global_map: HashMap<Mangle, u32>,
+  global_section: Vec<u32>,
   import_section: Vec<Import>,
+  export_section: Vec<Export>,
   type_section: Vec<RegisteredType>,
   function_section: Vec<u32>,
   elements_section: Vec<FunctionKind>,
@@ -56,12 +59,41 @@ struct ModuleEncoder {
 
 impl ModuleEncoder {
   pub fn new() -> Self {
-    Self::default()
+    let mut this = Self::default();
+    let main = this.new_main_function();
+    this.main_fn = main;
+    this
   }
 
-  pub fn encode(self, main_func: u32) -> Vec<u8> {
+  pub fn encode_ir(&mut self, mut ir: IrModule) {
+    for item in ir.items.clone() {
+      match item {
+        ModuleItem::Let(mangle, ptr) => {
+          let global_id = self.new_global(mangle, &ir.nodes[ptr].type_);
+          lower::lower(&mut ir, ptr, self, self.main_fn);
+          self.push(self.main_fn, GlobalSet(global_id));
+        },
+        _ => {},
+      }
+    }
+  }
+
+  pub fn new_global(&mut self, mangle: Mangle, type_: &TypeRef) -> u32 {
+    let id = self.global_section.len() as u32;
+    let type_ = self.get_type_id(type_, false);
+    self.global_section.push(type_);
+    self.export_section.push(Export {
+      name: mangle.clone(),
+      kind: ExportKind::Global,
+      index: id,
+    });
+    self.global_map.insert(mangle, id);
+    id
+  }
+
+  pub fn finish(self) -> Vec<u8> {
     let FunctionKind::Native(main_func) =
-      self.elements_section[main_func as usize]
+      self.elements_section[self.main_fn as usize]
     else {
       panic!()
     };
@@ -71,13 +103,13 @@ impl ModuleEncoder {
       .type_map
       .clone()
       .into_iter()
-      .map(|(type_, id)| (id, format!("{type_}")))
+      .map(|(type_, id)| (id, format!("{}", type_)))
       .chain(
         self
           .raw_type_map
           .clone()
           .into_iter()
-          .map(|(type_, id)| (id, format!("(raw) {type_}"))),
+          .map(|(type_, id)| (id, format!("(raw) {}", type_))),
       )
       .collect::<Vec<_>>();
     type_names_map.sort_by(|(id1, _), (id2, _)| id1.cmp(&id2));
@@ -137,17 +169,6 @@ impl ModuleEncoder {
           .fold(&mut ImportSection::new(), |section, import| {
             section.import(&import.major, &import.minor, import.entity)
           })
-          .import(
-            "sys",
-            "memory",
-            EntityType::Memory(MemoryType {
-              minimum: 1,
-              maximum: None,
-              memory64: false,
-              shared: false,
-              page_size_log2: None,
-            }),
-          ),
       )
       // Function section
       .section(
@@ -163,6 +184,24 @@ impl ModuleEncoder {
         minimum: (no_funcs + no_imports) as u64,
         maximum: Some((no_funcs + no_imports) as u64),
         shared: false,
+      }))
+      // Global section
+      .section(&*self.global_section.into_iter().fold(&mut GlobalSection::new(), |section, type_| {
+        section.global(
+          GlobalType {
+            val_type: ValType::Ref(
+              RefType {
+                nullable: true,
+                heap_type: HeapType::Concrete(type_),
+              }),
+            mutable: true,
+            shared: false
+          },
+          &ConstExpr::ref_null(HeapType::Concrete(type_)))
+      }))
+      // Export section
+      .section(&*self.export_section.into_iter().fold(&mut ExportSection::new(), |section, ex| {
+        section.export(&ex.name, ex.kind, ex.index)
       }))
       // Start section
       .section(&StartSection {
@@ -202,7 +241,7 @@ impl ModuleEncoder {
     ts
   }
 
-  pub fn get_type_id(&mut self, t: &Type, raw: bool) -> u32 {
+  pub fn get_type_id(&mut self, t: &TypeRef, raw: bool) -> u32 {
     match self.get_storage_type(t, raw) {
       StorageType::Val(ValType::Ref(RefType {
         heap_type: HeapType::Concrete(id),
@@ -212,14 +251,15 @@ impl ModuleEncoder {
     }
   }
 
-  pub fn get_valtype(&mut self, t: &Type, raw: bool) -> ValType {
+  pub fn get_valtype(&mut self, t: &TypeRef, raw: bool) -> ValType {
     match self.get_storage_type(t, raw) {
       StorageType::I8 | StorageType::I16 => ValType::I32,
       StorageType::Val(val_type) => val_type,
     }
   }
 
-  pub fn get_storage_type(&mut self, t: &Type, raw: bool) -> StorageType {
+  pub fn get_storage_type(&mut self, t: &TypeRef, raw: bool) -> StorageType {
+    let t = (*t.borrow()).clone();
     let register = |this: &mut Self, t: Type, rt: RegisteredType| {
       let id = this.type_section.len() as u32;
       this.type_section.push(rt);
@@ -240,14 +280,14 @@ impl ModuleEncoder {
     } else {
       &self.type_map
     }
-    .get(t)
+    .get(&t)
     {
       return StorageType::Val(ValType::Ref(RefType {
         nullable: false,
         heap_type: HeapType::Concrete(*t),
       }));
     }
-    let rt = match t {
+    let rt = match t.clone() {
       Type::_ClosureCapture => {
         RegisteredType::Array(StorageType::Val(ValType::Ref(RefType::ANYREF)))
       },
@@ -272,30 +312,36 @@ impl ModuleEncoder {
       Type::Struct { member_types, .. } => RegisteredType::Struct(
         member_types
           .into_iter()
-          .map(|t| self.get_storage_type(t, false))
+          .map(|t| self.get_storage_type(&t, false))
           .collect(),
       ),
       Type::Function(_, _) if !raw => {
         //let raw_func_type = self.get_storage_type(t, true);
         let raw_func_type = StorageType::Val(ValType::I32);
-        let capture_type = self.get_storage_type(&Type::_ClosureCapture, false);
+        let capture_type =
+          self.get_storage_type(&Type::_ClosureCapture.into(), false);
         RegisteredType::Struct(vec![raw_func_type, capture_type])
       },
       Type::Function(a, b) => RegisteredType::Function(FuncType::new(
         [
-          self.get_valtype(a, false),
-          self.get_valtype(&Type::_ClosureCapture, false),
+          self.get_valtype(&a, false),
+          self.get_valtype(&Type::_ClosureCapture.into(), false),
         ],
-        [self.get_valtype(b, false)],
+        [self.get_valtype(&b, false)],
       )),
       Type::Product(items) => RegisteredType::Struct(
         items
           .into_iter()
-          .map(|t| self.get_storage_type(t, false))
+          .map(|t| self.get_storage_type(&t, false))
           .collect(),
       ),
+      Type::Weak(wk) => {
+        let r = wk.upgrade().unwrap();
+        return self.get_storage_type(&r, raw);
+      },
+
       Type::Type => todo!(),
     };
-    register(self, t.clone(), rt)
+    register(self, t, rt)
   }
 }

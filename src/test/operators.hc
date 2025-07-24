@@ -1,58 +1,60 @@
-// Unary ops
-assert not false;
-assert not not not false;
-assert (-1 == 0 - 1);
-assert (-.1.0 == 0.0 -. 1.0);
-assert (-1.0 == 0.0 -. 1.0); // Special case
+module OpTest
+  // Unary ops
+  let _ = assert not false
+  let _ = assert not not not false
+  let _ = assert (-1 == 0 - 1)
+  let _ = assert (-.1.0 == 0.0 -. 1.0)
+  let _ = assert (-1.0 == 0.0 -. 1.0) // Special case
 
-// Integer arithmetic
-assert (1 + 2 == 3);
-assert (1 - 2 == -1);
-assert (1 * 2 == 2);
-assert (1 / 2 == 0);
-assert (1 % 2 == 1);
+  // Integer arithmetic
+  let _ = assert (1 + 2 == 3)
+  let _ = assert (1 - 2 == -1)
+  let _ = assert (1 * 2 == 2)
+  let _ = assert (1 / 2 == 0)
+  let _ = assert (1 % 2 == 1)
 
-// Real arithmetic
-assert (1.0 +. 2.0 == 3.0);
-assert (2.0 -. 1.0 == 1.0);
-assert (1.0 *. 2.0 == 2.0);
-assert (1.0 /. 2.0 == 0.5);
+  // Real arithmetic
+  let _ = assert (1.0 +. 2.0 == 3.0)
+  let _ = assert (2.0 -. 1.0 == 1.0)
+  let _ = assert (1.0 *. 2.0 == 2.0)
+  let _ = assert (1.0 /. 2.0 == 0.5)
 
-// Boolean logical
-assert (true and true);
-assert (true or false);
-assert (true xor false);
+  // Boolean logical
+  let _ = assert (true and true)
+  let _ = assert (true or false)
+  let _ = assert (true xor false)
 
-// Unit comparison
-assert (() == () == true);
-assert (() != () == false);
-assert (() <= () == true);
-assert (() >= () == true);
-assert (() < () == false);
-assert (() > () == false);
+  // Unit comparison
+  let _ = assert (() == () == true)
+  let _ = assert (() != () == false)
+  let _ = assert (() <= () == true)
+  let _ = assert (() >= () == true)
+  let _ = assert (() < () == false)
+  let _ = assert (() > () == false)
 
-// Boolean comparison
-assert (true == true);
-assert (true != false);
-assert (false <= true);
-assert (true >= false);
-assert (false < true);
-assert (true > false);
+  // Boolean comparison
+  let _ = assert (true == true)
+  let _ = assert (true != false)
+  let _ = assert (false <= true)
+  let _ = assert (true >= false)
+  let _ = assert (false < true)
+  let _ = assert (true > false)
 
-// Glyph comparison
-assert ('a' == 'a');
-assert ('a' != 'b');
-assert ('a' <= 'b');
-assert ('b' >= 'a');
-assert ('a' < 'b');
-assert ('b' > 'a');
+  // Glyph comparison
+  let _ = assert ('a' == 'a')
+  let _ = assert ('a' != 'b')
+  let _ = assert ('a' <= 'b')
+  let _ = assert ('b' >= 'a')
+  let _ = assert ('a' < 'b')
+  let _ = assert ('b' > 'a')
 
-// String comparison
-assert ("abc" == "abc");
-assert ("abc" != "def");
-assert ("abc" <= "def");
-assert ("def" >= "abc");
-assert ("abc" <= "abc");
-assert ("abc" >= "abc");
-assert ("abc" < "def");
-assert ("def" > "abc")
+  // String comparison
+  let _ = assert ("abc" == "abc")
+  let _ = assert ("abc" != "def")
+  let _ = assert ("abc" <= "def")
+  let _ = assert ("def" >= "abc")
+  let _ = assert ("abc" <= "abc")
+  let _ = assert ("abc" >= "abc")
+  let _ = assert ("abc" < "def")
+  let _ = assert ("def" > "abc")
+end

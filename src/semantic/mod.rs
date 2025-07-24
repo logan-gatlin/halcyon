@@ -1,6 +1,8 @@
+mod check;
 mod inference;
 mod unification;
 
+use check::*;
 use inference::*;
 use unification::*;
 
@@ -9,49 +11,52 @@ use std::collections::{HashMap, HashSet};
 use crate::{builtin::Builtin, ir::*, lint::*, operator::*};
 
 pub struct Environment {
-  let_bound_map: HashMap<Mangle, bool>,
-  type_map: HashMap<Mangle, Type>,
-  value_map: HashMap<Mangle, ConstValue>,
+  scheme_map: HashMap<Mangle, bool>,
+  value_map: HashMap<Mangle, TypeRef>,
+  type_map: HashMap<Mangle, TypeRef>,
   type_variable: TypeVariable,
 }
 
 impl Environment {
   pub fn new() -> Self {
-    let mut let_bound_map = HashMap::new();
-    let mut type_map = HashMap::new();
+    let mut scheme_map = HashMap::new();
     let mut value_map = HashMap::new();
+    let mut type_map = HashMap::new();
     Type::primitives().into_iter().for_each(|(prim, name)| {
       let mangle = mangle_builtin(name);
-      let_bound_map.insert(mangle.clone(), false);
-      type_map.insert(mangle.clone(), Type::Type);
-      value_map.insert(mangle.clone(), ConstValue::Type(prim));
+      type_map.insert(mangle.clone(), prim);
     });
     Builtin::ALL.into_iter().for_each(|bt| {
       let mangle = bt.get_mangle();
-      let_bound_map.insert(mangle.clone(), true);
-      type_map.insert(mangle.clone(), bt.get_type());
+      scheme_map.insert(mangle.clone(), true);
+      value_map.insert(mangle.clone(), bt.get_type());
     });
     Self {
-      let_bound_map,
-      type_map,
+      scheme_map,
       value_map,
+      type_map,
       type_variable: 0,
     }
   }
 
-  pub fn fresh_type_var(&mut self) -> Type {
+  pub fn fresh_type_var(&mut self) -> TypeRef {
     let tv = self.type_variable;
     self.type_variable += 1;
-    Type::TypeVariable(tv)
+    Type::TypeVariable(tv).to_ref()
+  }
+
+  pub fn reset_type_variable(&mut self) {
+    self.type_variable = 0;
   }
 
   fn map_fresh_type_variables(
     &mut self,
-    t: &Type,
+    t: &TypeRef,
     map: &mut HashMap<TypeVariable, TypeVariable>,
   ) {
-    match t {
-      Type::Any
+    match &*(t.borrow()) {
+      Type::Weak(_)
+      | Type::Any
       | Type::_ClosureCapture
       | Type::Unit
       | Type::Integer
@@ -78,7 +83,7 @@ impl Environment {
         ..
       } => items
         .into_iter()
-        .for_each(|t| self.map_fresh_type_variables(t, map)),
+        .for_each(|t| self.map_fresh_type_variables(&t, map)),
       Type::Function(param_type, return_type) => {
         self.map_fresh_type_variables(param_type, map);
         self.map_fresh_type_variables(return_type, map);
@@ -86,104 +91,78 @@ impl Environment {
     }
   }
 
-  pub fn get_type(&mut self, mangle: &Mangle) -> Type {
-    if *self.let_bound_map.get(mangle).unwrap() {
-      let mut t = self.type_map.get(mangle).unwrap().clone();
+  pub fn define_type(&mut self, mangle: Mangle, type_: TypeRef) {
+    self.type_map.insert(mangle, type_);
+  }
+
+  pub fn get_type(&self, mangle: &Mangle) -> TypeRef {
+    self.type_map.get(mangle).unwrap().clone()
+  }
+
+  pub fn get_value_type(&mut self, mangle: &Mangle) -> TypeRef {
+    if *self.scheme_map.get(mangle).unwrap() {
+      let t = self.value_map.get(mangle).unwrap().clone();
       let mut fresh = HashMap::new();
       self.map_fresh_type_variables(&t, &mut fresh);
-      fresh
-        .into_iter()
-        .for_each(|(old, new)| t.substitute(old, &Type::TypeVariable(new)));
+      fresh.into_iter().for_each(|(old, new)| {
+        t.borrow_mut().substitute(old, &Type::TypeVariable(new))
+      });
       t
     } else {
-      self.type_map.get(mangle).unwrap().clone()
+      self.value_map.get(mangle).unwrap().clone()
     }
   }
 
-  pub fn insert_type(&mut self, mangle: Mangle, type_: Type, let_bound: bool) {
-    self.type_map.insert(mangle.clone(), type_);
-    self.let_bound_map.insert(mangle, let_bound);
-  }
-
-  pub fn get_value(&self, mangle: &Mangle) -> Result<&ConstValue> {
-    self
-      .value_map
-      .get(mangle)
-      .ok_or(lint_nospan(TypeLint::NotAvailable))
-  }
-
-  pub fn insert_value(&mut self, mangle: Mangle, value: ConstValue) {
-    self.value_map.insert(mangle, value);
+  pub fn insert_value_type(
+    &mut self,
+    mangle: Mangle,
+    type_: TypeRef,
+    let_bound: bool,
+  ) {
+    self.value_map.insert(mangle.clone(), type_);
+    self.scheme_map.insert(mangle, let_bound);
   }
 }
 
 #[derive(Debug, Clone)]
-pub struct TypeConstraint(Type, Type, Span);
+pub struct TypeConstraint(TypeRef, TypeRef, Span);
 
 impl std::fmt::Display for TypeConstraint {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "({}) == ({})", self.0, self.1)
+    write!(f, "({}) == ({})", self.0.borrow(), self.1.borrow())
   }
 }
 
 #[derive(Debug, Clone)]
-pub struct Substitution(TypeVariable, Type);
+pub struct Substitution(TypeVariable, TypeRef);
 
-pub fn type_solve(module: &mut IrModule) -> Result<()> {
-  let mut env = Environment::new();
-  let mut constraints = vec![];
-  type_inference(module, 0, &mut env, &mut constraints)?;
-  let solution = unification(&constraints)?;
-  apply_solution(module, 0, solution);
-  Ok(())
+#[derive(Debug, Clone, Default)]
+pub struct ModuleInterface {
+  pub types: HashMap<String, TypeRef>,
+  pub values: HashMap<String, TypeRef>,
 }
 
-pub fn parse_type(
-  nodes: &IrModule,
-  node: IrPtr,
-  env: &Environment,
-) -> Result<Type> {
-  let span = nodes[node].span;
-  use IrKind::*;
-  Ok(match &nodes[node].kind {
-    Identifier(mangle) => match env.get_value(mangle) {
-      Ok(ConstValue::Type(t)) => t.clone(),
-      _ => return Err(lint_nospan(TypeLint::NotAvailable)).span(span),
-    },
-    StructDef {
-      field_names,
-      field_types,
-    } => Type::Struct {
-      member_names: field_names.clone(),
-      member_types: field_types
-        .into_iter()
-        .map(|t| parse_type(nodes, *t, env))
-        .try_collect()?,
-    },
-    Binary { op, left, right } => match op {
-      /*
-      BinaryOp::Plus => {
-        parse_type(nodes, *left, env)? + parse_type(nodes, *right, env)?
+pub fn type_solve(module: &mut IrModule) -> Result<ModuleInterface> {
+  let mut interface = ModuleInterface::default();
+  let mut env = Environment::new();
+  for item in module.items.clone() {
+    match item {
+      ModuleItem::Let(name, ir) => {
+        let mut constraints = vec![];
+        type_inference(module, ir, &mut env, &mut constraints)?;
+        let solution = unification(&constraints)?;
+        apply_solution(module, ir, solution);
+        let second_solution = unification(&check_structs(&env, module, ir)?)?;
+        apply_solution(module, ir, second_solution);
+        env.insert_value_type(name.clone(), module[ir].type_.clone(), true);
+        env.reset_type_variable();
+        interface.values.insert(name, module[ir].type_.clone());
       },
-      */
-      BinaryOp::Star => {
-        parse_type(nodes, *left, env)? * parse_type(nodes, *right, env)?
+      ModuleItem::Type(name, type_) => {
+        env.define_type(name.clone(), type_.clone());
+        interface.types.insert(name, type_);
       },
-      _ => {
-        return Err(lint_nospan(TypeLint::BinaryOpUndefined))
-          .context(format!("{op}"))
-          .context(format!("{}", Type::Type))
-          .context(format!("{}", Type::Type))
-          .span(span);
-      },
-    },
-    Unary { op, .. } => {
-      return Err(lint_nospan(TypeLint::UnaryOpUndefined))
-        .context(format!("{op}"))
-        .context(format!("{}", Type::Type))
-        .span(span);
-    },
-    Immediate(ConstValue::Unit) => Type::Unit,
-    _ => return Err(lint_nospan(TypeLint::NotAType)).span(span),
-  })
+    }
+  }
+  Ok(interface)
 }

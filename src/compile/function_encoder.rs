@@ -94,17 +94,19 @@ impl ModuleEncoder {
 
   pub fn new_function(
     &mut self,
-    type_: &Type,
+    type_: &TypeRef,
     parameter_name: Mangle,
     capture_names: Vec<Mangle>,
-    capture_types: Vec<Type>,
+    capture_types: Vec<TypeRef>,
   ) -> u32 {
-    let Type::Function(parameter_type, _) = type_ else {
+    let Type::Function(parameter_type, _) = (*type_.borrow()).clone() else {
       panic!()
     };
-    let parameter_type = self.get_valtype(parameter_type, false);
-    let closure_type_id = self.get_type_id(&Type::_ClosureCapture, false);
-    let capture_types = capture_types.iter().map(|t| self.get_valtype(t, false));
+    let parameter_type = self.get_valtype(&parameter_type, false);
+    let closure_type_id =
+      self.get_type_id(&Type::_ClosureCapture.into(), false);
+    let capture_types =
+      capture_types.iter().map(|t| self.get_valtype(t, false));
     let mut code = FunctionEncoder {
       local_names: [(parameter_name, 0)].into_iter().collect(),
       parameter: Some(parameter_type),
@@ -128,7 +130,7 @@ impl ModuleEncoder {
         code.push(i::RefCastNonNull(heap_type));
         code.push(i::LocalSet(local));
       });
-    let type_id = self.get_type_id(&type_, true);
+    let type_id = self.get_type_id(type_, true);
     self.function_section.push(type_id);
     let code_id = self.code_section.len() as u32;
     self.code_section.push(code);
@@ -144,10 +146,10 @@ impl ModuleEncoder {
   pub fn new_curried_function(
     &mut self,
     parameter_names: Vec<Mangle>,
-    parameter_types: Vec<Type>,
-    return_type: Type,
+    parameter_types: Vec<TypeRef>,
+    return_type: TypeRef,
     capture_names: Vec<Mangle>,
-    capture_types: Vec<Type>,
+    capture_types: Vec<TypeRef>,
   ) -> (u32, u32) {
     let mut capture_names_list = vec![];
     let mut capture_types_list = vec![];
@@ -172,45 +174,51 @@ impl ModuleEncoder {
       .iter_mut()
       .for_each(|types| types.extend(capture_types.clone()));
     let mut tail = 0;
-    let head = parameter_names
-      .into_iter()
-      .zip(parameter_types)
-      .zip(capture_names_list)
-      .zip(capture_types_list)
-      .rev()
-      .fold(
-        (Option::<u32>::None, return_type),
-        |(last_function, return_type),
-         (((parameter_name, parameter_type), capture_names), capture_types)| {
-          let new_return_type = Type::func(parameter_type, return_type.clone());
-          let next_function = self.new_function(
-            &new_return_type,
-            parameter_name.clone(),
-            capture_names.clone(),
-            capture_types.clone(),
-          );
-          if let Some(last_function) = last_function {
-            use Instruction as i;
-            self
-              .func(next_function)
-              .push(i::I32Const(last_function as i32));
-            self.func(next_function).get_local(&parameter_name);
-            for capture in &capture_names {
-              self.func(last_function).get_local(capture);
+    let head =
+      parameter_names
+        .into_iter()
+        .zip(parameter_types)
+        .zip(capture_names_list)
+        .zip(capture_types_list)
+        .rev()
+        .fold(
+          (Option::<u32>::None, return_type),
+          |(last_function, return_type),
+           (
+            ((parameter_name, parameter_type), capture_names),
+            capture_types,
+          )| {
+            let new_return_type =
+              Type::func(parameter_type, return_type.clone());
+            let next_function = self.new_function(
+              &new_return_type,
+              parameter_name.clone(),
+              capture_names.clone(),
+              capture_types.clone(),
+            );
+            if let Some(last_function) = last_function {
+              use Instruction as i;
+              self
+                .func(next_function)
+                .push(i::I32Const(last_function as i32));
+              self.func(next_function).get_local(&parameter_name);
+              for capture in &capture_names {
+                self.func(last_function).get_local(capture);
+              }
+              let capture_array_type =
+                self.get_type_id(&Type::_ClosureCapture.into(), false);
+              self.func(next_function).push(i::ArrayNewFixed {
+                array_type_index: capture_array_type,
+                array_size: (capture_names.len() + 1) as u32,
+              });
+              let function_type = self.get_type_id(&return_type, false);
+              self.func(next_function).push(i::StructNew(function_type));
+            } else {
+              tail = next_function;
             }
-            let capture_array_type = self.get_type_id(&Type::_ClosureCapture, false);
-            self.func(next_function).push(i::ArrayNewFixed {
-              array_type_index: capture_array_type,
-              array_size: (capture_names.len() + 1) as u32,
-            });
-            let function_type = self.get_type_id(&return_type, false);
-            self.func(next_function).push(i::StructNew(function_type));
-          } else {
-            tail = next_function;
-          }
-          (Some(next_function), new_return_type)
-        },
-      );
+            (Some(next_function), new_return_type)
+          },
+        );
     (head.0.unwrap(), tail)
   }
 }

@@ -13,6 +13,10 @@ use module::*;
 use type_expression::*;
 use value_expression::*;
 
+pub use module::{ModuleExpression, ModuleExpressionKind, ParsedModule};
+pub use type_expression::{TypeExpression, TypeExpressionKind};
+pub use value_expression::{Literal, ValueExpression, ValueExpressionKind};
+
 use multipeek::MultiPeek;
 
 use crate::{lint::*, operator::*, token::*};
@@ -155,11 +159,19 @@ impl<I: Iterator<Item = Token>> StatefulIter<I> {
   }
 }
 
-pub fn parse(iter: impl IntoIterator<Item = Token>) -> Result<ParsedModule> {
+pub fn parse(
+  iter: impl IntoIterator<Item = Token>,
+) -> Result<Vec<ParsedModule>> {
   let mut iter = StatefulIter {
     iter: multipeek::multipeek(iter),
     last_span: Span { start: 0, width: 1 },
     span_stack: vec![],
   };
-  parse_module(&mut iter)
+  let mut modules = vec![];
+  while let Some(tok) = iter.peek(0)
+    && tok.0 != EOF
+  {
+    modules.push(parse_module(&mut iter)?);
+  }
+  Ok(modules)
 }

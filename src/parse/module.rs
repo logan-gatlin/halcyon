@@ -3,14 +3,17 @@ use super::*;
 #[derive(Debug, Clone)]
 pub enum ModuleExpressionKind {
   Let {
-    is_recursive: bool,
     assignee: String,
+    assignee_span: Span,
     value: Box<ValueExpression>,
   },
   Type {
-    is_recursive: bool,
     assignee: String,
+    assignee_span: Span,
     value: Box<TypeExpression>,
+  },
+  Import {
+    name: String,
   },
 }
 
@@ -18,9 +21,9 @@ pub type ModuleExpression = Expression<ModuleExpressionKind>;
 
 #[derive(Debug, Clone)]
 pub struct ParsedModule {
-  name: String,
-  contents: Vec<ModuleExpression>,
-  span: Span,
+  pub name: String,
+  pub contents: Vec<ModuleExpression>,
+  pub span: Span,
 }
 
 pub fn parse_module(iter: it!()) -> Result<ParsedModule> {
@@ -49,27 +52,43 @@ pub fn parse_module(iter: it!()) -> Result<ParsedModule> {
 
 pub fn parse_module_expression(iter: it!()) -> Result<ModuleExpression> {
   iter.start_span();
-  let is_let = iter.eat_one_of([Let, Type])? == 0;
-  iter.skip(0);
-  let assignee = iter.eat_ident()?;
-  let is_recursive = iter.eat_one_of([Equal, DoubleColon])? == 1;
-  if is_let {
-    Ok(ModuleExpression {
-      kind: ModuleExpressionKind::Let {
-        is_recursive,
-        assignee,
-        value: Box::new(parse_value_expression(iter, 0)?),
+  let variant = iter.eat_one_of([Let, Type, Import])?;
+  match variant {
+    // Let
+    0 => {
+      let assignee = iter.eat_ident()?;
+      let assignee_span = iter.last_span;
+      iter.eat_or_error(Equal)?;
+      Ok(ModuleExpression {
+        kind: ModuleExpressionKind::Let {
+          assignee,
+          assignee_span,
+          value: Box::new(parse_value_expression(iter, 0)?),
+        },
+        span: iter.end_span(),
+      })
+    },
+    // Type
+    1 => {
+      let assignee = iter.eat_ident()?;
+      let assignee_span = iter.last_span;
+      iter.eat_or_error(Equal)?;
+      Ok(ModuleExpression {
+        kind: ModuleExpressionKind::Type {
+          assignee,
+          assignee_span,
+          value: Box::new(parse_type_expression(iter, 0)?),
+        },
+        span: iter.end_span(),
+      })
+    },
+    // Import
+    2 => Ok(ModuleExpression {
+      kind: ModuleExpressionKind::Import {
+        name: iter.eat_ident()?,
       },
       span: iter.end_span(),
-    })
-  } else {
-    Ok(ModuleExpression {
-      kind: ModuleExpressionKind::Type {
-        is_recursive,
-        assignee,
-        value: todo!(),
-      },
-      span: iter.end_span(),
-    })
+    }),
+    _ => unreachable!(),
   }
 }

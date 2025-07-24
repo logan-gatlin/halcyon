@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use super::*;
 use ValueExpressionKind as e;
 
@@ -14,7 +16,6 @@ pub enum Literal {
 #[derive(Debug, Clone)]
 pub enum ValueExpressionKind {
   Let {
-    is_recursive: bool,
     assignee_span: Span,
     assignee: String,
     value: Box<ValueExpression>,
@@ -34,7 +35,7 @@ pub enum ValueExpressionKind {
   FunctionDef {
     arguments: Vec<String>,
     argument_spans: Vec<Span>,
-    types: Vec<Option<ValueExpression>>,
+    types: Vec<Option<TypeExpression>>,
     body: Box<ValueExpression>,
   },
   FunctionCall {
@@ -55,6 +56,10 @@ pub enum ValueExpressionKind {
     lhs: Box<ValueExpression>,
     rhs: String,
   },
+  ModuleField {
+    lhs: Box<ValueExpression>,
+    rhs: String,
+  },
 }
 
 pub type ValueExpression = Expression<ValueExpressionKind>;
@@ -71,7 +76,7 @@ fn parse_primary(iter: it!()) -> Result<ValueExpression> {
     StringLiteral(value) => e::Literal(Literal::String(value)),
     GlyphLiteral(value) => e::Literal(Literal::Glyph(value)),
     True => e::Literal(Literal::Boolean(true)),
-    False => e::Literal(Literal::Boolean(true)),
+    False => e::Literal(Literal::Boolean(false)),
     Identifier(ident) => e::Identifier(ident),
     // Function definition
     Fn => {
@@ -82,10 +87,30 @@ fn parse_primary(iter: it!()) -> Result<ValueExpression> {
         if iter.eat(FatArrow).is_some() {
           break;
         }
-        iter.start_span();
-        arguments.push(iter.eat_ident()?);
-        spans.push(iter.end_span());
-        types.push(None);
+        // Typed parameter
+        if iter.eat(LeftParen).is_some() {
+          arguments.push(iter.eat_ident()?);
+          spans.push(iter.last_span);
+          iter.eat_or_error(Colon)?;
+          types.push(Some(parse_type_expression(iter, 0)?));
+          iter.eat_or_error(RightParen)?;
+        }
+        // Untyped parameter
+        else {
+          arguments.push(iter.eat_ident()?);
+          spans.push(iter.last_span);
+          types.push(None);
+        }
+      }
+      let mut parameter_set = HashSet::new();
+      for i in 0..arguments.len() {
+        if !parameter_set.insert(&arguments[i]) {
+          return Err(lint(
+            NameLint::ParamRedefinition,
+            spans[i],
+            ["function".to_string(), arguments[i].clone()],
+          ));
+        }
       }
       let body = Box::new(parse_value_expression(iter, 0)?);
       e::FunctionDef {
@@ -98,8 +123,10 @@ fn parse_primary(iter: it!()) -> Result<ValueExpression> {
     Let => e::Let {
       assignee: iter.eat_ident()?,
       assignee_span: iter.last_span,
-      is_recursive: iter.eat_one_of([Equal, DoubleColon])? == 1,
-      value: Box::new(parse_value_expression(iter, 0)?),
+      value: {
+        iter.eat_or_error(Equal)?;
+        Box::new(parse_value_expression(iter, 0)?)
+      },
       in_: if iter.eat(In).is_some() {
         Some(Box::new(parse_value_expression(iter, 0)?))
       } else {
@@ -209,7 +236,9 @@ pub fn parse_value_expression(
     iter.end_span();
     parse_primary(iter)?
   };
-  const TERMINAL_TOKENS: [TokenKind; 4] = [Let, Type, End, RightParen];
+  const TERMINAL_TOKENS: [TokenKind; 9] = [
+    Let, Type, Import, End, RightParen, RightBrace, In, Then, Else,
+  ];
   // Precedence climbing loop
   while let Some(next) = iter.peek(0) {
     if TERMINAL_TOKENS.contains(&next.0) {
@@ -235,10 +264,23 @@ pub fn parse_value_expression(
         },
         span: iter.end_span(),
       }
-    } else if precedence < FIELD_PREC && iter.eat(Dot).is_some() {
+    }
+    // Field
+    else if precedence < FIELD_PREC && iter.eat(Dot).is_some() {
       let rhs = iter.eat_ident()?;
       current = ValueExpression {
         kind: e::Field {
+          lhs: current.into(),
+          rhs,
+        },
+        span: iter.end_span(),
+      }
+    }
+    // Module field
+    else if precedence < MODULE_FIELD_PREC && iter.eat(Colon).is_some() {
+      let rhs = iter.eat_ident()?;
+      current = ValueExpression {
+        kind: e::ModuleField {
           lhs: current.into(),
           rhs,
         },

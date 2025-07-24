@@ -24,7 +24,6 @@ pub enum TokenKind {
   Colon,
   DoubleColon,
   Semicolon,
-  DoubleSemicolon,
 
   Dot,
   DotDot,
@@ -68,6 +67,7 @@ pub enum TokenKind {
   RealLiteral(String),
 
   Module,
+  Import,
   End,
   Match,
   Let,
@@ -118,7 +118,6 @@ impl std::fmt::Display for TokenKind {
         Colon => ":",
         DoubleColon => "::",
         Semicolon => ";",
-        DoubleSemicolon => ";;",
         Dot => ".",
         DotDot => "..",
         Plus => "+",
@@ -156,6 +155,7 @@ impl std::fmt::Display for TokenKind {
         IntegerLiteral(_, _) => "integer literal",
         RealLiteral(_) => "float literal",
         Module => "module",
+        Import => "import",
         End => "end",
         Match => "match",
         Let => "let",
@@ -332,7 +332,7 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
         ']' => RightSquare,
         ',' => Comma,
         ':' if not_next(':') => Colon,
-        ';' if not_next(';') => Semicolon,
+        ';' => Semicolon,
         '|' => Pipe,
         '&' => Ampersand,
         '^' => Carrot,
@@ -371,7 +371,6 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
         ('=', '>') => FatArrow,
         (':', ':') => DoubleColon,
         ('|', '>') => Apply,
-        (';', ';') => DoubleSemicolon,
         ('+', '.') => PlusDot,
         ('-', '.') => MinusDot,
         ('*', '.') => StarDot,
@@ -473,8 +472,8 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
       }
     }
     // Match keyword or identifier
-    if current.is_ascii_punctuation()
-      || (!current.is_alphanumeric() && current != '_')
+    if !(!current.is_ascii_punctuation() && current.is_alphanumeric()
+      || current == '_')
     {
       position.width = 1;
       return t(TokenKind::Idk, position);
@@ -494,6 +493,7 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
         "let" => Let,
         "in" => In,
         "module" => Module,
+        "import" => Import,
         "end" => End,
         "match" => Match,
         "if" => If,
@@ -542,10 +542,8 @@ fn bake_string(s: &str, mut span: Span) -> Result<String> {
       Some(c) => c,
       None => break,
     };
-    println!("{c} {span:?}");
     if c == '\\' {
       let (escape, length) = parse_single_escape(&mut iter, span)?;
-      println!("+{length}");
       span.start += length + 1;
       baked.push(escape);
     } else {

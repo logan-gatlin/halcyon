@@ -62,45 +62,19 @@ help = "An expression should be here"
 # Name errors
 [3000]
 reason = "Undefined name"
-help = "The name `%` cannot be found. Names defined using `=` may only be used after they are defined, while names defined using `::` may be used anywhere within the block they are defined"
+help = "The name `%` is cannot be found in this scope"
 
 [3001]
 reason = "Redefinition of name"
-help = "The constant `%` is defined more than once in the same scope"
+help = "The name `%` is defined more than once in the same module"
 
 [3002]
-reason = "Redefinition of field"
-help = "This % contains more than one parameter with the same name `%`. Try choosing a different name, or removing this parameter"
+reason = "Redefinition of parameter"
+help = "This % contains more than one parameter named `%`."
 
 [3003]
-reason = "Invalid main"
-help = "When the output of a program (the final expression) evaluates to a function, that function will be compiled. Currently, the produced function must have no parameters and no return type, like: `() {...}`"
-
-[3004]
-reason = "Invalid field"
-help = "The field of a value must be an identifier"
-
-[3005]
-reason = "Multiplie loop parameters"
-help = "A loop may only have a single parameter. Try removing any parameters after the first"
-
-[3006]
-reason = "No target for break"
-help = "'break' expression is used to exit a loop, it may not occur outside of a loop. Try removing 'break'"
-
-[3007]
-reason = "Unrecognized directive"
-help = """The recognized directives are:
-* #[builtin(<string>)]
-* #[foreign(<string>, <string>, <type>)]"""
-
-[3008]
-reason = "Non-unique export"
-help = "Every export must have a unique name"
-
-[3009]
-reason = "Non-unique import"
-help = "An item may only be imported in one place"
+reason = "Unknown module"
+help = "Modules must be imported before they are referenced. Try adding `import %` to this module."
 
 # Type errors
 [4000]
@@ -108,64 +82,12 @@ reason = "Type mismatch"
 help = "Encountered a type error: `%` ≠ `%`"
 
 [4001]
-reason = "Type mismatch"
-help = "The predicate of an if expression must be a boolean, but this expression has the type `%`"
+reason = "Ambiguous Expression"
+help = "The type of this expression is ambiguous. Try adding type hints to the function signature or let binding."
 
 [4002]
-reason = "Type mismatch"
-help = "The return type of this function is declared to be `%`, but is actually `%`"
-
-[4003]
-reason = "Type mismatch"
-help = "The parameter for this loop is `%`, but this expression is `%`"
-
-[4004]
-reason = "Type mismatch"
-help = "A previous break expression in this loop produced `%`, but this break produces `%`"
-
-[4005]
-reason = "Type mismatch"
-help = "This function parameter is `%`, but this expression is `%`"
-
-[4006]
-reason = "Type mismatch"
-help = "The field `%` of this struct is `%`, but this expression is `%`"
-
-[4007]
-reason = "No fields on type"
-help = "The type `%` has no fields which can be accessed using the `.` operator"
-
-[4008]
-reason = "Structure field missing"
-help = "This structure does not have a field `%``"
-
-[4009]
-reason = "Call of non-function"
-help = "This expression cannot be called because it is `%`. Only functions may be called"
-
-[4010]
-reason = "Too many arguments"
-help = "This function accepts only % arguments. Try removing the extra arguments"
-
-[4011]
-reason = "Too few arguments"
-help = "This function accepts % arguments. Try providing the missing arguments"
-
-[4012]
-reason = "Binary operator undefined"
-help = "The operator % is not defined for the types `%` and `%`"
-
-[4013]
-reason = "Unary operator undefined"
-help = "The operator % is not defined for the type `%`"
-
-[4014]
-reason = "Expected a type here"
-help = "This expression is not supported inside a type"
-
-[4015]
-reason = "Not available during compilation"
-help = "This expression relies on information not available during compilation"
+reason = "Non-existant field"
+help = "No type exists with a field named `%` and the type `%`"
 
 # Compiler bug
 [9000]

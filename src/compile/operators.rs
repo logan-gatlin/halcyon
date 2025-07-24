@@ -46,6 +46,7 @@ impl ModuleEncoder {
   }
 
   fn binary_arithmetic(&mut self, type_: Type, op: Instruction) -> u32 {
+    let type_: TypeRef = type_.into();
     let (head, tail) = self.new_curried_function(
       vec!["a".into(), "b".into()],
       vec![type_.clone(), type_.clone()],
@@ -71,19 +72,19 @@ impl ModuleEncoder {
     glyph_op: Instruction,
     unit_op: Instruction,
   ) -> u32 {
-    let integer_type = self.get_type_id(&Type::Integer, false);
-    let real_type = self.get_type_id(&Type::Real, false);
-    let boolean_type = self.get_type_id(&Type::Boolean, false);
-    let glyph_type = self.get_type_id(&Type::Glyph, false);
-    let unit_type = self.get_type_id(&Type::Unit, false);
-    let string_type = self.get_type_id(&Type::String, false);
+    let integer_type = self.get_type_id(&Type::Integer.into(), false);
+    let real_type = self.get_type_id(&Type::Real.into(), false);
+    let boolean_type = self.get_type_id(&Type::Boolean.into(), false);
+    let glyph_type = self.get_type_id(&Type::Glyph.into(), false);
+    let unit_type = self.get_type_id(&Type::Unit.into(), false);
+    let string_type = self.get_type_id(&Type::String.into(), false);
 
     const TRUE: Instruction = I32Const(1);
     const FALSE: Instruction = I32Const(0);
     let (head, tail) = self.new_curried_function(
       vec!["a".into(), "b".into()],
-      vec![Type::TypeVariable(0), Type::TypeVariable(0)],
-      Type::Boolean,
+      vec![Type::TypeVariable(0).into(), Type::TypeVariable(0).into()],
+      Type::Boolean.into(),
       vec![],
       vec![],
     );
@@ -252,21 +253,21 @@ impl ModuleEncoder {
       UnaryOp::Minus => {
         self.push(f, I64Const(0));
         self.func(f).get_local("a");
-        self.unwrap_primitive(f, &Type::Integer);
+        self.unwrap_primitive(f, &Type::Integer.into());
         self.push(f, I64Sub);
-        self.new_struct(f, &Type::Integer);
+        self.new_struct(f, &Type::Integer.into());
       },
       UnaryOp::MinusDot => {
         self.func(f).get_local("a");
-        self.unwrap_primitive(f, &Type::Real);
+        self.unwrap_primitive(f, &Type::Real.into());
         self.push(f, F64Neg);
-        self.new_struct(f, &Type::Real);
+        self.new_struct(f, &Type::Real.into());
       },
       UnaryOp::Not => {
         self.func(f).get_local("a");
-        self.unwrap_primitive(f, &Type::Boolean);
+        self.unwrap_primitive(f, &Type::Boolean.into());
         self.push(f, I32Eqz);
-        self.new_struct(f, &Type::Boolean);
+        self.new_struct(f, &Type::Boolean.into());
       },
     };
     f

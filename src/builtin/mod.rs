@@ -1,6 +1,6 @@
 use std::{cell::OnceCell, collections::HashMap};
 
-use crate::ir::{Type, mangle_builtin};
+use crate::ir::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Builtin {
@@ -39,9 +39,9 @@ impl Builtin {
     mangle_builtin(self)
   }
 
-  pub fn get_type(&self) -> Type {
+  pub fn get_type(&self) -> TypeRef {
     match self {
-      Self::Assert => Type::func(Type::Boolean, Type::Unit),
+      Self::Assert => Type::func(Type::Boolean.to_ref(), Type::Unit.to_ref()),
     }
   }
 }

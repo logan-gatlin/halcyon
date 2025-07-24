@@ -7,24 +7,24 @@ pub fn unification(
   cons.reverse();
   let mut solution = vec![];
   while let Some(con) = cons.pop() {
-    if con.0.ambiguous() || con.1.ambiguous() {
-      continue;
-    }
     let span = con.2;
-    match (con.0, con.1) {
+    // This is gross
+    let t1 = (*con.0.borrow()).clone();
+    let t2 = (*con.1.borrow()).clone();
+    match (t1, t2) {
       (t1, t2) if t1 == t2 => {},
       (Type::Function(p1, r1), Type::Function(p2, r2)) => {
-        cons.push(TypeConstraint(*p1, *p2, span));
-        cons.push(TypeConstraint(*r1, *r2, span));
+        cons.push(TypeConstraint(p1, p2, span));
+        cons.push(TypeConstraint(r1, r2, span));
       },
-      (Type::TypeVariable(tv), t) | (t, Type::TypeVariable(tv))
+      (t, Type::TypeVariable(tv)) | (Type::TypeVariable(tv), t)
         if !t.contains_type_var(tv) =>
       {
         cons.iter_mut().for_each(|TypeConstraint(t1, t2, _)| {
-          t1.substitute(tv, &t);
-          t2.substitute(tv, &t);
+          t1.borrow_mut().substitute(tv, &t);
+          t2.borrow_mut().substitute(tv, &t);
         });
-        solution.push(Substitution(tv, t));
+        solution.push(Substitution(tv, t.into()));
       },
       (Type::Product(p1), Type::Product(p2)) if p1.len() == p2.len() => cons
         .extend_from_slice(
@@ -76,12 +76,10 @@ pub fn apply_solution(
           to_visit.push(in_);
         }
       },
-      IrKind::Immediate(_) => {},
-      IrKind::Identifier(_) => {},
+      IrKind::ImportedSymbol(..)
+      | IrKind::Immediate(_)
+      | IrKind::Identifier(_) => {},
       IrKind::Tuple(items) => to_visit.extend_from_slice(&items),
-      IrKind::StructDef { field_types, .. } => {
-        to_visit.extend_from_slice(&field_types)
-      },
       IrKind::StructLiteral { field_values, .. } => {
         to_visit.extend_from_slice(&field_values);
       },
@@ -95,6 +93,12 @@ pub fn apply_solution(
       },
       IrKind::FunctionDef { body, .. } => {
         to_visit.push(body);
+      },
+      IrKind::RecursiveDeclaration { body, in_, .. } => {
+        to_visit.push(body);
+        if let Some(in_) = in_ {
+          to_visit.push(in_);
+        }
       },
       IrKind::FunctionCall {
         callee,
@@ -126,13 +130,21 @@ pub fn apply_solution(
   }
   visited.into_iter().for_each(|n| {
     let nt = &mut nodes[n].type_;
-    solution
-      .iter()
-      .for_each(|Substitution(tv, t)| nt.substitute(*tv, t));
+    solution.iter().for_each(|Substitution(tv, t)| {
+      nt.borrow_mut().substitute(*tv, &t.borrow())
+    });
     if let IrKind::FunctionDef { capture_types, .. } = &mut nodes[n].kind {
       capture_types.into_iter().for_each(|old_t| {
         solution.iter().for_each(|Substitution(tv, new_t)| {
-          old_t.substitute(*tv, new_t);
+          old_t.borrow_mut().substitute(*tv, &new_t.borrow());
+        })
+      })
+    } else if let IrKind::RecursiveDeclaration { capture_types, .. } =
+      &mut nodes[n].kind
+    {
+      capture_types.into_iter().for_each(|old_t| {
+        solution.iter().for_each(|Substitution(tv, new_t)| {
+          old_t.borrow_mut().substitute(*tv, &new_t.borrow());
         })
       })
     }

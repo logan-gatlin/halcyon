@@ -1,5 +1,8 @@
 //pub mod assembly;
-use crate::{ir::Type, token::*};
+use crate::{
+  ir::{Type, TypeRef},
+  token::*,
+};
 
 pub type Precedence = usize;
 
@@ -46,6 +49,7 @@ macro_rules! op {
 
 pub const RIGHT_ASSOC: bool = true;
 pub const LEFT_ASSOC: bool = false;
+pub const MODULE_FIELD_PREC: Precedence = 18;
 pub const FIELD_PREC: Precedence = 17;
 pub const CALL_PREC: Precedence = 12;
 
@@ -84,7 +88,6 @@ op! {
 op! {
   BinaryTypeOp;
   Star, 15, LEFT_ASSOC;
-  Plus, 14, LEFT_ASSOC;
   Arrow, 5, RIGHT_ASSOC;
 }
 
@@ -98,14 +101,17 @@ impl BinaryOp {
     Self::Greater,
   ];
 
-  pub fn get_curry_type(&self) -> Type {
-    let Type::Function(_, box Type::Function(a, b)) = self.get_type() else {
+  pub fn get_curry_type(&self) -> TypeRef {
+    let Type::Function(_, a) = self.get_type().borrow().clone() else {
       panic!()
     };
-    Type::Function(a, b)
+    let Type::Function(a, b) = a.borrow().clone() else {
+      panic!()
+    };
+    Type::func(a, b)
   }
 
-  pub fn get_type(&self) -> Type {
+  pub fn get_type(&self) -> TypeRef {
     use BinaryOp::*;
     use Type as t;
     let f = |t: Type, r: Type| Type::func(t.clone(), Type::func(t, r));
@@ -132,14 +138,13 @@ impl BinaryOp {
         Type::TypeVariable(0),
         Type::func(Type::TypeVariable(1), Type::TypeVariable(1)),
       ),
-      Dot => todo!(),
       Apply => todo!(),
     }
   }
 }
 
 impl UnaryOp {
-  pub fn get_type(&self) -> Type {
+  pub fn get_type(&self) -> TypeRef {
     use UnaryOp::*;
     match self {
       Minus => Type::func(Type::Integer, Type::Integer),
