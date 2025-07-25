@@ -207,15 +207,3 @@ impl std::ops::IndexMut<usize> for IrModule {
 }
 
 type FunctionDepth = usize;
-
-#[derive(Debug, Clone)]
-enum Scope {
-  Value {
-    clean: String,
-    old: Option<(Mangle, FunctionDepth)>,
-  },
-  Type {
-    clean: String,
-    old: Option<Mangle>,
-  },
-}

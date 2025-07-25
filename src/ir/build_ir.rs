@@ -7,9 +7,10 @@ pub fn build_ir(
   module: ParsedModule,
   context: &HashMap<String, ModuleInterface>,
 ) -> Result<IrModule> {
-  let mut names = HashSet::new();
   let mut items = vec![];
   let mut ir = vec![];
+  let mut value_ns = NameSpace::new(module.name.clone());
+  let mut type_ns = NameSpace::new(module.name.clone());
   let mut ns = NameSpace::new(module.name.clone());
   for expr in module.contents {
     use ModuleExpressionKind as e;
