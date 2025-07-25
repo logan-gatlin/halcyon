@@ -13,12 +13,17 @@ mod token;
 
 use std::collections::HashMap;
 
+use builtin::*;
 use compile::*;
 use ir::*;
 use lint::render::Linter;
 use parse::*;
 use semantic::*;
 use token::*;
+
+// TODO:
+// Sum types
+// Parametric types
 
 pub use lint::*;
 
@@ -40,9 +45,11 @@ pub fn compile(input: &str) {
   let parsed_modules = parse(tokens).handle(&linter);
   let mut encoder = ModuleEncoder::new();
   let mut interfaces = HashMap::new();
+  make_std_module(&mut encoder, &mut interfaces);
   for module in parsed_modules {
     let mut ir = build_ir(module, &interfaces).handle(&linter);
     let interface = type_solve(&mut ir).handle(&linter);
+    println!("{ir}");
     interfaces.insert(ir.module_name.clone(), interface);
     encoder.encode_ir(ir);
   }
@@ -57,4 +64,5 @@ pub fn compile(input: &str) {
       span: None,
     })
     .handle(&linter);
+  execute(wasm);
 }

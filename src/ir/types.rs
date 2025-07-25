@@ -34,6 +34,11 @@ pub enum Type {
   },
   /// Tuple
   Product(Vec<TypeRef>),
+  /// Variant
+  Sum {
+    variant_names: Vec<String>,
+    variant_types: Vec<TypeRef>,
+  },
   /// Function type
   Function(TypeRef, TypeRef),
   /// Placeholder until arrays are implemented, so I can
@@ -70,6 +75,17 @@ impl std::ops::Add for Type {
 impl Type {
   pub fn to_ref(self) -> TypeRef {
     Rc::new(RefCell::new(self))
+  }
+
+  pub fn curry(params: &[TypeRef], returns: TypeRef) -> TypeRef {
+    match params {
+      [] => returns,
+      [p] => Type::func(p.clone(), returns),
+      [.., p] => Type::curry(
+        &params[0..params.len() - 1],
+        Type::func(p.clone(), returns),
+      ),
+    }
   }
 
   pub fn primitives() -> Vec<(TypeRef, &'static str)> {
@@ -147,20 +163,9 @@ impl Type {
       Type::Product(items) => items.iter_mut().for_each(|i| {
         i.borrow_mut().substitute(tv, type_);
       }),
-      /*
-      Type::Sum(hash_set) => {
-        *self = Type::Sum(
-          hash_set
-            .clone()
-            .into_iter()
-            .map(|mut t| {
-              t.substitute(tv, type_);
-              t
-            })
-            .collect::<HashSet<_>>(),
-        );
-      },
-      */
+      Type::Sum { variant_types, .. } => variant_types
+        .iter_mut()
+        .for_each(|t| t.borrow_mut().substitute(tv, type_)),
       Type::Function(a, b) => {
         a.borrow_mut().substitute(tv, type_);
         b.borrow_mut().substitute(tv, type_);
@@ -273,12 +278,16 @@ impl Into<TypeRef> for Type {
 impl std::hash::Hash for Type {
   fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
     match self {
-      Type::Struct {
-        member_names,
-        member_types,
+      Type::Sum {
+        variant_names: names,
+        variant_types: types,
+      }
+      | Type::Struct {
+        member_names: names,
+        member_types: types,
       } => {
-        member_names.hash(state);
-        member_types.iter().for_each(|t| {
+        names.hash(state);
+        types.iter().for_each(|t| {
           t.borrow().hash(state);
         })
       },
@@ -331,14 +340,14 @@ impl std::fmt::Display for Type {
       } => {
         let fields = member_names
           .into_iter()
-          .zip(member_types.into_iter())
+          .zip(member_types)
           .map(|(name, type_)| format!("{name}: {}", type_.borrow()))
           .collect::<Vec<_>>()
           .join(", ");
         write!(f, "{{ {fields} }}")
       },
       Type::Type => write!(f, "type"),
-      Type::Function(a, b) => write!(f, "{} -> {}", a.borrow(), b.borrow()),
+      Type::Function(a, b) => write!(f, "({} -> {})", a.borrow(), b.borrow()),
       Type::TypeVariable(id) => write!(f, "'{id}"),
       Type::Product(items) => write!(
         f,
@@ -349,19 +358,19 @@ impl std::fmt::Display for Type {
           .collect::<Vec<_>>()
           .join(" * ")
       ),
-      /*
-      Type::Sum(items) => {
-        write!(
-          f,
-          "({})",
-          items
-            .into_iter()
-            .map(|i| format!("{i}"))
-            .collect::<Vec<_>>()
-            .join(" + ")
-        )
-      },
-      */
+      Type::Sum {
+        variant_names,
+        variant_types,
+      } => write!(
+        f,
+        "{}",
+        variant_names
+          .into_iter()
+          .zip(variant_types)
+          .map(|(name, type_)| format!("{name} of {}", type_.borrow()))
+          .collect::<Vec<_>>()
+          .join(" | ")
+      ),
       Type::Weak(w) => {
         w.upgrade().unwrap();
         write!(f, "(cycle)")

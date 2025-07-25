@@ -4,11 +4,9 @@ mod namespace;
 pub mod printing;
 pub mod types;
 
-use std::collections::HashMap;
+use std::{collections::HashMap, rc::Rc};
 
-use crate::{
-  builtin::Builtin, lint::*, operator::*, semantic::ModuleInterface,
-};
+use crate::{lint::*, operator::*, semantic::ModuleInterface};
 
 pub use build_ir::*;
 pub use constant::*;
@@ -120,7 +118,17 @@ pub struct IrNode {
 #[derive(Debug, Clone)]
 pub enum ModuleItem {
   Let(String, IrPtr),
+  CompilerBuiltin(String, TypeRef, BoxedClosure),
   Type(String, TypeRef),
+}
+
+#[derive(Clone)]
+pub struct BoxedClosure(pub Rc<dyn Fn(&mut crate::compile::ModuleEncoder)>);
+
+impl std::fmt::Debug for BoxedClosure {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "<closure>")
+  }
 }
 
 #[derive(Debug, Clone)]

@@ -10,7 +10,7 @@ pub enum ModuleExpressionKind {
   Type {
     assignee: String,
     assignee_span: Span,
-    value: Box<TypeExpression>,
+    value: Box<TypeDefinition>,
   },
   Import {
     name: String,
@@ -19,6 +19,7 @@ pub enum ModuleExpressionKind {
 
 pub type ModuleExpression = Expression<ModuleExpressionKind>;
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct ParsedModule {
   pub name: String,
@@ -77,7 +78,7 @@ pub fn parse_module_expression(iter: it!()) -> Result<ModuleExpression> {
         kind: ModuleExpressionKind::Type {
           assignee,
           assignee_span,
-          value: Box::new(parse_type_expression(iter, 0)?),
+          value: Box::new(parse_type_definition(iter)?),
         },
         span: iter.end_span(),
       })

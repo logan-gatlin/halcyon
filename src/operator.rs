@@ -30,7 +30,7 @@ macro_rules! op {
     impl std::fmt::Display for $name {
       fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-          $(Self::$op => write!(f, "{}", TokenKind::$op)),*
+          $(Self::$op => write!(f, "{}{}", stringify!($name), TokenKind::$op)),*
         }
       }
     }
@@ -111,34 +111,65 @@ impl BinaryOp {
     Type::func(a, b)
   }
 
+  pub fn parameter_type(&self) -> TypeRef {
+    match self {
+      BinaryOp::Minus
+      | BinaryOp::Star
+      | BinaryOp::Slash
+      | BinaryOp::Percent
+      | BinaryOp::Plus => Type::Integer.into(),
+      BinaryOp::PlusDot
+      | BinaryOp::StarDot
+      | BinaryOp::SlashDot
+      | BinaryOp::MinusDot => Type::Real.into(),
+      BinaryOp::And | BinaryOp::Xor | BinaryOp::Or => Type::Boolean.into(),
+      BinaryOp::DoubleEqual
+      | BinaryOp::BangEqual
+      | BinaryOp::Less
+      | BinaryOp::LessEqual
+      | BinaryOp::Greater
+      | BinaryOp::GreaterEqual => Type::TypeVariable(0).into(),
+      BinaryOp::Apply | BinaryOp::Semicolon => panic!(),
+    }
+  }
+
+  pub fn return_type(&self) -> TypeRef {
+    match self {
+      BinaryOp::Minus
+      | BinaryOp::Star
+      | BinaryOp::Slash
+      | BinaryOp::Percent
+      | BinaryOp::Plus => Type::Integer.into(),
+      BinaryOp::PlusDot
+      | BinaryOp::StarDot
+      | BinaryOp::SlashDot
+      | BinaryOp::MinusDot => Type::Real.into(),
+      BinaryOp::DoubleEqual
+      | BinaryOp::BangEqual
+      | BinaryOp::Less
+      | BinaryOp::LessEqual
+      | BinaryOp::Greater
+      | BinaryOp::GreaterEqual
+      | BinaryOp::And
+      | BinaryOp::Xor
+      | BinaryOp::Or => Type::Boolean.into(),
+      BinaryOp::Apply | BinaryOp::Semicolon => panic!(),
+    }
+  }
+
   pub fn get_type(&self) -> TypeRef {
     use BinaryOp::*;
     use Type as t;
-    let f = |t: Type, r: Type| Type::func(t.clone(), Type::func(t, r));
     match self {
-      Minus => f(t::Integer, t::Integer),
-      Plus => f(t::Integer, t::Integer),
-      Star => f(t::Integer, t::Integer),
-      Slash => f(t::Integer, t::Integer),
-      Percent => f(t::Integer, t::Integer),
-      StarDot => f(t::Real, t::Real),
-      SlashDot => f(t::Real, t::Real),
-      PlusDot => f(t::Real, t::Real),
-      MinusDot => f(t::Real, t::Real),
-      Xor => f(t::Boolean, t::Boolean),
-      Or => f(t::Boolean, t::Boolean),
-      And => f(t::Boolean, t::Boolean),
-      DoubleEqual => f(t::TypeVariable(0), Type::Boolean),
-      BangEqual => f(t::TypeVariable(0), Type::Boolean),
-      Less => f(t::TypeVariable(0), Type::Boolean),
-      LessEqual => f(t::TypeVariable(0), Type::Boolean),
-      Greater => f(t::TypeVariable(0), Type::Boolean),
-      GreaterEqual => f(t::TypeVariable(0), Type::Boolean),
       Semicolon => t::func(
         Type::TypeVariable(0),
         Type::func(Type::TypeVariable(1), Type::TypeVariable(1)),
       ),
       Apply => todo!(),
+      op => Type::curry(
+        &[op.parameter_type(), op.parameter_type()],
+        op.return_type(),
+      ),
     }
   }
 }

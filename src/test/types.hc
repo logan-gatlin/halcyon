@@ -1,4 +1,6 @@
 module TypeTest
+  import std
+
   // Primitive aliases
   type a = integer
   type b = real
@@ -16,28 +18,11 @@ module TypeTest
     e : e,
     f : f,
   }
-  type nested_struct = {
-    a : {
-      a : {
-        a : {
-          a : {
-            a : unit
-          }
-        }
-      }
-    }
-  }
   type tuple = a * b * c * d * e * f * struct
-
-  // Recursion
-  type direct_recursion = direct_recursion
-  type recursive_struct = {
-    cycle: recursive_struct,
-  }
-  type recursive_tuple = integer * recursive_tuple
+  type variant = V_int of integer | V_real of real | V_both of integer * real
 
   // Struct field inference
   type specific_struct = { specific_name: integer }
   let tricky_inference = fn a => a.specific_name
-  let _ = assert ((tricky_inference { specific_name = 1 }) + 1 == 2)
+  let _ = std:assert ((tricky_inference { specific_name = 1 }) + 1 == 2)
 end

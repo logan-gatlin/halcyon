@@ -11,8 +11,8 @@ pub fn type_inference(
   let span = nodes[ptr].span;
   let type_ = match nodes[ptr].kind.clone() {
     h::ImportedSymbol(name, type_) => {
-      environment.insert_value_type(name, type_.clone(), true);
-      type_
+      environment.insert_value_type(name.clone(), type_.clone(), true);
+      environment.get_value_type(&name)
     },
     // Let declarations
     h::Declaration {

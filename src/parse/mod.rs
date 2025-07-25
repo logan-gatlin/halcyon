@@ -9,13 +9,9 @@ mod printing;
 mod type_expression;
 mod value_expression;
 
-use module::*;
-use type_expression::*;
-use value_expression::*;
-
-pub use module::{ModuleExpression, ModuleExpressionKind, ParsedModule};
-pub use type_expression::{TypeExpression, TypeExpressionKind};
-pub use value_expression::{Literal, ValueExpression, ValueExpressionKind};
+pub use module::*;
+pub use type_expression::*;
+pub use value_expression::*;
 
 use multipeek::MultiPeek;
 
@@ -29,7 +25,7 @@ pub struct Expression<K> {
   pub span: Span,
 }
 
-struct StatefulIter<I: Iterator<Item = Token>> {
+pub struct StatefulIter<I: Iterator<Item = Token>> {
   iter: MultiPeek<I>,
   last_span: Span,
   span_stack: Vec<Span>,

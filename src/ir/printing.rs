@@ -202,6 +202,13 @@ impl std::fmt::Display for IrModule {
                 sexpr("value", [format!("{}", type_.borrow()).as_str().into()]),
               ],
             ),
+            ModuleItem::CompilerBuiltin(name, type_, ..) => sexpr(
+              "compiler-builtin",
+              [
+                sexpr("name", [name.as_str().into()]),
+                sexpr("type", [format!("{}", type_.borrow()).as_str().into()]),
+              ],
+            ),
           }
         })
       )

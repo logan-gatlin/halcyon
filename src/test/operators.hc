@@ -1,60 +1,61 @@
 module OpTest
+  import std
   // Unary ops
-  let _ = assert not false
-  let _ = assert not not not false
-  let _ = assert (-1 == 0 - 1)
-  let _ = assert (-.1.0 == 0.0 -. 1.0)
-  let _ = assert (-1.0 == 0.0 -. 1.0) // Special case
+  let _ = std:assert not false
+  let _ = std:assert not not not false
+  let _ = std:assert (-1 == 0 - 1)
+  let _ = std:assert (-.1.0 == 0.0 -. 1.0)
+  let _ = std:assert (-1.0 == 0.0 -. 1.0) // Special case
 
   // Integer arithmetic
-  let _ = assert (1 + 2 == 3)
-  let _ = assert (1 - 2 == -1)
-  let _ = assert (1 * 2 == 2)
-  let _ = assert (1 / 2 == 0)
-  let _ = assert (1 % 2 == 1)
+  let _ = std:assert (1 + 2 == 3)
+  let _ = std:assert (1 - 2 == -1)
+  let _ = std:assert (1 * 2 == 2)
+  let _ = std:assert (1 / 2 == 0)
+  let _ = std:assert (1 % 2 == 1)
 
   // Real arithmetic
-  let _ = assert (1.0 +. 2.0 == 3.0)
-  let _ = assert (2.0 -. 1.0 == 1.0)
-  let _ = assert (1.0 *. 2.0 == 2.0)
-  let _ = assert (1.0 /. 2.0 == 0.5)
+  let _ = std:assert (1.0 +. 2.0 == 3.0)
+  let _ = std:assert (2.0 -. 1.0 == 1.0)
+  let _ = std:assert (1.0 *. 2.0 == 2.0)
+  let _ = std:assert (1.0 /. 2.0 == 0.5)
 
   // Boolean logical
-  let _ = assert (true and true)
-  let _ = assert (true or false)
-  let _ = assert (true xor false)
+  let _ = std:assert (true and true)
+  let _ = std:assert (true or false)
+  let _ = std:assert (true xor false)
 
   // Unit comparison
-  let _ = assert (() == () == true)
-  let _ = assert (() != () == false)
-  let _ = assert (() <= () == true)
-  let _ = assert (() >= () == true)
-  let _ = assert (() < () == false)
-  let _ = assert (() > () == false)
+  let _ = std:assert (() == () == true)
+  let _ = std:assert (() != () == false)
+  let _ = std:assert (() <= () == true)
+  let _ = std:assert (() >= () == true)
+  let _ = std:assert (() < () == false)
+  let _ = std:assert (() > () == false)
 
   // Boolean comparison
-  let _ = assert (true == true)
-  let _ = assert (true != false)
-  let _ = assert (false <= true)
-  let _ = assert (true >= false)
-  let _ = assert (false < true)
-  let _ = assert (true > false)
+  let _ = std:assert (true == true)
+  let _ = std:assert (true != false)
+  let _ = std:assert (false <= true)
+  let _ = std:assert (true >= false)
+  let _ = std:assert (false < true)
+  let _ = std:assert (true > false)
 
   // Glyph comparison
-  let _ = assert ('a' == 'a')
-  let _ = assert ('a' != 'b')
-  let _ = assert ('a' <= 'b')
-  let _ = assert ('b' >= 'a')
-  let _ = assert ('a' < 'b')
-  let _ = assert ('b' > 'a')
+  let _ = std:assert ('a' == 'a')
+  let _ = std:assert ('a' != 'b')
+  let _ = std:assert ('a' <= 'b')
+  let _ = std:assert ('b' >= 'a')
+  let _ = std:assert ('a' < 'b')
+  let _ = std:assert ('b' > 'a')
 
   // String comparison
-  let _ = assert ("abc" == "abc")
-  let _ = assert ("abc" != "def")
-  let _ = assert ("abc" <= "def")
-  let _ = assert ("def" >= "abc")
-  let _ = assert ("abc" <= "abc")
-  let _ = assert ("abc" >= "abc")
-  let _ = assert ("abc" < "def")
-  let _ = assert ("def" > "abc")
+  let _ = std:assert ("abc" == "abc")
+  let _ = std:assert ("abc" != "def")
+  let _ = std:assert ("abc" <= "def")
+  let _ = std:assert ("def" >= "abc")
+  let _ = std:assert ("abc" <= "abc")
+  let _ = std:assert ("abc" >= "abc")
+  let _ = std:assert ("abc" < "def")
+  let _ = std:assert ("def" > "abc")
 end

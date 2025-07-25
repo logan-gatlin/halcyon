@@ -92,7 +92,7 @@ fn parse_primary(iter: it!()) -> Result<ValueExpression> {
           arguments.push(iter.eat_ident()?);
           spans.push(iter.last_span);
           iter.eat_or_error(Colon)?;
-          types.push(Some(parse_type_expression(iter, 0)?));
+          types.push(Some(parse_type_expression(iter)?));
           iter.eat_or_error(RightParen)?;
         }
         // Untyped parameter

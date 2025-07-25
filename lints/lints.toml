@@ -62,7 +62,7 @@ help = "An expression should be here"
 # Name errors
 [3000]
 reason = "Undefined name"
-help = "The name `%` is cannot be found in this scope"
+help = "The name `%` is not found in this scope"
 
 [3001]
 reason = "Redefinition of name"
@@ -73,8 +73,12 @@ reason = "Redefinition of parameter"
 help = "This % contains more than one parameter named `%`."
 
 [3003]
-reason = "Unknown module"
+reason = "Module not in scope"
 help = "Modules must be imported before they are referenced. Try adding `import %` to this module."
+
+[3004]
+reason = "No such module"
+help = "Cannot find a module called `%`"
 
 # Type errors
 [4000]

@@ -1,3 +1,5 @@
+use crate::builtin::BUILTIN_MODULE_NAME;
+
 use super::*;
 
 fn cast(state: &mut ModuleEncoder, f: u32, to: &TypeRef) {
@@ -78,10 +80,38 @@ pub fn lower(
     h::Binary { op, left, right } => {
       lower(nodes, left, state, f);
       // Stack: Arg1
-      state.new_capture(f, 0);
+      state.get_symbol(f, mangle_global(&[BUILTIN_MODULE_NAME], op));
+      // Stack: Arg1 Closure
+      let op_func_type = state.get_valtype(&op.get_type(), false);
+      let temporary = state.func(f).new_temporary(op_func_type);
+      state.push(f, LocalTee(temporary));
+      // Stack: Arg1 Closure
+      let op_func_type_id = state.get_type_id(&op.get_type(), false);
+      state.push(
+        f,
+        StructGet {
+          struct_type_index: op_func_type_id,
+          field_index: 1,
+        },
+      );
       // Stack: Arg1 Capture
-      let op_function = state.get_binary_operator(op);
-      state.call_raw_function(f, op_function, &op.get_type());
+      state.push(f, LocalGet(temporary));
+      state.push(
+        f,
+        StructGet {
+          struct_type_index: op_func_type_id,
+          field_index: 0,
+        },
+      );
+      // Stack: Arg1 Capture FunctionPtr
+      let raw_op_func_type = state.get_type_id(&op.get_type(), true);
+      state.push(
+        f,
+        CallIndirect {
+          type_index: raw_op_func_type,
+          table_index: 0,
+        },
+      );
       // Stack: Closure
       let closure_type = op.get_curry_type();
       let closure_valtype = state.get_valtype(&closure_type, false);
@@ -242,6 +272,7 @@ pub fn lower(
           table_index: 0,
         },
       );
+      cast(state, f, &this_t);
     },
     h::ImportedSymbol(mangle, _) => {
       state.get_symbol(f, &mangle);

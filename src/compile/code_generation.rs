@@ -1,5 +1,3 @@
-use crate::builtin::Builtin;
-
 use super::*;
 
 #[allow(dead_code)]
@@ -43,24 +41,13 @@ impl ModuleEncoder {
     }
   }
 
-  pub fn get_symbol(&mut self, current_function: u32, mangle: &Mangle) {
+  pub fn get_symbol(&mut self, current_function: u32, mangle: impl AsRef<str>) {
+    let mangle = mangle.as_ref();
     if self.func(current_function).has_local(mangle) {
       self.func(current_function).get_local(mangle);
     } else if let Some(global_id) = self.global_map.get(mangle) {
       self.push(current_function, GlobalGet(*global_id));
       self.push(current_function, RefAsNonNull);
-    } else {
-      let bt = Builtin::from_mangle(mangle).unwrap();
-      let func = if let Some(func) = self.builtin_map.get(&bt) {
-        *func
-      } else {
-        let func = self.generate_builtin(bt);
-        self.builtin_map.insert(bt, func);
-        func
-      };
-      self.push(current_function, Instruction::I32Const(func as i32));
-      self.new_capture(current_function, 0);
-      self.new_struct(current_function, &bt.get_type());
     }
   }
 

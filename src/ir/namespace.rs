@@ -1,6 +1,70 @@
+use std::collections::HashSet;
+
 use super::*;
 
 #[derive(Debug, Clone)]
+struct NameEvent {
+  name: String,
+  previous_value: Option<Mangle>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct Ns {
+  module_name: String,
+  globals: HashSet<Mangle>,
+  lookup_table: HashMap<String, Mangle>,
+  state: Vec<NameEvent>,
+}
+
+impl Ns {
+  pub fn new(module_name: String) -> Self {
+    let mut this = Self::default();
+    this.module_name = module_name;
+    this
+  }
+
+  pub fn define_global(&mut self, name: String) -> Result<Mangle> {
+    assert!(self.state.len() == 0);
+    let mangle = mangle_global(&[&self.module_name], &name);
+    if !self.globals.insert(mangle.clone()) {
+      return Err(lint_nospan(NameLint::NameRedefinition)).context(&name);
+    }
+    self.lookup_table.insert(name, mangle.clone());
+    Ok(mangle)
+  }
+
+  pub fn get(&self, name: &String) -> Result<Mangle> {
+    self
+      .lookup_table
+      .get(name)
+      .ok_or(lint_nospan(NameLint::UndefinedName))
+      .context(name)
+      .cloned()
+  }
+
+  pub fn begin_local_scope(&mut self, name: String, salt: usize) -> Mangle {
+    let mangle =
+      mangle_name(vec![self.module_name.clone()], &format!("{salt}"));
+    let ev = NameEvent {
+      name: name.clone(),
+      previous_value: self.lookup_table.insert(name, mangle.clone()),
+    };
+    self.state.push(ev);
+    mangle
+  }
+
+  pub fn end_local_scope(&mut self) {
+    let NameEvent {
+      name,
+      previous_value,
+    } = self.state.pop().unwrap();
+    if let Some(p) = previous_value {
+      self.lookup_table.insert(name, p);
+    }
+  }
+}
+
+#[derive(Debug, Clone, Default)]
 pub struct NameSpace {
   module_name: String,
   pub module_table: HashMap<String, ModuleInterface>,
@@ -15,28 +79,16 @@ pub struct NameSpace {
 
 impl NameSpace {
   pub fn new(module_name: String) -> Self {
-    let mut builtins = HashMap::new();
-    Builtin::ALL.into_iter().for_each(|bt| {
-      builtins.insert(bt.to_string(), bt.get_mangle());
-    });
-    let mut type_name_table = HashMap::new();
-    let mut type_table = HashMap::new();
+    let mut this = Self::default();
+    this.module_name = module_name;
     Type::primitives().into_iter().for_each(|(prim, name)| {
       let mangle = mangle_builtin(prim.borrow());
-      type_name_table.insert(name.to_string(), mangle.clone());
-      type_table.insert(mangle, prim);
+      this
+        .type_name_table
+        .insert(name.to_string(), mangle.clone());
+      this.type_table.insert(mangle, prim);
     });
-    Self {
-      module_name,
-      module_table: HashMap::new(),
-      value_name_table: HashMap::new(),
-      type_name_table,
-      type_table,
-      globals: builtins,
-      salt: 0,
-      scopes: vec![],
-      captures: vec![],
-    }
+    this
   }
 
   pub fn resolve_module_value_path(

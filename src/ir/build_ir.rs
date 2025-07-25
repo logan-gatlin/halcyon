@@ -48,16 +48,28 @@ pub fn build_ir(
             [assignee.clone()],
           ));
         };
-        let mangle =
-          ns.push_type(assignee.clone(), Type::TypeVariable(0).into());
-        let type_ = type_expr(&mut ns, *value)?;
-        let weak = Type::Weak(Rc::downgrade(&type_));
-        type_.borrow_mut().substitute(0, &weak);
-        ns.update_type(mangle.clone(), type_.clone());
-        items.push(ModuleItem::Type(mangle, type_));
+        // Recursive type
+        if matches!(value.kind, TypeDefinitionKind::Sum { .. }) {
+          let mangle = ns.push_type(assignee, Type::TypeVariable(0).into());
+          let type_ = type_def(&mut ns, *value)?;
+          let weak = Type::Weak(Rc::downgrade(&type_));
+          type_.borrow_mut().substitute(0, &weak);
+          ns.update_type(mangle.clone(), type_.clone());
+          items.push(ModuleItem::Type(mangle, type_));
+        }
+        // Non-recursive type
+        else {
+          let type_ = type_def(&mut ns, *value)?;
+          let mangle = ns.push_type(assignee, type_.clone());
+          items.push(ModuleItem::Type(mangle, type_));
+        }
       },
       e::Import { name } => {
-        let interface = context.get(&name).unwrap();
+        let interface = context.get(&name).ok_or(lint(
+          NameLint::NoSuchModule,
+          expr.span,
+          [name.clone()],
+        ))?;
         ns.module_table.insert(name, interface.clone());
       },
     }
@@ -313,55 +325,44 @@ pub fn value_expr(
   Ok(ptr)
 }
 
+pub fn type_def(ns: &mut NameSpace, expr: TypeDefinition) -> Result<TypeRef> {
+  use TypeDefinitionKind::*;
+  Ok(match expr.kind {
+    Structure { lhs, rhs } => Type::Struct {
+      member_names: lhs,
+      member_types: rhs.into_iter().map(|e| type_expr(ns, e)).try_collect()?,
+    }
+    .to_ref(),
+    Sum {
+      variant_names,
+      variant_types,
+    } => Type::Sum {
+      variant_names,
+      variant_types: variant_types
+        .into_iter()
+        .map(|e| type_expr(ns, e))
+        .try_collect()?,
+    }
+    .to_ref(),
+    Expression(expression) => type_expr(ns, expression)?,
+  })
+}
+
 pub fn type_expr(ns: &mut NameSpace, expr: TypeExpression) -> Result<TypeRef> {
   use TypeExpressionKind::*;
   Ok(match expr.kind {
-    StructureDefinition { lhs, rhs } => {
-      if HashSet::<&String>::from_iter(lhs.iter()).len() != lhs.len() {
-        panic!()
-      }
-      Type::Struct {
-        member_names: lhs,
-        member_types: rhs
-          .into_iter()
-          .map(|t| type_expr(ns, t).map(|t| t.into()))
-          .try_collect::<Vec<_>>()?,
-      }
-      .into()
-    },
-    Identifier(name) => ns
-      .get_type(&name)
-      .ok_or(lint(NameLint::UndefinedName, expr.span, [name.clone()]))?
-      .clone(),
-    Binary { op, left, right } => {
-      let left = type_expr(ns, *left)?;
-      let right = type_expr(ns, *right)?;
-      match op {
-        BinaryTypeOp::Star => Type::product(left, right),
-        BinaryTypeOp::Arrow => Type::func(left, right),
-      }
-    },
-    ModuleField { lhs, rhs } => {
-      fn flatten_module_path(
-        ns: &NameSpace,
-        expr: TypeExpression,
-        mut path: Vec<String>,
-        span: Span,
-      ) -> Result<TypeRef> {
-        match expr.kind {
-          ModuleField { lhs, rhs } => {
-            path.push(rhs);
-            flatten_module_path(ns, *lhs, path, span + expr.span)
-          },
-          Identifier(base) => {
-            path.push(base);
-            path.reverse();
-            ns.resolve_module_type_path(&path).span(span)
-          },
-          _ => todo!(),
-        }
-      }
-      flatten_module_path(ns, *lhs, vec![rhs], expr.span)?
-    },
+    Identifier(name) => ns.get_type(&name).ok_or(lint(
+      NameLint::UndefinedName,
+      expr.span,
+      [name],
+    ))?,
+    Product(expressions) => Type::Product(
+      expressions
+        .into_iter()
+        .map(|e| type_expr(ns, e))
+        .try_collect()?,
+    )
+    .to_ref(),
+    ModulePath(items) => ns.resolve_module_type_path(&items)?,
   })
 }

@@ -8,7 +8,7 @@ use unification::*;
 
 use std::collections::{HashMap, HashSet};
 
-use crate::{builtin::Builtin, ir::*, lint::*, operator::*};
+use crate::{ir::*, lint::*, operator::*};
 
 pub struct Environment {
   scheme_map: HashMap<Mangle, bool>,
@@ -19,21 +19,14 @@ pub struct Environment {
 
 impl Environment {
   pub fn new() -> Self {
-    let mut scheme_map = HashMap::new();
-    let mut value_map = HashMap::new();
     let mut type_map = HashMap::new();
     Type::primitives().into_iter().for_each(|(prim, name)| {
       let mangle = mangle_builtin(name);
       type_map.insert(mangle.clone(), prim);
     });
-    Builtin::ALL.into_iter().for_each(|bt| {
-      let mangle = bt.get_mangle();
-      scheme_map.insert(mangle.clone(), true);
-      value_map.insert(mangle.clone(), bt.get_type());
-    });
     Self {
-      scheme_map,
-      value_map,
+      scheme_map: HashMap::new(),
+      value_map: HashMap::new(),
       type_map,
       type_variable: 0,
     }
@@ -72,12 +65,11 @@ impl Environment {
           map.insert(*tv, new_tv);
         }
       },
-      /*
-      Type::Sum(hash_set) => hash_set
-        .into_iter()
-        .for_each(|t| self.map_fresh_type_variables(t, map)),
-      */
-      Type::Product(items)
+      Type::Sum {
+        variant_types: items,
+        ..
+      }
+      | Type::Product(items)
       | Type::Struct {
         member_types: items,
         ..
@@ -161,6 +153,9 @@ pub fn type_solve(module: &mut IrModule) -> Result<ModuleInterface> {
       ModuleItem::Type(name, type_) => {
         env.define_type(name.clone(), type_.clone());
         interface.types.insert(name, type_);
+      },
+      ModuleItem::CompilerBuiltin(name, type_, _) => {
+        env.insert_value_type(name, type_, true);
       },
     }
   }

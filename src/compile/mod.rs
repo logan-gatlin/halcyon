@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use wasm_encoder::Instruction::*;
 use wasm_encoder::*;
 
-use crate::{builtin::Builtin, ir::*, operator::*};
+use crate::{ir::*, operator::*};
 
 use function_encoder::*;
 
@@ -41,7 +41,7 @@ enum RegisteredType {
 
 #[derive(Debug, Clone, Default)]
 pub struct ModuleEncoder {
-  main_fn: u32,
+  pub main_fn: u32,
   type_map: HashMap<Type, u32>,
   raw_type_map: HashMap<Type, u32>,
   global_map: HashMap<Mangle, u32>,
@@ -52,7 +52,6 @@ pub struct ModuleEncoder {
   function_section: Vec<u32>,
   elements_section: Vec<FunctionKind>,
   code_section: Vec<FunctionEncoder>,
-  builtin_map: HashMap<Builtin, u32>,
   binary_operator_map: HashMap<BinaryOp, u32>,
   unary_operator_map: HashMap<UnaryOp, u32>,
 }
@@ -71,6 +70,11 @@ impl ModuleEncoder {
         ModuleItem::Let(mangle, ptr) => {
           let global_id = self.new_global(mangle, &ir.nodes[ptr].type_);
           lower::lower(&mut ir, ptr, self, self.main_fn);
+          self.push(self.main_fn, GlobalSet(global_id));
+        },
+        ModuleItem::CompilerBuiltin(mangle, type_, closure) => {
+          let global_id = self.new_global(mangle, &type_);
+          (*closure.0)(self);
           self.push(self.main_fn, GlobalSet(global_id));
         },
         _ => {},
@@ -335,6 +339,10 @@ impl ModuleEncoder {
           .map(|t| self.get_storage_type(&t, false))
           .collect(),
       ),
+      Type::Sum { .. } => RegisteredType::Struct(vec![
+        StorageType::Val(ValType::I32),
+        StorageType::Val(ValType::Ref(RefType::ANYREF)),
+      ]),
       Type::Weak(wk) => {
         let r = wk.upgrade().unwrap();
         return self.get_storage_type(&r, raw);

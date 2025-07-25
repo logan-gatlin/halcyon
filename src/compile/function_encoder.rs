@@ -148,8 +148,6 @@ impl ModuleEncoder {
     parameter_names: Vec<Mangle>,
     parameter_types: Vec<TypeRef>,
     return_type: TypeRef,
-    capture_names: Vec<Mangle>,
-    capture_types: Vec<TypeRef>,
   ) -> (u32, u32) {
     let mut capture_names_list = vec![];
     let mut capture_types_list = vec![];
@@ -167,12 +165,6 @@ impl ModuleEncoder {
           (name_list, type_list)
         },
       );
-    capture_names_list
-      .iter_mut()
-      .for_each(|names| names.extend_from_slice(&capture_names));
-    capture_types_list
-      .iter_mut()
-      .for_each(|types| types.extend(capture_types.clone()));
     let mut tail = 0;
     let head =
       parameter_names

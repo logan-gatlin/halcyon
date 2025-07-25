@@ -51,8 +51,6 @@ impl ModuleEncoder {
       vec!["a".into(), "b".into()],
       vec![type_.clone(), type_.clone()],
       type_.clone(),
-      vec![],
-      vec![],
     );
     ["a", "b"].into_iter().for_each(|local| {
       self.func(tail).get_local(local);
@@ -85,8 +83,6 @@ impl ModuleEncoder {
       vec!["a".into(), "b".into()],
       vec![Type::TypeVariable(0).into(), Type::TypeVariable(0).into()],
       Type::Boolean.into(),
-      vec![],
-      vec![],
     );
     let a = self.func(tail).get_local_id("a");
     let b = self.func(tail).get_local_id("b");
