@@ -1,7 +1,6 @@
 # Halcyon Compiler
-The Halcyon language is a strongly typed compiled language for the 
-[WebAssembly](https://webassembly.org/) virtual machine. Its major features
-are implicit types, move semantics, and memory safety.
+The Halcyon language is a strongly typed functional programming language for the 
+[WebAssembly](https://webassembly.org/) virtual machine.
 
 ```
 module Demo
