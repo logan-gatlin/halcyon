@@ -1,13 +1,22 @@
+use crate::std_hc::BUILTIN_MODULE_NAME;
+
 use super::*;
 
 #[allow(dead_code)]
 impl ModuleEncoder {
-  pub fn new_import(
+  /// Returns (table_id, type_id)
+  pub fn new_import<P, R>(
     &mut self,
     major: impl Into<String>,
     minor: impl Into<String>,
-    ft: FuncType,
-  ) -> u32 {
+    params: P,
+    returns: R,
+  ) -> (u32, u32)
+  where
+    P: IntoIterator<Item = ValType>,
+    R: IntoIterator<Item = ValType>,
+  {
+    let ft = FuncType::new(params, returns);
     let type_id = self.type_section.len() as u32;
     self.type_section.push(RegisteredType::Function(ft));
     let import_id = self.import_section.len() as u32;
@@ -18,36 +27,58 @@ impl ModuleEncoder {
     });
     let element_id = self.elements_section.len() as u32;
     self.elements_section.push(FunctionKind::Import(import_id));
-    element_id
+    (element_id, type_id)
   }
 
-  pub fn get_unary_operator(&mut self, op: UnaryOp) -> u32 {
-    if let Some(func) = self.unary_operator_map.get(&op) {
-      *func
-    } else {
-      let func = self.generate_unary_operator(op);
-      self.unary_operator_map.insert(op, func);
-      func
-    }
-  }
-
-  pub fn get_binary_operator(&mut self, op: BinaryOp) -> u32 {
-    if let Some(func) = self.binary_operator_map.get(&op) {
-      *func
-    } else {
-      let func = self.generate_binary_operator(op);
-      self.binary_operator_map.insert(op, func);
-      func
-    }
-  }
-
-  pub fn get_symbol(&mut self, current_function: u32, mangle: impl AsRef<str>) {
-    let mangle = mangle.as_ref();
+  pub fn get_symbol(&mut self, current_function: u32, mangle: &Path) {
     if self.func(current_function).has_local(mangle) {
       self.func(current_function).get_local(mangle);
     } else if let Some(global_id) = self.global_map.get(mangle) {
       self.push(current_function, GlobalGet(*global_id));
       self.push(current_function, RefAsNonNull);
+    }
+  }
+
+  pub fn make_new_array(
+    &mut self,
+    type_: &TypeRef,
+    size: u32,
+  ) -> Instruction<'static> {
+    let array_t = self.get_type_id(type_, false);
+    Instruction::ArrayNewFixed {
+      array_type_index: array_t,
+      array_size: size,
+    }
+  }
+
+  pub fn make_new_capture(&mut self, size: u32) -> Instruction<'static> {
+    let array_t = self.get_type_id(&Type::_ClosureCapture.into(), false);
+    Instruction::ArrayNewFixed {
+      array_type_index: array_t,
+      array_size: size,
+    }
+  }
+
+  pub fn make_new_struct(&mut self, type_: &TypeRef) -> Instruction<'static> {
+    let type_id = self.get_type_id(type_, false);
+    Instruction::StructNew(type_id)
+  }
+
+  pub fn make_unwrap_primitive(
+    &mut self,
+    type_: &TypeRef,
+  ) -> Instruction<'static> {
+    let type_id = self.get_type_id(type_, false);
+    match *type_.borrow() {
+      Type::Integer
+      | Type::Real
+      | Type::Boolean
+      | Type::String
+      | Type::Glyph => StructGet {
+        struct_type_index: type_id,
+        field_index: 0,
+      },
+      _ => todo!(),
     }
   }
 

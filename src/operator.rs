@@ -1,4 +1,3 @@
-//pub mod assembly;
 use crate::{
   ir::{Type, TypeRef},
   token::*,

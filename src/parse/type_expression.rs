@@ -92,7 +92,7 @@ pub fn parse_type_expression(iter: it!()) -> Result<TypeExpression> {
     iter.start_span();
     let kind = match iter.eat_ident()? {
       // Module field
-      name if iter.eat(Colon).is_some() => {
+      name if iter.peek_or_error(0, Colon).is_ok() => {
         let mut path = vec![name];
         while iter.eat(Colon).is_some() {
           path.push(iter.eat_ident()?);

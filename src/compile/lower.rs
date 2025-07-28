@@ -1,4 +1,4 @@
-use crate::builtin::BUILTIN_MODULE_NAME;
+use crate::std_hc::BUILTIN_MODULE_NAME;
 
 use super::*;
 
@@ -21,6 +21,13 @@ pub fn lower(
   state: &mut ModuleEncoder,
   f: u32,
 ) {
+  macro_rules! asm {
+    ($($e:expr);*;) => {
+      let __temp = [$($e,)*];
+      state.func(f).extend(&__temp);
+    };
+  }
+
   let nk = nodes[ptr].kind.clone();
   let this_t = nodes[ptr].type_.clone();
   use IrKind as h;
@@ -80,7 +87,7 @@ pub fn lower(
     h::Binary { op, left, right } => {
       lower(nodes, left, state, f);
       // Stack: Arg1
-      state.get_symbol(f, mangle_global(&[BUILTIN_MODULE_NAME], op));
+      state.get_symbol(f, &Path::from(BUILTIN_MODULE_NAME).child(op));
       // Stack: Arg1 Closure
       let op_func_type = state.get_valtype(&op.get_type(), false);
       let temporary = state.func(f).new_temporary(op_func_type);
@@ -152,9 +159,37 @@ pub fn lower(
     },
     h::Unary { op, child } => {
       lower(nodes, child, state, f);
-      state.new_capture(f, 0);
-      let operator_func = state.get_unary_operator(op);
-      state.call_raw_function(f, operator_func, &op.get_type());
+      state.get_symbol(f, &Path::from(BUILTIN_MODULE_NAME).child(op));
+      let op_func_type = state.get_valtype(&op.get_type(), false);
+      let temporary = state.func(f).new_temporary(op_func_type);
+      state.push(f, LocalTee(temporary));
+      // Stack: Arg1 Closure
+      let op_func_type_id = state.get_type_id(&op.get_type(), false);
+      state.push(
+        f,
+        StructGet {
+          struct_type_index: op_func_type_id,
+          field_index: 1,
+        },
+      );
+      // Stack: Arg1 Capture
+      state.push(f, LocalGet(temporary));
+      state.push(
+        f,
+        StructGet {
+          struct_type_index: op_func_type_id,
+          field_index: 0,
+        },
+      );
+      // Stack: Arg1 Capture FunctionPtr
+      let raw_op_func_type = state.get_type_id(&op.get_type(), true);
+      state.push(
+        f,
+        CallIndirect {
+          type_index: raw_op_func_type,
+          table_index: 0,
+        },
+      );
     },
     h::If {
       predicate,
@@ -194,8 +229,10 @@ pub fn lower(
         state.func(f).get_local(c);
         cast_any(state, f);
       }
-      state.new_capture(f, captures.len() as u32);
-      state.new_struct(f, &this_t);
+      asm! {
+        state.make_new_capture(captures.len() as u32);
+        state.make_new_struct(&this_t);
+      }
     },
     h::RecursiveDeclaration {
       assignee,

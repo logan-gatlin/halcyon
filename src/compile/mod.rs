@@ -1,8 +1,6 @@
 mod code_generation;
 mod function_encoder;
 mod lower;
-mod operators;
-mod runtime;
 
 use std::collections::HashMap;
 use wasm_encoder::Instruction::*;
@@ -44,7 +42,7 @@ pub struct ModuleEncoder {
   pub main_fn: u32,
   type_map: HashMap<Type, u32>,
   raw_type_map: HashMap<Type, u32>,
-  global_map: HashMap<Mangle, u32>,
+  global_map: HashMap<Path, u32>,
   global_section: Vec<u32>,
   import_section: Vec<Import>,
   export_section: Vec<Export>,
@@ -72,22 +70,17 @@ impl ModuleEncoder {
           lower::lower(&mut ir, ptr, self, self.main_fn);
           self.push(self.main_fn, GlobalSet(global_id));
         },
-        ModuleItem::CompilerBuiltin(mangle, type_, closure) => {
-          let global_id = self.new_global(mangle, &type_);
-          (*closure.0)(self);
-          self.push(self.main_fn, GlobalSet(global_id));
-        },
         _ => {},
       }
     }
   }
 
-  pub fn new_global(&mut self, mangle: Mangle, type_: &TypeRef) -> u32 {
+  pub fn new_global(&mut self, mangle: Path, type_: &TypeRef) -> u32 {
     let id = self.global_section.len() as u32;
     let type_ = self.get_type_id(type_, false);
     self.global_section.push(type_);
     self.export_section.push(Export {
-      name: mangle.clone(),
+      name: mangle.to_string(),
       kind: ExportKind::Global,
       index: id,
     });
@@ -172,7 +165,7 @@ impl ModuleEncoder {
           .into_iter()
           .fold(&mut ImportSection::new(), |section, import| {
             section.import(&import.major, &import.minor, import.entity)
-          })
+          }).import("sys", "memory", EntityType::Memory(MemoryType { minimum: 1, maximum: None, memory64: false, shared: false, page_size_log2: None }))
       )
       // Function section
       .section(
@@ -320,7 +313,6 @@ impl ModuleEncoder {
           .collect(),
       ),
       Type::Function(_, _) if !raw => {
-        //let raw_func_type = self.get_storage_type(t, true);
         let raw_func_type = StorageType::Val(ValType::I32);
         let capture_type =
           self.get_storage_type(&Type::_ClosureCapture.into(), false);

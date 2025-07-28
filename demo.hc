@@ -1,4 +1,7 @@
 module A
-  type t = A of unit | B of integer
+  import std
+  let _ = std:print_string "Hello World"
 end
+
+
 

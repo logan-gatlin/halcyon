@@ -10,25 +10,18 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{ir::*, lint::*, operator::*};
 
+#[derive(Debug, Clone, Default)]
 pub struct Environment {
-  scheme_map: HashMap<Mangle, bool>,
-  value_map: HashMap<Mangle, TypeRef>,
-  type_map: HashMap<Mangle, TypeRef>,
+  scheme_map: HashMap<Path, bool>,
+  value_map: HashMap<Path, TypeRef>,
+  type_map: HashMap<Path, TypeRef>,
   type_variable: TypeVariable,
 }
 
 impl Environment {
   pub fn new() -> Self {
-    let mut type_map = HashMap::new();
-    Type::primitives().into_iter().for_each(|(prim, name)| {
-      let mangle = mangle_builtin(name);
-      type_map.insert(mangle.clone(), prim);
-    });
     Self {
-      scheme_map: HashMap::new(),
-      value_map: HashMap::new(),
-      type_map,
-      type_variable: 0,
+      ..Default::default()
     }
   }
 
@@ -83,15 +76,15 @@ impl Environment {
     }
   }
 
-  pub fn define_type(&mut self, mangle: Mangle, type_: TypeRef) {
+  pub fn define_type(&mut self, mangle: Path, type_: TypeRef) {
     self.type_map.insert(mangle, type_);
   }
 
-  pub fn get_type(&self, mangle: &Mangle) -> TypeRef {
+  pub fn get_type(&self, mangle: &Path) -> TypeRef {
     self.type_map.get(mangle).unwrap().clone()
   }
 
-  pub fn get_value_type(&mut self, mangle: &Mangle) -> TypeRef {
+  pub fn get_value_type(&mut self, mangle: &Path) -> TypeRef {
     if *self.scheme_map.get(mangle).unwrap() {
       let t = self.value_map.get(mangle).unwrap().clone();
       let mut fresh = HashMap::new();
@@ -107,7 +100,7 @@ impl Environment {
 
   pub fn insert_value_type(
     &mut self,
-    mangle: Mangle,
+    mangle: Path,
     type_: TypeRef,
     let_bound: bool,
   ) {
@@ -130,8 +123,8 @@ pub struct Substitution(TypeVariable, TypeRef);
 
 #[derive(Debug, Clone, Default)]
 pub struct ModuleInterface {
-  pub types: HashMap<String, TypeRef>,
-  pub values: HashMap<String, TypeRef>,
+  pub types: HashMap<Path, TypeRef>,
+  pub values: HashMap<Path, TypeRef>,
 }
 
 pub fn type_solve(module: &mut IrModule) -> Result<ModuleInterface> {
@@ -153,9 +146,6 @@ pub fn type_solve(module: &mut IrModule) -> Result<ModuleInterface> {
       ModuleItem::Type(name, type_) => {
         env.define_type(name.clone(), type_.clone());
         interface.types.insert(name, type_);
-      },
-      ModuleItem::CompilerBuiltin(name, type_, _) => {
-        env.insert_value_type(name, type_, true);
       },
     }
   }

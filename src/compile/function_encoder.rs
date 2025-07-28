@@ -2,7 +2,7 @@ use super::*;
 
 #[derive(Debug, Clone)]
 pub struct FunctionEncoder {
-  local_names: HashMap<Mangle, u32>,
+  local_names: HashMap<Path, u32>,
   parameter: Option<ValType>,
   closure_capture: bool,
   locals: Vec<ValType>,
@@ -14,25 +14,22 @@ impl FunctionEncoder {
     (self.parameter.is_some() as u32) + (self.closure_capture as u32)
   }
 
-  pub fn new_local(&mut self, name: Mangle, type_: ValType) -> u32 {
+  pub fn new_local(&mut self, name: Path, type_: ValType) -> u32 {
     let id = self.locals.len() as u32 + self.local_offset();
     self.locals.push(type_);
     self.local_names.insert(name, id);
     id
   }
 
-  pub fn get_local_id(&mut self, mangle: impl Into<String>) -> u32 {
-    let mangle: String = mangle.into();
+  pub fn get_local_id(&mut self, mangle: &Path) -> u32 {
     self.local_names.get(&mangle).unwrap().clone()
   }
 
-  pub fn has_local(&self, mangle: impl Into<String>) -> bool {
-    let mangle: String = mangle.into();
+  pub fn has_local(&self, mangle: &Path) -> bool {
     self.local_names.contains_key(&mangle)
   }
 
-  pub fn get_local(&mut self, mangle: impl Into<String>) {
-    let mangle: String = mangle.into();
+  pub fn get_local(&mut self, mangle: &Path) {
     let local = self.local_names.get(&mangle).unwrap().clone();
     self.push(Instruction::LocalGet(local));
   }
@@ -56,7 +53,7 @@ impl FunctionEncoder {
       .local_names
       .iter()
       .fold(NameMap::new(), |mut map, (name, id)| {
-        map.append(*id, name);
+        map.append(*id, name.as_ref());
         map
       })
   }
@@ -95,8 +92,8 @@ impl ModuleEncoder {
   pub fn new_function(
     &mut self,
     type_: &TypeRef,
-    parameter_name: Mangle,
-    capture_names: Vec<Mangle>,
+    parameter_name: Path,
+    capture_names: Vec<Path>,
     capture_types: Vec<TypeRef>,
   ) -> u32 {
     let Type::Function(parameter_type, _) = (*type_.borrow()).clone() else {
@@ -145,7 +142,7 @@ impl ModuleEncoder {
 
   pub fn new_curried_function(
     &mut self,
-    parameter_names: Vec<Mangle>,
+    parameter_names: Vec<Path>,
     parameter_types: Vec<TypeRef>,
     return_type: TypeRef,
   ) -> (u32, u32) {

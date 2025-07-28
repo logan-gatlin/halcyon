@@ -13,7 +13,7 @@ impl IrModule {
       } => sexpr(
         "let",
         [
-          sexpr("mangle", [assignee.as_str().into()]),
+          sexpr("mangle", [assignee.into()]),
           sexpr("value", [self.sexpr(*value)]),
           if let Some(i) = in_ {
             sexpr("in", [self.sexpr(*i)])
@@ -33,17 +33,13 @@ impl IrModule {
       } => sexpr(
         "let-rec",
         [
-          sexpr("assignee", [assignee.as_str().into()]),
+          sexpr("assignee", [assignee.into()]),
           sexpr(
             "function",
             [
               Some(sexpr(
                 "argument",
-                [parameter_name
-                  .clone()
-                  .unwrap_or("()".into())
-                  .as_str()
-                  .into()],
+                [parameter_name.clone().unwrap_or("()".into()).into()],
               )),
               if captures.len() == 0 {
                 None
@@ -70,7 +66,7 @@ impl IrModule {
         ],
       ),
       h::Immediate(const_value) => sexpr(format!("{const_value}"), []),
-      h::Identifier(name) => sexpr("identifier", [name.as_str().into()]),
+      h::Identifier(name) => sexpr("identifier", [name.into()]),
       h::StructLiteral {
         field_names,
         field_values,
@@ -111,11 +107,7 @@ impl IrModule {
         [
           Some(sexpr(
             "argument",
-            [parameter_name
-              .clone()
-              .unwrap_or("()".into())
-              .as_str()
-              .into()],
+            [parameter_name.clone().unwrap_or("()".into()).into()],
           )),
           if captures.len() == 0 {
             None
@@ -170,9 +162,7 @@ impl IrModule {
           .map(|n| self.sexpr(*n))
           .collect::<Vec<_>>(),
       ),
-      h::ImportedSymbol(name, _) => {
-        sexpr("module-import", [name.as_str().into()])
-      },
+      h::ImportedSymbol(name, _) => sexpr("module-import", [name.into()]),
     };
     se.push_front(format!("(type {})", node.type_.borrow()).as_str().into());
     se
@@ -191,22 +181,15 @@ impl std::fmt::Display for IrModule {
             ModuleItem::Let(name, ir) => sexpr(
               "let",
               [
-                sexpr("name", [name.as_str().into()]),
+                sexpr("name", [name.into()]),
                 sexpr("value", [self.sexpr(*ir)]),
               ],
             ),
             ModuleItem::Type(name, type_) => sexpr(
               "type",
               [
-                sexpr("name", [name.as_str().into()]),
+                sexpr("name", [name.into()]),
                 sexpr("value", [format!("{}", type_.borrow()).as_str().into()]),
-              ],
-            ),
-            ModuleItem::CompilerBuiltin(name, type_, ..) => sexpr(
-              "compiler-builtin",
-              [
-                sexpr("name", [name.as_str().into()]),
-                sexpr("type", [format!("{}", type_.borrow()).as_str().into()]),
               ],
             ),
           }

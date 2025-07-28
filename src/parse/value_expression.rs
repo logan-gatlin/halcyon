@@ -56,10 +56,7 @@ pub enum ValueExpressionKind {
     lhs: Box<ValueExpression>,
     rhs: String,
   },
-  ModuleField {
-    lhs: Box<ValueExpression>,
-    rhs: String,
-  },
+  ModuleField(Vec<String>),
 }
 
 pub type ValueExpression = Expression<ValueExpressionKind>;
@@ -77,7 +74,17 @@ fn parse_primary(iter: it!()) -> Result<ValueExpression> {
     GlyphLiteral(value) => e::Literal(Literal::Glyph(value)),
     True => e::Literal(Literal::Boolean(true)),
     False => e::Literal(Literal::Boolean(false)),
-    Identifier(ident) => e::Identifier(ident),
+    Identifier(ident) if iter.peek(0).is_none_or(|t| t.0 != Colon) => {
+      e::Identifier(ident)
+    },
+    // Module field
+    Identifier(ident) => {
+      let mut path = vec![ident];
+      while iter.eat(Colon).is_some() {
+        path.push(iter.eat_ident()?);
+      }
+      e::ModuleField(path)
+    },
     // Function definition
     Fn => {
       let mut arguments = vec![];
@@ -270,17 +277,6 @@ pub fn parse_value_expression(
       let rhs = iter.eat_ident()?;
       current = ValueExpression {
         kind: e::Field {
-          lhs: current.into(),
-          rhs,
-        },
-        span: iter.end_span(),
-      }
-    }
-    // Module field
-    else if precedence < MODULE_FIELD_PREC && iter.eat(Colon).is_some() {
-      let rhs = iter.eat_ident()?;
-      current = ValueExpression {
-        kind: e::ModuleField {
           lhs: current.into(),
           rhs,
         },

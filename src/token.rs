@@ -68,6 +68,7 @@ pub enum TokenKind {
 
   Module,
   Import,
+  Use,
   End,
   Match,
   Let,
@@ -157,6 +158,7 @@ impl std::fmt::Display for TokenKind {
         RealLiteral(_) => "float literal",
         Module => "module",
         Import => "import",
+        Use => "use",
         End => "end",
         Match => "match",
         Let => "let",
@@ -496,6 +498,7 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
         "in" => In,
         "module" => Module,
         "import" => Import,
+        "use" => Use,
         "of" => Of,
         "end" => End,
         "match" => Match,

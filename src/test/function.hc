@@ -4,7 +4,7 @@ module FunctionTest
   let _ = std:assert ((fn a => a) () == ())
 
   // Type hints
-  let _ = std:assert ((fn (a: integer) b => a + b) 1 2 == 3)
+  let _ = std:assert ((fn (a: std:integer) b => a + b) 1 2 == 3)
 
   // Currying
   let _ = std:assert ((fn a b c => a + b + c) 1 2 3 == 6)
