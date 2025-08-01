@@ -108,14 +108,14 @@ impl IrModule {
           } else {
             value
           }
-        },
+        }
         RecursiveDeclaration { body, in_, .. } => {
           if let Some(in_) = in_ {
             in_
           } else {
             body
           }
-        },
+        }
         FunctionCall {
           argument: arguments,
           ..
@@ -130,7 +130,7 @@ impl IrModule {
           } else {
             break;
           }
-        },
+        }
         FunctionDef { body: last, .. }
         | Binary { right: last, .. }
         | Unary { child: last, .. }
@@ -141,7 +141,7 @@ impl IrModule {
           } else {
             then
           }
-        },
+        }
         ImportedSymbol(..) | Immediate(..) | Identifier(..) => break,
       }
     }
@@ -162,5 +162,3 @@ impl std::ops::IndexMut<usize> for IrModule {
     &mut self.nodes[index]
   }
 }
-
-type FunctionDepth = usize;

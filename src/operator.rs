@@ -12,6 +12,7 @@ macro_rules! op {
       $($op,)*
     }
 
+    #[allow(dead_code)]
     impl $name {
       pub fn precedence(&self) -> Precedence {
         match self {
@@ -48,7 +49,6 @@ macro_rules! op {
 
 pub const RIGHT_ASSOC: bool = true;
 pub const LEFT_ASSOC: bool = false;
-pub const MODULE_FIELD_PREC: Precedence = 18;
 pub const FIELD_PREC: Precedence = 17;
 pub const CALL_PREC: Precedence = 12;
 
@@ -112,15 +112,12 @@ impl BinaryOp {
 
   pub fn parameter_type(&self) -> TypeRef {
     match self {
-      BinaryOp::Minus
-      | BinaryOp::Star
-      | BinaryOp::Slash
-      | BinaryOp::Percent
-      | BinaryOp::Plus => Type::Integer.into(),
-      BinaryOp::PlusDot
-      | BinaryOp::StarDot
-      | BinaryOp::SlashDot
-      | BinaryOp::MinusDot => Type::Real.into(),
+      BinaryOp::Minus | BinaryOp::Star | BinaryOp::Slash | BinaryOp::Percent | BinaryOp::Plus => {
+        Type::Integer.into()
+      }
+      BinaryOp::PlusDot | BinaryOp::StarDot | BinaryOp::SlashDot | BinaryOp::MinusDot => {
+        Type::Real.into()
+      }
       BinaryOp::And | BinaryOp::Xor | BinaryOp::Or => Type::Boolean.into(),
       BinaryOp::DoubleEqual
       | BinaryOp::BangEqual
@@ -134,15 +131,12 @@ impl BinaryOp {
 
   pub fn return_type(&self) -> TypeRef {
     match self {
-      BinaryOp::Minus
-      | BinaryOp::Star
-      | BinaryOp::Slash
-      | BinaryOp::Percent
-      | BinaryOp::Plus => Type::Integer.into(),
-      BinaryOp::PlusDot
-      | BinaryOp::StarDot
-      | BinaryOp::SlashDot
-      | BinaryOp::MinusDot => Type::Real.into(),
+      BinaryOp::Minus | BinaryOp::Star | BinaryOp::Slash | BinaryOp::Percent | BinaryOp::Plus => {
+        Type::Integer.into()
+      }
+      BinaryOp::PlusDot | BinaryOp::StarDot | BinaryOp::SlashDot | BinaryOp::MinusDot => {
+        Type::Real.into()
+      }
       BinaryOp::DoubleEqual
       | BinaryOp::BangEqual
       | BinaryOp::Less

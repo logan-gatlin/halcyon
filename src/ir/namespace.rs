@@ -1,5 +1,3 @@
-use std::{collections::HashSet, ops::Not};
-
 use super::*;
 
 #[derive(Debug, Clone)]
@@ -12,7 +10,6 @@ struct NameEvent {
 struct NameSpace {
   module_name: Path,
   salt: usize,
-  imported_modules: HashSet<Path>,
   lookup_table: HashMap<String, Path>,
   state: Vec<NameEvent>,
 }
@@ -161,16 +158,13 @@ impl ValueNameSpace {
         for capture in (*depth)..(self.capture_list.len()) {
           self.capture_list[capture].push(mangle.clone());
         }
-      },
-      None => {},
+      }
+      None => {}
     }
     Ok(mangle)
   }
 
-  pub fn import_module(
-    &mut self,
-    items: impl IntoIterator<Item = (Path, TypeRef)>,
-  ) {
+  pub fn import_module(&mut self, items: impl IntoIterator<Item = (Path, TypeRef)>) {
     for (name, type_) in items {
       self.import_types.insert(name, type_);
     }
@@ -192,6 +186,7 @@ pub struct TypeNameSpace {
   type_map: HashMap<Path, TypeRef>,
 }
 
+#[allow(dead_code)]
 impl TypeNameSpace {
   inherit!(get end_local_scope);
 
@@ -223,10 +218,7 @@ impl TypeNameSpace {
     Ok(mangle)
   }
 
-  pub fn import_module(
-    &mut self,
-    items: impl IntoIterator<Item = (Path, TypeRef)>,
-  ) {
+  pub fn import_module(&mut self, items: impl IntoIterator<Item = (Path, TypeRef)>) {
     for (name, type_) in items {
       self.type_map.insert(name, type_);
     }

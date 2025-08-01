@@ -16,7 +16,6 @@ pub enum Literal {
 #[derive(Debug, Clone)]
 pub enum ValueExpressionKind {
   Let {
-    assignee_span: Span,
     assignee: String,
     value: Box<ValueExpression>,
     in_: Option<Box<ValueExpression>>,
@@ -74,9 +73,7 @@ fn parse_primary(iter: it!()) -> Result<ValueExpression> {
     GlyphLiteral(value) => e::Literal(Literal::Glyph(value)),
     True => e::Literal(Literal::Boolean(true)),
     False => e::Literal(Literal::Boolean(false)),
-    Identifier(ident) if iter.peek(0).is_none_or(|t| t.0 != Colon) => {
-      e::Identifier(ident)
-    },
+    Identifier(ident) if iter.peek(0).is_none_or(|t| t.0 != Colon) => e::Identifier(ident),
     // Module field
     Identifier(ident) => {
       let mut path = vec![ident];
@@ -84,7 +81,7 @@ fn parse_primary(iter: it!()) -> Result<ValueExpression> {
         path.push(iter.eat_ident()?);
       }
       e::ModuleField(path)
-    },
+    }
     // Function definition
     Fn => {
       let mut arguments = vec![];
@@ -126,10 +123,9 @@ fn parse_primary(iter: it!()) -> Result<ValueExpression> {
         types,
         body,
       }
-    },
+    }
     Let => e::Let {
       assignee: iter.eat_ident()?,
-      assignee_span: iter.last_span,
       value: {
         iter.eat_or_error(Equal)?;
         Box::new(parse_value_expression(iter, 0)?)
@@ -151,21 +147,17 @@ fn parse_primary(iter: it!()) -> Result<ValueExpression> {
         lhs.push(iter.eat_ident()?);
         iter.eat_or_error(Equal)?;
         rhs.push(parse_value_expression(iter, 0)?);
-        if iter.eat(Comma).is_none()
-          && iter.peek_or_error(0, RightBrace).is_err()
-        {
+        if iter.eat(Comma).is_none() && iter.peek_or_error(0, RightBrace).is_err() {
           iter.start_span();
-          return Err(
-            if iter.peek_or_error(0, Identifier("".into())).is_ok() {
-              iter.report_error(ExpectedToken, [format!("{Comma}")])
-            } else {
-              iter.report_error(ExpectedToken, [format!("{RightBrace}")])
-            },
-          );
+          return Err(if iter.peek_or_error(0, Identifier("".into())).is_ok() {
+            iter.report_error(ExpectedToken, [format!("{Comma}")])
+          } else {
+            iter.report_error(ExpectedToken, [format!("{RightBrace}")])
+          });
         }
       }
       e::StructureLiteral { lhs, rhs }
-    },
+    }
     If => e::If {
       predicate: Box::new(parse_value_expression(iter, 0)?),
       then: {
@@ -191,9 +183,7 @@ fn parse_primary(iter: it!()) -> Result<ValueExpression> {
           is_tuple = true;
         } else if iter.peek_or_error(0, RightParen).is_err() {
           iter.start_span();
-          return Err(
-            iter.report_error(ExpectedToken, [format!("{RightParen}")]),
-          );
+          return Err(iter.report_error(ExpectedToken, [format!("{RightParen}")]));
         }
       }
       if is_tuple {
@@ -203,7 +193,7 @@ fn parse_primary(iter: it!()) -> Result<ValueExpression> {
         inner.span = iter.end_span();
         return Ok(inner);
       }
-    },
+    }
     _ => return Err(iter.report_error(ExpectedExpression, [])),
   };
   Ok(ValueExpression {
@@ -212,10 +202,7 @@ fn parse_primary(iter: it!()) -> Result<ValueExpression> {
   })
 }
 
-pub fn parse_value_expression(
-  iter: it!(),
-  precedence: Precedence,
-) -> Result<ValueExpression> {
+pub fn parse_value_expression(iter: it!(), precedence: Precedence) -> Result<ValueExpression> {
   iter.start_span();
   let unary_ops = [Minus, MinusDot, Not];
   let mut current = if let Ok(id) = iter.eat_one_of(unary_ops.clone()) {
@@ -224,9 +211,7 @@ pub fn parse_value_expression(
       return Err(iter.report_error(ExpectedExpression, []));
     }
     let operand = parse_value_expression(iter, op.precedence())?;
-    let op = if let (UnaryOp::Minus, e::Literal(Literal::Real(_))) =
-      (op, &operand.kind)
-    {
+    let op = if let (UnaryOp::Minus, e::Literal(Literal::Real(_))) = (op, &operand.kind) {
       UnaryOp::MinusDot
     } else {
       op

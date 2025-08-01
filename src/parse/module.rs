@@ -1,5 +1,6 @@
 use super::*;
 
+#[expect(dead_code)]
 #[derive(Debug, Clone)]
 pub enum ModuleExpressionKind {
   Let {
@@ -70,7 +71,7 @@ pub fn parse_module_expression(iter: it!()) -> Result<ModuleExpression> {
         },
         span: iter.end_span(),
       })
-    },
+    }
     // Type
     1 => {
       let assignee = iter.eat_ident()?;
@@ -84,7 +85,7 @@ pub fn parse_module_expression(iter: it!()) -> Result<ModuleExpression> {
         },
         span: iter.end_span(),
       })
-    },
+    }
     // Import
     2 => Ok(ModuleExpression {
       kind: ModuleExpressionKind::Import {

@@ -8,37 +8,11 @@ pub fn make_builtin_module(encoder: &mut ModuleEncoder) -> ModuleInterface {
   primitive_types(&mut interface);
   operator_assembly(encoder, &mut interface);
   primitive_funcs(encoder, &mut interface);
+  strings::make(encoder, &mut interface);
   interface
 }
 
-fn make_function(
-  encoder: &mut ModuleEncoder,
-  name: &str,
-  parameter_types: Vec<TypeRef>,
-  return_type: TypeRef,
-) -> u32 {
-  let this_type = Type::curry(&parameter_types, return_type.clone());
-  let (head, tail) = encoder.new_curried_function(
-    (0..parameter_types.len())
-      .into_iter()
-      .map(|i| format!("{i}").into())
-      .collect(),
-    parameter_types,
-    return_type,
-  );
-  let path = Path::from(BUILTIN_MODULE_NAME).child(name);
-  encoder.push(encoder.main_fn, I32Const(head as i32));
-  encoder.new_capture(encoder.main_fn, 0u32);
-  encoder.new_struct(encoder.main_fn, &this_type);
-  let global_id = encoder.new_global(path, &this_type);
-  encoder.push(encoder.main_fn, GlobalSet(global_id));
-  tail
-}
-
-fn primitive_funcs(
-  encoder: &mut ModuleEncoder,
-  interface: &mut ModuleInterface,
-) {
+fn primitive_funcs(encoder: &mut ModuleEncoder, interface: &mut ModuleInterface) {
   let e = encoder;
   let mut f;
   macro_rules! func {
@@ -56,107 +30,12 @@ fn primitive_funcs(
   macro_rules! asm {
     ($($e:expr);*;) => {
       let __temp = [$($e,)*];
-      e.func(f).extend(&__temp);
+      e.func_mut(f).extend(&__temp);
     };
   }
   // Panic
   func! { fn panic(Type::Unit) -> (Type::TypeVariable(0)) };
   asm!(Unreachable;);
-
-  // String length
-  func! { fn string_length(Type::String) -> (Type::Integer) };
-  asm! {
-    LocalGet(0);
-    ArrayLen;
-    I64ExtendI32U;
-  }
-  e.new_struct(f, &Type::Integer.to_ref());
-
-  // Memory set
-  {
-    func! { fn string_copy(Type::String, Type::Integer) -> (Type::Unit) };
-    let string_param = 0;
-    let int_param = 1;
-    let index = e.func(f).new_local("index".into(), ValType::I32);
-    let length = e.func(f).new_local("length".into(), ValType::I32);
-    asm! {
-      I32Const(0);
-      LocalSet(index);
-      // let index = 0
-      LocalGet(string_param);
-      ArrayLen;
-      LocalSet(length);
-      // let length = len(string)
-      Loop(BlockType::Empty);
-        LocalGet(index);
-        LocalGet(length);
-        I32LtU;
-        // if index < length
-        If(BlockType::Empty);
-          LocalGet(index);
-          LocalGet(string_param);
-          LocalGet(index);
-          ArrayGetU(string_param);
-          I32Store8(MemArg { offset: 0, align: 0, memory_index: 0 });
-          // *ptr = string[index]
-          LocalGet(index);
-          I32Const(1);
-          I32Add;
-          LocalSet(index);
-          // index += 1
-          // Continue
-          Br(1);
-        End;
-      End;
-    }
-  }
-
-  // Print string
-  {
-    func! { fn print_string (Type::String) -> (Type::Unit) };
-    let (import_id, import_type) =
-      e.new_import("sys", "print_string", [ValType::I32; 2], []);
-    let param = 0;
-    let index = e.func(f).new_local("index".into(), ValType::I32);
-    let length = e.func(f).new_local("length".into(), ValType::I32);
-    let string_type = e.get_type_id(&Type::String.to_ref(), false);
-    asm! {
-      I32Const(0);
-      LocalSet(index);
-      // let index = 0
-      LocalGet(param);
-      ArrayLen;
-      LocalSet(length);
-      // let length = len(string)
-      Loop(BlockType::Empty);
-        LocalGet(index);
-        LocalGet(length);
-        I32LtU;
-        // if index < length
-        If(BlockType::Empty);
-          LocalGet(index);
-          LocalGet(param);
-          LocalGet(index);
-          ArrayGetU(string_type);
-          I32Store8(MemArg { offset: 0, align: 0, memory_index: 0 });
-          // *ptr = string[index]
-          LocalGet(index);
-          I32Const(1);
-          I32Add;
-          LocalSet(index);
-          // index += 1
-          // Continue
-          Br(1);
-        End;
-      End;
-      I32Const(0);
-      LocalGet(length);
-      I32Const(import_id as i32);
-      CallIndirect { type_index: import_type, table_index: 0 };
-      // print_string(0, len(string))
-    }
-    e.push_constant(f, ConstValue::Unit);
-  }
 }
 
 fn primitive_types(interface: &mut ModuleInterface) {
@@ -176,23 +55,19 @@ fn primitive_types(interface: &mut ModuleInterface) {
   });
 }
 
-fn operator_assembly(
-  encoder: &mut ModuleEncoder,
-  interface: &mut ModuleInterface,
-) {
+fn operator_assembly(encoder: &mut ModuleEncoder, interface: &mut ModuleInterface) {
   let e = encoder;
   // Unary operators
   {
     use UnaryOp::*;
     // Integer negate (-)
     let type_ = Type::Integer.to_ref();
-    let f =
-      make_function(e, &format!("{Minus}"), vec![type_.clone()], type_.clone());
+    let f = make_function(e, &format!("{Minus}"), vec![type_.clone()], type_.clone());
     e.push(f, I64Const(0));
     e.get_symbol(f, &Path::from("0"));
-    e.unwrap_primitive(f, &type_);
+    e.unwrap_primitive(f, type_.clone());
     e.push(f, I64Sub);
-    e.new_struct(f, &type_);
+    e.new_struct(f, type_.clone());
     // Real negate (-)
     let type_ = Type::Real.to_ref();
     let f = make_function(
@@ -203,17 +78,16 @@ fn operator_assembly(
     );
     e.push(f, F64Const(0.0.into()));
     e.get_symbol(f, &Path::from("0"));
-    e.unwrap_primitive(f, &type_);
+    e.unwrap_primitive(f, type_.clone());
     e.push(f, F64Sub);
-    e.new_struct(f, &type_);
+    e.new_struct(f, type_.clone());
     // Boolean negate (not)
     let type_ = Type::Boolean.to_ref();
-    let f =
-      make_function(e, &format!("{Not}"), vec![type_.clone()], type_.clone());
+    let f = make_function(e, &format!("{Not}"), vec![type_.clone()], type_.clone());
     e.get_symbol(f, &Path::from("0"));
-    e.unwrap_primitive(f, &type_);
+    e.unwrap_primitive(f, type_.clone());
     e.push(f, I32Eqz);
-    e.new_struct(f, &type_);
+    e.new_struct(f, type_);
   }
 
   use BinaryOp::*;
@@ -244,20 +118,20 @@ fn operator_assembly(
       op.return_type(),
     );
     e.get_symbol(f, &Path::from("0"));
-    e.unwrap_primitive(f, &op.parameter_type());
+    e.unwrap_primitive(f, op.parameter_type());
     e.get_symbol(f, &Path::from("1"));
-    e.unwrap_primitive(f, &op.parameter_type());
+    e.unwrap_primitive(f, op.parameter_type());
     e.push(f, instr);
-    e.new_struct(f, &op.return_type());
+    e.new_struct(f, op.return_type());
   });
   // Binary comparison ops
   {
-    let integer_type = e.get_type_id(&Type::Integer.into(), false);
-    let real_type = e.get_type_id(&Type::Real.into(), false);
-    let boolean_type = e.get_type_id(&Type::Boolean.into(), false);
-    let glyph_type = e.get_type_id(&Type::Glyph.into(), false);
-    let unit_type = e.get_type_id(&Type::Unit.into(), false);
-    let string_type = e.get_type_id(&Type::String.into(), false);
+    let integer_type = e.get_asm_type(Type::Integer).id;
+    let real_type = e.get_asm_type(Type::Real).id;
+    let boolean_type = e.get_asm_type(Type::Boolean).id;
+    let glyph_type = e.get_asm_type(Type::Glyph).id;
+    let unit_type = e.get_asm_type(Type::Unit).id;
+    let string_type = e.get_asm_type(Type::String).id;
     [
       (DoubleEqual, I64Eq, F64Eq, I32Eq, TRUE),
       (BangEqual, I64Ne, F64Ne, I32Ne, FALSE),
@@ -278,12 +152,12 @@ fn operator_assembly(
         Type::Boolean.to_ref(),
       );
 
-      let a = e.func(f).get_local_id(&Path::from("0"));
-      let b = e.func(f).get_local_id(&Path::from("1"));
+      let a = e.func_mut(f).get_local_id(&Path::from("0"));
+      let b = e.func_mut(f).get_local_id(&Path::from("1"));
       macro_rules! asm {
         ($($e:expr);*;) => {
           let __temp = [$($e,)*];
-          e.func(f).extend(&__temp);
+          e.func_mut(f).extend(&__temp);
         };
       }
       let type_ops = [
@@ -307,7 +181,7 @@ fn operator_assembly(
         },
       };
       // Jump on cast
-      e.func(f).get_local(&Path::from("0"));
+      asm! { e.get_local(f, "0"); }
       type_ops
         .clone()
         .into_iter()
@@ -391,8 +265,8 @@ fn operator_assembly(
         Return;
         End;
       );
-      let index = e.func(f).new_local("index".into(), ValType::I32);
-      let length = e.func(f).new_local("index".into(), ValType::I32);
+      let index = e.func_mut(f).new_local("index", ValType::I32);
+      let length = e.func_mut(f).new_local("index", ValType::I32);
       asm!(
         I32Const(0);
         LocalSet(index);

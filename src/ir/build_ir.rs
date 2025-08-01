@@ -22,7 +22,7 @@ pub fn build_ir(
         let value = value_expr(&mut ir, &mut value_ns, &type_ns, *value)?;
         let mangle = value_ns.define_global(&assignee).span(assignee_span)?;
         items.push(ModuleItem::Let(mangle, value));
-      },
+      }
       e::Type {
         assignee,
         assignee_span,
@@ -47,7 +47,7 @@ pub fn build_ir(
             .span(expr.span)?;
           items.push(ModuleItem::Type(mangle, type_));
         }
-      },
+      }
       e::Import { name } => {
         let interface = context.get(&name.clone().into()).ok_or(lint(
           NameLint::NoSuchModule,
@@ -56,11 +56,11 @@ pub fn build_ir(
         ))?;
         value_ns.import_module(interface.values.clone());
         type_ns.import_module(interface.types.clone());
-      },
+      }
 
-      e::Use(name) => {},
+      e::Use(_) => {}
 
-      e::Module(m) => {},
+      e::Module(_) => {}
     }
   }
   Ok(IrModule {
@@ -104,15 +104,13 @@ pub fn value_expr(
         crate::parse::Literal::Unit => ConstValue::Unit,
         crate::parse::Literal::Integer(i, base) => {
           ConstValue::Integer(int(&i, base as u32).span(span)?)
-        },
-        crate::parse::Literal::Real(r) => {
-          ConstValue::Real(real(&r).span(span)?)
-        },
+        }
+        crate::parse::Literal::Real(r) => ConstValue::Real(real(&r).span(span)?),
         crate::parse::Literal::String(s) => ConstValue::String(s),
         crate::parse::Literal::Glyph(g) => ConstValue::Glyph(g),
         crate::parse::Literal::Boolean(b) => ConstValue::Boolean(b),
       })
-    },
+    }
     Identifier(name) => ir::Identifier(ns.get(&name).span(expr.span)?),
     Binary { op, left, right } => ir::Binary {
       op,
@@ -183,15 +181,14 @@ pub fn value_expr(
           body,
         }
       }
-    },
+    }
     // Recursive let
     Let {
       assignee,
-      value:
-        value @ box Expression {
-          kind: FunctionDef { .. },
-          ..
-        },
+      value: value @ box Expression {
+        kind: FunctionDef { .. },
+        ..
+      },
       in_,
       ..
     } => {
@@ -227,7 +224,7 @@ pub fn value_expr(
         body,
         in_,
       }
-    },
+    }
     Let {
       assignee,
       value,
@@ -247,12 +244,12 @@ pub fn value_expr(
         value,
         in_,
       }
-    },
+    }
     FunctionCall { callee, argument } => {
       let callee = rec!(*callee)?;
       let argument = rec!(*argument)?;
       ir::FunctionCall { callee, argument }
-    },
+    }
     If {
       predicate,
       then,
@@ -266,9 +263,7 @@ pub fn value_expr(
         None
       },
     },
-    Tuple(expressions) => {
-      ir::Tuple(expressions.into_iter().map(|e| rec!(e)).try_collect()?)
-    },
+    Tuple(expressions) => ir::Tuple(expressions.into_iter().map(|e| rec!(e)).try_collect()?),
     StructureLiteral { lhs, rhs } => ir::StructLiteral {
       field_names: lhs,
       field_values: rhs.into_iter().map(|e| rec!(e)).try_collect()?,
@@ -283,16 +278,13 @@ pub fn value_expr(
         path.clone().into(),
         ns.get_import_type(&path.into()).span(span)?,
       )
-    },
+    }
   };
   module[ptr].kind = kind;
   Ok(ptr)
 }
 
-pub fn type_def(
-  ns: &mut TypeNameSpace,
-  expr: TypeDefinition,
-) -> Result<TypeRef> {
+pub fn type_def(ns: &mut TypeNameSpace, expr: TypeDefinition) -> Result<TypeRef> {
   use TypeDefinitionKind::*;
   Ok(match expr.kind {
     Structure { lhs, rhs } => Type::Struct {

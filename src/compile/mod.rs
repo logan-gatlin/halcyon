@@ -37,6 +37,13 @@ enum RegisteredType {
   Struct(Vec<StorageType>),
 }
 
+#[derive(Debug, Clone)]
+pub struct AsmType {
+  pub id: u32,
+  pub raw_id: u32,
+  pub val: ValType,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct ModuleEncoder {
   pub main_fn: u32,
@@ -50,8 +57,6 @@ pub struct ModuleEncoder {
   function_section: Vec<u32>,
   elements_section: Vec<FunctionKind>,
   code_section: Vec<FunctionEncoder>,
-  binary_operator_map: HashMap<BinaryOp, u32>,
-  unary_operator_map: HashMap<UnaryOp, u32>,
 }
 
 impl ModuleEncoder {
@@ -66,18 +71,18 @@ impl ModuleEncoder {
     for item in ir.items.clone() {
       match item {
         ModuleItem::Let(mangle, ptr) => {
-          let global_id = self.new_global(mangle, &ir.nodes[ptr].type_);
+          let global_id = self.new_global(mangle, ir.nodes[ptr].type_.clone());
           lower::lower(&mut ir, ptr, self, self.main_fn);
           self.push(self.main_fn, GlobalSet(global_id));
-        },
-        _ => {},
+        }
+        _ => {}
       }
     }
   }
 
-  pub fn new_global(&mut self, mangle: Path, type_: &TypeRef) -> u32 {
+  pub fn new_global(&mut self, mangle: Path, type_: impl Into<TypeRef>) -> u32 {
     let id = self.global_section.len() as u32;
-    let type_ = self.get_type_id(type_, false);
+    let type_ = self.get_asm_type(type_.into().clone()).id;
     self.global_section.push(type_);
     self.export_section.push(Export {
       name: mangle.to_string(),
@@ -89,9 +94,7 @@ impl ModuleEncoder {
   }
 
   pub fn finish(self) -> Vec<u8> {
-    let FunctionKind::Native(main_func) =
-      self.elements_section[self.main_fn as usize]
-    else {
+    let FunctionKind::Native(main_func) = self.elements_section[self.main_fn as usize] else {
       panic!()
     };
 
@@ -165,7 +168,18 @@ impl ModuleEncoder {
           .into_iter()
           .fold(&mut ImportSection::new(), |section, import| {
             section.import(&import.major, &import.minor, import.entity)
-          }).import("sys", "memory", EntityType::Memory(MemoryType { minimum: 1, maximum: None, memory64: false, shared: false, page_size_log2: None }))
+          })
+          .import(
+            "sys",
+            "memory",
+            EntityType::Memory(MemoryType {
+              minimum: 1,
+              maximum: None,
+              memory64: false,
+              shared: false,
+              page_size_log2: None,
+            }),
+          ),
       )
       // Function section
       .section(
@@ -183,23 +197,31 @@ impl ModuleEncoder {
         shared: false,
       }))
       // Global section
-      .section(&*self.global_section.into_iter().fold(&mut GlobalSection::new(), |section, type_| {
-        section.global(
-          GlobalType {
-            val_type: ValType::Ref(
-              RefType {
+      .section(&*self.global_section.into_iter().fold(
+        &mut GlobalSection::new(),
+        |section, type_| {
+          section.global(
+            GlobalType {
+              val_type: ValType::Ref(RefType {
                 nullable: true,
                 heap_type: HeapType::Concrete(type_),
               }),
-            mutable: true,
-            shared: false
-          },
-          &ConstExpr::ref_null(HeapType::Concrete(type_)))
-      }))
+              mutable: true,
+              shared: false,
+            },
+            &ConstExpr::ref_null(HeapType::Concrete(type_)),
+          )
+        },
+      ))
       // Export section
-      .section(&*self.export_section.into_iter().fold(&mut ExportSection::new(), |section, ex| {
-        section.export(&ex.name, ex.kind, ex.index)
-      }))
+      .section(
+        &*self
+          .export_section
+          .into_iter()
+          .fold(&mut ExportSection::new(), |section, ex| {
+            section.export(&ex.name, ex.kind, ex.index)
+          }),
+      )
       // Start section
       .section(&StartSection {
         function_index: (main_func + no_imports),
@@ -223,39 +245,49 @@ impl ModuleEncoder {
     for t in &self.type_section {
       match t {
         RegisteredType::Function(func_type) => ts.ty().func_type(func_type),
-        RegisteredType::Array(storage_type) => {
-          ts.ty().array(storage_type, true)
-        },
+        RegisteredType::Array(storage_type) => ts.ty().array(storage_type, true),
         RegisteredType::Struct(storage_types) => {
           ts.ty()
             .struct_(storage_types.into_iter().map(|t| FieldType {
               element_type: *t,
               mutable: false,
             }))
-        },
+        }
       }
     }
     ts
   }
 
-  pub fn get_type_id(&mut self, t: &TypeRef, raw: bool) -> u32 {
-    match self.get_storage_type(t, raw) {
+  pub fn get_asm_type(&mut self, t: impl Into<TypeRef>) -> AsmType {
+    let t = t.into();
+    AsmType {
+      val: self.get_valtype(&t, false),
+      id: self.get_type_id(&t.clone(), false),
+      raw_id: self.get_type_id(&t, true),
+    }
+  }
+
+  fn get_type_id(&mut self, t: &TypeRef, raw: bool) -> u32 {
+    match self.get_storage_type(&t, raw) {
       StorageType::Val(ValType::Ref(RefType {
         heap_type: HeapType::Concrete(id),
         ..
       })) => id,
-      _ => panic!(),
+      // Anyref does not appear in the type-id list,
+      // and the type ID of anyref should never be accessed.
+      // Possibly find a cleaner way to do this?
+      _ => u32::MAX,
     }
   }
 
-  pub fn get_valtype(&mut self, t: &TypeRef, raw: bool) -> ValType {
+  fn get_valtype(&mut self, t: &TypeRef, raw: bool) -> ValType {
     match self.get_storage_type(t, raw) {
       StorageType::I8 | StorageType::I16 => ValType::I32,
       StorageType::Val(val_type) => val_type,
     }
   }
 
-  pub fn get_storage_type(&mut self, t: &TypeRef, raw: bool) -> StorageType {
+  fn get_storage_type(&mut self, t: &TypeRef, raw: bool) -> StorageType {
     let t = (*t.borrow()).clone();
     let register = |this: &mut Self, t: Type, rt: RegisteredType| {
       let id = this.type_section.len() as u32;
@@ -272,7 +304,7 @@ impl ModuleEncoder {
       }))
     };
 
-    if let Some(t) = if raw {
+    if let Some(t) = if raw && let Type::Function(..) = t {
       &self.raw_type_map
     } else {
       &self.type_map
@@ -287,25 +319,17 @@ impl ModuleEncoder {
     let rt = match t.clone() {
       Type::_ClosureCapture => {
         RegisteredType::Array(StorageType::Val(ValType::Ref(RefType::ANYREF)))
-      },
+      }
       Type::Any => panic!(),
       Type::TypeVariable(_) => {
         return StorageType::Val(ValType::Ref(RefType::ANYREF));
-      },
+      }
       Type::Unit => RegisteredType::Struct(vec![]),
-      Type::Integer => {
-        RegisteredType::Struct(vec![StorageType::Val(ValType::I64)])
-      },
-      Type::Real => {
-        RegisteredType::Struct(vec![StorageType::Val(ValType::F64)])
-      },
-      Type::Boolean => {
-        RegisteredType::Struct(vec![StorageType::Val(ValType::I32)])
-      },
+      Type::Integer => RegisteredType::Struct(vec![StorageType::Val(ValType::I64)]),
+      Type::Real => RegisteredType::Struct(vec![StorageType::Val(ValType::F64)]),
+      Type::Boolean => RegisteredType::Struct(vec![StorageType::Val(ValType::I32)]),
       Type::String => RegisteredType::Array(StorageType::I8),
-      Type::Glyph => {
-        RegisteredType::Struct(vec![StorageType::Val(ValType::I32)])
-      },
+      Type::Glyph => RegisteredType::Struct(vec![StorageType::Val(ValType::I32)]),
       Type::Struct { member_types, .. } => RegisteredType::Struct(
         member_types
           .into_iter()
@@ -314,10 +338,9 @@ impl ModuleEncoder {
       ),
       Type::Function(_, _) if !raw => {
         let raw_func_type = StorageType::Val(ValType::I32);
-        let capture_type =
-          self.get_storage_type(&Type::_ClosureCapture.into(), false);
+        let capture_type = self.get_storage_type(&Type::_ClosureCapture.into(), false);
         RegisteredType::Struct(vec![raw_func_type, capture_type])
-      },
+      }
       Type::Function(a, b) => RegisteredType::Function(FuncType::new(
         [
           self.get_valtype(&a, false),
@@ -338,7 +361,7 @@ impl ModuleEncoder {
       Type::Weak(wk) => {
         let r = wk.upgrade().unwrap();
         return self.get_storage_type(&r, raw);
-      },
+      }
 
       Type::Type => todo!(),
     };

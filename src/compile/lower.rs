@@ -2,29 +2,25 @@ use crate::std_hc::BUILTIN_MODULE_NAME;
 
 use super::*;
 
-fn cast(state: &mut ModuleEncoder, f: u32, to: &TypeRef) {
+fn cast(state: &mut ModuleEncoder, to: impl Into<TypeRef>) -> Instruction<'static> {
+  let to = to.into();
   if let Type::TypeVariable(_) = (*to.borrow()).clone() {
-    cast_any(state, f);
+    cast_any()
   } else {
-    let type_id = state.get_type_id(to, false);
-    state.push(f, Instruction::RefCastNonNull(HeapType::Concrete(type_id)));
+    let type_id = state.get_asm_type(to).id;
+    Instruction::RefCastNonNull(HeapType::Concrete(type_id))
   }
 }
 
-fn cast_any(state: &mut ModuleEncoder, f: u32) {
-  state.push(f, Instruction::RefCastNonNull(HeapType::ANY));
+fn cast_any() -> Instruction<'static> {
+  Instruction::RefCastNonNull(HeapType::ANY)
 }
 
-pub fn lower(
-  nodes: &mut IrModule,
-  ptr: IrPtr,
-  state: &mut ModuleEncoder,
-  f: u32,
-) {
+pub fn lower(nodes: &mut IrModule, ptr: IrPtr, state: &mut ModuleEncoder, f: u32) {
   macro_rules! asm {
     ($($e:expr);*;) => {
       let __temp = [$($e,)*];
-      state.func(f).extend(&__temp);
+      state.func_mut(f).extend(&__temp);
     };
   }
 
@@ -38,43 +34,42 @@ pub fn lower(
       in_,
     } => {
       let local = state
-        .func(f)
+        .func_mut(f)
         .new_local(assignee, ValType::Ref(RefType::ANYREF));
       lower(nodes, value, state, f);
-      state.push(f, LocalSet(local));
+      asm! { LocalSet(local); }
       if let Some(in_) = in_ {
         lower(nodes, in_, state, f);
       } else {
-        state.push_constant(f, ConstValue::Unit);
+        asm! { state.make_struct(Type::Unit); }
       }
-    },
+    }
     h::Immediate(const_value) => state.push_constant(f, const_value),
     h::Identifier(mangle) => {
       state.get_symbol(f, &mangle);
-      cast(state, f, &this_t);
-    },
+      asm! { cast(state, this_t); }
+    }
     h::Tuple(items)
     | h::StructLiteral {
       field_values: items,
       ..
     } => {
       items.into_iter().for_each(|i| lower(nodes, i, state, f));
-      let tid = state.get_type_id(&this_t, false);
-      state.push(f, StructNew(tid));
-    },
+      asm! { state.make_struct(this_t); }
+    }
     h::Field { of, index } => {
       lower(nodes, of, state, f);
-      let struct_t = &nodes[of].type_;
-      let field_id = struct_t.borrow().field_index(&index).unwrap();
-      let struct_t = state.get_type_id(&struct_t, false);
-      state.push(
-        f,
+      asm! {
         StructGet {
-          struct_type_index: struct_t,
-          field_index: field_id,
-        },
-      )
-    },
+          struct_type_index: state
+            .get_asm_type(nodes[of].type_.clone()).id,
+          field_index: nodes[of].type_
+            .borrow()
+            .field_index(&index)
+            .unwrap(),
+        };
+      }
+    }
     h::Binary {
       op: BinaryOp::Semicolon,
       left,
@@ -83,132 +78,90 @@ pub fn lower(
       lower(nodes, left, state, f);
       state.push(f, Drop);
       lower(nodes, right, state, f);
-    },
+    }
     h::Binary { op, left, right } => {
+      let operator_type = state.get_asm_type(op.get_type());
+      let operator_temporary = state.func_mut(f).new_temporary(operator_type.val);
+      let curried_operator_type = state.get_asm_type(op.get_curry_type());
+      let curried_operator_temporary = state.func_mut(f).new_temporary(curried_operator_type.val);
       lower(nodes, left, state, f);
-      // Stack: Arg1
       state.get_symbol(f, &Path::from(BUILTIN_MODULE_NAME).child(op));
-      // Stack: Arg1 Closure
-      let op_func_type = state.get_valtype(&op.get_type(), false);
-      let temporary = state.func(f).new_temporary(op_func_type);
-      state.push(f, LocalTee(temporary));
-      // Stack: Arg1 Closure
-      let op_func_type_id = state.get_type_id(&op.get_type(), false);
-      state.push(
-        f,
+      asm! {
+        LocalTee(operator_temporary);
         StructGet {
-          struct_type_index: op_func_type_id,
+          struct_type_index: operator_type.id,
           field_index: 1,
-        },
-      );
-      // Stack: Arg1 Capture
-      state.push(f, LocalGet(temporary));
-      state.push(
-        f,
+        };
+        LocalGet(operator_temporary);
         StructGet {
-          struct_type_index: op_func_type_id,
+          struct_type_index: operator_type.id,
           field_index: 0,
-        },
-      );
-      // Stack: Arg1 Capture FunctionPtr
-      let raw_op_func_type = state.get_type_id(&op.get_type(), true);
-      state.push(
-        f,
+        };
         CallIndirect {
-          type_index: raw_op_func_type,
+          type_index: operator_type.raw_id,
           table_index: 0,
-        },
-      );
-      // Stack: Closure
-      let closure_type = op.get_curry_type();
-      let closure_valtype = state.get_valtype(&closure_type, false);
-      let temporary = state.func(f).new_temporary(closure_valtype);
-      state.push(f, LocalSet(temporary));
-      // Stack: (empty)
+        };
+        LocalSet(curried_operator_temporary);
+      }
       lower(nodes, right, state, f);
-      // Stack: Arg2
-      state.push(f, LocalGet(temporary));
-      let closure_type_id = state.get_type_id(&closure_type, false);
-      // Stack: Arg2 Closure
-      state.push(
-        f,
+      asm! {
+        LocalGet(curried_operator_temporary);
         StructGet {
-          struct_type_index: closure_type_id,
+          struct_type_index: curried_operator_type.id,
           field_index: 1,
-        },
-      );
-      // Stack: Arg2 Capture
-      state.push(f, LocalGet(temporary));
-      // Stack: Arg2 Capture Closure
-      state.push(
-        f,
+        };
+        LocalGet(curried_operator_temporary);
         StructGet {
-          struct_type_index: closure_type_id,
+          struct_type_index: curried_operator_type.id,
           field_index: 0,
-        },
-      );
-      // Stack: Arg2 Capture Function
-      let raw_function_type = state.get_type_id(&closure_type, true);
-      state.push(
-        f,
+        };
         CallIndirect {
-          type_index: raw_function_type,
+          type_index: curried_operator_type.raw_id,
           table_index: 0,
-        },
-      );
-    },
+        };
+      }
+    }
     h::Unary { op, child } => {
       lower(nodes, child, state, f);
+      let operator_type = state.get_asm_type(op.get_type());
+      let temporary = state.func_mut(f).new_temporary(operator_type.val);
       state.get_symbol(f, &Path::from(BUILTIN_MODULE_NAME).child(op));
-      let op_func_type = state.get_valtype(&op.get_type(), false);
-      let temporary = state.func(f).new_temporary(op_func_type);
-      state.push(f, LocalTee(temporary));
-      // Stack: Arg1 Closure
-      let op_func_type_id = state.get_type_id(&op.get_type(), false);
-      state.push(
-        f,
+      asm! {
+        LocalTee(temporary);
         StructGet {
-          struct_type_index: op_func_type_id,
+          struct_type_index: operator_type.id,
           field_index: 1,
-        },
-      );
-      // Stack: Arg1 Capture
-      state.push(f, LocalGet(temporary));
-      state.push(
-        f,
+        };
+        LocalGet(temporary);
         StructGet {
-          struct_type_index: op_func_type_id,
+          struct_type_index: operator_type.id,
           field_index: 0,
-        },
-      );
-      // Stack: Arg1 Capture FunctionPtr
-      let raw_op_func_type = state.get_type_id(&op.get_type(), true);
-      state.push(
-        f,
+        };
         CallIndirect {
-          type_index: raw_op_func_type,
+          type_index: operator_type.raw_id,
           table_index: 0,
-        },
-      );
-    },
+        };
+      };
+    }
     h::If {
       predicate,
       then,
       else_,
     } => {
       lower(nodes, predicate, state, f);
-      state.unwrap_primitive(f, &Type::Boolean.into());
-      let block_type = BlockType::Result(state.get_valtype(&this_t, false));
-      state.push(f, If(block_type));
+      asm! {
+        state.make_unwrap_primitive(Type::Boolean);
+        If(BlockType::Result(state.get_valtype(&this_t, false)));
+      }
       lower(nodes, then, state, f);
-      state.push(f, Else);
+      asm! { Else; }
       if let Some(else_) = else_ {
         lower(nodes, else_, state, f);
       } else {
-        state.push_constant(f, ConstValue::Unit);
+        asm! { state.make_struct(Type::Unit); }
       }
-      state.push(f, End);
-    },
+      asm! { End; }
+    }
     h::FunctionDef {
       parameter_name,
       body,
@@ -217,23 +170,25 @@ pub fn lower(
       ..
     } => {
       let new_func = state.new_function(
-        &this_t,
+        this_t.clone(),
         parameter_name.unwrap_or("unit".into()),
         captures.clone(),
         capture_types.clone(),
       );
       lower(nodes, body, state, new_func);
-      state.push(f, I32Const(new_func as i32));
+      asm! { I32Const(new_func as i32); }
       // Push all captures
       for c in &captures {
-        state.func(f).get_local(c);
-        cast_any(state, f);
+        asm! {
+          state.get_local(f, c.clone());
+          cast_any();
+        }
       }
       asm! {
-        state.make_new_capture(captures.len() as u32);
-        state.make_new_struct(&this_t);
+        state.make_capture(captures.len() as u32);
+        state.make_struct(this_t);
       }
-    },
+    }
     h::RecursiveDeclaration {
       assignee,
       parameter_name,
@@ -246,73 +201,67 @@ pub fn lower(
     } => {
       // <Copied from FunctionDef>
       let new_func = state.new_function(
-        &this_t,
+        this_t,
         parameter_name.unwrap_or("unit".into()),
         captures.clone(),
         capture_types.clone(),
       );
       lower(nodes, body, state, new_func);
-      state.push(f, I32Const(new_func as i32));
+      asm! { I32Const(new_func as i32); }
       // Push all captures
       for c in &captures {
-        state.func(f).get_local(c);
-        cast_any(state, f);
+        asm! {
+          state.get_local(f, c.clone());
+          cast_any();
+        }
       }
-      state.new_capture(f, captures.len() as u32);
-      state.new_struct(f, &function_type);
+      let local = state
+        .func_mut(f)
+        .new_local(assignee, ValType::Ref(RefType::ANYREF));
+      asm! {
+       state.make_capture(captures.len() as u32);
+       state.make_struct(function_type);
       // </Copied from FunctionDef>
       // <Copied from Declaration>
-      let local = state
-        .func(f)
-        .new_local(assignee, ValType::Ref(RefType::ANYREF));
-      state.push(f, LocalSet(local));
+       LocalSet(local);
+      }
       if let Some(in_) = in_ {
         lower(nodes, in_, state, f);
       } else {
-        state.push_constant(f, ConstValue::Unit);
+        asm! { state.make_struct(Type::Unit); }
       }
       // </Copied from Declaration>
-    },
+    }
     h::FunctionCall {
       callee,
       argument: arguments,
       ..
     } => {
-      let callee_type = state.get_valtype(&nodes[callee].type_, false);
-      let callee_type_id =
-        state.get_type_id(&nodes[callee].type_.clone(), false);
-      let callee_raw_type_id = state.get_type_id(&nodes[callee].type_, true);
-      let function_temporary = state.func(f).new_temporary(callee_type);
+      let callee_type = state.get_asm_type(nodes[callee].type_.clone());
+      let function_temporary = state.func_mut(f).new_temporary(callee_type.val);
       lower(nodes, callee, state, f);
-      state.push(f, LocalSet(function_temporary));
+      asm! { LocalSet(function_temporary); }
       lower(nodes, arguments, state, f);
-      state.push(f, LocalGet(function_temporary));
-      state.push(
-        f,
+      asm! {
+        LocalGet(function_temporary);
         StructGet {
-          struct_type_index: callee_type_id,
+          struct_type_index: callee_type.id,
           field_index: 1,
-        },
-      );
-      state.push(f, LocalGet(function_temporary));
-      state.push(
-        f,
+        };
+        LocalGet(function_temporary);
         StructGet {
-          struct_type_index: callee_type_id,
+          struct_type_index: callee_type.id,
           field_index: 0,
-        },
-      );
-      state.push(
-        f,
+        };
         CallIndirect {
-          type_index: callee_raw_type_id,
+          type_index: callee_type.raw_id,
           table_index: 0,
-        },
-      );
-      cast(state, f, &this_t);
-    },
+        };
+        cast(state, this_t);
+      }
+    }
     h::ImportedSymbol(mangle, _) => {
       state.get_symbol(f, &mangle);
-    },
+    }
   }
 }

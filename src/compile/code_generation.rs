@@ -1,5 +1,3 @@
-use crate::std_hc::BUILTIN_MODULE_NAME;
-
 use super::*;
 
 #[allow(dead_code)]
@@ -31,50 +29,38 @@ impl ModuleEncoder {
   }
 
   pub fn get_symbol(&mut self, current_function: u32, mangle: &Path) {
-    if self.func(current_function).has_local(mangle) {
-      self.func(current_function).get_local(mangle);
+    if self.func_mut(current_function).has_local(mangle) {
+      let i = self.get_local(current_function, mangle.clone());
+      self.push(current_function, i);
     } else if let Some(global_id) = self.global_map.get(mangle) {
       self.push(current_function, GlobalGet(*global_id));
       self.push(current_function, RefAsNonNull);
     }
   }
 
-  pub fn make_new_array(
-    &mut self,
-    type_: &TypeRef,
-    size: u32,
-  ) -> Instruction<'static> {
-    let array_t = self.get_type_id(type_, false);
+  pub fn make_new_array(&mut self, type_: impl Into<TypeRef>, size: u32) -> Instruction<'static> {
     Instruction::ArrayNewFixed {
-      array_type_index: array_t,
+      array_type_index: self.get_asm_type(type_).id,
       array_size: size,
     }
   }
 
-  pub fn make_new_capture(&mut self, size: u32) -> Instruction<'static> {
-    let array_t = self.get_type_id(&Type::_ClosureCapture.into(), false);
+  pub fn make_capture(&mut self, size: u32) -> Instruction<'static> {
     Instruction::ArrayNewFixed {
-      array_type_index: array_t,
+      array_type_index: self.get_asm_type(Type::_ClosureCapture).id,
       array_size: size,
     }
   }
 
-  pub fn make_new_struct(&mut self, type_: &TypeRef) -> Instruction<'static> {
-    let type_id = self.get_type_id(type_, false);
-    Instruction::StructNew(type_id)
+  pub fn make_struct(&mut self, type_: impl Into<TypeRef>) -> Instruction<'static> {
+    Instruction::StructNew(self.get_asm_type(type_).id)
   }
 
-  pub fn make_unwrap_primitive(
-    &mut self,
-    type_: &TypeRef,
-  ) -> Instruction<'static> {
-    let type_id = self.get_type_id(type_, false);
+  pub fn make_unwrap_primitive(&mut self, type_: impl Into<TypeRef>) -> Instruction<'static> {
+    let type_: TypeRef = type_.into();
+    let type_id = self.get_asm_type(type_.clone()).id;
     match *type_.borrow() {
-      Type::Integer
-      | Type::Real
-      | Type::Boolean
-      | Type::String
-      | Type::Glyph => StructGet {
+      Type::Integer | Type::Real | Type::Boolean | Type::String | Type::Glyph => StructGet {
         struct_type_index: type_id,
         field_index: 0,
       },
@@ -82,8 +68,8 @@ impl ModuleEncoder {
     }
   }
 
-  pub fn new_array(&mut self, function: u32, type_: &TypeRef, size: u32) {
-    let array_t = self.get_type_id(type_, false);
+  pub fn new_array(&mut self, function: u32, type_: impl Into<TypeRef>, size: u32) {
+    let array_t = self.get_asm_type(type_).id;
     self.push(
       function,
       Instruction::ArrayNewFixed {
@@ -94,30 +80,36 @@ impl ModuleEncoder {
   }
 
   pub fn new_capture(&mut self, function: u32, size: u32) {
-    self.new_array(function, &Type::_ClosureCapture.into(), size);
+    self.new_array(function, Type::_ClosureCapture, size);
   }
 
-  pub fn new_struct(&mut self, function: u32, type_: &TypeRef) {
-    let type_id = self.get_type_id(type_, false);
+  pub fn new_struct(&mut self, function: u32, type_: impl Into<TypeRef>) {
+    let type_id = self.get_asm_type(type_).id;
     self.push(function, Instruction::StructNew(type_id));
   }
 
-  pub fn func(&mut self, index: u32) -> &mut FunctionEncoder {
-    let FunctionKind::Native(index) = self.elements_section[index as usize]
-    else {
+  pub fn func_mut(&mut self, index: u32) -> &mut FunctionEncoder {
+    let FunctionKind::Native(index) = self.elements_section[index as usize] else {
       panic!()
     };
     &mut self.code_section[index as usize]
+  }
+
+  pub fn func(&self, index: u32) -> &FunctionEncoder {
+    let FunctionKind::Native(index) = self.elements_section[index as usize] else {
+      panic!()
+    };
+    &self.code_section[index as usize]
   }
 
   pub fn call_raw_function(
     &mut self,
     function: u32,
     callee_id: u32,
-    callee_type: &TypeRef,
+    callee_type: impl Into<TypeRef>,
   ) {
     self.push(function, I32Const(callee_id as i32));
-    let callee_type = self.get_type_id(callee_type, true);
+    let callee_type = self.get_asm_type(callee_type).raw_id;
     self.push(
       function,
       CallIndirect {
@@ -130,30 +122,29 @@ impl ModuleEncoder {
   pub fn push_constant(&mut self, function: u32, c: ConstValue) {
     match c {
       ConstValue::Unit => {
-        let tid = self.get_type_id(&Type::Unit.into(), false);
+        let tid = self.get_asm_type(Type::Unit).id;
         self.push(function, StructNew(tid));
-      },
+      }
       ConstValue::Integer(i) => {
         self.push(function, I64Const(i));
-        let tid = self.get_type_id(&Type::Integer.into(), false);
+        let tid = self.get_asm_type(Type::Integer).id;
         self.push(function, StructNew(tid));
-      },
+      }
       ConstValue::Real(r) => {
         self.push(function, F64Const((r).into()));
-        let tid = self.get_type_id(&Type::Real.into(), false);
+        let tid = self.get_asm_type(Type::Real).id;
         self.push(function, StructNew(tid));
-      },
+      }
       ConstValue::Boolean(b) => {
         self.push(function, I32Const(if b { 1 } else { 0 }));
-        let tid = self.get_type_id(&Type::Boolean.into(), false);
+        let tid = self.get_asm_type(Type::Boolean).id;
         self.push(function, StructNew(tid));
-      },
+      }
       ConstValue::String(s) => {
         for b in s.bytes() {
           self.push(function, I32Const(b as i32));
         }
-        let array_type_index =
-          self.get_type_id(&Type::String.into(), false) as u32;
+        let array_type_index = self.get_asm_type(Type::String).id as u32;
         self.push(
           function,
           ArrayNewFixed {
@@ -161,23 +152,20 @@ impl ModuleEncoder {
             array_size: s.len() as u32,
           },
         );
-      },
+      }
       ConstValue::Glyph(g) => {
         self.push(function, I32Const(g as i32));
-        let tid = self.get_type_id(&Type::Glyph.into(), false);
+        let tid = self.get_asm_type(Type::Glyph).id;
         self.push(function, StructNew(tid));
-      },
+      }
     }
   }
 
-  pub fn unwrap_primitive(&mut self, function: u32, type_: &TypeRef) {
-    let type_id = self.get_type_id(type_, false);
+  pub fn unwrap_primitive(&mut self, function: u32, type_: impl Into<TypeRef>) {
+    let type_ = type_.into();
+    let type_id = self.get_asm_type(type_.clone()).id;
     match *type_.borrow() {
-      Type::Integer
-      | Type::Real
-      | Type::Boolean
-      | Type::String
-      | Type::Glyph => {
+      Type::Integer | Type::Real | Type::Boolean | Type::String | Type::Glyph => {
         self.push(
           function,
           StructGet {
@@ -185,7 +173,7 @@ impl ModuleEncoder {
             field_index: 0,
           },
         );
-      },
+      }
       _ => todo!(),
     }
   }

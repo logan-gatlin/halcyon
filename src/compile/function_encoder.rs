@@ -14,10 +14,10 @@ impl FunctionEncoder {
     (self.parameter.is_some() as u32) + (self.closure_capture as u32)
   }
 
-  pub fn new_local(&mut self, name: Path, type_: ValType) -> u32 {
+  pub fn new_local(&mut self, name: impl Into<Path>, type_: ValType) -> u32 {
     let id = self.locals.len() as u32 + self.local_offset();
     self.locals.push(type_);
-    self.local_names.insert(name, id);
+    self.local_names.insert(name.into(), id);
     id
   }
 
@@ -27,11 +27,6 @@ impl FunctionEncoder {
 
   pub fn has_local(&self, mangle: &Path) -> bool {
     self.local_names.contains_key(&mangle)
-  }
-
-  pub fn get_local(&mut self, mangle: &Path) {
-    let local = self.local_names.get(&mangle).unwrap().clone();
-    self.push(Instruction::LocalGet(local));
   }
 
   pub fn new_temporary(&mut self, type_: ValType) -> u32 {
@@ -70,6 +65,7 @@ impl FunctionEncoder {
   }
 }
 
+#[allow(dead_code)]
 impl ModuleEncoder {
   pub fn new_main_function(&mut self) -> u32 {
     self.function_section.push(self.type_section.len() as u32);
@@ -89,21 +85,40 @@ impl ModuleEncoder {
     element_id
   }
 
+  pub fn get_local(&self, f: u32, local: impl Into<Path>) -> Instruction<'static> {
+    let local = self.func(f).local_names.get(&local.into()).unwrap().clone();
+    Instruction::LocalGet(local)
+  }
+
+  pub fn new_local(&mut self, f: u32, name: impl Into<Path>, t: impl Into<TypeRef>) -> u32 {
+    let t = self.get_asm_type(t);
+    self.func_mut(f).new_local(name, t.val)
+  }
+
+  pub fn new_local_val(&mut self, f: u32, name: impl Into<Path>, t: ValType) -> u32 {
+    self.func_mut(f).new_local(name, t)
+  }
+
+  pub fn new_local_any(&mut self, f: u32, name: impl Into<Path>) -> u32 {
+    self
+      .func_mut(f)
+      .new_local(name, ValType::Ref(RefType::ANYREF))
+  }
+
   pub fn new_function(
     &mut self,
-    type_: &TypeRef,
+    type_: impl Into<TypeRef>,
     parameter_name: Path,
     capture_names: Vec<Path>,
     capture_types: Vec<TypeRef>,
   ) -> u32 {
+    let type_ = type_.into();
     let Type::Function(parameter_type, _) = (*type_.borrow()).clone() else {
       panic!()
     };
-    let parameter_type = self.get_valtype(&parameter_type, false);
-    let closure_type_id =
-      self.get_type_id(&Type::_ClosureCapture.into(), false);
-    let capture_types =
-      capture_types.iter().map(|t| self.get_valtype(t, false));
+    let parameter_type = self.get_asm_type(parameter_type).val;
+    let closure_type_id = self.get_asm_type(Type::_ClosureCapture).id;
+    let capture_types = capture_types.iter().map(|t| self.get_valtype(t, false));
     let mut code = FunctionEncoder {
       local_names: [(parameter_name, 0)].into_iter().collect(),
       parameter: Some(parameter_type),
@@ -127,7 +142,7 @@ impl ModuleEncoder {
         code.push(i::RefCastNonNull(heap_type));
         code.push(i::LocalSet(local));
       });
-    let type_id = self.get_type_id(type_, true);
+    let type_id = self.get_asm_type(type_).raw_id;
     self.function_section.push(type_id);
     let code_id = self.code_section.len() as u32;
     self.code_section.push(code);
@@ -137,77 +152,73 @@ impl ModuleEncoder {
   }
 
   pub fn push(&mut self, function: u32, instruction: Instruction<'static>) {
-    self.func(function).push(instruction);
+    self.func_mut(function).push(instruction);
   }
 
   pub fn new_curried_function(
     &mut self,
-    parameter_names: Vec<Path>,
-    parameter_types: Vec<TypeRef>,
+    mut parameter_names: Vec<Path>,
+    mut parameter_types: Vec<TypeRef>,
     return_type: TypeRef,
   ) -> (u32, u32) {
-    let mut capture_names_list = vec![];
-    let mut capture_types_list = vec![];
-    parameter_names
-      .clone()
-      .into_iter()
-      .zip(parameter_types.clone())
-      .fold(
-        (vec![], vec![]),
-        |(mut name_list, mut type_list), (name, type_)| {
-          capture_names_list.push(name_list.clone());
-          capture_types_list.push(type_list.clone());
-          name_list.push(name);
-          type_list.push(type_);
-          (name_list, type_list)
-        },
-      );
+    let ftype = Type::curry(&parameter_types, return_type.clone());
+    parameter_names.reverse();
+    parameter_types.reverse();
     let mut tail = 0;
-    let head =
-      parameter_names
-        .into_iter()
-        .zip(parameter_types)
-        .zip(capture_names_list)
-        .zip(capture_types_list)
-        .rev()
-        .fold(
-          (Option::<u32>::None, return_type),
-          |(last_function, return_type),
-           (
-            ((parameter_name, parameter_type), capture_names),
-            capture_types,
-          )| {
-            let new_return_type =
-              Type::func(parameter_type, return_type.clone());
-            let next_function = self.new_function(
-              &new_return_type,
-              parameter_name.clone(),
-              capture_names.clone(),
-              capture_types.clone(),
-            );
-            if let Some(last_function) = last_function {
-              use Instruction as i;
-              self
-                .func(next_function)
-                .push(i::I32Const(last_function as i32));
-              self.func(next_function).get_local(&parameter_name);
-              for capture in &capture_names {
-                self.func(last_function).get_local(capture);
-              }
-              let capture_array_type =
-                self.get_type_id(&Type::_ClosureCapture.into(), false);
-              self.func(next_function).push(i::ArrayNewFixed {
-                array_type_index: capture_array_type,
-                array_size: (capture_names.len() + 1) as u32,
-              });
-              let function_type = self.get_type_id(&return_type, false);
-              self.func(next_function).push(i::StructNew(function_type));
-            } else {
-              tail = next_function;
-            }
-            (Some(next_function), new_return_type)
-          },
-        );
-    (head.0.unwrap(), tail)
+    let head = self.curry(
+      parameter_names,
+      parameter_types,
+      vec![],
+      vec![],
+      return_type,
+      ftype,
+      &mut tail,
+    );
+    (head, tail)
+  }
+
+  fn curry(
+    &mut self,
+    mut parameter_names: Vec<Path>,
+    mut parameter_types: Vec<TypeRef>,
+    mut capture_names: Vec<Path>,
+    mut capture_types: Vec<TypeRef>,
+    return_type: TypeRef,
+    ftype: TypeRef,
+    tail: &mut u32,
+  ) -> u32 {
+    let name = parameter_names.pop().unwrap();
+    let type_ = parameter_types.pop().unwrap();
+    let Type::Function(_, r) = ftype.borrow().clone() else {
+      unreachable! {}
+    };
+    let f = self.new_function(
+      ftype.clone(),
+      name.clone(),
+      capture_names.clone(),
+      capture_types.clone(),
+    );
+    *tail = f;
+    let new_ftype = r;
+    capture_names.push(name);
+    capture_types.push(type_.clone());
+    if parameter_names.len() != 0 {
+      let tail = self.curry(
+        parameter_names,
+        parameter_types,
+        capture_names.clone(),
+        capture_types.clone(),
+        return_type,
+        new_ftype,
+        tail,
+      );
+      self.push(f, I32Const(tail as i32));
+      for (name, _type_) in capture_names.iter().zip(capture_types.iter()) {
+        self.push(f, self.get_local(f, name.clone()));
+      }
+      self.new_capture(f, capture_names.len() as u32);
+      self.new_struct(f, ftype);
+    }
+    f
   }
 }
