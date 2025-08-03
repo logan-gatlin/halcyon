@@ -1,6 +1,6 @@
 use crate::{
-  ir::{Type, TypeRef},
-  token::*,
+    ir::{Type, TypeRef},
+    token::*,
 };
 
 pub type Precedence = usize;
@@ -91,89 +91,93 @@ op! {
 }
 
 impl BinaryOp {
-  pub const POLYMORPHIC: [Self; 6] = [
-    Self::DoubleEqual,
-    Self::BangEqual,
-    Self::LessEqual,
-    Self::GreaterEqual,
-    Self::Less,
-    Self::Greater,
-  ];
+    pub const POLYMORPHIC: [Self; 6] = [
+        Self::DoubleEqual,
+        Self::BangEqual,
+        Self::LessEqual,
+        Self::GreaterEqual,
+        Self::Less,
+        Self::Greater,
+    ];
 
-  pub fn get_curry_type(&self) -> TypeRef {
-    let Type::Function(_, a) = self.get_type().borrow().clone() else {
-      panic!()
-    };
-    let Type::Function(a, b) = a.borrow().clone() else {
-      panic!()
-    };
-    Type::func(a, b)
-  }
-
-  pub fn parameter_type(&self) -> TypeRef {
-    match self {
-      BinaryOp::Minus | BinaryOp::Star | BinaryOp::Slash | BinaryOp::Percent | BinaryOp::Plus => {
-        Type::Integer.into()
-      }
-      BinaryOp::PlusDot | BinaryOp::StarDot | BinaryOp::SlashDot | BinaryOp::MinusDot => {
-        Type::Real.into()
-      }
-      BinaryOp::And | BinaryOp::Xor | BinaryOp::Or => Type::Boolean.into(),
-      BinaryOp::DoubleEqual
-      | BinaryOp::BangEqual
-      | BinaryOp::Less
-      | BinaryOp::LessEqual
-      | BinaryOp::Greater
-      | BinaryOp::GreaterEqual => Type::TypeVariable(0).into(),
-      BinaryOp::Apply | BinaryOp::Semicolon => panic!(),
+    pub fn get_curry_type(&self) -> TypeRef {
+        let Type::Function(_, a) = self.get_type().borrow().clone() else {
+            panic!()
+        };
+        let Type::Function(a, b) = a.borrow().clone() else {
+            panic!()
+        };
+        Type::func(a, b)
     }
-  }
 
-  pub fn return_type(&self) -> TypeRef {
-    match self {
-      BinaryOp::Minus | BinaryOp::Star | BinaryOp::Slash | BinaryOp::Percent | BinaryOp::Plus => {
-        Type::Integer.into()
-      }
-      BinaryOp::PlusDot | BinaryOp::StarDot | BinaryOp::SlashDot | BinaryOp::MinusDot => {
-        Type::Real.into()
-      }
-      BinaryOp::DoubleEqual
-      | BinaryOp::BangEqual
-      | BinaryOp::Less
-      | BinaryOp::LessEqual
-      | BinaryOp::Greater
-      | BinaryOp::GreaterEqual
-      | BinaryOp::And
-      | BinaryOp::Xor
-      | BinaryOp::Or => Type::Boolean.into(),
-      BinaryOp::Apply | BinaryOp::Semicolon => panic!(),
+    pub fn parameter_type(&self) -> TypeRef {
+        match self {
+            BinaryOp::Minus
+            | BinaryOp::Star
+            | BinaryOp::Slash
+            | BinaryOp::Percent
+            | BinaryOp::Plus => Type::Integer.into(),
+            BinaryOp::PlusDot | BinaryOp::StarDot | BinaryOp::SlashDot | BinaryOp::MinusDot => {
+                Type::Real.into()
+            }
+            BinaryOp::And | BinaryOp::Xor | BinaryOp::Or => Type::Boolean.into(),
+            BinaryOp::DoubleEqual
+            | BinaryOp::BangEqual
+            | BinaryOp::Less
+            | BinaryOp::LessEqual
+            | BinaryOp::Greater
+            | BinaryOp::GreaterEqual => Type::TypeVariable(0).into(),
+            BinaryOp::Apply | BinaryOp::Semicolon => panic!(),
+        }
     }
-  }
 
-  pub fn get_type(&self) -> TypeRef {
-    use BinaryOp::*;
-    use Type as t;
-    match self {
-      Semicolon => t::func(
-        Type::TypeVariable(0),
-        Type::func(Type::TypeVariable(1), Type::TypeVariable(1)),
-      ),
-      Apply => todo!(),
-      op => Type::curry(
-        &[op.parameter_type(), op.parameter_type()],
-        op.return_type(),
-      ),
+    pub fn return_type(&self) -> TypeRef {
+        match self {
+            BinaryOp::Minus
+            | BinaryOp::Star
+            | BinaryOp::Slash
+            | BinaryOp::Percent
+            | BinaryOp::Plus => Type::Integer.into(),
+            BinaryOp::PlusDot | BinaryOp::StarDot | BinaryOp::SlashDot | BinaryOp::MinusDot => {
+                Type::Real.into()
+            }
+            BinaryOp::DoubleEqual
+            | BinaryOp::BangEqual
+            | BinaryOp::Less
+            | BinaryOp::LessEqual
+            | BinaryOp::Greater
+            | BinaryOp::GreaterEqual
+            | BinaryOp::And
+            | BinaryOp::Xor
+            | BinaryOp::Or => Type::Boolean.into(),
+            BinaryOp::Apply | BinaryOp::Semicolon => panic!(),
+        }
     }
-  }
+
+    pub fn get_type(&self) -> TypeRef {
+        use BinaryOp::*;
+        use Type as t;
+        match self {
+            Semicolon => t::func(
+                Type::TypeVariable(0),
+                Type::func(Type::TypeVariable(1), Type::TypeVariable(1)),
+            ),
+            Apply => todo!(),
+            op => Type::curry(
+                &[op.parameter_type(), op.parameter_type()],
+                op.return_type(),
+            ),
+        }
+    }
 }
 
 impl UnaryOp {
-  pub fn get_type(&self) -> TypeRef {
-    use UnaryOp::*;
-    match self {
-      Minus => Type::func(Type::Integer, Type::Integer),
-      MinusDot => Type::func(Type::Real, Type::Real),
-      Not => Type::func(Type::Boolean, Type::Boolean),
+    pub fn get_type(&self) -> TypeRef {
+        use UnaryOp::*;
+        match self {
+            Minus => Type::func(Type::Integer, Type::Integer),
+            MinusDot => Type::func(Type::Real, Type::Real),
+            Not => Type::func(Type::Boolean, Type::Boolean),
+        }
     }
-  }
 }

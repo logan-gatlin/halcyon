@@ -40,12 +40,9 @@
   (type $"(raw) (unit -> '1)" (;38;) (func (param (ref $unit) (ref $capture)) (result anyref)))
   (type $"(boolean -> unit)" (;39;) (struct (field i32) (field (ref $capture))))
   (type $"(raw) (boolean -> unit)" (;40;) (func (param (ref $boolean) (ref $capture)) (result (ref $unit))))
-  (type $"({ specific_name: integer } -> integer)" (;41;) (struct (field i32) (field (ref $capture))))
-  (type $"{ specific_name: integer }" (;42;) (struct (field (ref $integer))))
-  (type $"(raw) ({ specific_name: integer } -> integer)" (;43;) (func (param (ref $"{ specific_name: integer }") (ref $capture)) (result (ref $integer))))
   (import "sys" "print_string" (func (;0;) (type 30)))
   (import "sys" "memory" (memory (;0;) 1))
-  (table (;0;) 53 53 funcref)
+  (table (;0;) 52 52 funcref)
   (global (;0;) (mut (ref null $"(integer -> integer)")) ref.null $"(integer -> integer)")
   (global (;1;) (mut (ref null $"(real -> real)")) ref.null $"(real -> real)")
   (global (;2;) (mut (ref null $"(boolean -> boolean)")) ref.null $"(boolean -> boolean)")
@@ -76,8 +73,49 @@
   (global (;27;) (mut (ref null $"(string -> integer)")) ref.null $"(string -> integer)")
   (global (;28;) (mut (ref null $"(string -> unit)")) ref.null $"(string -> unit)")
   (global (;29;) (mut (ref null $"(string -> (string -> string))")) ref.null $"(string -> (string -> string))")
-  (global (;30;) (mut (ref null $"({ specific_name: integer } -> integer)")) ref.null $"({ specific_name: integer } -> integer)")
+  (global (;30;) (mut (ref null $unit)) ref.null $unit)
   (global (;31;) (mut (ref null $unit)) ref.null $unit)
+  (global (;32;) (mut (ref null $unit)) ref.null $unit)
+  (global (;33;) (mut (ref null $unit)) ref.null $unit)
+  (global (;34;) (mut (ref null $unit)) ref.null $unit)
+  (global (;35;) (mut (ref null $unit)) ref.null $unit)
+  (global (;36;) (mut (ref null $unit)) ref.null $unit)
+  (global (;37;) (mut (ref null $unit)) ref.null $unit)
+  (global (;38;) (mut (ref null $unit)) ref.null $unit)
+  (global (;39;) (mut (ref null $unit)) ref.null $unit)
+  (global (;40;) (mut (ref null $unit)) ref.null $unit)
+  (global (;41;) (mut (ref null $unit)) ref.null $unit)
+  (global (;42;) (mut (ref null $unit)) ref.null $unit)
+  (global (;43;) (mut (ref null $unit)) ref.null $unit)
+  (global (;44;) (mut (ref null $unit)) ref.null $unit)
+  (global (;45;) (mut (ref null $unit)) ref.null $unit)
+  (global (;46;) (mut (ref null $unit)) ref.null $unit)
+  (global (;47;) (mut (ref null $unit)) ref.null $unit)
+  (global (;48;) (mut (ref null $unit)) ref.null $unit)
+  (global (;49;) (mut (ref null $unit)) ref.null $unit)
+  (global (;50;) (mut (ref null $unit)) ref.null $unit)
+  (global (;51;) (mut (ref null $unit)) ref.null $unit)
+  (global (;52;) (mut (ref null $unit)) ref.null $unit)
+  (global (;53;) (mut (ref null $unit)) ref.null $unit)
+  (global (;54;) (mut (ref null $unit)) ref.null $unit)
+  (global (;55;) (mut (ref null $unit)) ref.null $unit)
+  (global (;56;) (mut (ref null $unit)) ref.null $unit)
+  (global (;57;) (mut (ref null $unit)) ref.null $unit)
+  (global (;58;) (mut (ref null $unit)) ref.null $unit)
+  (global (;59;) (mut (ref null $unit)) ref.null $unit)
+  (global (;60;) (mut (ref null $unit)) ref.null $unit)
+  (global (;61;) (mut (ref null $unit)) ref.null $unit)
+  (global (;62;) (mut (ref null $unit)) ref.null $unit)
+  (global (;63;) (mut (ref null $unit)) ref.null $unit)
+  (global (;64;) (mut (ref null $unit)) ref.null $unit)
+  (global (;65;) (mut (ref null $unit)) ref.null $unit)
+  (global (;66;) (mut (ref null $unit)) ref.null $unit)
+  (global (;67;) (mut (ref null $unit)) ref.null $unit)
+  (global (;68;) (mut (ref null $unit)) ref.null $unit)
+  (global (;69;) (mut (ref null $unit)) ref.null $unit)
+  (global (;70;) (mut (ref null $unit)) ref.null $unit)
+  (global (;71;) (mut (ref null $unit)) ref.null $unit)
+  (global (;72;) (mut (ref null $unit)) ref.null $unit)
   (export "builtin:UnaryOp-" (global 0))
   (export "builtin:UnaryOp-." (global 1))
   (export "builtin:UnaryOpnot" (global 2))
@@ -108,12 +146,53 @@
   (export "std:string_length" (global 27))
   (export "std:string_print" (global 28))
   (export "std:string_concatenate" (global 29))
-  (export "TypeTest:tricky_inference" (global 30))
-  (export "TypeTest:a" (global 31))
+  (export "OpTest:_#0" (global 30))
+  (export "OpTest:_#1" (global 31))
+  (export "OpTest:_#2" (global 32))
+  (export "OpTest:_#3" (global 33))
+  (export "OpTest:_#4" (global 34))
+  (export "OpTest:_#5" (global 35))
+  (export "OpTest:_#6" (global 36))
+  (export "OpTest:_#7" (global 37))
+  (export "OpTest:_#8" (global 38))
+  (export "OpTest:_#9" (global 39))
+  (export "OpTest:_#10" (global 40))
+  (export "OpTest:_#11" (global 41))
+  (export "OpTest:_#12" (global 42))
+  (export "OpTest:_#13" (global 43))
+  (export "OpTest:_#14" (global 44))
+  (export "OpTest:_#15" (global 45))
+  (export "OpTest:_#16" (global 46))
+  (export "OpTest:_#17" (global 47))
+  (export "OpTest:_#18" (global 48))
+  (export "OpTest:_#19" (global 49))
+  (export "OpTest:_#20" (global 50))
+  (export "OpTest:_#21" (global 51))
+  (export "OpTest:_#22" (global 52))
+  (export "OpTest:_#23" (global 53))
+  (export "OpTest:_#24" (global 54))
+  (export "OpTest:_#25" (global 55))
+  (export "OpTest:_#26" (global 56))
+  (export "OpTest:_#27" (global 57))
+  (export "OpTest:_#28" (global 58))
+  (export "OpTest:_#29" (global 59))
+  (export "OpTest:_#30" (global 60))
+  (export "OpTest:_#31" (global 61))
+  (export "OpTest:_#32" (global 62))
+  (export "OpTest:_#33" (global 63))
+  (export "OpTest:_#34" (global 64))
+  (export "OpTest:_#35" (global 65))
+  (export "OpTest:_#36" (global 66))
+  (export "OpTest:_#37" (global 67))
+  (export "OpTest:_#38" (global 68))
+  (export "OpTest:_#39" (global 69))
+  (export "OpTest:_#40" (global 70))
+  (export "OpTest:_#41" (global 71))
+  (export "OpTest:_#42" (global 72))
   (start 1)
-  (elem (;0;) (i32.const 0) func 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 0 44 45 46 47 48 49 50 51 52)
+  (elem (;0;) (i32.const 0) func 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 0 44 45 46 47 48 49 50 51)
   (func (;1;) (type 0)
-    (local $0 (ref $"(boolean -> unit)")) (local (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(integer -> (integer -> integer))") (ref $"(integer -> integer)") (ref $"({ specific_name: integer } -> integer)"))
+    (local $0 (ref $"(boolean -> unit)")) (local (ref $"(boolean -> boolean)") (ref $"(boolean -> unit)") (ref $"(boolean -> boolean)") (ref $"(boolean -> boolean)") (ref $"(boolean -> boolean)") (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(integer -> integer)") (ref $"(integer -> (integer -> integer))") (ref $"(integer -> integer)") (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(real -> real)") (ref $"(real -> (real -> real))") (ref $"(real -> real)") (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(real -> real)") (ref $"(real -> (real -> real))") (ref $"(real -> real)") (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(integer -> (integer -> integer))") (ref $"(integer -> integer)") (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(integer -> (integer -> integer))") (ref $"(integer -> integer)") (ref $"(integer -> integer)") (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(integer -> (integer -> integer))") (ref $"(integer -> integer)") (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(integer -> (integer -> integer))") (ref $"(integer -> integer)") (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(integer -> (integer -> integer))") (ref $"(integer -> integer)") (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(real -> (real -> real))") (ref $"(real -> real)") (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(real -> (real -> real))") (ref $"(real -> real)") (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(real -> (real -> real))") (ref $"(real -> real)") (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(real -> (real -> real))") (ref $"(real -> real)") (ref $"(boolean -> unit)") (ref $"(boolean -> (boolean -> boolean))") (ref $"(boolean -> boolean)") (ref $"(boolean -> unit)") (ref $"(boolean -> (boolean -> boolean))") (ref $"(boolean -> boolean)") (ref $"(boolean -> unit)") (ref $"(boolean -> (boolean -> boolean))") (ref $"(boolean -> boolean)") (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)"))
     i32.const 1
     array.new_fixed $capture 0
     struct.new $"(integer -> integer)"
@@ -234,63 +313,1483 @@
     array.new_fixed $capture 0
     struct.new $"(string -> (string -> string))"
     global.set 29
-    i32.const 52
-    array.new_fixed $capture 0
-    struct.new $"({ specific_name: integer } -> integer)"
-    global.set 30
     global.get 26
     ref.as_non_null
     local.set $0
-    global.get 30
-    ref.as_non_null
-    ref.cast (ref $"({ specific_name: integer } -> integer)")
-    local.set 5
-    i64.const 1
-    struct.new $integer
-    struct.new $"{ specific_name: integer }"
-    local.get 5
-    struct.get $"({ specific_name: integer } -> integer)" 1
-    local.get 5
-    struct.get $"({ specific_name: integer } -> integer)" 0
-    call_indirect (type $"(raw) ({ specific_name: integer } -> integer)")
-    ref.cast (ref $integer)
-    global.get 3
-    ref.as_non_null
-    local.tee 3
-    struct.get $"(integer -> (integer -> integer))" 1
-    local.get 3
-    struct.get $"(integer -> (integer -> integer))" 0
-    call_indirect (type $"(raw) (integer -> (integer -> integer))")
-    local.set 4
-    i64.const 1
-    struct.new $integer
-    local.get 4
-    struct.get $"(integer -> integer)" 1
-    local.get 4
-    struct.get $"(integer -> integer)" 0
-    call_indirect (type $"(raw) (integer -> integer)")
-    global.get 15
+    i32.const 0
+    struct.new $boolean
+    global.get 2
     ref.as_non_null
     local.tee 1
-    struct.get $"('0 -> ('0 -> boolean))" 1
+    struct.get $"(boolean -> boolean)" 1
     local.get 1
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 2
-    i64.const 2
-    struct.new $integer
-    local.get 2
-    struct.get $"('0 -> boolean)" 1
-    local.get 2
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
+    struct.get $"(boolean -> boolean)" 0
+    call_indirect (type $"(raw) (boolean -> boolean)")
     local.get $0
     struct.get $"(boolean -> unit)" 1
     local.get $0
     struct.get $"(boolean -> unit)" 0
     call_indirect (type $"(raw) (boolean -> unit)")
     ref.cast (ref $unit)
+    global.set 30
+    global.get 26
+    ref.as_non_null
+    local.set 2
+    i32.const 0
+    struct.new $boolean
+    global.get 2
+    ref.as_non_null
+    local.tee 3
+    struct.get $"(boolean -> boolean)" 1
+    local.get 3
+    struct.get $"(boolean -> boolean)" 0
+    call_indirect (type $"(raw) (boolean -> boolean)")
+    global.get 2
+    ref.as_non_null
+    local.tee 4
+    struct.get $"(boolean -> boolean)" 1
+    local.get 4
+    struct.get $"(boolean -> boolean)" 0
+    call_indirect (type $"(raw) (boolean -> boolean)")
+    global.get 2
+    ref.as_non_null
+    local.tee 5
+    struct.get $"(boolean -> boolean)" 1
+    local.get 5
+    struct.get $"(boolean -> boolean)" 0
+    call_indirect (type $"(raw) (boolean -> boolean)")
+    local.get 2
+    struct.get $"(boolean -> unit)" 1
+    local.get 2
+    struct.get $"(boolean -> unit)" 0
+    call_indirect (type $"(raw) (boolean -> unit)")
+    ref.cast (ref $unit)
     global.set 31
+    global.get 26
+    ref.as_non_null
+    local.set 6
+    i64.const 1
+    struct.new $integer
+    global.get 0
+    ref.as_non_null
+    local.tee 9
+    struct.get $"(integer -> integer)" 1
+    local.get 9
+    struct.get $"(integer -> integer)" 0
+    call_indirect (type $"(raw) (integer -> integer)")
+    global.get 15
+    ref.as_non_null
+    local.tee 7
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 7
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 8
+    i64.const 0
+    struct.new $integer
+    global.get 4
+    ref.as_non_null
+    local.tee 10
+    struct.get $"(integer -> (integer -> integer))" 1
+    local.get 10
+    struct.get $"(integer -> (integer -> integer))" 0
+    call_indirect (type $"(raw) (integer -> (integer -> integer))")
+    local.set 11
+    i64.const 1
+    struct.new $integer
+    local.get 11
+    struct.get $"(integer -> integer)" 1
+    local.get 11
+    struct.get $"(integer -> integer)" 0
+    call_indirect (type $"(raw) (integer -> integer)")
+    local.get 8
+    struct.get $"('0 -> boolean)" 1
+    local.get 8
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    local.get 6
+    struct.get $"(boolean -> unit)" 1
+    local.get 6
+    struct.get $"(boolean -> unit)" 0
+    call_indirect (type $"(raw) (boolean -> unit)")
+    ref.cast (ref $unit)
+    global.set 32
+    global.get 26
+    ref.as_non_null
+    local.set 12
+    f64.const 0x1p+0 (;=1;)
+    struct.new $real
+    global.get 1
+    ref.as_non_null
+    local.tee 15
+    struct.get $"(real -> real)" 1
+    local.get 15
+    struct.get $"(real -> real)" 0
+    call_indirect (type $"(raw) (real -> real)")
+    global.get 15
+    ref.as_non_null
+    local.tee 13
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 13
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 14
+    f64.const 0x0p+0 (;=0;)
+    struct.new $real
+    global.get 9
+    ref.as_non_null
+    local.tee 16
+    struct.get $"(real -> (real -> real))" 1
+    local.get 16
+    struct.get $"(real -> (real -> real))" 0
+    call_indirect (type $"(raw) (real -> (real -> real))")
+    local.set 17
+    f64.const 0x1p+0 (;=1;)
+    struct.new $real
+    local.get 17
+    struct.get $"(real -> real)" 1
+    local.get 17
+    struct.get $"(real -> real)" 0
+    call_indirect (type $"(raw) (real -> real)")
+    local.get 14
+    struct.get $"('0 -> boolean)" 1
+    local.get 14
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    local.get 12
+    struct.get $"(boolean -> unit)" 1
+    local.get 12
+    struct.get $"(boolean -> unit)" 0
+    call_indirect (type $"(raw) (boolean -> unit)")
+    ref.cast (ref $unit)
+    global.set 33
+    global.get 26
+    ref.as_non_null
+    local.set 18
+    f64.const 0x1p+0 (;=1;)
+    struct.new $real
+    global.get 1
+    ref.as_non_null
+    local.tee 21
+    struct.get $"(real -> real)" 1
+    local.get 21
+    struct.get $"(real -> real)" 0
+    call_indirect (type $"(raw) (real -> real)")
+    global.get 15
+    ref.as_non_null
+    local.tee 19
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 19
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 20
+    f64.const 0x0p+0 (;=0;)
+    struct.new $real
+    global.get 9
+    ref.as_non_null
+    local.tee 22
+    struct.get $"(real -> (real -> real))" 1
+    local.get 22
+    struct.get $"(real -> (real -> real))" 0
+    call_indirect (type $"(raw) (real -> (real -> real))")
+    local.set 23
+    f64.const 0x1p+0 (;=1;)
+    struct.new $real
+    local.get 23
+    struct.get $"(real -> real)" 1
+    local.get 23
+    struct.get $"(real -> real)" 0
+    call_indirect (type $"(raw) (real -> real)")
+    local.get 20
+    struct.get $"('0 -> boolean)" 1
+    local.get 20
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    local.get 18
+    struct.get $"(boolean -> unit)" 1
+    local.get 18
+    struct.get $"(boolean -> unit)" 0
+    call_indirect (type $"(raw) (boolean -> unit)")
+    ref.cast (ref $unit)
+    global.set 34
+    global.get 26
+    ref.as_non_null
+    local.set 24
+    i64.const 1
+    struct.new $integer
+    global.get 3
+    ref.as_non_null
+    local.tee 27
+    struct.get $"(integer -> (integer -> integer))" 1
+    local.get 27
+    struct.get $"(integer -> (integer -> integer))" 0
+    call_indirect (type $"(raw) (integer -> (integer -> integer))")
+    local.set 28
+    i64.const 2
+    struct.new $integer
+    local.get 28
+    struct.get $"(integer -> integer)" 1
+    local.get 28
+    struct.get $"(integer -> integer)" 0
+    call_indirect (type $"(raw) (integer -> integer)")
+    global.get 15
+    ref.as_non_null
+    local.tee 25
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 25
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 26
+    i64.const 3
+    struct.new $integer
+    local.get 26
+    struct.get $"('0 -> boolean)" 1
+    local.get 26
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    local.get 24
+    struct.get $"(boolean -> unit)" 1
+    local.get 24
+    struct.get $"(boolean -> unit)" 0
+    call_indirect (type $"(raw) (boolean -> unit)")
+    ref.cast (ref $unit)
+    global.set 35
+    global.get 26
+    ref.as_non_null
+    local.set 29
+    i64.const 1
+    struct.new $integer
+    global.get 4
+    ref.as_non_null
+    local.tee 32
+    struct.get $"(integer -> (integer -> integer))" 1
+    local.get 32
+    struct.get $"(integer -> (integer -> integer))" 0
+    call_indirect (type $"(raw) (integer -> (integer -> integer))")
+    local.set 33
+    i64.const 2
+    struct.new $integer
+    local.get 33
+    struct.get $"(integer -> integer)" 1
+    local.get 33
+    struct.get $"(integer -> integer)" 0
+    call_indirect (type $"(raw) (integer -> integer)")
+    global.get 15
+    ref.as_non_null
+    local.tee 30
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 30
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 31
+    i64.const 1
+    struct.new $integer
+    global.get 0
+    ref.as_non_null
+    local.tee 34
+    struct.get $"(integer -> integer)" 1
+    local.get 34
+    struct.get $"(integer -> integer)" 0
+    call_indirect (type $"(raw) (integer -> integer)")
+    local.get 31
+    struct.get $"('0 -> boolean)" 1
+    local.get 31
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    local.get 29
+    struct.get $"(boolean -> unit)" 1
+    local.get 29
+    struct.get $"(boolean -> unit)" 0
+    call_indirect (type $"(raw) (boolean -> unit)")
+    ref.cast (ref $unit)
+    global.set 36
+    global.get 26
+    ref.as_non_null
+    local.set 35
+    i64.const 1
+    struct.new $integer
+    global.get 5
+    ref.as_non_null
+    local.tee 38
+    struct.get $"(integer -> (integer -> integer))" 1
+    local.get 38
+    struct.get $"(integer -> (integer -> integer))" 0
+    call_indirect (type $"(raw) (integer -> (integer -> integer))")
+    local.set 39
+    i64.const 2
+    struct.new $integer
+    local.get 39
+    struct.get $"(integer -> integer)" 1
+    local.get 39
+    struct.get $"(integer -> integer)" 0
+    call_indirect (type $"(raw) (integer -> integer)")
+    global.get 15
+    ref.as_non_null
+    local.tee 36
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 36
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 37
+    i64.const 2
+    struct.new $integer
+    local.get 37
+    struct.get $"('0 -> boolean)" 1
+    local.get 37
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    local.get 35
+    struct.get $"(boolean -> unit)" 1
+    local.get 35
+    struct.get $"(boolean -> unit)" 0
+    call_indirect (type $"(raw) (boolean -> unit)")
+    ref.cast (ref $unit)
+    global.set 37
+    global.get 26
+    ref.as_non_null
+    local.set 40
+    i64.const 1
+    struct.new $integer
+    global.get 6
+    ref.as_non_null
+    local.tee 43
+    struct.get $"(integer -> (integer -> integer))" 1
+    local.get 43
+    struct.get $"(integer -> (integer -> integer))" 0
+    call_indirect (type $"(raw) (integer -> (integer -> integer))")
+    local.set 44
+    i64.const 2
+    struct.new $integer
+    local.get 44
+    struct.get $"(integer -> integer)" 1
+    local.get 44
+    struct.get $"(integer -> integer)" 0
+    call_indirect (type $"(raw) (integer -> integer)")
+    global.get 15
+    ref.as_non_null
+    local.tee 41
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 41
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 42
+    i64.const 0
+    struct.new $integer
+    local.get 42
+    struct.get $"('0 -> boolean)" 1
+    local.get 42
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    local.get 40
+    struct.get $"(boolean -> unit)" 1
+    local.get 40
+    struct.get $"(boolean -> unit)" 0
+    call_indirect (type $"(raw) (boolean -> unit)")
+    ref.cast (ref $unit)
+    global.set 38
+    global.get 26
+    ref.as_non_null
+    local.set 45
+    i64.const 1
+    struct.new $integer
+    global.get 7
+    ref.as_non_null
+    local.tee 48
+    struct.get $"(integer -> (integer -> integer))" 1
+    local.get 48
+    struct.get $"(integer -> (integer -> integer))" 0
+    call_indirect (type $"(raw) (integer -> (integer -> integer))")
+    local.set 49
+    i64.const 2
+    struct.new $integer
+    local.get 49
+    struct.get $"(integer -> integer)" 1
+    local.get 49
+    struct.get $"(integer -> integer)" 0
+    call_indirect (type $"(raw) (integer -> integer)")
+    global.get 15
+    ref.as_non_null
+    local.tee 46
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 46
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 47
+    i64.const 1
+    struct.new $integer
+    local.get 47
+    struct.get $"('0 -> boolean)" 1
+    local.get 47
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    local.get 45
+    struct.get $"(boolean -> unit)" 1
+    local.get 45
+    struct.get $"(boolean -> unit)" 0
+    call_indirect (type $"(raw) (boolean -> unit)")
+    ref.cast (ref $unit)
+    global.set 39
+    global.get 26
+    ref.as_non_null
+    local.set 50
+    f64.const 0x1p+0 (;=1;)
+    struct.new $real
+    global.get 8
+    ref.as_non_null
+    local.tee 53
+    struct.get $"(real -> (real -> real))" 1
+    local.get 53
+    struct.get $"(real -> (real -> real))" 0
+    call_indirect (type $"(raw) (real -> (real -> real))")
+    local.set 54
+    f64.const 0x1p+1 (;=2;)
+    struct.new $real
+    local.get 54
+    struct.get $"(real -> real)" 1
+    local.get 54
+    struct.get $"(real -> real)" 0
+    call_indirect (type $"(raw) (real -> real)")
+    global.get 15
+    ref.as_non_null
+    local.tee 51
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 51
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 52
+    f64.const 0x1.8p+1 (;=3;)
+    struct.new $real
+    local.get 52
+    struct.get $"('0 -> boolean)" 1
+    local.get 52
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    local.get 50
+    struct.get $"(boolean -> unit)" 1
+    local.get 50
+    struct.get $"(boolean -> unit)" 0
+    call_indirect (type $"(raw) (boolean -> unit)")
+    ref.cast (ref $unit)
+    global.set 40
+    global.get 26
+    ref.as_non_null
+    local.set 55
+    f64.const 0x1p+1 (;=2;)
+    struct.new $real
+    global.get 9
+    ref.as_non_null
+    local.tee 58
+    struct.get $"(real -> (real -> real))" 1
+    local.get 58
+    struct.get $"(real -> (real -> real))" 0
+    call_indirect (type $"(raw) (real -> (real -> real))")
+    local.set 59
+    f64.const 0x1p+0 (;=1;)
+    struct.new $real
+    local.get 59
+    struct.get $"(real -> real)" 1
+    local.get 59
+    struct.get $"(real -> real)" 0
+    call_indirect (type $"(raw) (real -> real)")
+    global.get 15
+    ref.as_non_null
+    local.tee 56
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 56
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 57
+    f64.const 0x1p+0 (;=1;)
+    struct.new $real
+    local.get 57
+    struct.get $"('0 -> boolean)" 1
+    local.get 57
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    local.get 55
+    struct.get $"(boolean -> unit)" 1
+    local.get 55
+    struct.get $"(boolean -> unit)" 0
+    call_indirect (type $"(raw) (boolean -> unit)")
+    ref.cast (ref $unit)
+    global.set 41
+    global.get 26
+    ref.as_non_null
+    local.set 60
+    f64.const 0x1p+0 (;=1;)
+    struct.new $real
+    global.get 10
+    ref.as_non_null
+    local.tee 63
+    struct.get $"(real -> (real -> real))" 1
+    local.get 63
+    struct.get $"(real -> (real -> real))" 0
+    call_indirect (type $"(raw) (real -> (real -> real))")
+    local.set 64
+    f64.const 0x1p+1 (;=2;)
+    struct.new $real
+    local.get 64
+    struct.get $"(real -> real)" 1
+    local.get 64
+    struct.get $"(real -> real)" 0
+    call_indirect (type $"(raw) (real -> real)")
+    global.get 15
+    ref.as_non_null
+    local.tee 61
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 61
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 62
+    f64.const 0x1p+1 (;=2;)
+    struct.new $real
+    local.get 62
+    struct.get $"('0 -> boolean)" 1
+    local.get 62
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    local.get 60
+    struct.get $"(boolean -> unit)" 1
+    local.get 60
+    struct.get $"(boolean -> unit)" 0
+    call_indirect (type $"(raw) (boolean -> unit)")
+    ref.cast (ref $unit)
+    global.set 42
+    global.get 26
+    ref.as_non_null
+    local.set 65
+    f64.const 0x1p+0 (;=1;)
+    struct.new $real
+    global.get 11
+    ref.as_non_null
+    local.tee 68
+    struct.get $"(real -> (real -> real))" 1
+    local.get 68
+    struct.get $"(real -> (real -> real))" 0
+    call_indirect (type $"(raw) (real -> (real -> real))")
+    local.set 69
+    f64.const 0x1p+1 (;=2;)
+    struct.new $real
+    local.get 69
+    struct.get $"(real -> real)" 1
+    local.get 69
+    struct.get $"(real -> real)" 0
+    call_indirect (type $"(raw) (real -> real)")
+    global.get 15
+    ref.as_non_null
+    local.tee 66
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 66
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 67
+    f64.const 0x1p-1 (;=0.5;)
+    struct.new $real
+    local.get 67
+    struct.get $"('0 -> boolean)" 1
+    local.get 67
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    local.get 65
+    struct.get $"(boolean -> unit)" 1
+    local.get 65
+    struct.get $"(boolean -> unit)" 0
+    call_indirect (type $"(raw) (boolean -> unit)")
+    ref.cast (ref $unit)
+    global.set 43
+    global.get 26
+    ref.as_non_null
+    local.set 70
+    i32.const 1
+    struct.new $boolean
+    global.get 12
+    ref.as_non_null
+    local.tee 71
+    struct.get $"(boolean -> (boolean -> boolean))" 1
+    local.get 71
+    struct.get $"(boolean -> (boolean -> boolean))" 0
+    call_indirect (type $"(raw) (boolean -> (boolean -> boolean))")
+    local.set 72
+    i32.const 1
+    struct.new $boolean
+    local.get 72
+    struct.get $"(boolean -> boolean)" 1
+    local.get 72
+    struct.get $"(boolean -> boolean)" 0
+    call_indirect (type $"(raw) (boolean -> boolean)")
+    local.get 70
+    struct.get $"(boolean -> unit)" 1
+    local.get 70
+    struct.get $"(boolean -> unit)" 0
+    call_indirect (type $"(raw) (boolean -> unit)")
+    ref.cast (ref $unit)
+    global.set 44
+    global.get 26
+    ref.as_non_null
+    local.set 73
+    i32.const 1
+    struct.new $boolean
+    global.get 13
+    ref.as_non_null
+    local.tee 74
+    struct.get $"(boolean -> (boolean -> boolean))" 1
+    local.get 74
+    struct.get $"(boolean -> (boolean -> boolean))" 0
+    call_indirect (type $"(raw) (boolean -> (boolean -> boolean))")
+    local.set 75
+    i32.const 0
+    struct.new $boolean
+    local.get 75
+    struct.get $"(boolean -> boolean)" 1
+    local.get 75
+    struct.get $"(boolean -> boolean)" 0
+    call_indirect (type $"(raw) (boolean -> boolean)")
+    local.get 73
+    struct.get $"(boolean -> unit)" 1
+    local.get 73
+    struct.get $"(boolean -> unit)" 0
+    call_indirect (type $"(raw) (boolean -> unit)")
+    ref.cast (ref $unit)
+    global.set 45
+    global.get 26
+    ref.as_non_null
+    local.set 76
+    i32.const 1
+    struct.new $boolean
+    global.get 14
+    ref.as_non_null
+    local.tee 77
+    struct.get $"(boolean -> (boolean -> boolean))" 1
+    local.get 77
+    struct.get $"(boolean -> (boolean -> boolean))" 0
+    call_indirect (type $"(raw) (boolean -> (boolean -> boolean))")
+    local.set 78
+    i32.const 0
+    struct.new $boolean
+    local.get 78
+    struct.get $"(boolean -> boolean)" 1
+    local.get 78
+    struct.get $"(boolean -> boolean)" 0
+    call_indirect (type $"(raw) (boolean -> boolean)")
+    local.get 76
+    struct.get $"(boolean -> unit)" 1
+    local.get 76
+    struct.get $"(boolean -> unit)" 0
+    call_indirect (type $"(raw) (boolean -> unit)")
+    ref.cast (ref $unit)
+    global.set 46
+    global.get 26
+    ref.as_non_null
+    local.set 79
+    struct.new $unit
+    global.get 15
+    ref.as_non_null
+    local.tee 82
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 82
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 83
+    struct.new $unit
+    local.get 83
+    struct.get $"('0 -> boolean)" 1
+    local.get 83
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    global.get 15
+    ref.as_non_null
+    local.tee 80
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 80
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 81
+    i32.const 1
+    struct.new $boolean
+    local.get 81
+    struct.get $"('0 -> boolean)" 1
+    local.get 81
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    local.get 79
+    struct.get $"(boolean -> unit)" 1
+    local.get 79
+    struct.get $"(boolean -> unit)" 0
+    call_indirect (type $"(raw) (boolean -> unit)")
+    ref.cast (ref $unit)
+    global.set 47
+    global.get 26
+    ref.as_non_null
+    local.set 84
+    struct.new $unit
+    global.get 16
+    ref.as_non_null
+    local.tee 87
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 87
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 88
+    struct.new $unit
+    local.get 88
+    struct.get $"('0 -> boolean)" 1
+    local.get 88
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    global.get 15
+    ref.as_non_null
+    local.tee 85
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 85
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 86
+    i32.const 0
+    struct.new $boolean
+    local.get 86
+    struct.get $"('0 -> boolean)" 1
+    local.get 86
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    local.get 84
+    struct.get $"(boolean -> unit)" 1
+    local.get 84
+    struct.get $"(boolean -> unit)" 0
+    call_indirect (type $"(raw) (boolean -> unit)")
+    ref.cast (ref $unit)
+    global.set 48
+    global.get 26
+    ref.as_non_null
+    local.set 89
+    struct.new $unit
+    global.get 17
+    ref.as_non_null
+    local.tee 92
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 92
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 93
+    struct.new $unit
+    local.get 93
+    struct.get $"('0 -> boolean)" 1
+    local.get 93
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    global.get 15
+    ref.as_non_null
+    local.tee 90
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 90
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 91
+    i32.const 1
+    struct.new $boolean
+    local.get 91
+    struct.get $"('0 -> boolean)" 1
+    local.get 91
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    local.get 89
+    struct.get $"(boolean -> unit)" 1
+    local.get 89
+    struct.get $"(boolean -> unit)" 0
+    call_indirect (type $"(raw) (boolean -> unit)")
+    ref.cast (ref $unit)
+    global.set 49
+    global.get 26
+    ref.as_non_null
+    local.set 94
+    struct.new $unit
+    global.get 18
+    ref.as_non_null
+    local.tee 97
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 97
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 98
+    struct.new $unit
+    local.get 98
+    struct.get $"('0 -> boolean)" 1
+    local.get 98
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    global.get 15
+    ref.as_non_null
+    local.tee 95
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 95
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 96
+    i32.const 1
+    struct.new $boolean
+    local.get 96
+    struct.get $"('0 -> boolean)" 1
+    local.get 96
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    local.get 94
+    struct.get $"(boolean -> unit)" 1
+    local.get 94
+    struct.get $"(boolean -> unit)" 0
+    call_indirect (type $"(raw) (boolean -> unit)")
+    ref.cast (ref $unit)
+    global.set 50
+    global.get 26
+    ref.as_non_null
+    local.set 99
+    struct.new $unit
+    global.get 19
+    ref.as_non_null
+    local.tee 102
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 102
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 103
+    struct.new $unit
+    local.get 103
+    struct.get $"('0 -> boolean)" 1
+    local.get 103
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    global.get 15
+    ref.as_non_null
+    local.tee 100
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 100
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 101
+    i32.const 0
+    struct.new $boolean
+    local.get 101
+    struct.get $"('0 -> boolean)" 1
+    local.get 101
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    local.get 99
+    struct.get $"(boolean -> unit)" 1
+    local.get 99
+    struct.get $"(boolean -> unit)" 0
+    call_indirect (type $"(raw) (boolean -> unit)")
+    ref.cast (ref $unit)
+    global.set 51
+    global.get 26
+    ref.as_non_null
+    local.set 104
+    struct.new $unit
+    global.get 20
+    ref.as_non_null
+    local.tee 107
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 107
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 108
+    struct.new $unit
+    local.get 108
+    struct.get $"('0 -> boolean)" 1
+    local.get 108
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    global.get 15
+    ref.as_non_null
+    local.tee 105
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 105
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 106
+    i32.const 0
+    struct.new $boolean
+    local.get 106
+    struct.get $"('0 -> boolean)" 1
+    local.get 106
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    local.get 104
+    struct.get $"(boolean -> unit)" 1
+    local.get 104
+    struct.get $"(boolean -> unit)" 0
+    call_indirect (type $"(raw) (boolean -> unit)")
+    ref.cast (ref $unit)
+    global.set 52
+    global.get 26
+    ref.as_non_null
+    local.set 109
+    i32.const 1
+    struct.new $boolean
+    global.get 15
+    ref.as_non_null
+    local.tee 110
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 110
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 111
+    i32.const 1
+    struct.new $boolean
+    local.get 111
+    struct.get $"('0 -> boolean)" 1
+    local.get 111
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    local.get 109
+    struct.get $"(boolean -> unit)" 1
+    local.get 109
+    struct.get $"(boolean -> unit)" 0
+    call_indirect (type $"(raw) (boolean -> unit)")
+    ref.cast (ref $unit)
+    global.set 53
+    global.get 26
+    ref.as_non_null
+    local.set 112
+    i32.const 1
+    struct.new $boolean
+    global.get 16
+    ref.as_non_null
+    local.tee 113
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 113
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 114
+    i32.const 0
+    struct.new $boolean
+    local.get 114
+    struct.get $"('0 -> boolean)" 1
+    local.get 114
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    local.get 112
+    struct.get $"(boolean -> unit)" 1
+    local.get 112
+    struct.get $"(boolean -> unit)" 0
+    call_indirect (type $"(raw) (boolean -> unit)")
+    ref.cast (ref $unit)
+    global.set 54
+    global.get 26
+    ref.as_non_null
+    local.set 115
+    i32.const 0
+    struct.new $boolean
+    global.get 17
+    ref.as_non_null
+    local.tee 116
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 116
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 117
+    i32.const 1
+    struct.new $boolean
+    local.get 117
+    struct.get $"('0 -> boolean)" 1
+    local.get 117
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    local.get 115
+    struct.get $"(boolean -> unit)" 1
+    local.get 115
+    struct.get $"(boolean -> unit)" 0
+    call_indirect (type $"(raw) (boolean -> unit)")
+    ref.cast (ref $unit)
+    global.set 55
+    global.get 26
+    ref.as_non_null
+    local.set 118
+    i32.const 1
+    struct.new $boolean
+    global.get 18
+    ref.as_non_null
+    local.tee 119
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 119
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 120
+    i32.const 0
+    struct.new $boolean
+    local.get 120
+    struct.get $"('0 -> boolean)" 1
+    local.get 120
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    local.get 118
+    struct.get $"(boolean -> unit)" 1
+    local.get 118
+    struct.get $"(boolean -> unit)" 0
+    call_indirect (type $"(raw) (boolean -> unit)")
+    ref.cast (ref $unit)
+    global.set 56
+    global.get 26
+    ref.as_non_null
+    local.set 121
+    i32.const 0
+    struct.new $boolean
+    global.get 19
+    ref.as_non_null
+    local.tee 122
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 122
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 123
+    i32.const 1
+    struct.new $boolean
+    local.get 123
+    struct.get $"('0 -> boolean)" 1
+    local.get 123
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    local.get 121
+    struct.get $"(boolean -> unit)" 1
+    local.get 121
+    struct.get $"(boolean -> unit)" 0
+    call_indirect (type $"(raw) (boolean -> unit)")
+    ref.cast (ref $unit)
+    global.set 57
+    global.get 26
+    ref.as_non_null
+    local.set 124
+    i32.const 1
+    struct.new $boolean
+    global.get 20
+    ref.as_non_null
+    local.tee 125
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 125
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 126
+    i32.const 0
+    struct.new $boolean
+    local.get 126
+    struct.get $"('0 -> boolean)" 1
+    local.get 126
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    local.get 124
+    struct.get $"(boolean -> unit)" 1
+    local.get 124
+    struct.get $"(boolean -> unit)" 0
+    call_indirect (type $"(raw) (boolean -> unit)")
+    ref.cast (ref $unit)
+    global.set 58
+    global.get 26
+    ref.as_non_null
+    local.set 127
+    i32.const 97
+    struct.new $glyph
+    global.get 15
+    ref.as_non_null
+    local.tee 128
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 128
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 129
+    i32.const 97
+    struct.new $glyph
+    local.get 129
+    struct.get $"('0 -> boolean)" 1
+    local.get 129
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    local.get 127
+    struct.get $"(boolean -> unit)" 1
+    local.get 127
+    struct.get $"(boolean -> unit)" 0
+    call_indirect (type $"(raw) (boolean -> unit)")
+    ref.cast (ref $unit)
+    global.set 59
+    global.get 26
+    ref.as_non_null
+    local.set 130
+    i32.const 97
+    struct.new $glyph
+    global.get 16
+    ref.as_non_null
+    local.tee 131
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 131
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 132
+    i32.const 98
+    struct.new $glyph
+    local.get 132
+    struct.get $"('0 -> boolean)" 1
+    local.get 132
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    local.get 130
+    struct.get $"(boolean -> unit)" 1
+    local.get 130
+    struct.get $"(boolean -> unit)" 0
+    call_indirect (type $"(raw) (boolean -> unit)")
+    ref.cast (ref $unit)
+    global.set 60
+    global.get 26
+    ref.as_non_null
+    local.set 133
+    i32.const 97
+    struct.new $glyph
+    global.get 17
+    ref.as_non_null
+    local.tee 134
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 134
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 135
+    i32.const 98
+    struct.new $glyph
+    local.get 135
+    struct.get $"('0 -> boolean)" 1
+    local.get 135
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    local.get 133
+    struct.get $"(boolean -> unit)" 1
+    local.get 133
+    struct.get $"(boolean -> unit)" 0
+    call_indirect (type $"(raw) (boolean -> unit)")
+    ref.cast (ref $unit)
+    global.set 61
+    global.get 26
+    ref.as_non_null
+    local.set 136
+    i32.const 98
+    struct.new $glyph
+    global.get 18
+    ref.as_non_null
+    local.tee 137
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 137
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 138
+    i32.const 97
+    struct.new $glyph
+    local.get 138
+    struct.get $"('0 -> boolean)" 1
+    local.get 138
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    local.get 136
+    struct.get $"(boolean -> unit)" 1
+    local.get 136
+    struct.get $"(boolean -> unit)" 0
+    call_indirect (type $"(raw) (boolean -> unit)")
+    ref.cast (ref $unit)
+    global.set 62
+    global.get 26
+    ref.as_non_null
+    local.set 139
+    i32.const 97
+    struct.new $glyph
+    global.get 19
+    ref.as_non_null
+    local.tee 140
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 140
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 141
+    i32.const 98
+    struct.new $glyph
+    local.get 141
+    struct.get $"('0 -> boolean)" 1
+    local.get 141
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    local.get 139
+    struct.get $"(boolean -> unit)" 1
+    local.get 139
+    struct.get $"(boolean -> unit)" 0
+    call_indirect (type $"(raw) (boolean -> unit)")
+    ref.cast (ref $unit)
+    global.set 63
+    global.get 26
+    ref.as_non_null
+    local.set 142
+    i32.const 98
+    struct.new $glyph
+    global.get 20
+    ref.as_non_null
+    local.tee 143
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 143
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 144
+    i32.const 97
+    struct.new $glyph
+    local.get 144
+    struct.get $"('0 -> boolean)" 1
+    local.get 144
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    local.get 142
+    struct.get $"(boolean -> unit)" 1
+    local.get 142
+    struct.get $"(boolean -> unit)" 0
+    call_indirect (type $"(raw) (boolean -> unit)")
+    ref.cast (ref $unit)
+    global.set 64
+    global.get 26
+    ref.as_non_null
+    local.set 145
+    i32.const 97
+    i32.const 98
+    i32.const 99
+    array.new_fixed $string 3
+    global.get 15
+    ref.as_non_null
+    local.tee 146
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 146
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 147
+    i32.const 97
+    i32.const 98
+    i32.const 99
+    array.new_fixed $string 3
+    local.get 147
+    struct.get $"('0 -> boolean)" 1
+    local.get 147
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    local.get 145
+    struct.get $"(boolean -> unit)" 1
+    local.get 145
+    struct.get $"(boolean -> unit)" 0
+    call_indirect (type $"(raw) (boolean -> unit)")
+    ref.cast (ref $unit)
+    global.set 65
+    global.get 26
+    ref.as_non_null
+    local.set 148
+    i32.const 97
+    i32.const 98
+    i32.const 99
+    array.new_fixed $string 3
+    global.get 16
+    ref.as_non_null
+    local.tee 149
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 149
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 150
+    i32.const 100
+    i32.const 101
+    i32.const 102
+    array.new_fixed $string 3
+    local.get 150
+    struct.get $"('0 -> boolean)" 1
+    local.get 150
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    local.get 148
+    struct.get $"(boolean -> unit)" 1
+    local.get 148
+    struct.get $"(boolean -> unit)" 0
+    call_indirect (type $"(raw) (boolean -> unit)")
+    ref.cast (ref $unit)
+    global.set 66
+    global.get 26
+    ref.as_non_null
+    local.set 151
+    i32.const 97
+    i32.const 98
+    i32.const 99
+    array.new_fixed $string 3
+    global.get 17
+    ref.as_non_null
+    local.tee 152
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 152
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 153
+    i32.const 100
+    i32.const 101
+    i32.const 102
+    array.new_fixed $string 3
+    local.get 153
+    struct.get $"('0 -> boolean)" 1
+    local.get 153
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    local.get 151
+    struct.get $"(boolean -> unit)" 1
+    local.get 151
+    struct.get $"(boolean -> unit)" 0
+    call_indirect (type $"(raw) (boolean -> unit)")
+    ref.cast (ref $unit)
+    global.set 67
+    global.get 26
+    ref.as_non_null
+    local.set 154
+    i32.const 100
+    i32.const 101
+    i32.const 102
+    array.new_fixed $string 3
+    global.get 18
+    ref.as_non_null
+    local.tee 155
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 155
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 156
+    i32.const 97
+    i32.const 98
+    i32.const 99
+    array.new_fixed $string 3
+    local.get 156
+    struct.get $"('0 -> boolean)" 1
+    local.get 156
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    local.get 154
+    struct.get $"(boolean -> unit)" 1
+    local.get 154
+    struct.get $"(boolean -> unit)" 0
+    call_indirect (type $"(raw) (boolean -> unit)")
+    ref.cast (ref $unit)
+    global.set 68
+    global.get 26
+    ref.as_non_null
+    local.set 157
+    i32.const 97
+    i32.const 98
+    i32.const 99
+    array.new_fixed $string 3
+    global.get 17
+    ref.as_non_null
+    local.tee 158
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 158
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 159
+    i32.const 97
+    i32.const 98
+    i32.const 99
+    array.new_fixed $string 3
+    local.get 159
+    struct.get $"('0 -> boolean)" 1
+    local.get 159
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    local.get 157
+    struct.get $"(boolean -> unit)" 1
+    local.get 157
+    struct.get $"(boolean -> unit)" 0
+    call_indirect (type $"(raw) (boolean -> unit)")
+    ref.cast (ref $unit)
+    global.set 69
+    global.get 26
+    ref.as_non_null
+    local.set 160
+    i32.const 97
+    i32.const 98
+    i32.const 99
+    array.new_fixed $string 3
+    global.get 18
+    ref.as_non_null
+    local.tee 161
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 161
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 162
+    i32.const 97
+    i32.const 98
+    i32.const 99
+    array.new_fixed $string 3
+    local.get 162
+    struct.get $"('0 -> boolean)" 1
+    local.get 162
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    local.get 160
+    struct.get $"(boolean -> unit)" 1
+    local.get 160
+    struct.get $"(boolean -> unit)" 0
+    call_indirect (type $"(raw) (boolean -> unit)")
+    ref.cast (ref $unit)
+    global.set 70
+    global.get 26
+    ref.as_non_null
+    local.set 163
+    i32.const 97
+    i32.const 98
+    i32.const 99
+    array.new_fixed $string 3
+    global.get 19
+    ref.as_non_null
+    local.tee 164
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 164
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 165
+    i32.const 100
+    i32.const 101
+    i32.const 102
+    array.new_fixed $string 3
+    local.get 165
+    struct.get $"('0 -> boolean)" 1
+    local.get 165
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    local.get 163
+    struct.get $"(boolean -> unit)" 1
+    local.get 163
+    struct.get $"(boolean -> unit)" 0
+    call_indirect (type $"(raw) (boolean -> unit)")
+    ref.cast (ref $unit)
+    global.set 71
+    global.get 26
+    ref.as_non_null
+    local.set 166
+    i32.const 100
+    i32.const 101
+    i32.const 102
+    array.new_fixed $string 3
+    global.get 20
+    ref.as_non_null
+    local.tee 167
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 167
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    local.set 168
+    i32.const 97
+    i32.const 98
+    i32.const 99
+    array.new_fixed $string 3
+    local.get 168
+    struct.get $"('0 -> boolean)" 1
+    local.get 168
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    local.get 166
+    struct.get $"(boolean -> unit)" 1
+    local.get 166
+    struct.get $"(boolean -> unit)" 0
+    call_indirect (type $"(raw) (boolean -> unit)")
+    ref.cast (ref $unit)
+    global.set 72
   )
   (func (;2;) (type $"(raw) (integer -> integer)") (param $0 (ref $integer)) (param (ref $capture)) (result (ref $integer))
     i64.const 0
@@ -1439,7 +2938,7 @@
     array.new_fixed $capture 1
     struct.new $"(string -> string)"
   )
-  (func (;51;) (type $"(raw) (string -> string)") (param $a#0 (ref $string)) (param (ref $capture)) (result (ref $string))
+  (func (;51;) (type $"(raw) (string -> string)") (param (ref $string) (ref $capture)) (result (ref $string))
     (local (ref $string) (ref $"(string -> string)") (ref $"(string -> (string -> string))"))
     local.get 1
     i32.const 0
@@ -1458,7 +2957,7 @@
     call_indirect (type $"(raw) (string -> (string -> string))")
     ref.cast (ref $"(string -> string)")
     local.set 3
-    local.get $a#0
+    local.get 0
     ref.cast (ref $string)
     local.get 3
     struct.get $"(string -> string)" 1
@@ -1466,10 +2965,5 @@
     struct.get $"(string -> string)" 0
     call_indirect (type $"(raw) (string -> string)")
     ref.cast (ref $string)
-  )
-  (func (;52;) (type $"(raw) ({ specific_name: integer } -> integer)") (param (ref $"{ specific_name: integer }") (ref $capture)) (result (ref $integer))
-    local.get 0
-    ref.cast (ref $"{ specific_name: integer }")
-    struct.get $"{ specific_name: integer }" 0
   )
 )
