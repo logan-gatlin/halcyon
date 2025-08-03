@@ -5,11 +5,13 @@ macro_rules! it {
 }
 
 mod module;
+mod pattern;
 mod printing;
 mod type_expression;
 mod value_expression;
 
 pub use module::*;
+pub use pattern::*;
 pub use type_expression::*;
 pub use value_expression::*;
 
@@ -62,7 +64,7 @@ impl<I: Iterator<Item = Token>> StatefulIter<I> {
           *s += tok.1;
         });
         Some(tok)
-      },
+      }
       None => None,
     }
   }
@@ -85,11 +87,7 @@ impl<I: Iterator<Item = Token>> StatefulIter<I> {
     }
   }
 
-  pub fn peek_or_error(
-    &mut self,
-    n: usize,
-    expect: TokenKind,
-  ) -> Result<Token> {
+  pub fn peek_or_error(&mut self, n: usize, expect: TokenKind) -> Result<Token> {
     if let Some(next) = self.peek(n)
       && next.0 == expect
     {
@@ -112,18 +110,13 @@ impl<I: Iterator<Item = Token>> StatefulIter<I> {
   }
 
   pub fn eat_ident(&mut self) -> Result<String> {
-    let Token(Identifier(assignee), _) =
-      self.eat_or_error(Identifier("".into()))?
-    else {
+    let Token(Identifier(assignee), _) = self.eat_or_error(Identifier("".into()))? else {
       unreachable!();
     };
     Ok(assignee)
   }
 
-  pub fn eat_one_of(
-    &mut self,
-    kinds: impl IntoIterator<Item = TokenKind>,
-  ) -> Result<usize> {
+  pub fn eat_one_of(&mut self, kinds: impl IntoIterator<Item = TokenKind>) -> Result<usize> {
     let kinds = kinds.into_iter().collect::<Vec<_>>();
     let kinds_str = kinds
       .iter()
@@ -155,9 +148,7 @@ impl<I: Iterator<Item = Token>> StatefulIter<I> {
   }
 }
 
-pub fn parse(
-  iter: impl IntoIterator<Item = Token>,
-) -> Result<Vec<ParsedModule>> {
+pub fn parse(iter: impl IntoIterator<Item = Token>) -> Result<Vec<ParsedModule>> {
   let mut iter = StatefulIter {
     iter: multipeek::multipeek(iter),
     last_span: Span { start: 0, width: 1 },

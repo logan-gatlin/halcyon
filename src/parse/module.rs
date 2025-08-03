@@ -1,6 +1,5 @@
 use super::*;
 
-#[expect(dead_code)]
 #[derive(Debug, Clone)]
 pub enum ModuleExpressionKind {
   Let {
@@ -13,11 +12,9 @@ pub enum ModuleExpressionKind {
     assignee_span: Span,
     value: Box<TypeDefinition>,
   },
-  Use(String),
   Import {
     name: String,
   },
-  Module(ParsedModule),
 }
 
 pub type ModuleExpression = Expression<ModuleExpressionKind>;
@@ -56,7 +53,7 @@ pub fn parse_module(iter: it!()) -> Result<ParsedModule> {
 
 pub fn parse_module_expression(iter: it!()) -> Result<ModuleExpression> {
   iter.start_span();
-  let variant = iter.eat_one_of([Let, Type, Import, Use, Module])?;
+  let variant = iter.eat_one_of([Let, Type, Import])?;
   match variant {
     // Let
     0 => {
@@ -91,14 +88,6 @@ pub fn parse_module_expression(iter: it!()) -> Result<ModuleExpression> {
       kind: ModuleExpressionKind::Import {
         name: iter.eat_ident()?,
       },
-      span: iter.end_span(),
-    }),
-    3 => Ok(ModuleExpression {
-      kind: ModuleExpressionKind::Use(iter.eat_ident()?),
-      span: iter.end_span(),
-    }),
-    4 => Ok(ModuleExpression {
-      kind: ModuleExpressionKind::Module(parse_module(iter)?),
       span: iter.end_span(),
     }),
     _ => unreachable!(),

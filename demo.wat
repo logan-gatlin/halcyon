@@ -27,31 +27,25 @@
   (type $"(raw) (unit -> '0)" (;25;) (func (param (ref $unit) (ref $capture)) (result anyref)))
   (type $"(string -> integer)" (;26;) (struct (field i32) (field (ref $capture))))
   (type $"(raw) (string -> integer)" (;27;) (func (param (ref $string) (ref $capture)) (result (ref $integer))))
-  (type $"(string -> (string -> (string -> unit)))" (;28;) (struct (field i32) (field (ref $capture))))
-  (type $"(string -> (string -> unit))" (;29;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (string -> (string -> (string -> unit)))" (;30;) (func (param (ref $string) (ref $capture)) (result (ref $"(string -> (string -> unit))"))))
-  (type $"(string -> unit)" (;31;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (string -> (string -> unit))" (;32;) (func (param (ref $string) (ref $capture)) (result (ref $"(string -> unit)"))))
-  (type $"(raw) (string -> unit)" (;33;) (func (param (ref $string) (ref $capture)) (result (ref $unit))))
-  (type (;34;) (func (param i32 i32)))
-  (type $"(integer -> string)" (;35;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (integer -> string)" (;36;) (func (param (ref $integer) (ref $capture)) (result (ref $string))))
-  (type $"(string -> (string -> string))" (;37;) (struct (field i32) (field (ref $capture))))
-  (type $"(string -> string)" (;38;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (string -> (string -> string))" (;39;) (func (param (ref $string) (ref $capture)) (result (ref $"(string -> string)"))))
-  (type $"(raw) (string -> string)" (;40;) (func (param (ref $string) (ref $capture)) (result (ref $string))))
-  (type $"(unit -> '3)" (;41;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (unit -> '3)" (;42;) (func (param (ref $unit) (ref $capture)) (result anyref)))
-  (type $"(unit -> '1)" (;43;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (unit -> '1)" (;44;) (func (param (ref $unit) (ref $capture)) (result anyref)))
-  (type $"(boolean -> unit)" (;45;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (boolean -> unit)" (;46;) (func (param (ref $boolean) (ref $capture)) (result (ref $unit))))
-  (type $"({ specific_name: integer } -> integer)" (;47;) (struct (field i32) (field (ref $capture))))
-  (type $"{ specific_name: integer }" (;48;) (struct (field (ref $integer))))
-  (type $"(raw) ({ specific_name: integer } -> integer)" (;49;) (func (param (ref $"{ specific_name: integer }") (ref $capture)) (result (ref $integer))))
-  (import "sys" "print_string" (func (;0;) (type 34)))
+  (type $"(string -> unit)" (;28;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (string -> unit)" (;29;) (func (param (ref $string) (ref $capture)) (result (ref $unit))))
+  (type (;30;) (func (param i32 i32)))
+  (type $"(string -> (string -> string))" (;31;) (struct (field i32) (field (ref $capture))))
+  (type $"(string -> string)" (;32;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (string -> (string -> string))" (;33;) (func (param (ref $string) (ref $capture)) (result (ref $"(string -> string)"))))
+  (type $"(raw) (string -> string)" (;34;) (func (param (ref $string) (ref $capture)) (result (ref $string))))
+  (type $"(unit -> '3)" (;35;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (unit -> '3)" (;36;) (func (param (ref $unit) (ref $capture)) (result anyref)))
+  (type $"(unit -> '1)" (;37;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (unit -> '1)" (;38;) (func (param (ref $unit) (ref $capture)) (result anyref)))
+  (type $"(boolean -> unit)" (;39;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (boolean -> unit)" (;40;) (func (param (ref $boolean) (ref $capture)) (result (ref $unit))))
+  (type $"({ specific_name: integer } -> integer)" (;41;) (struct (field i32) (field (ref $capture))))
+  (type $"{ specific_name: integer }" (;42;) (struct (field (ref $integer))))
+  (type $"(raw) ({ specific_name: integer } -> integer)" (;43;) (func (param (ref $"{ specific_name: integer }") (ref $capture)) (result (ref $integer))))
+  (import "sys" "print_string" (func (;0;) (type 30)))
   (import "sys" "memory" (memory (;0;) 1))
-  (table (;0;) 55 55 funcref)
+  (table (;0;) 53 53 funcref)
   (global (;0;) (mut (ref null $"(integer -> integer)")) ref.null $"(integer -> integer)")
   (global (;1;) (mut (ref null $"(real -> real)")) ref.null $"(real -> real)")
   (global (;2;) (mut (ref null $"(boolean -> boolean)")) ref.null $"(boolean -> boolean)")
@@ -75,16 +69,15 @@
   (global (;20;) (mut (ref null $"('0 -> ('0 -> boolean))")) ref.null $"('0 -> ('0 -> boolean))")
   (global (;21;) (mut (ref null $"(unit -> '0)")) ref.null $"(unit -> '0)")
   (global (;22;) (mut (ref null $"(string -> integer)")) ref.null $"(string -> integer)")
-  (global (;23;) (mut (ref null $"(string -> (string -> (string -> unit)))")) ref.null $"(string -> (string -> (string -> unit)))")
-  (global (;24;) (mut (ref null $"(string -> unit)")) ref.null $"(string -> unit)")
-  (global (;25;) (mut (ref null $"(integer -> string)")) ref.null $"(integer -> string)")
-  (global (;26;) (mut (ref null $"(string -> (string -> string))")) ref.null $"(string -> (string -> string))")
-  (global (;27;) (mut (ref null $"(unit -> '3)")) ref.null $"(unit -> '3)")
-  (global (;28;) (mut (ref null $"(boolean -> unit)")) ref.null $"(boolean -> unit)")
-  (global (;29;) (mut (ref null $"(string -> integer)")) ref.null $"(string -> integer)")
-  (global (;30;) (mut (ref null $"(string -> unit)")) ref.null $"(string -> unit)")
-  (global (;31;) (mut (ref null $"({ specific_name: integer } -> integer)")) ref.null $"({ specific_name: integer } -> integer)")
-  (global (;32;) (mut (ref null $unit)) ref.null $unit)
+  (global (;23;) (mut (ref null $"(string -> unit)")) ref.null $"(string -> unit)")
+  (global (;24;) (mut (ref null $"(string -> (string -> string))")) ref.null $"(string -> (string -> string))")
+  (global (;25;) (mut (ref null $"(unit -> '3)")) ref.null $"(unit -> '3)")
+  (global (;26;) (mut (ref null $"(boolean -> unit)")) ref.null $"(boolean -> unit)")
+  (global (;27;) (mut (ref null $"(string -> integer)")) ref.null $"(string -> integer)")
+  (global (;28;) (mut (ref null $"(string -> unit)")) ref.null $"(string -> unit)")
+  (global (;29;) (mut (ref null $"(string -> (string -> string))")) ref.null $"(string -> (string -> string))")
+  (global (;30;) (mut (ref null $"({ specific_name: integer } -> integer)")) ref.null $"({ specific_name: integer } -> integer)")
+  (global (;31;) (mut (ref null $unit)) ref.null $unit)
   (export "builtin:UnaryOp-" (global 0))
   (export "builtin:UnaryOp-." (global 1))
   (export "builtin:UnaryOpnot" (global 2))
@@ -108,18 +101,17 @@
   (export "builtin:BinaryOp>" (global 20))
   (export "builtin:panic" (global 21))
   (export "builtin:string_length" (global 22))
-  (export "builtin:copy_string" (global 23))
-  (export "builtin:print_string" (global 24))
-  (export "builtin:zeroed_string" (global 25))
-  (export "builtin:string_concatenate" (global 26))
-  (export "std:panic" (global 27))
-  (export "std:assert" (global 28))
-  (export "std:string_length" (global 29))
-  (export "std:print_string" (global 30))
-  (export "TypeTest:tricky_inference" (global 31))
-  (export "TypeTest:a" (global 32))
+  (export "builtin:print_string" (global 23))
+  (export "builtin:string_concatenate" (global 24))
+  (export "std:panic" (global 25))
+  (export "std:assert" (global 26))
+  (export "std:string_length" (global 27))
+  (export "std:string_print" (global 28))
+  (export "std:string_concatenate" (global 29))
+  (export "TypeTest:tricky_inference" (global 30))
+  (export "TypeTest:a" (global 31))
   (start 1)
-  (elem (;0;) (i32.const 0) func 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 0 47 48 49 50 51 52 53 54)
+  (elem (;0;) (i32.const 0) func 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 0 44 45 46 47 48 49 50 51 52)
   (func (;1;) (type 0)
     (local $0 (ref $"(boolean -> unit)")) (local (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(integer -> (integer -> integer))") (ref $"(integer -> integer)") (ref $"({ specific_name: integer } -> integer)"))
     i32.const 1
@@ -216,44 +208,40 @@
     global.set 22
     i32.const 42
     array.new_fixed $capture 0
-    struct.new $"(string -> (string -> (string -> unit)))"
-    global.set 23
-    i32.const 45
-    array.new_fixed $capture 0
     struct.new $"(string -> unit)"
-    global.set 24
-    i32.const 47
-    array.new_fixed $capture 0
-    struct.new $"(integer -> string)"
-    global.set 25
-    i32.const 48
+    global.set 23
+    i32.const 44
     array.new_fixed $capture 0
     struct.new $"(string -> (string -> string))"
-    global.set 26
-    i32.const 50
+    global.set 24
+    i32.const 46
     array.new_fixed $capture 0
     struct.new $"(unit -> '3)"
-    global.set 27
-    i32.const 51
+    global.set 25
+    i32.const 47
     array.new_fixed $capture 0
     struct.new $"(boolean -> unit)"
-    global.set 28
-    i32.const 52
+    global.set 26
+    i32.const 48
     array.new_fixed $capture 0
     struct.new $"(string -> integer)"
-    global.set 29
-    i32.const 53
+    global.set 27
+    i32.const 49
     array.new_fixed $capture 0
     struct.new $"(string -> unit)"
-    global.set 30
-    i32.const 54
+    global.set 28
+    i32.const 50
+    array.new_fixed $capture 0
+    struct.new $"(string -> (string -> string))"
+    global.set 29
+    i32.const 52
     array.new_fixed $capture 0
     struct.new $"({ specific_name: integer } -> integer)"
-    global.set 31
-    global.get 28
+    global.set 30
+    global.get 26
     ref.as_non_null
     local.set $0
-    global.get 31
+    global.get 30
     ref.as_non_null
     ref.cast (ref $"({ specific_name: integer } -> integer)")
     local.set 5
@@ -302,7 +290,7 @@
     struct.get $"(boolean -> unit)" 0
     call_indirect (type $"(raw) (boolean -> unit)")
     ref.cast (ref $unit)
-    global.set 32
+    global.set 31
   )
   (func (;2;) (type $"(raw) (integer -> integer)") (param $0 (ref $integer)) (param (ref $capture)) (result (ref $integer))
     i64.const 0
@@ -1317,40 +1305,7 @@
     i64.extend_i32_u
     struct.new $integer
   )
-  (func (;43;) (type $"(raw) (string -> (string -> (string -> unit)))") (param $1 (ref $string)) (param (ref $capture)) (result (ref $"(string -> (string -> unit))"))
-    i32.const 43
-    local.get $1
-    array.new_fixed $capture 1
-    struct.new $"(string -> (string -> (string -> unit)))"
-  )
-  (func (;44;) (type $"(raw) (string -> (string -> unit))") (param $2 (ref $string)) (param (ref $capture)) (result (ref $"(string -> unit)"))
-    (local $0 (ref $string))
-    local.get 1
-    i32.const 0
-    array.get $capture
-    ref.cast (ref $string)
-    local.set $0
-    i32.const 44
-    local.get $0
-    local.get $2
-    array.new_fixed $capture 2
-    struct.new $"(string -> (string -> unit))"
-  )
-  (func (;45;) (type $"(raw) (string -> unit)") (param $0 (ref $string)) (param (ref $capture)) (result (ref $unit))
-    (local $index (ref $string)) (local $length (ref $string))
-    local.get 1
-    i32.const 0
-    array.get $capture
-    ref.cast (ref $string)
-    local.set $index
-    local.get 1
-    i32.const 1
-    array.get $capture
-    ref.cast (ref $string)
-    local.set $length
-    unreachable
-  )
-  (func (;46;) (type $"(raw) (string -> unit)") (param $0 (ref $string)) (param (ref $capture)) (result (ref $unit))
+  (func (;43;) (type $"(raw) (string -> unit)") (param $0 (ref $string)) (param (ref $capture)) (result (ref $unit))
     (local i32 i32)
     i32.const 0
     local.set 2
@@ -1376,24 +1331,18 @@
     end
     i32.const 0
     local.get 3
-    i32.const 46
-    call_indirect (type 34)
+    i32.const 43
+    call_indirect (type 30)
     struct.new $unit
   )
-  (func (;47;) (type $"(raw) (integer -> string)") (param $0 (ref $integer)) (param (ref $capture)) (result (ref $string))
-    local.get $0
-    struct.get $integer 0
-    i32.wrap_i64
-    array.new_default $string
-  )
-  (func (;48;) (type $"(raw) (string -> (string -> string))") (param $1 (ref $string)) (param (ref $capture)) (result (ref $"(string -> string)"))
-    i32.const 49
+  (func (;44;) (type $"(raw) (string -> (string -> string))") (param $1 (ref $string)) (param (ref $capture)) (result (ref $"(string -> string)"))
+    i32.const 45
     local.get $1
     array.new_fixed $capture 1
     struct.new $"(string -> (string -> string))"
   )
-  (func (;49;) (type $"(raw) (string -> string)") (param $unit (ref $string)) (param (ref $capture)) (result (ref $string))
-    (local (ref $string) i32 i32 i32 i32 (ref $string))
+  (func (;45;) (type $"(raw) (string -> string)") (param $unit (ref $string)) (param (ref $capture)) (result (ref $string))
+    (local (ref $string) i32 i32 (ref $string))
     local.get 1
     i32.const 0
     array.get $capture
@@ -1401,16 +1350,27 @@
     local.set 2
     local.get 2
     array.len
-    local.tee 4
+    local.tee 3
     local.get $unit
     array.len
-    local.tee 5
+    local.tee 4
     i32.add
-    local.tee 6
     array.new_default $string
-    unreachable
+    local.tee 5
+    i32.const 0
+    local.get 2
+    i32.const 0
+    local.get 3
+    array.copy $string $string
+    local.get 5
+    local.get 3
+    local.get $unit
+    i32.const 0
+    local.get 4
+    array.copy $string $string
+    local.get 5
   )
-  (func (;50;) (type $"(raw) (unit -> '3)") (param $condition#0 (ref $unit)) (param (ref $capture)) (result anyref)
+  (func (;46;) (type $"(raw) (unit -> '3)") (param $condition#0 (ref $unit)) (param (ref $capture)) (result anyref)
     (local (ref $"(unit -> '1)"))
     global.get 21
     ref.as_non_null
@@ -1423,7 +1383,7 @@
     call_indirect (type $"(raw) (unit -> '1)")
     ref.cast (ref any)
   )
-  (func (;51;) (type $"(raw) (boolean -> unit)") (param $s#1 (ref $boolean)) (param (ref $capture)) (result (ref $unit))
+  (func (;47;) (type $"(raw) (boolean -> unit)") (param $s#1 (ref $boolean)) (param (ref $capture)) (result (ref $unit))
     (local (ref $"(unit -> '3)"))
     local.get $s#1
     ref.cast (ref $boolean)
@@ -1431,7 +1391,7 @@
     if (result (ref $unit)) ;; label = @1
       struct.new $unit
     else
-      global.get 27
+      global.get 25
       ref.as_non_null
       ref.cast (ref $"(unit -> '3)")
       local.set 2
@@ -1444,7 +1404,7 @@
       ref.cast (ref $unit)
     end
   )
-  (func (;52;) (type $"(raw) (string -> integer)") (param $s#2 (ref $string)) (param (ref $capture)) (result (ref $integer))
+  (func (;48;) (type $"(raw) (string -> integer)") (param $s#2 (ref $string)) (param (ref $capture)) (result (ref $integer))
     (local (ref $"(string -> integer)"))
     global.get 22
     ref.as_non_null
@@ -1458,12 +1418,12 @@
     call_indirect (type $"(raw) (string -> integer)")
     ref.cast (ref $integer)
   )
-  (func (;53;) (type $"(raw) (string -> unit)") (param $a#0 (ref $string)) (param (ref $capture)) (result (ref $unit))
+  (func (;49;) (type $"(raw) (string -> unit)") (param $s1#3 (ref $string)) (param (ref $capture)) (result (ref $unit))
     (local (ref $"(string -> unit)"))
-    global.get 24
+    global.get 23
     ref.as_non_null
     local.set 2
-    local.get $a#0
+    local.get $s1#3
     ref.cast (ref $string)
     local.get 2
     struct.get $"(string -> unit)" 1
@@ -1472,7 +1432,42 @@
     call_indirect (type $"(raw) (string -> unit)")
     ref.cast (ref $unit)
   )
-  (func (;54;) (type $"(raw) ({ specific_name: integer } -> integer)") (param (ref $"{ specific_name: integer }") (ref $capture)) (result (ref $integer))
+  (func (;50;) (type $"(raw) (string -> (string -> string))") (param $s2#4 (ref $string)) (param (ref $capture)) (result (ref $"(string -> string)"))
+    i32.const 51
+    local.get $s2#4
+    ref.cast (ref any)
+    array.new_fixed $capture 1
+    struct.new $"(string -> string)"
+  )
+  (func (;51;) (type $"(raw) (string -> string)") (param $a#0 (ref $string)) (param (ref $capture)) (result (ref $string))
+    (local (ref $string) (ref $"(string -> string)") (ref $"(string -> (string -> string))"))
+    local.get 1
+    i32.const 0
+    array.get $capture
+    ref.cast (ref $string)
+    local.set 2
+    global.get 24
+    ref.as_non_null
+    local.set 4
+    local.get 2
+    ref.cast (ref $string)
+    local.get 4
+    struct.get $"(string -> (string -> string))" 1
+    local.get 4
+    struct.get $"(string -> (string -> string))" 0
+    call_indirect (type $"(raw) (string -> (string -> string))")
+    ref.cast (ref $"(string -> string)")
+    local.set 3
+    local.get $a#0
+    ref.cast (ref $string)
+    local.get 3
+    struct.get $"(string -> string)" 1
+    local.get 3
+    struct.get $"(string -> string)" 0
+    call_indirect (type $"(raw) (string -> string)")
+    ref.cast (ref $string)
+  )
+  (func (;52;) (type $"(raw) ({ specific_name: integer } -> integer)") (param (ref $"{ specific_name: integer }") (ref $capture)) (result (ref $integer))
     local.get 0
     ref.cast (ref $"{ specific_name: integer }")
     struct.get $"{ specific_name: integer }" 0

@@ -32,13 +32,6 @@ pub fn make(encoder: &mut ModuleEncoder, interface: &mut ModuleInterface) {
     e.make_struct(Type::Integer);
   }
 
-  // String copy (dest, dest_offset, src, src_offset, size)
-  {
-    func! { fn copy_string (Type::String, Type::String, Type::String) -> (Type::Unit) }
-    asm! {
-      Unreachable;
-    }
-  }
   // Print string
   {
     func! { fn print_string (Type::String) -> (Type::Unit) };
@@ -84,24 +77,14 @@ pub fn make(encoder: &mut ModuleEncoder, interface: &mut ModuleInterface) {
     }
     e.push_constant(f, ConstValue::Unit);
   }
-  // New zeroed string with given length
-  {
-    func! { fn zeroed_string (Type::Integer) -> (Type::String) };
-    asm! {
-      LocalGet(0);
-      e.make_unwrap_primitive(Type::Integer);
-      I32WrapI64;
-      ArrayNewDefault(e.get_asm_type(Type::String).id);
-    }
-  }
   // String concatenate
   {
     func! { fn string_concatenate (Type::String, Type::String) -> (Type::String) };
-    let index = e.func_mut(f).new_local("index", ValType::I32);
     let length1 = e.func_mut(f).new_local("length1", ValType::I32);
     let length2 = e.func_mut(f).new_local("length2", ValType::I32);
-    let length3 = e.func_mut(f).new_local("length3", ValType::I32);
+    let string_type = e.get_asm_type(Type::String);
     let s = e.new_local(f, "s", Type::String);
+    // array.copy: dest dest_offset src src_offset len
     asm! {
       e.get_local(f, "0");
       ArrayLen;
@@ -110,9 +93,32 @@ pub fn make(encoder: &mut ModuleEncoder, interface: &mut ModuleInterface) {
       ArrayLen;
       LocalTee(length2);
       I32Add;
-      LocalTee(length3);
-      ArrayNewDefault(e.get_asm_type(Type::String).id);
-      Unreachable;
+      // First copy
+      // Destination string
+      ArrayNewDefault(string_type.id);
+      LocalTee(s);
+      // Destination offset
+      I32Const(0);
+      // Source string
+      e.get_local(f, "0");
+      // Source offset
+      I32Const(0);
+      // Length
+      LocalGet(length1);
+      ArrayCopy { array_type_index_dst: string_type.id, array_type_index_src: string_type.id };
+      // Second copy
+      // Destination string
+      LocalGet(s);
+      // Destination offset
+      LocalGet(length1);
+      // Source string
+      e.get_local(f, "1");
+      // Source offset
+      I32Const(0);
+      // Length
+      LocalGet(length2);
+      ArrayCopy { array_type_index_dst: string_type.id, array_type_index_src: string_type.id };
+      LocalGet(s);
     }
   }
 }

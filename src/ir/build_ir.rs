@@ -57,10 +57,6 @@ pub fn build_ir(
         value_ns.import_module(interface.values.clone());
         type_ns.import_module(interface.types.clone());
       }
-
-      e::Use(_) => {}
-
-      e::Module(_) => {}
     }
   }
   Ok(IrModule {

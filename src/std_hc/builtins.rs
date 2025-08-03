@@ -12,6 +12,7 @@ pub fn make_builtin_module(encoder: &mut ModuleEncoder) -> ModuleInterface {
   interface
 }
 
+#[allow(unused_mut)]
 fn primitive_funcs(encoder: &mut ModuleEncoder, interface: &mut ModuleInterface) {
   let e = encoder;
   let mut f;

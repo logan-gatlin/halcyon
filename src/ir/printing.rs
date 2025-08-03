@@ -46,11 +46,10 @@ impl IrModule {
               } else {
                 Some(sexpr(
                   "captures",
-                  captures.into_iter().zip(capture_types.into_iter()).map(
-                    |(cap, ty)| {
-                      sexpr(cap, [format!("{}", ty.borrow()).as_str().into()])
-                    },
-                  ),
+                  captures
+                    .into_iter()
+                    .zip(capture_types.into_iter())
+                    .map(|(cap, ty)| sexpr(cap, [format!("{}", ty.borrow()).as_str().into()])),
                 ))
               },
               Some(sexpr("body", [self.sexpr(*body)])),
@@ -73,8 +72,10 @@ impl IrModule {
         ..
       } => sexpr(
         "struct-literal",
-        field_names.into_iter().zip(field_values.into_iter()).map(
-          |(name, value)| {
+        field_names
+          .into_iter()
+          .zip(field_values.into_iter())
+          .map(|(name, value)| {
             sexpr(
               "field",
               [
@@ -82,8 +83,7 @@ impl IrModule {
                 sexpr("value", [self.sexpr(*value)]),
               ],
             )
-          },
-        ),
+          }),
       ),
       h::Field { of, index } => sexpr(
         "field",
@@ -94,7 +94,7 @@ impl IrModule {
       ),
       h::Binary { op, left, right } => {
         sexpr(format!("{op}"), [self.sexpr(*left), self.sexpr(*right)])
-      },
+      }
       h::Unary { op, child } => sexpr(format!("{op}"), [self.sexpr(*child)]),
       h::FunctionDef {
         body,
@@ -114,11 +114,10 @@ impl IrModule {
           } else {
             Some(sexpr(
               "captures",
-              captures.into_iter().zip(capture_types.into_iter()).map(
-                |(cap, ty)| {
-                  sexpr(cap, [format!("{}", ty.borrow()).as_str().into()])
-                },
-              ),
+              captures
+                .into_iter()
+                .zip(capture_types.into_iter())
+                .map(|(cap, ty)| sexpr(cap, [format!("{}", ty.borrow()).as_str().into()])),
             ))
           },
           Some(sexpr("body", [self.sexpr(*body)])),
@@ -154,7 +153,7 @@ impl IrModule {
         } else {
           sexpr("if", [sexpr("then", [self.sexpr(*then)])])
         }
-      },
+      }
       h::Tuple(items) => sexpr(
         "tuple",
         items
