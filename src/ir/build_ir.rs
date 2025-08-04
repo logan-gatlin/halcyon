@@ -14,13 +14,22 @@ pub fn build_ir(
     for expr in module.contents {
         use ModuleExpressionKind as e;
         match expr.kind {
+            // Recursive let
             e::Let {
                 assignee,
-                assignee_span,
-                value,
+                value:
+                    value @ box Expression {
+                        kind: ValueExpressionKind::FunctionDef { .. },
+                        ..
+                    },
             } => {
+                let mangle = pattern(&mut value_ns, assignee, true)?;
                 let value = value_expr(&mut ir, &mut value_ns, &type_ns, *value)?;
-                let mangle = value_ns.define_global(&assignee).span(assignee_span)?;
+                items.push(ModuleItem::Let(mangle, value));
+            }
+            e::Let { assignee, value } => {
+                let value = value_expr(&mut ir, &mut value_ns, &type_ns, *value)?;
+                let mangle = pattern(&mut value_ns, assignee, true)?;
                 items.push(ModuleItem::Let(mangle, value));
             }
             e::Type {
@@ -35,7 +44,7 @@ pub fn build_ir(
                         .span(assignee_span)?;
                     let type_ = type_def(&mut type_ns, *value)?;
                     let weak = Type::Weak(Rc::downgrade(&type_));
-                    type_.borrow_mut().substitute(0, &weak);
+                    type_.borrow_mut().unify(0, &weak);
                     type_ns.update_type(&mangle, type_.clone());
                     items.push(ModuleItem::Type(mangle, type_));
                 }
@@ -67,6 +76,24 @@ pub fn build_ir(
     })
 }
 
+fn lit(literal: Literal) -> Result<ConstValue> {
+    fn int(value: &str, base: u32) -> Result<i64> {
+        i64::from_str_radix(value, base).lint(TokenLint::InvalidInteger)
+    }
+    fn real(value: &str) -> Result<f64> {
+        value.parse().lint(TokenLint::InvalidReal)
+    }
+
+    Ok(match literal {
+        crate::parse::Literal::Unit => ConstValue::Unit,
+        crate::parse::Literal::Integer(i, base) => ConstValue::Integer(int(&i, base as u32)?),
+        crate::parse::Literal::Real(r) => ConstValue::Real(real(&r)?),
+        crate::parse::Literal::String(s) => ConstValue::String(s),
+        crate::parse::Literal::Glyph(g) => ConstValue::Glyph(g),
+        crate::parse::Literal::Boolean(b) => ConstValue::Boolean(b),
+    })
+}
+
 pub fn value_expr(
     module: &mut Vec<IrNode>,
     ns: &mut ValueNameSpace,
@@ -76,7 +103,7 @@ pub fn value_expr(
     use IrKind as ir;
     use ValueExpressionKind::*;
     let span = expr.span;
-    let mut ptr = module.len();
+    let ptr = module.len();
     macro_rules! rec {
         ($e:expr) => {
             value_expr(module, ns, tns, $e)
@@ -88,25 +115,52 @@ pub fn value_expr(
         type_: Default::default(),
     });
     let kind = match expr.kind {
-        Literal(literal) => {
-            fn int(value: &str, base: u32) -> Result<i64> {
-                i64::from_str_radix(value, base).lint(TokenLint::InvalidInteger)
+        // Recursive let
+        Let {
+            assignee,
+            value:
+                value @ box Expression {
+                    kind: FunctionDef { .. },
+                    ..
+                },
+            in_,
+            ..
+        } => {
+            let assignee = pattern(ns, assignee, false)?;
+            let value = rec!(*value)?;
+            let in_ = if let Some(in_) = in_ {
+                Some(rec!(*in_)?)
+            } else {
+                None
+            };
+            (0..assignee.introduced_names()).for_each(|_| ns.end_local_scope());
+            ir::Declaration {
+                assignee,
+                value,
+                in_,
             }
-            fn real(value: &str) -> Result<f64> {
-                value.parse().lint(TokenLint::InvalidReal)
-            }
-
-            ir::Immediate(match literal {
-                crate::parse::Literal::Unit => ConstValue::Unit,
-                crate::parse::Literal::Integer(i, base) => {
-                    ConstValue::Integer(int(&i, base as u32).span(span)?)
-                }
-                crate::parse::Literal::Real(r) => ConstValue::Real(real(&r).span(span)?),
-                crate::parse::Literal::String(s) => ConstValue::String(s),
-                crate::parse::Literal::Glyph(g) => ConstValue::Glyph(g),
-                crate::parse::Literal::Boolean(b) => ConstValue::Boolean(b),
-            })
         }
+        Let {
+            assignee,
+            value,
+            in_,
+            ..
+        } => {
+            let value = rec!(*value)?;
+            let assignee = pattern(ns, assignee, false)?;
+            let in_ = if let Some(in_) = in_ {
+                Some(rec!(*in_)?)
+            } else {
+                None
+            };
+            (0..assignee.introduced_names()).for_each(|_| ns.end_local_scope());
+            ir::Declaration {
+                assignee,
+                value,
+                in_,
+            }
+        }
+        Literal(literal) => ir::Immediate(lit(literal).span(span)?),
         Identifier(name) => ir::Identifier(ns.get(&name).span(expr.span)?),
         Binary { op, left, right } => ir::Binary {
             op,
@@ -178,70 +232,6 @@ pub fn value_expr(
                 }
             }
         }
-        // Recursive let
-        Let {
-            assignee,
-            value:
-                value @ box Expression {
-                    kind: FunctionDef { .. },
-                    ..
-                },
-            in_,
-            ..
-        } => {
-            module.pop();
-            let assignee = ns.define_local(&assignee);
-            let value = rec!(*value)?;
-            ptr = value;
-            ns.end_local_scope();
-            let ir::FunctionDef {
-                parameter_name,
-                parameter_span,
-                parameter_type,
-                captures,
-                capture_types,
-                body,
-            } = module[value].kind.clone()
-            else {
-                unreachable!()
-            };
-            let in_ = if let Some(in_) = in_ {
-                Some(rec!(*in_)?)
-            } else {
-                None
-            };
-            ir::RecursiveDeclaration {
-                assignee,
-                parameter_name,
-                parameter_span,
-                parameter_type,
-                captures,
-                function_type: Type::Any.to_ref(),
-                capture_types,
-                body,
-                in_,
-            }
-        }
-        Let {
-            assignee,
-            value,
-            in_,
-            ..
-        } => {
-            let value = rec!(*value)?;
-            let assignee = ns.define_local(&assignee);
-            let in_ = if let Some(in_) = in_ {
-                Some(rec!(*in_)?)
-            } else {
-                None
-            };
-            ns.end_local_scope();
-            ir::Declaration {
-                assignee,
-                value,
-                in_,
-            }
-        }
         FunctionCall { callee, argument } => {
             let callee = rec!(*callee)?;
             let argument = rec!(*argument)?;
@@ -260,6 +250,30 @@ pub fn value_expr(
                 None
             },
         },
+        Match {
+            scrutinee,
+            predicates,
+            branches,
+        } => {
+            let scrutinee = rec!(*scrutinee)?;
+            let mut ir_predicates = vec![];
+            let mut predicate_spans = vec![];
+            let mut ir_branches = vec![];
+            for (p, b) in predicates.into_iter().zip(branches) {
+                predicate_spans.push(p.span);
+                let predicate = pattern(ns, p, false)?;
+                let introduced_names = predicate.introduced_names();
+                ir_predicates.push(predicate);
+                let branch = rec!(b)?;
+                ir_branches.push(branch);
+                (0..introduced_names).for_each(|_| ns.end_local_scope());
+            }
+            ir::Match {
+                scrutinee,
+                predicates: ir_predicates,
+                branches: ir_branches,
+            }
+        }
         Tuple(expressions) => ir::Tuple(expressions.into_iter().map(|e| rec!(e)).try_collect()?),
         StructureLiteral { lhs, rhs } => ir::StructLiteral {
             field_names: lhs,
@@ -279,6 +293,30 @@ pub fn value_expr(
     };
     module[ptr].kind = kind;
     Ok(ptr)
+}
+
+fn pattern(ns: &mut ValueNameSpace, expr: PatternExpression, global: bool) -> Result<Pattern> {
+    Ok(Pattern {
+        kind: match expr.kind {
+            PatternExpressionKind::Literal(literal) => {
+                PatternKind::Literal(lit(literal).span(expr.span)?)
+            }
+            PatternExpressionKind::Identifier(name) if !global => {
+                PatternKind::Name(ns.define_local(&name))
+            }
+            PatternExpressionKind::Identifier(name) => {
+                PatternKind::Name(ns.define_global(&name).span(expr.span)?)
+            }
+            PatternExpressionKind::Tuple(expressions) => PatternKind::Tuple(
+                expressions
+                    .into_iter()
+                    .map(|e| pattern(ns, e, global))
+                    .try_collect()?,
+            ),
+        },
+        type_: Type::default().into(),
+        span: expr.span,
+    })
 }
 
 pub fn type_def(ns: &mut TypeNameSpace, expr: TypeDefinition) -> Result<TypeRef> {

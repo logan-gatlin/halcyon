@@ -3,8 +3,7 @@ use super::*;
 #[derive(Debug, Clone)]
 pub enum ModuleExpressionKind {
     Let {
-        assignee: String,
-        assignee_span: Span,
+        assignee: PatternExpression,
         value: Box<ValueExpression>,
     },
     Type {
@@ -33,6 +32,7 @@ pub fn parse_module(iter: it!()) -> Result<ParsedModule> {
     iter.eat_or_error(Module)?;
     // name
     let name = iter.eat_ident()?;
+    iter.eat_or_error(Equal)?;
     let mut contents = vec![];
     // top-level expressions
     loop {
@@ -57,13 +57,11 @@ pub fn parse_module_expression(iter: it!()) -> Result<ModuleExpression> {
     match variant {
         // Let
         0 => {
-            let assignee = iter.eat_ident()?;
-            let assignee_span = iter.last_span;
+            let assignee = parse_pattern(iter)?;
             iter.eat_or_error(Equal)?;
             Ok(ModuleExpression {
                 kind: ModuleExpressionKind::Let {
                     assignee,
-                    assignee_span,
                     value: Box::new(parse_value_expression(iter, 0)?),
                 },
                 span: iter.end_span(),

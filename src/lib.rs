@@ -64,6 +64,7 @@ pub fn compile(input: &str) {
     for module in parsed_modules {
         let mut ir = build_ir(module, &interfaces).handle(&linter);
         let interface = type_solve(&mut ir).handle(&linter);
+        println!("{ir}");
         interfaces.insert(ir.module_name.clone(), interface);
         encoder.encode_ir(ir);
     }

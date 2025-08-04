@@ -16,7 +16,7 @@ pub enum Literal {
 #[derive(Debug, Clone)]
 pub enum ValueExpressionKind {
     Let {
-        assignee: String,
+        assignee: PatternExpression,
         value: Box<ValueExpression>,
         in_: Option<Box<ValueExpression>>,
     },
@@ -45,6 +45,11 @@ pub enum ValueExpressionKind {
         predicate: Box<ValueExpression>,
         then: Box<ValueExpression>,
         else_: Option<Box<ValueExpression>>,
+    },
+    Match {
+        scrutinee: Box<ValueExpression>,
+        predicates: Vec<PatternExpression>,
+        branches: Vec<ValueExpression>,
     },
     Tuple(Vec<ValueExpression>),
     StructureLiteral {
@@ -125,7 +130,7 @@ fn parse_primary(iter: it!()) -> Result<ValueExpression> {
             }
         }
         Let => e::Let {
-            assignee: iter.eat_ident()?,
+            assignee: parse_pattern(iter)?,
             value: {
                 iter.eat_or_error(Equal)?;
                 Box::new(parse_value_expression(iter, 0)?)
@@ -170,6 +175,27 @@ fn parse_primary(iter: it!()) -> Result<ValueExpression> {
                 None
             },
         },
+        Match => {
+            let scrutinee = Box::new(parse_value_expression(iter, 0)?);
+            iter.eat_or_error(With)?;
+            let mut predicates = vec![];
+            let mut branches = vec![];
+            // Optional first pipe
+            iter.eat(Pipe);
+            loop {
+                predicates.push(parse_pattern(iter)?);
+                iter.eat_or_error(FatArrow)?;
+                branches.push(parse_value_expression(iter, 0)?);
+                if iter.eat(Pipe).is_none() {
+                    break;
+                }
+            }
+            e::Match {
+                scrutinee,
+                predicates,
+                branches,
+            }
+        }
         // Tuple or parenthesis
         LeftParen => {
             let mut inner = vec![];
@@ -228,8 +254,8 @@ pub fn parse_value_expression(iter: it!(), precedence: Precedence) -> Result<Val
         iter.end_span();
         parse_primary(iter)?
     };
-    const TERMINAL_TOKENS: [TokenKind; 9] = [
-        Let, Type, Import, End, RightParen, RightBrace, In, Then, Else,
+    const TERMINAL_TOKENS: [TokenKind; 12] = [
+        Let, Type, Import, End, RightParen, RightBrace, In, Then, Else, Comma, With, Pipe,
     ];
     // Precedence climbing loop
     while let Some(next) = iter.peek(0) {

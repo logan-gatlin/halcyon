@@ -1,3 +1,5 @@
+use crate::ir::{Type, TypeRef};
+
 #[derive(Clone, Debug)]
 pub enum ConstValue {
     Unit,
@@ -18,5 +20,19 @@ impl std::fmt::Display for ConstValue {
             ConstValue::Glyph(val) => write!(f, "{val}"),
             ConstValue::Boolean(val) => write!(f, "{val}"),
         }
+    }
+}
+
+impl ConstValue {
+    pub fn type_of(&self) -> TypeRef {
+        match self {
+            ConstValue::Unit => Type::Unit,
+            ConstValue::Integer(_) => Type::Integer,
+            ConstValue::Real(_) => Type::Real,
+            ConstValue::Boolean(_) => Type::Boolean,
+            ConstValue::String(_) => Type::String,
+            ConstValue::Glyph(_) => Type::Glyph,
+        }
+        .to_ref()
     }
 }

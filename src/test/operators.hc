@@ -1,4 +1,4 @@
-module OpTest
+module OpTest =
   import std
   // Unary ops
   let _ = std:assert not false

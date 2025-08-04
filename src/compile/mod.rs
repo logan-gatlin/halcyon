@@ -71,9 +71,15 @@ impl ModuleEncoder {
         for item in ir.items.clone() {
             match item {
                 ModuleItem::Let(mangle, ptr) => {
-                    let global_id = self.new_global(mangle, ir.nodes[ptr].type_.clone());
+                    mangle.iter_names(&mut |n, t| {
+                        self.new_global(n.clone(), t.clone());
+                    });
                     lower::lower(&mut ir, ptr, self, self.main_fn);
-                    self.push(self.main_fn, GlobalSet(global_id));
+                    let value_t = self.get_asm_type(mangle.type_.clone());
+                    let local = self.func_mut(self.main_fn).new_temporary(value_t.val);
+                    self.push(self.main_fn, LocalSet(local));
+                    lower::lower_pattern(mangle, self, local, self.main_fn, true);
+                    self.push(self.main_fn, Drop);
                 }
                 _ => {}
             }
@@ -361,8 +367,6 @@ impl ModuleEncoder {
                 let r = wk.upgrade().unwrap();
                 return self.get_storage_type(&r, raw);
             }
-
-            Type::Type => todo!(),
         };
         register(self, t, rt)
     }

@@ -3,6 +3,8 @@ use std::{
     rc::{Rc, Weak},
 };
 
+use crate::semantic::Substitution;
+
 pub type TypeVariable = usize;
 pub type TypeRef = Rc<RefCell<Type>>;
 pub type WeakTypeRef = Weak<RefCell<Type>>;
@@ -23,8 +25,6 @@ pub enum Type {
     String,
     /// UTF-8 codepoint 32 bit
     Glyph,
-    /// Higher order type
-    Type,
     // Type variable
     TypeVariable(TypeVariable),
     /// Record type
@@ -47,30 +47,50 @@ pub enum Type {
     Weak(WeakTypeRef),
 }
 
-/*
-impl std::ops::Add for Type {
-  type Output = Type;
-
-  fn add(self, rhs: Self) -> Self::Output {
-    match (self, rhs) {
-      (t1, t2) if t1 == t2 => t1,
-      (Type::Sum(s1), Type::Sum(s2)) => {
-        Type::Sum(s1.union(&s2).cloned().collect::<HashSet<_>>())
-      },
-      (Type::Sum(mut s), t) | (t, Type::Sum(mut s)) => {
-        s.insert(t);
-        Type::Sum(s)
-      },
-      (t1, t2) => {
-        let mut hs = HashSet::new();
-        hs.insert(t1);
-        hs.insert(t2);
-        Type::Sum(hs)
-      },
+pub trait Unify {
+    fn unify(&mut self, tv: TypeVariable, type_: &Type);
+    fn unify_all(&mut self, subs: &[Substitution]) {
+        for Substitution(tv, t) in subs {
+            self.unify(*tv, &(t.borrow()));
+        }
     }
-  }
 }
-*/
+
+impl Unify for Type {
+    fn unify(&mut self, tv: TypeVariable, type_: &Type) {
+        match self {
+            Type::TypeVariable(t) => {
+                if *t == tv {
+                    *self = type_.clone();
+                }
+            }
+            Type::Struct { member_types, .. } => {
+                member_types.iter_mut().for_each(|t| {
+                    t.borrow_mut().unify(tv, type_);
+                });
+            }
+            Type::Product(items) => items.iter_mut().for_each(|i| {
+                i.borrow_mut().unify(tv, type_);
+            }),
+            Type::Sum { variant_types, .. } => variant_types
+                .iter_mut()
+                .for_each(|t| t.borrow_mut().unify(tv, type_)),
+            Type::Function(a, b) => {
+                a.borrow_mut().unify(tv, type_);
+                b.borrow_mut().unify(tv, type_);
+            }
+            Type::Weak(_)
+            | Type::Any
+            | Type::_ClosureCapture
+            | Type::Unit
+            | Type::Integer
+            | Type::Real
+            | Type::Boolean
+            | Type::String
+            | Type::Glyph => {}
+        }
+    }
+}
 
 impl Type {
     pub fn to_ref(self) -> TypeRef {
@@ -130,50 +150,13 @@ impl Type {
             Type::Product(items) => items
                 .into_iter()
                 .fold(false, |accum, x| accum || x.borrow().contains_type_var(tv)),
-            /*
-            Type::Sum(hash_set) => hash_set
-              .into_iter()
-              .fold(false, |accum, x| accum || x.contains_type_var(tv)),
-            */
+            Type::Sum { variant_types, .. } => variant_types
+                .into_iter()
+                .fold(false, |accum, x| accum || x.borrow().contains_type_var(tv)),
             Type::Function(a, b) => {
                 a.borrow().contains_type_var(tv) || b.borrow().contains_type_var(tv)
             }
             _ => false,
-        }
-    }
-
-    pub fn substitute(&mut self, tv: TypeVariable, type_: &Type) {
-        match self {
-            Type::TypeVariable(t) => {
-                if *t == tv {
-                    *self = type_.clone();
-                }
-            }
-            Type::Struct { member_types, .. } => {
-                member_types.iter_mut().for_each(|t| {
-                    t.borrow_mut().substitute(tv, type_);
-                });
-            }
-            Type::Product(items) => items.iter_mut().for_each(|i| {
-                i.borrow_mut().substitute(tv, type_);
-            }),
-            Type::Sum { variant_types, .. } => variant_types
-                .iter_mut()
-                .for_each(|t| t.borrow_mut().substitute(tv, type_)),
-            Type::Function(a, b) => {
-                a.borrow_mut().substitute(tv, type_);
-                b.borrow_mut().substitute(tv, type_);
-            }
-            Type::Weak(_)
-            | Type::Any
-            | Type::_ClosureCapture
-            | Type::Unit
-            | Type::Integer
-            | Type::Real
-            | Type::Boolean
-            | Type::String
-            | Type::Glyph
-            | Type::Type => {}
         }
     }
 
@@ -238,8 +221,7 @@ impl PartialEq for Type {
             | (t::Real, t::Real)
             | (t::Boolean, t::Boolean)
             | (t::Glyph, t::Glyph)
-            | (t::String, t::String)
-            | (t::Type, t::Type) => true,
+            | (t::String, t::String) => true,
             (
                 t::Struct {
                     member_names: names1,
@@ -288,7 +270,6 @@ impl std::hash::Hash for Type {
                 a.borrow().hash(state);
                 b.borrow().hash(state);
             }
-            Type::Type => "type".hash(state),
             Type::Any => {
                 "any".hash(state);
             }
@@ -339,7 +320,6 @@ impl std::fmt::Display for Type {
                     .join(", ");
                 write!(f, "{{ {fields} }}")
             }
-            Type::Type => write!(f, "type"),
             Type::Function(a, b) => write!(f, "({} -> {})", a.borrow(), b.borrow()),
             Type::TypeVariable(id) => write!(f, "'{id}"),
             Type::Product(items) => write!(

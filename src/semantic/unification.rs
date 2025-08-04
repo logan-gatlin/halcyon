@@ -19,8 +19,8 @@ pub fn unification(constraints: &[TypeConstraint]) -> Result<Vec<Substitution>> 
                 if !t.contains_type_var(tv) =>
             {
                 cons.iter_mut().for_each(|TypeConstraint(t1, t2, _)| {
-                    t1.borrow_mut().substitute(tv, &t);
-                    t2.borrow_mut().substitute(tv, &t);
+                    t1.borrow_mut().unify(tv, &t);
+                    t2.borrow_mut().unify(tv, &t);
                 });
                 solution.push(Substitution(tv, t.into()));
             }
@@ -84,12 +84,6 @@ pub fn apply_solution(nodes: &mut IrModule, mut node_ptr: IrPtr, solution: Vec<S
             IrKind::FunctionDef { body, .. } => {
                 to_visit.push(body);
             }
-            IrKind::RecursiveDeclaration { body, in_, .. } => {
-                to_visit.push(body);
-                if let Some(in_) = in_ {
-                    to_visit.push(in_);
-                }
-            }
             IrKind::FunctionCall {
                 callee,
                 argument: arguments,
@@ -109,6 +103,14 @@ pub fn apply_solution(nodes: &mut IrModule, mut node_ptr: IrPtr, solution: Vec<S
                     to_visit.push(else_);
                 }
             }
+            IrKind::Match {
+                scrutinee,
+                branches,
+                ..
+            } => {
+                to_visit.push(scrutinee);
+                to_visit.extend_from_slice(&branches);
+            }
         }
         while let Some(next) = to_visit.pop() {
             if !visited.contains(&next) {
@@ -118,23 +120,7 @@ pub fn apply_solution(nodes: &mut IrModule, mut node_ptr: IrPtr, solution: Vec<S
         }
         break;
     }
-    visited.into_iter().for_each(|n| {
-        let nt = &mut nodes[n].type_;
-        solution
-            .iter()
-            .for_each(|Substitution(tv, t)| nt.borrow_mut().substitute(*tv, &t.borrow()));
-        if let IrKind::FunctionDef { capture_types, .. } = &mut nodes[n].kind {
-            capture_types.into_iter().for_each(|old_t| {
-                solution.iter().for_each(|Substitution(tv, new_t)| {
-                    old_t.borrow_mut().substitute(*tv, &new_t.borrow());
-                })
-            })
-        } else if let IrKind::RecursiveDeclaration { capture_types, .. } = &mut nodes[n].kind {
-            capture_types.into_iter().for_each(|old_t| {
-                solution.iter().for_each(|Substitution(tv, new_t)| {
-                    old_t.borrow_mut().substitute(*tv, &new_t.borrow());
-                })
-            })
-        }
-    });
+    visited
+        .into_iter()
+        .for_each(|n| nodes[n].unify_all(&solution));
 }

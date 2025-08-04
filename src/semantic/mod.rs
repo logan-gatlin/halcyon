@@ -1,4 +1,5 @@
 mod check;
+mod exhaustiveness;
 mod inference;
 mod unification;
 
@@ -49,8 +50,7 @@ impl Environment {
             | Type::Real
             | Type::Boolean
             | Type::String
-            | Type::Glyph
-            | Type::Type => {}
+            | Type::Glyph => {}
             Type::TypeVariable(tv) => {
                 if !map.contains_key(tv) {
                     let new_tv = self.type_variable;
@@ -91,7 +91,7 @@ impl Environment {
             self.map_fresh_type_variables(&t, &mut fresh);
             fresh
                 .into_iter()
-                .for_each(|(old, new)| t.borrow_mut().substitute(old, &Type::TypeVariable(new)));
+                .for_each(|(old, new)| t.borrow_mut().unify(old, &Type::TypeVariable(new)));
             t
         } else {
             self.value_map.get(mangle).unwrap().clone()
@@ -114,7 +114,7 @@ impl std::fmt::Display for TypeConstraint {
 }
 
 #[derive(Debug, Clone)]
-pub struct Substitution(TypeVariable, TypeRef);
+pub struct Substitution(pub TypeVariable, pub TypeRef);
 
 #[derive(Debug, Clone, Default)]
 pub struct ModuleInterface {
@@ -124,25 +124,37 @@ pub struct ModuleInterface {
 
 pub fn type_solve(module: &mut IrModule) -> Result<ModuleInterface> {
     let mut interface = ModuleInterface::default();
-    let mut env = Environment::new();
-    for item in module.items.clone() {
+    let mut environment = Environment::new();
+    for (id, item) in module.items.clone().into_iter().enumerate() {
         match item {
-            ModuleItem::Let(name, ir) => {
-                let mut constraints = vec![];
-                type_inference(module, ir, &mut env, &mut constraints)?;
-                let solution = unification(&constraints)?;
+            ModuleItem::Let(mut assignee, ir) => {
+                let mut new_constraints = vec![];
+                let recursive_type_placeholder = infer_pattern(&mut assignee, &mut environment);
+                type_inference(module, ir, &mut environment, &mut new_constraints)?;
+                new_constraints.push(TypeConstraint(
+                    recursive_type_placeholder.clone(),
+                    module.nodes[ir].type_.clone(),
+                    module.nodes[ir].span,
+                ));
+                let solution = unification(&new_constraints)?;
+                assignee.unify_all(&solution);
                 apply_solution(module, ir, solution);
-                let second_solution = unification(&check_structs(&env, module, ir)?)?;
+                let second_solution = unification(&check_structs(&mut environment, module, ir)?)?;
+                assignee.unify_all(&second_solution);
                 apply_solution(module, ir, second_solution);
-                env.insert_value_type(name.clone(), module[ir].type_.clone(), true);
-                env.reset_type_variable();
-                interface.values.insert(name, module[ir].type_.clone());
+                module.items[id] = ModuleItem::Let(assignee.clone(), ir);
+                assignee.iter_names(&mut |name, type_| {
+                    interface.values.insert(name.clone(), type_.clone());
+                    environment.insert_value_type(name.clone(), type_.clone(), true);
+                });
+                environment.reset_type_variable();
             }
             ModuleItem::Type(name, type_) => {
-                env.define_type(name.clone(), type_.clone());
-                interface.types.insert(name, type_);
+                environment.define_type(name.clone(), type_.clone());
+                interface.types.insert(name.clone(), type_.clone());
             }
         }
     }
+    exhaustiveness::check(&module)?;
     Ok(interface)
 }

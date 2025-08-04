@@ -1,9 +1,4 @@
-# Halcyon Compiler
-The Halcyon language is a strongly typed functional programming language for the 
-[WebAssembly](https://webassembly.org/) virtual machine.
-
-```
-module Demo = 
+module FizzBuzz = 
   import std
   let fizzbuzz = fn from to =>
     let to_str = fn num =>
@@ -16,6 +11,5 @@ module Demo =
       if from <= to then
         std:print_string (to_str from);
         fizzbuzz (from + 1) to
-  let _ = fizzbuzz 1 30
+  let () = fizzbuzz 1 30
 end
-```

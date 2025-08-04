@@ -16,13 +16,130 @@ fn cast_any() -> Instruction<'static> {
     Instruction::RefCastNonNull(HeapType::ANY)
 }
 
+// Helper functions to insert binary-operator assembly anywhere. Useful for comparisons
+// in patterns.
+/// Assumes the first operand is on the stack. Returns temporary with the curried op
+fn binary_op_first_half(op: BinaryOp, state: &mut ModuleEncoder, f: u32) -> u32 {
+    macro_rules! asm {
+            ($($e:expr);*;) => {
+                let __temp = [$($e,)*];
+                state.func_mut(f).extend(&__temp);
+            };
+        }
+    let operator_type = state.get_asm_type(op.get_type());
+    let operator_temporary = state.func_mut(f).new_temporary(operator_type.val);
+    let curried_operator_type = state.get_asm_type(op.get_curry_type());
+    let curried_operator_temporary = state.func_mut(f).new_temporary(curried_operator_type.val);
+    state.get_symbol(f, &Path::from(BUILTIN_MODULE_NAME).child(op));
+    asm! {
+      LocalTee(operator_temporary);
+      StructGet {
+        struct_type_index: operator_type.id,
+        field_index: 1,
+      };
+      LocalGet(operator_temporary);
+      StructGet {
+        struct_type_index: operator_type.id,
+        field_index: 0,
+      };
+      CallIndirect {
+        type_index: operator_type.raw_id,
+        table_index: 0,
+      };
+      LocalSet(curried_operator_temporary);
+    }
+    curried_operator_temporary
+}
+
+// Assumes the second operand is on the stack
+fn binary_op_second_half(
+    op: BinaryOp,
+    curried_operator_temporary: u32,
+    state: &mut ModuleEncoder,
+    f: u32,
+) {
+    macro_rules! asm {
+            ($($e:expr);*;) => {
+                let __temp = [$($e,)*];
+                state.func_mut(f).extend(&__temp);
+            };
+        }
+    let curried_operator_type = state.get_asm_type(op.get_curry_type());
+    asm! {
+      LocalGet(curried_operator_temporary);
+      StructGet {
+        struct_type_index: curried_operator_type.id,
+        field_index: 1,
+      };
+      LocalGet(curried_operator_temporary);
+      StructGet {
+        struct_type_index: curried_operator_type.id,
+        field_index: 0,
+      };
+      CallIndirect {
+        type_index: curried_operator_type.raw_id,
+        table_index: 0,
+      };
+    }
+}
+
+pub fn lower_pattern(
+    pattern: Pattern,
+    state: &mut ModuleEncoder,
+    temp: u32,
+    f: u32,
+    is_global: bool,
+) {
+    match pattern.kind {
+        PatternKind::Name(path) => {
+            state.push(f, LocalGet(temp));
+            if !is_global {
+                let local = state.new_local(f, path, pattern.type_);
+                state.push(f, LocalSet(local));
+            } else {
+                let global_id = state.get_global_id(&path);
+                state.push(f, GlobalSet(global_id));
+            }
+            state.push(f, I32Const(1));
+        }
+        PatternKind::Tuple(patterns) => {
+            let struct_t = state.get_asm_type(pattern.type_.clone());
+            let num_patterns = patterns.len();
+            for (id, p) in patterns.into_iter().enumerate() {
+                state.push(f, LocalGet(temp));
+                state.push(
+                    f,
+                    StructGet {
+                        struct_type_index: struct_t.id,
+                        field_index: id as u32,
+                    },
+                );
+                let temporary_t = state.get_asm_type(p.type_.clone());
+                let temp = state.func_mut(f).new_temporary(temporary_t.val);
+                state.push(f, LocalSet(temp));
+                lower_pattern(p, state, temp, f, is_global);
+            }
+            for _ in 0..(num_patterns.checked_sub(1).unwrap_or(0)) {
+                state.push(f, I32And);
+            }
+        }
+        PatternKind::Literal(const_value) => {
+            state.push(f, LocalGet(temp));
+            let temp = binary_op_first_half(BinaryOp::DoubleEqual, state, f);
+            state.push_constant(f, const_value);
+            binary_op_second_half(BinaryOp::DoubleEqual, temp, state, f);
+            state.unwrap_primitive(f, Type::Boolean);
+        }
+    }
+}
+
 pub fn lower(nodes: &mut IrModule, ptr: IrPtr, state: &mut ModuleEncoder, f: u32) {
     macro_rules! asm {
-    ($($e:expr);*;) => {
-      let __temp = [$($e,)*];
-      state.func_mut(f).extend(&__temp);
-    };
-  }
+        ($($e:expr);*;) => {
+            let __temp = [$($e,)*];
+            state.func_mut(f).extend(&__temp);
+        };
+    }
 
     let nk = nodes[ptr].kind.clone();
     let this_t = nodes[ptr].type_.clone();
@@ -33,11 +150,12 @@ pub fn lower(nodes: &mut IrModule, ptr: IrPtr, state: &mut ModuleEncoder, f: u32
             value,
             in_,
         } => {
-            let local = state
-                .func_mut(f)
-                .new_local(assignee, ValType::Ref(RefType::ANYREF));
+            let value_t = state.get_asm_type(nodes[value].type_.clone());
+            let temporary = state.func_mut(f).new_temporary(value_t.val);
             lower(nodes, value, state, f);
-            asm! { LocalSet(local); }
+            asm! {LocalSet(temporary); }
+            lower_pattern(assignee, state, temporary, f, false);
+            asm! { Drop; }
             if let Some(in_) = in_ {
                 lower(nodes, in_, state, f);
             } else {
@@ -80,47 +198,10 @@ pub fn lower(nodes: &mut IrModule, ptr: IrPtr, state: &mut ModuleEncoder, f: u32
             lower(nodes, right, state, f);
         }
         h::Binary { op, left, right } => {
-            let operator_type = state.get_asm_type(op.get_type());
-            let operator_temporary = state.func_mut(f).new_temporary(operator_type.val);
-            let curried_operator_type = state.get_asm_type(op.get_curry_type());
-            let curried_operator_temporary =
-                state.func_mut(f).new_temporary(curried_operator_type.val);
             lower(nodes, left, state, f);
-            state.get_symbol(f, &Path::from(BUILTIN_MODULE_NAME).child(op));
-            asm! {
-              LocalTee(operator_temporary);
-              StructGet {
-                struct_type_index: operator_type.id,
-                field_index: 1,
-              };
-              LocalGet(operator_temporary);
-              StructGet {
-                struct_type_index: operator_type.id,
-                field_index: 0,
-              };
-              CallIndirect {
-                type_index: operator_type.raw_id,
-                table_index: 0,
-              };
-              LocalSet(curried_operator_temporary);
-            }
+            let temp = binary_op_first_half(op, state, f);
             lower(nodes, right, state, f);
-            asm! {
-              LocalGet(curried_operator_temporary);
-              StructGet {
-                struct_type_index: curried_operator_type.id,
-                field_index: 1,
-              };
-              LocalGet(curried_operator_temporary);
-              StructGet {
-                struct_type_index: curried_operator_type.id,
-                field_index: 0,
-              };
-              CallIndirect {
-                type_index: curried_operator_type.raw_id,
-                table_index: 0,
-              };
-            }
+            binary_op_second_half(op, temp, state, f);
         }
         h::Unary { op, child } => {
             lower(nodes, child, state, f);
@@ -163,6 +244,28 @@ pub fn lower(nodes: &mut IrModule, ptr: IrPtr, state: &mut ModuleEncoder, f: u32
             }
             asm! { End; }
         }
+        h::Match {
+            scrutinee,
+            predicates,
+            branches,
+        } => {
+            let scrutinee_t = state.get_asm_type(nodes[scrutinee].type_.clone());
+            let branches_t = state.get_asm_type(this_t);
+            lower(nodes, scrutinee, state, f);
+            let scrutinee_temp = state.func_mut(f).new_temporary(scrutinee_t.val);
+            asm! { LocalSet(scrutinee_temp); }
+            let num_branches = branches.len();
+            for (p, b) in predicates.into_iter().zip(branches) {
+                lower_pattern(p, state, scrutinee_temp, f, false);
+                asm! { If(BlockType::Result(branches_t.val)); }
+                lower(nodes, b, state, f);
+                asm! { Else; }
+            }
+            asm! { Unreachable; }
+            (0..num_branches).for_each(|_| {
+                asm! { End; }
+            });
+        }
         h::FunctionDef {
             parameter_name,
             body,
@@ -189,49 +292,6 @@ pub fn lower(nodes: &mut IrModule, ptr: IrPtr, state: &mut ModuleEncoder, f: u32
               state.make_capture(captures.len() as u32);
               state.make_struct(this_t);
             }
-        }
-        h::RecursiveDeclaration {
-            assignee,
-            parameter_name,
-            captures,
-            capture_types,
-            function_type,
-            body,
-            in_,
-            ..
-        } => {
-            // <Copied from FunctionDef>
-            let new_func = state.new_function(
-                this_t,
-                parameter_name.unwrap_or("unit".into()),
-                captures.clone(),
-                capture_types.clone(),
-            );
-            lower(nodes, body, state, new_func);
-            asm! { I32Const(new_func as i32); }
-            // Push all captures
-            for c in &captures {
-                asm! {
-                  state.get_local(f, c.clone());
-                  cast_any();
-                }
-            }
-            let local = state
-                .func_mut(f)
-                .new_local(assignee, ValType::Ref(RefType::ANYREF));
-            asm! {
-             state.make_capture(captures.len() as u32);
-             state.make_struct(function_type);
-            // </Copied from FunctionDef>
-            // <Copied from Declaration>
-             LocalSet(local);
-            }
-            if let Some(in_) = in_ {
-                lower(nodes, in_, state, f);
-            } else {
-                asm! { state.make_struct(Type::Unit); }
-            }
-            // </Copied from Declaration>
         }
         h::FunctionCall {
             callee,

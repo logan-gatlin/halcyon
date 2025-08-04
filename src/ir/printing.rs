@@ -1,5 +1,17 @@
 use super::*;
 
+impl Into<SExpression> for &Pattern {
+    fn into(self) -> SExpression {
+        let mut se = match &self.kind {
+            PatternKind::Name(path) => sexpr(path, []),
+            PatternKind::Tuple(patterns) => sexpr("tuple", patterns.iter().map(|p| p.into())),
+            PatternKind::Literal(const_value) => sexpr(format!("{const_value}"), []),
+        };
+        se.push_front(format!("(type {})", self.type_.borrow()).as_str().into());
+        se
+    }
+}
+
 impl IrModule {
     fn sexpr(&self, node: IrPtr) -> SExpression {
         let node = &self[node];
@@ -15,49 +27,6 @@ impl IrModule {
                 [
                     sexpr("mangle", [assignee.into()]),
                     sexpr("value", [self.sexpr(*value)]),
-                    if let Some(i) = in_ {
-                        sexpr("in", [self.sexpr(*i)])
-                    } else {
-                        sexpr("", [])
-                    },
-                ],
-            ),
-            h::RecursiveDeclaration {
-                assignee,
-                in_,
-                parameter_name,
-                captures,
-                capture_types,
-                body,
-                ..
-            } => sexpr(
-                "let-rec",
-                [
-                    sexpr("assignee", [assignee.into()]),
-                    sexpr(
-                        "function",
-                        [
-                            Some(sexpr(
-                                "argument",
-                                [parameter_name.clone().unwrap_or("()".into()).into()],
-                            )),
-                            if captures.len() == 0 {
-                                None
-                            } else {
-                                Some(sexpr(
-                                    "captures",
-                                    captures.into_iter().zip(capture_types.into_iter()).map(
-                                        |(cap, ty)| {
-                                            sexpr(cap, [format!("{}", ty.borrow()).as_str().into()])
-                                        },
-                                    ),
-                                ))
-                            },
-                            Some(sexpr("body", [self.sexpr(*body)])),
-                        ]
-                        .into_iter()
-                        .flatten(),
-                    ),
                     if let Some(i) = in_ {
                         sexpr("in", [self.sexpr(*i)])
                     } else {
@@ -157,6 +126,28 @@ impl IrModule {
                     sexpr("if", [sexpr("then", [self.sexpr(*then)])])
                 }
             }
+            h::Match {
+                scrutinee,
+                predicates,
+                branches,
+            } => sexpr(
+                "match",
+                [
+                    sexpr("scrutinee", [self.sexpr(*scrutinee)]),
+                    sexpr(
+                        "branches",
+                        predicates.into_iter().zip(branches).map(|(p, b)| {
+                            sexpr(
+                                "",
+                                [
+                                    sexpr("predicate", [p.into()]),
+                                    sexpr("branch", [self.sexpr(*b)]),
+                                ],
+                            )
+                        }),
+                    ),
+                ],
+            ),
             h::Tuple(items) => sexpr(
                 "tuple",
                 items

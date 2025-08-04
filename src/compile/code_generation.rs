@@ -35,7 +35,13 @@ impl ModuleEncoder {
         } else if let Some(global_id) = self.global_map.get(mangle) {
             self.push(current_function, GlobalGet(*global_id));
             self.push(current_function, RefAsNonNull);
+        } else {
+            unreachable!("No symbol exists: {mangle}")
         }
+    }
+
+    pub fn get_global_id(&self, path: &Path) -> u32 {
+        self.global_map.get(path).unwrap().clone()
     }
 
     pub fn make_new_array(&mut self, type_: impl Into<TypeRef>, size: u32) -> Instruction<'static> {

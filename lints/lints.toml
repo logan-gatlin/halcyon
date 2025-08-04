@@ -93,6 +93,10 @@ help = "The type of this expression is ambiguous. Try adding type hints to the f
 reason = "Non-existant field"
 help = "No type exists with a field named `%` and the type `%`"
 
+[4003]
+reason = "Pattern is not exhaustive"
+help = "Patterns in let expressions must cover every possible case. Make this pattern more broad so that it covers all elements of the type `%`."
+
 # Compiler bug
 [9000]
 reason = "(COMPILER BUG) WAT failed validation"

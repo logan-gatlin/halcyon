@@ -20,19 +20,8 @@ pub type IrPtr = usize;
 #[derive(Debug, Clone)]
 pub enum IrKind {
     Declaration {
-        assignee: Path,
+        assignee: Pattern,
         value: IrPtr,
-        in_: Option<IrPtr>,
-    },
-    RecursiveDeclaration {
-        assignee: Path,
-        parameter_name: Option<Path>,
-        parameter_span: Span,
-        parameter_type: Option<TypeRef>,
-        captures: Vec<Path>,
-        capture_types: Vec<TypeRef>,
-        function_type: TypeRef,
-        body: IrPtr,
         in_: Option<IrPtr>,
     },
     Immediate(ConstValue),
@@ -72,7 +61,57 @@ pub enum IrKind {
         then: IrPtr,
         else_: Option<IrPtr>,
     },
+    Match {
+        scrutinee: IrPtr,
+        predicates: Vec<Pattern>,
+        branches: Vec<IrPtr>,
+    },
     ImportedSymbol(Path, TypeRef),
+}
+
+#[derive(Debug, Clone)]
+pub struct Pattern {
+    pub kind: PatternKind,
+    pub type_: TypeRef,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub enum PatternKind {
+    Name(Path),
+    Tuple(Vec<Pattern>),
+    Literal(ConstValue),
+}
+
+impl Pattern {
+    pub fn introduced_names(&self) -> usize {
+        match &self.kind {
+            PatternKind::Name(_) => 1,
+            PatternKind::Tuple(patterns) => patterns
+                .into_iter()
+                .fold(0, |v, p| v + p.introduced_names()),
+            PatternKind::Literal(_) => 0,
+        }
+    }
+
+    pub fn iter_names(&self, f: &mut impl FnMut(&Path, &TypeRef)) {
+        match &self.kind {
+            PatternKind::Name(path) => f(path, &self.type_),
+            PatternKind::Tuple(patterns) => patterns.iter().for_each(|p| p.iter_names(f)),
+            PatternKind::Literal(_) => {}
+        }
+    }
+}
+
+impl Unify for Pattern {
+    fn unify(&mut self, tv: TypeVariable, type_: &Type) {
+        self.type_.borrow_mut().unify(tv, type_);
+        match &mut self.kind {
+            PatternKind::Name(_) => {}
+            PatternKind::Tuple(patterns) => patterns.iter_mut().for_each(|p| p.unify(tv, type_)),
+            PatternKind::Literal(_) => {}
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -82,9 +121,27 @@ pub struct IrNode {
     pub type_: TypeRef,
 }
 
+impl Unify for IrNode {
+    fn unify(&mut self, tv: TypeVariable, type_: &Type) {
+        self.type_.borrow_mut().unify(tv, type_);
+        match &mut self.kind {
+            IrKind::FunctionDef { capture_types, .. } => {
+                capture_types.into_iter().for_each(|old_t| {
+                    old_t.borrow_mut().unify(tv, type_);
+                })
+            }
+            IrKind::Match { predicates, .. } => {
+                predicates.into_iter().for_each(|p| p.unify(tv, type_))
+            }
+            IrKind::Declaration { assignee, .. } => assignee.unify(tv, type_),
+            _ => {}
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum ModuleItem {
-    Let(Path, IrPtr),
+    Let(Pattern, IrPtr),
     Type(Path, TypeRef),
 }
 
@@ -94,6 +151,15 @@ pub struct IrModule {
     pub universe: HashMap<Path, TypeRef>,
     pub items: Vec<ModuleItem>,
     pub nodes: Vec<IrNode>,
+}
+
+impl Unify for IrModule {
+    fn unify(&mut self, tv: TypeVariable, type_: &Type) {
+        self.universe
+            .iter_mut()
+            .for_each(|(_, t)| t.borrow_mut().unify(tv, type_));
+        self.nodes.iter_mut().for_each(|n| n.unify(tv, type_));
+    }
 }
 
 impl IrModule {
@@ -107,13 +173,6 @@ impl IrModule {
                         in_
                     } else {
                         value
-                    }
-                }
-                RecursiveDeclaration { body, in_, .. } => {
-                    if let Some(in_) = in_ {
-                        in_
-                    } else {
-                        body
                     }
                 }
                 FunctionCall {
@@ -140,6 +199,17 @@ impl IrModule {
                         else_
                     } else {
                         then
+                    }
+                }
+                Match {
+                    scrutinee,
+                    branches,
+                    ..
+                } => {
+                    if let Some(last) = branches.last() {
+                        last
+                    } else {
+                        scrutinee
                     }
                 }
                 ImportedSymbol(..) | Immediate(..) | Identifier(..) => break,

@@ -1,4 +1,4 @@
-module TypeTest
+module TypeTest = 
   import std
 
   // Primitive aliases
@@ -24,5 +24,5 @@ module TypeTest
   // Struct field inference
   type specific_struct = { specific_name: integer }
   let tricky_inference = fn a => a.specific_name
-  let a = std:assert ((tricky_inference { specific_name = 1 }) + 1 == 2)
+  let () = std:assert ((tricky_inference { specific_name = 1 }) + 1 == 2)
 end
