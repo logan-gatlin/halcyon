@@ -185,6 +185,19 @@ impl std::fmt::Display for IrModule {
                                 sexpr("value", [format!("{}", type_.borrow()).as_str().into()]),
                             ],
                         ),
+                        ModuleItem::Constructor {
+                            name,
+                            parameter,
+                            sum,
+                            ..
+                        } => sexpr(
+                            "constructor",
+                            [
+                                sexpr("name", [name.into()]),
+                                sexpr("from", [format!("{}", parameter.borrow()).as_str().into()]),
+                                sexpr("to", [format!("{}", sum.borrow()).as_str().into()]),
+                            ],
+                        ),
                     }
                 })
             )

@@ -81,6 +81,26 @@ impl ModuleEncoder {
                     lower::lower_pattern(mangle, self, local, self.main_fn, true);
                     self.push(self.main_fn, Drop);
                 }
+                ModuleItem::Constructor {
+                    name,
+                    index,
+                    parameter,
+                    sum,
+                } => {
+                    let ftype = Type::func(parameter.clone(), sum.clone());
+                    let global_id = self.new_global(name, ftype.clone());
+                    let parameter: Path = "a".into();
+                    let f = self.new_function(ftype.clone(), parameter.clone(), vec![], vec![]);
+                    // Assign to global
+                    self.push(self.main_fn, I32Const(f as i32));
+                    self.new_capture(self.main_fn, 0);
+                    self.new_struct(self.main_fn, ftype);
+                    self.push(self.main_fn, GlobalSet(global_id));
+                    // Create constructor func
+                    self.push(f, I32Const(index as i32));
+                    self.get_symbol(f, &parameter);
+                    self.new_struct(f, sum);
+                }
                 _ => {}
             }
         }

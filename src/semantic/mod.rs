@@ -153,6 +153,16 @@ pub fn type_solve(module: &mut IrModule) -> Result<ModuleInterface> {
                 environment.define_type(name.clone(), type_.clone());
                 interface.types.insert(name.clone(), type_.clone());
             }
+            ModuleItem::Constructor {
+                name,
+                parameter,
+                sum,
+                ..
+            } => {
+                let ftype = Type::func(parameter, sum);
+                environment.insert_value_type(name.clone(), ftype.clone(), true);
+                interface.types.insert(name, ftype);
+            }
         }
     }
     exhaustiveness::check(&module)?;

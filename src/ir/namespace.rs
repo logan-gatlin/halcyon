@@ -177,6 +177,36 @@ impl ValueNameSpace {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct Constructor {
+    variant: usize,
+    in_type: TypeRef,
+    out_type: TypeRef,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ConstructorNameSpace {
+    ns: NameSpace,
+    constructor_map: HashMap<Path, Constructor>,
+}
+
+impl ConstructorNameSpace {
+    inherit!(get);
+
+    pub fn new(module_name: Path) -> Self {
+        Self {
+            ns: NameSpace::new(module_name),
+            ..Default::default()
+        }
+    }
+
+    pub fn define(&mut self, path: &str, cons: Constructor) -> Result<()> {
+        let path = self.ns.define_global(path)?;
+        self.constructor_map.insert(path, cons);
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct TypeNameSpace {
     ns: NameSpace,

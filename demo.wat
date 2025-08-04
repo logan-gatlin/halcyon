@@ -40,65 +40,39 @@
   (type $"(raw) (unit -> '2)" (;38;) (func (param (ref $unit) (ref $capture)) (result anyref)))
   (type $"(boolean -> unit)" (;39;) (struct (field i32) (field (ref $capture))))
   (type $"(raw) (boolean -> unit)" (;40;) (func (param (ref $boolean) (ref $capture)) (result (ref $unit))))
-  (type $"(unit -> unit)" (;41;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (unit -> unit)" (;42;) (func (param (ref $unit) (ref $capture)) (result (ref $unit))))
-  (type $"(integer -> (integer -> (integer -> integer)))" (;43;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (integer -> (integer -> (integer -> integer)))" (;44;) (func (param (ref $integer) (ref $capture)) (result (ref $"(integer -> (integer -> integer))"))))
-  (type $"('1 -> ('2 -> ('3 -> ('4 -> ('5 -> ('6 -> ('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))))))))))))))" (;45;) (struct (field i32) (field (ref $capture))))
-  (type $"('2 -> ('3 -> ('4 -> ('5 -> ('6 -> ('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))))))))))))))))" (;46;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) ('1 -> ('2 -> ('3 -> ('4 -> ('5 -> ('6 -> ('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))))))))))))))" (;47;) (func (param anyref (ref $capture)) (result (ref $"('2 -> ('3 -> ('4 -> ('5 -> ('6 -> ('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))))))))))))))))"))))
-  (type $"('3 -> ('4 -> ('5 -> ('6 -> ('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))))))))))))" (;48;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) ('2 -> ('3 -> ('4 -> ('5 -> ('6 -> ('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))))))))))))))))" (;49;) (func (param anyref (ref $capture)) (result (ref $"('3 -> ('4 -> ('5 -> ('6 -> ('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))))))))))))"))))
-  (type $"('4 -> ('5 -> ('6 -> ('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))))))))))))))" (;50;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) ('3 -> ('4 -> ('5 -> ('6 -> ('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))))))))))))" (;51;) (func (param anyref (ref $capture)) (result (ref $"('4 -> ('5 -> ('6 -> ('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))))))))))))))"))))
-  (type $"('5 -> ('6 -> ('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))))))))))" (;52;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) ('4 -> ('5 -> ('6 -> ('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))))))))))))))" (;53;) (func (param anyref (ref $capture)) (result (ref $"('5 -> ('6 -> ('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))))))))))"))))
-  (type $"('6 -> ('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))))))))))))" (;54;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) ('5 -> ('6 -> ('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))))))))))" (;55;) (func (param anyref (ref $capture)) (result (ref $"('6 -> ('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))))))))))))"))))
-  (type $"('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))))))))" (;56;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) ('6 -> ('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))))))))))))" (;57;) (func (param anyref (ref $capture)) (result (ref $"('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))))))))"))))
-  (type $"('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))))))))))" (;58;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) ('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))))))))" (;59;) (func (param anyref (ref $capture)) (result (ref $"('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))))))))))"))))
-  (type $"('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))))))" (;60;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))))))))))" (;61;) (func (param anyref (ref $capture)) (result (ref $"('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))))))"))))
-  (type $"('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))))))))" (;62;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))))))" (;63;) (func (param anyref (ref $capture)) (result (ref $"('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))))))))"))))
-  (type $"('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))))" (;64;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))))))))" (;65;) (func (param anyref (ref $capture)) (result (ref $"('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))))"))))
-  (type $"('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))))))" (;66;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))))" (;67;) (func (param anyref (ref $capture)) (result (ref $"('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))))))"))))
-  (type $"('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))" (;68;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))))))" (;69;) (func (param anyref (ref $capture)) (result (ref $"('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))"))))
-  (type $"('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))))" (;70;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))" (;71;) (func (param anyref (ref $capture)) (result (ref $"('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))))"))))
-  (type $"('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))" (;72;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))))" (;73;) (func (param anyref (ref $capture)) (result (ref $"('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))"))))
-  (type $"('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))" (;74;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))" (;75;) (func (param anyref (ref $capture)) (result (ref $"('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))"))))
-  (type $"('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))" (;76;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))" (;77;) (func (param anyref (ref $capture)) (result (ref $"('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))"))))
-  (type $"('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))" (;78;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))" (;79;) (func (param anyref (ref $capture)) (result (ref $"('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))"))))
-  (type $"('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))" (;80;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))" (;81;) (func (param anyref (ref $capture)) (result (ref $"('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))"))))
-  (type $"('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))" (;82;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))" (;83;) (func (param anyref (ref $capture)) (result (ref $"('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))"))))
-  (type $"('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))" (;84;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))" (;85;) (func (param anyref (ref $capture)) (result (ref $"('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))"))))
-  (type $"('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))" (;86;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))" (;87;) (func (param anyref (ref $capture)) (result (ref $"('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))"))))
-  (type $"('23 -> ('24 -> ('25 -> ('26 -> unit))))" (;88;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))" (;89;) (func (param anyref (ref $capture)) (result (ref $"('23 -> ('24 -> ('25 -> ('26 -> unit))))"))))
-  (type $"('24 -> ('25 -> ('26 -> unit)))" (;90;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) ('23 -> ('24 -> ('25 -> ('26 -> unit))))" (;91;) (func (param anyref (ref $capture)) (result (ref $"('24 -> ('25 -> ('26 -> unit)))"))))
-  (type $"('25 -> ('26 -> unit))" (;92;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) ('24 -> ('25 -> ('26 -> unit)))" (;93;) (func (param anyref (ref $capture)) (result (ref $"('25 -> ('26 -> unit))"))))
-  (type $"('26 -> unit)" (;94;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) ('25 -> ('26 -> unit))" (;95;) (func (param anyref (ref $capture)) (result (ref $"('26 -> unit)"))))
-  (type $"(raw) ('26 -> unit)" (;96;) (func (param anyref (ref $capture)) (result (ref $unit))))
+  (type $"(integer -> A of integer | B of real)" (;41;) (struct (field i32) (field (ref $capture))))
+  (type $"A of integer | B of real" (;42;) (struct (field i32) (field anyref)))
+  (type $"(raw) (integer -> A of integer | B of real)" (;43;) (func (param (ref $integer) (ref $capture)) (result (ref $"A of integer | B of real"))))
+  (type $"#type44 A of integer | B of real" (@name "A of integer | B of real") (;44;) (struct (field i32) (field anyref)))
+  (type $"#type45 A of integer | B of real" (@name "A of integer | B of real") (;45;) (struct (field i32) (field anyref)))
+  (type $"(raw) A of integer | B of real" (;46;) (struct (field i32) (field anyref)))
+  (type $"(real -> A of integer | B of real)" (;47;) (struct (field i32) (field (ref $capture))))
+  (type $"#type48 A of integer | B of real" (@name "A of integer | B of real") (;48;) (struct (field i32) (field anyref)))
+  (type $"(raw) (real -> A of integer | B of real)" (;49;) (func (param (ref $real) (ref $capture)) (result (ref $"#type48 A of integer | B of real"))))
+  (type $"#type50 A of integer | B of real" (@name "A of integer | B of real") (;50;) (struct (field i32) (field anyref)))
+  (type $"#type51 A of integer | B of real" (@name "A of integer | B of real") (;51;) (struct (field i32) (field anyref)))
+  (type $"#type52 (raw) A of integer | B of real" (@name "(raw) A of integer | B of real") (;52;) (struct (field i32) (field anyref)))
+  (type $"#type53 A of integer | B of real" (@name "A of integer | B of real") (;53;) (struct (field i32) (field anyref)))
+  (type $"#type54 A of integer | B of real" (@name "A of integer | B of real") (;54;) (struct (field i32) (field anyref)))
+  (type $"#type55 (raw) A of integer | B of real" (@name "(raw) A of integer | B of real") (;55;) (struct (field i32) (field anyref)))
+  (type $"#type56 A of integer | B of real" (@name "A of integer | B of real") (;56;) (struct (field i32) (field anyref)))
+  (type $"#type57 A of integer | B of real" (@name "A of integer | B of real") (;57;) (struct (field i32) (field anyref)))
+  (type $"#type58 (raw) A of integer | B of real" (@name "(raw) A of integer | B of real") (;58;) (struct (field i32) (field anyref)))
+  (type $"#type59 A of integer | B of real" (@name "A of integer | B of real") (;59;) (struct (field i32) (field anyref)))
+  (type $"#type60 A of integer | B of real" (@name "A of integer | B of real") (;60;) (struct (field i32) (field anyref)))
+  (type $"#type61 (raw) A of integer | B of real" (@name "(raw) A of integer | B of real") (;61;) (struct (field i32) (field anyref)))
+  (type $"#type62 A of integer | B of real" (@name "A of integer | B of real") (;62;) (struct (field i32) (field anyref)))
+  (type $"#type63 A of integer | B of real" (@name "A of integer | B of real") (;63;) (struct (field i32) (field anyref)))
+  (type $"#type64 (raw) A of integer | B of real" (@name "(raw) A of integer | B of real") (;64;) (struct (field i32) (field anyref)))
+  (type $"#type65 A of integer | B of real" (@name "A of integer | B of real") (;65;) (struct (field i32) (field anyref)))
+  (type $"#type66 A of integer | B of real" (@name "A of integer | B of real") (;66;) (struct (field i32) (field anyref)))
+  (type $"#type67 (raw) A of integer | B of real" (@name "(raw) A of integer | B of real") (;67;) (struct (field i32) (field anyref)))
+  (type $"#type68 A of integer | B of real" (@name "A of integer | B of real") (;68;) (struct (field i32) (field anyref)))
+  (type $"#type69 A of integer | B of real" (@name "A of integer | B of real") (;69;) (struct (field i32) (field anyref)))
+  (type $"#type70 (raw) A of integer | B of real" (@name "(raw) A of integer | B of real") (;70;) (struct (field i32) (field anyref)))
   (import "sys" "print_string" (func (;0;) (type 30)))
   (import "sys" "memory" (memory (;0;) 1))
-  (table (;0;) 86 86 funcref)
+  (table (;0;) 54 54 funcref)
   (global (;0;) (mut (ref null $"(integer -> integer)")) ref.null $"(integer -> integer)")
   (global (;1;) (mut (ref null $"(real -> real)")) ref.null $"(real -> real)")
   (global (;2;) (mut (ref null $"(boolean -> boolean)")) ref.null $"(boolean -> boolean)")
@@ -129,7 +103,10 @@
   (global (;27;) (mut (ref null $"(string -> integer)")) ref.null $"(string -> integer)")
   (global (;28;) (mut (ref null $"(string -> unit)")) ref.null $"(string -> unit)")
   (global (;29;) (mut (ref null $"(string -> (string -> string))")) ref.null $"(string -> (string -> string))")
-  (global (;30;) (mut (ref null $"('1 -> ('2 -> ('3 -> ('4 -> ('5 -> ('6 -> ('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))))))))))))))")) ref.null $"('1 -> ('2 -> ('3 -> ('4 -> ('5 -> ('6 -> ('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))))))))))))))")
+  (global (;30;) (mut (ref null $"(integer -> A of integer | B of real)")) ref.null $"(integer -> A of integer | B of real)")
+  (global (;31;) (mut (ref null $"(real -> A of integer | B of real)")) ref.null $"(real -> A of integer | B of real)")
+  (global (;32;) (mut (ref null $"#type54 A of integer | B of real")) ref.null $"#type54 A of integer | B of real")
+  (global (;33;) (mut (ref null $"#type63 A of integer | B of real")) ref.null $"#type63 A of integer | B of real")
   (export "builtin:UnaryOp-" (global 0))
   (export "builtin:UnaryOp-." (global 1))
   (export "builtin:UnaryOpnot" (global 2))
@@ -160,11 +137,14 @@
   (export "std:string_length" (global 27))
   (export "std:print_string" (global 28))
   (export "std:string_concatenate" (global 29))
-  (export "FunctionTest:_#8" (global 30))
+  (export "A:A" (global 30))
+  (export "A:B" (global 31))
+  (export "A:a" (global 32))
+  (export "A:b" (global 33))
   (start 1)
-  (elem (;0;) (i32.const 0) func 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 0 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81 82 83 84 85)
+  (elem (;0;) (i32.const 0) func 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 0 44 45 46 47 48 49 50 51 52 53)
   (func (;1;) (type 0)
-    (local $0 (ref $"(unit -> '4)")) (local (ref $"(boolean -> unit)") (ref $"(string -> integer)") (ref $"(string -> unit)") (ref $"(string -> (string -> string))") (ref $"(boolean -> unit)") (ref $"(unit -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $unit) (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(boolean -> unit)") (ref $"(integer -> integer)") (ref $"(integer -> (integer -> integer))") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $unit) (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(boolean -> unit)") (ref $"(integer -> integer)") (ref $"(integer -> (integer -> integer))") (ref $"(integer -> (integer -> (integer -> integer)))") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $unit) (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(boolean -> unit)") (ref $"(integer -> integer)") (ref $integer) (ref $integer) (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $unit) (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"('1 -> ('2 -> ('3 -> ('4 -> ('5 -> ('6 -> ('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))))))))))))))") (ref $"(boolean -> unit)") (ref $"(unit -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $unit) (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)"))
+    (local $0 (ref $"(unit -> '4)")) (local (ref $"(boolean -> unit)") (ref $"(string -> integer)") (ref $"(string -> unit)") (ref $"(string -> (string -> string))") (ref $"(integer -> A of integer | B of real)") (ref $"#type59 A of integer | B of real") (ref $"(real -> A of integer | B of real)") (ref $"#type68 A of integer | B of real"))
     i32.const 1
     array.new_fixed $capture 0
     struct.new $"(integer -> integer)"
@@ -305,315 +285,47 @@
     global.set 29
     i32.const 1
     drop
-    global.get 26
-    ref.as_non_null
-    local.set 5
     i32.const 52
     array.new_fixed $capture 0
-    struct.new $"(unit -> unit)"
-    local.set 6
-    struct.new $unit
-    local.get 6
-    struct.get $"(unit -> unit)" 1
-    local.get 6
-    struct.get $"(unit -> unit)" 0
-    call_indirect (type $"(raw) (unit -> unit)")
-    ref.cast (ref $unit)
-    global.get 15
-    ref.as_non_null
-    local.tee 7
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 7
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 8
-    struct.new $unit
-    local.get 8
-    struct.get $"('0 -> boolean)" 1
-    local.get 8
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 5
-    struct.get $"(boolean -> unit)" 1
-    local.get 5
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 9
-    local.get 9
-    global.get 15
-    ref.as_non_null
-    local.tee 10
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 10
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 11
-    struct.new $unit
-    local.get 11
-    struct.get $"('0 -> boolean)" 1
-    local.get 11
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    struct.get $boolean 0
-    drop
-    global.get 26
-    ref.as_non_null
-    local.set 12
+    struct.new $"(integer -> A of integer | B of real)"
+    global.set 30
     i32.const 53
     array.new_fixed $capture 0
-    struct.new $"(integer -> (integer -> integer))"
-    local.set 14
+    struct.new $"(real -> A of integer | B of real)"
+    global.set 31
+    global.get 30
+    ref.as_non_null
+    ref.cast (ref $"(integer -> A of integer | B of real)")
+    local.set 5
     i64.const 1
     struct.new $integer
-    local.get 14
-    struct.get $"(integer -> (integer -> integer))" 1
-    local.get 14
-    struct.get $"(integer -> (integer -> integer))" 0
-    call_indirect (type $"(raw) (integer -> (integer -> integer))")
-    ref.cast (ref $"(integer -> integer)")
-    local.set 13
-    i64.const 2
-    struct.new $integer
-    local.get 13
-    struct.get $"(integer -> integer)" 1
-    local.get 13
-    struct.get $"(integer -> integer)" 0
-    call_indirect (type $"(raw) (integer -> integer)")
-    ref.cast (ref $integer)
-    global.get 15
-    ref.as_non_null
-    local.tee 15
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 15
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 16
-    i64.const 3
-    struct.new $integer
-    local.get 16
-    struct.get $"('0 -> boolean)" 1
-    local.get 16
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 12
-    struct.get $"(boolean -> unit)" 1
-    local.get 12
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 17
-    local.get 17
-    global.get 15
-    ref.as_non_null
-    local.tee 18
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 18
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 19
-    struct.new $unit
-    local.get 19
-    struct.get $"('0 -> boolean)" 1
-    local.get 19
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    struct.get $boolean 0
-    drop
-    global.get 26
-    ref.as_non_null
-    local.set 20
-    i32.const 55
-    array.new_fixed $capture 0
-    struct.new $"(integer -> (integer -> (integer -> integer)))"
-    local.set 23
-    i64.const 1
-    struct.new $integer
-    local.get 23
-    struct.get $"(integer -> (integer -> (integer -> integer)))" 1
-    local.get 23
-    struct.get $"(integer -> (integer -> (integer -> integer)))" 0
-    call_indirect (type $"(raw) (integer -> (integer -> (integer -> integer)))")
-    ref.cast (ref $"(integer -> (integer -> integer))")
-    local.set 22
-    i64.const 2
-    struct.new $integer
-    local.get 22
-    struct.get $"(integer -> (integer -> integer))" 1
-    local.get 22
-    struct.get $"(integer -> (integer -> integer))" 0
-    call_indirect (type $"(raw) (integer -> (integer -> integer))")
-    ref.cast (ref $"(integer -> integer)")
-    local.set 21
-    i64.const 3
-    struct.new $integer
-    local.get 21
-    struct.get $"(integer -> integer)" 1
-    local.get 21
-    struct.get $"(integer -> integer)" 0
-    call_indirect (type $"(raw) (integer -> integer)")
-    ref.cast (ref $integer)
-    global.get 15
-    ref.as_non_null
-    local.tee 24
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 24
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 25
-    i64.const 6
-    struct.new $integer
-    local.get 25
-    struct.get $"('0 -> boolean)" 1
-    local.get 25
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 20
-    struct.get $"(boolean -> unit)" 1
-    local.get 20
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 26
-    local.get 26
-    global.get 15
-    ref.as_non_null
-    local.tee 27
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 27
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 28
-    struct.new $unit
-    local.get 28
-    struct.get $"('0 -> boolean)" 1
-    local.get 28
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    struct.get $boolean 0
-    drop
-    global.get 26
-    ref.as_non_null
-    local.set 29
-    i64.const 1
-    struct.new $integer
-    local.set 31
-    local.get 31
-    local.set 32
+    local.get 5
+    struct.get $"(integer -> A of integer | B of real)" 1
+    local.get 5
+    struct.get $"(integer -> A of integer | B of real)" 0
+    call_indirect (type $"(raw) (integer -> A of integer | B of real)")
+    ref.cast (ref $"#type57 A of integer | B of real")
+    local.set 6
+    local.get 6
+    global.set 32
     i32.const 1
     drop
-    i32.const 58
-    local.get 32
-    ref.cast (ref any)
-    array.new_fixed $capture 1
-    struct.new $"(integer -> integer)"
-    local.set 30
-    i64.const 2
-    struct.new $integer
-    local.get 30
-    struct.get $"(integer -> integer)" 1
-    local.get 30
-    struct.get $"(integer -> integer)" 0
-    call_indirect (type $"(raw) (integer -> integer)")
-    ref.cast (ref $integer)
-    global.get 15
+    global.get 31
     ref.as_non_null
-    local.tee 33
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 33
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 34
-    i64.const 3
-    struct.new $integer
-    local.get 34
-    struct.get $"('0 -> boolean)" 1
-    local.get 34
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 29
-    struct.get $"(boolean -> unit)" 1
-    local.get 29
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 35
-    local.get 35
-    global.get 15
-    ref.as_non_null
-    local.tee 36
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 36
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 37
-    struct.new $unit
-    local.get 37
-    struct.get $"('0 -> boolean)" 1
-    local.get 37
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    struct.get $boolean 0
-    drop
-    i32.const 59
-    array.new_fixed $capture 0
-    struct.new $"('1 -> ('2 -> ('3 -> ('4 -> ('5 -> ('6 -> ('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))))))))))))))"
-    local.set 38
-    local.get 38
-    global.set 30
+    ref.cast (ref $"(real -> A of integer | B of real)")
+    local.set 7
+    f64.const 0x1p+0 (;=1;)
+    struct.new $real
+    local.get 7
+    struct.get $"(real -> A of integer | B of real)" 1
+    local.get 7
+    struct.get $"(real -> A of integer | B of real)" 0
+    call_indirect (type $"(raw) (real -> A of integer | B of real)")
+    ref.cast (ref $"#type66 A of integer | B of real")
+    local.set 8
+    local.get 8
+    global.set 33
     i32.const 1
-    drop
-    global.get 26
-    ref.as_non_null
-    local.set 39
-    i32.const 85
-    array.new_fixed $capture 0
-    struct.new $"(unit -> unit)"
-    local.set 40
-    struct.new $unit
-    local.get 40
-    struct.get $"(unit -> unit)" 1
-    local.get 40
-    struct.get $"(unit -> unit)" 0
-    call_indirect (type $"(raw) (unit -> unit)")
-    ref.cast (ref $unit)
-    global.get 15
-    ref.as_non_null
-    local.tee 41
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 41
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 42
-    struct.new $unit
-    local.get 42
-    struct.get $"('0 -> boolean)" 1
-    local.get 42
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 39
-    struct.get $"(boolean -> unit)" 1
-    local.get 39
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 43
-    local.get 43
-    global.get 15
-    ref.as_non_null
-    local.tee 44
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 44
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 45
-    struct.new $unit
-    local.get 45
-    struct.get $"('0 -> boolean)" 1
-    local.get 45
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    struct.get $boolean 0
     drop
   )
   (func (;2;) (type $"(raw) (integer -> integer)") (param $0 (ref $integer)) (param (ref $capture)) (result (ref $integer))
@@ -1763,7 +1475,7 @@
     array.new_fixed $capture 1
     struct.new $"(string -> string)"
   )
-  (func (;51;) (type $"(raw) (string -> string)") (param $a#0 (ref $string)) (param (ref $capture)) (result (ref $string))
+  (func (;51;) (type $"(raw) (string -> string)") (param $a (ref $string)) (param (ref $capture)) (result (ref $string))
     (local (ref $string) (ref $"(string -> string)") (ref $"(string -> (string -> string))"))
     local.get 1
     i32.const 0
@@ -1782,7 +1494,7 @@
     call_indirect (type $"(raw) (string -> (string -> string))")
     ref.cast (ref $"(string -> string)")
     local.set 3
-    local.get $a#0
+    local.get $a
     ref.cast (ref $string)
     local.get 3
     struct.get $"(string -> string)" 1
@@ -1791,263 +1503,14 @@
     call_indirect (type $"(raw) (string -> string)")
     ref.cast (ref $string)
   )
-  (func (;52;) (type $"(raw) (unit -> unit)") (param $a#1 (ref $unit)) (param (ref $capture)) (result (ref $unit))
-    local.get $a#1
-    ref.cast (ref $unit)
-  )
-  (func (;53;) (type $"(raw) (integer -> (integer -> integer))") (param $b#2 (ref $integer)) (param (ref $capture)) (result (ref $"(integer -> integer)"))
-    i32.const 54
-    local.get $b#2
-    ref.cast (ref any)
-    array.new_fixed $capture 1
-    struct.new $"(integer -> integer)"
-  )
-  (func (;54;) (type $"(raw) (integer -> integer)") (param $a#3 (ref $integer)) (param (ref $capture)) (result (ref $integer))
-    (local (ref $integer) (ref $"(integer -> (integer -> integer))") (ref $"(integer -> integer)"))
-    local.get 1
+  (func (;52;) (type $"(raw) (integer -> A of integer | B of real)") (param $a (ref $integer)) (param (ref $capture)) (result (ref $"A of integer | B of real"))
     i32.const 0
-    array.get $capture
-    ref.cast (ref $integer)
-    local.set 2
-    local.get 2
-    ref.cast (ref $integer)
-    global.get 3
-    ref.as_non_null
-    local.tee 3
-    struct.get $"(integer -> (integer -> integer))" 1
-    local.get 3
-    struct.get $"(integer -> (integer -> integer))" 0
-    call_indirect (type $"(raw) (integer -> (integer -> integer))")
-    local.set 4
-    local.get $a#3
-    ref.cast (ref $integer)
-    local.get 4
-    struct.get $"(integer -> integer)" 1
-    local.get 4
-    struct.get $"(integer -> integer)" 0
-    call_indirect (type $"(raw) (integer -> integer)")
+    local.get $a
+    struct.new $"#type45 A of integer | B of real"
   )
-  (func (;55;) (type $"(raw) (integer -> (integer -> (integer -> integer)))") (param $b#4 (ref $integer)) (param (ref $capture)) (result (ref $"(integer -> (integer -> integer))"))
-    i32.const 56
-    local.get $b#4
-    ref.cast (ref any)
-    array.new_fixed $capture 1
-    struct.new $"(integer -> (integer -> integer))"
-  )
-  (func (;56;) (type $"(raw) (integer -> (integer -> integer))") (param $c#5 (ref $integer)) (param (ref $capture)) (result (ref $"(integer -> integer)"))
-    (local $a#3 (ref $integer))
-    local.get 1
-    i32.const 0
-    array.get $capture
-    ref.cast (ref $integer)
-    local.set $a#3
-    i32.const 57
-    local.get $a#3
-    ref.cast (ref any)
-    local.get $c#5
-    ref.cast (ref any)
-    array.new_fixed $capture 2
-    struct.new $"(integer -> integer)"
-  )
-  (func (;57;) (type $"(raw) (integer -> integer)") (param $b#7 (ref $integer)) (param (ref $capture)) (result (ref $integer))
-    (local $a#6 (ref $integer)) (local (ref $integer) (ref $"(integer -> (integer -> integer))") (ref $"(integer -> integer)") (ref $"(integer -> (integer -> integer))") (ref $"(integer -> integer)"))
-    local.get 1
-    i32.const 0
-    array.get $capture
-    ref.cast (ref $integer)
-    local.set $a#6
-    local.get 1
+  (func (;53;) (type $"(raw) (real -> A of integer | B of real)") (param (ref $real) (ref $capture)) (result (ref $"#type48 A of integer | B of real"))
     i32.const 1
-    array.get $capture
-    ref.cast (ref $integer)
-    local.set 3
-    local.get $a#6
-    ref.cast (ref $integer)
-    global.get 3
-    ref.as_non_null
-    local.tee 4
-    struct.get $"(integer -> (integer -> integer))" 1
-    local.get 4
-    struct.get $"(integer -> (integer -> integer))" 0
-    call_indirect (type $"(raw) (integer -> (integer -> integer))")
-    local.set 5
-    local.get 3
-    ref.cast (ref $integer)
-    local.get 5
-    struct.get $"(integer -> integer)" 1
-    local.get 5
-    struct.get $"(integer -> integer)" 0
-    call_indirect (type $"(raw) (integer -> integer)")
-    global.get 3
-    ref.as_non_null
-    local.tee 6
-    struct.get $"(integer -> (integer -> integer))" 1
-    local.get 6
-    struct.get $"(integer -> (integer -> integer))" 0
-    call_indirect (type $"(raw) (integer -> (integer -> integer))")
-    local.set 7
-    local.get $b#7
-    ref.cast (ref $integer)
-    local.get 7
-    struct.get $"(integer -> integer)" 1
-    local.get 7
-    struct.get $"(integer -> integer)" 0
-    call_indirect (type $"(raw) (integer -> integer)")
-  )
-  (func (;58;) (type $"(raw) (integer -> integer)") (param $a#9 (ref $integer)) (param (ref $capture)) (result (ref $integer))
-    (local (ref $integer) (ref $"(integer -> (integer -> integer))") (ref $"(integer -> integer)"))
-    local.get 1
-    i32.const 0
-    array.get $capture
-    ref.cast (ref $integer)
-    local.set 2
-    local.get 2
-    ref.cast (ref $integer)
-    global.get 3
-    ref.as_non_null
-    local.tee 3
-    struct.get $"(integer -> (integer -> integer))" 1
-    local.get 3
-    struct.get $"(integer -> (integer -> integer))" 0
-    call_indirect (type $"(raw) (integer -> (integer -> integer))")
-    local.set 4
-    local.get $a#9
-    ref.cast (ref $integer)
-    local.get 4
-    struct.get $"(integer -> integer)" 1
-    local.get 4
-    struct.get $"(integer -> integer)" 0
-    call_indirect (type $"(raw) (integer -> integer)")
-  )
-  (func (;59;) (type $"(raw) ('1 -> ('2 -> ('3 -> ('4 -> ('5 -> ('6 -> ('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))))))))))))))") (param $b#10 anyref) (param (ref $capture)) (result (ref $"('2 -> ('3 -> ('4 -> ('5 -> ('6 -> ('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))))))))))))))))"))
-    i32.const 60
-    array.new_fixed $capture 0
-    struct.new $"('2 -> ('3 -> ('4 -> ('5 -> ('6 -> ('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))))))))))))))))"
-  )
-  (func (;60;) (type $"(raw) ('2 -> ('3 -> ('4 -> ('5 -> ('6 -> ('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))))))))))))))))") (param $c#11 anyref) (param (ref $capture)) (result (ref $"('3 -> ('4 -> ('5 -> ('6 -> ('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))))))))))))"))
-    i32.const 61
-    array.new_fixed $capture 0
-    struct.new $"('3 -> ('4 -> ('5 -> ('6 -> ('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))))))))))))"
-  )
-  (func (;61;) (type $"(raw) ('3 -> ('4 -> ('5 -> ('6 -> ('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))))))))))))") (param $d#12 anyref) (param (ref $capture)) (result (ref $"('4 -> ('5 -> ('6 -> ('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))))))))))))))"))
-    i32.const 62
-    array.new_fixed $capture 0
-    struct.new $"('4 -> ('5 -> ('6 -> ('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))))))))))))))"
-  )
-  (func (;62;) (type $"(raw) ('4 -> ('5 -> ('6 -> ('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))))))))))))))") (param $e#13 anyref) (param (ref $capture)) (result (ref $"('5 -> ('6 -> ('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))))))))))"))
-    i32.const 63
-    array.new_fixed $capture 0
-    struct.new $"('5 -> ('6 -> ('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))))))))))"
-  )
-  (func (;63;) (type $"(raw) ('5 -> ('6 -> ('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))))))))))") (param $f#14 anyref) (param (ref $capture)) (result (ref $"('6 -> ('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))))))))))))"))
-    i32.const 64
-    array.new_fixed $capture 0
-    struct.new $"('6 -> ('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))))))))))))"
-  )
-  (func (;64;) (type $"(raw) ('6 -> ('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))))))))))))") (param $g#15 anyref) (param (ref $capture)) (result (ref $"('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))))))))"))
-    i32.const 65
-    array.new_fixed $capture 0
-    struct.new $"('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))))))))"
-  )
-  (func (;65;) (type $"(raw) ('7 -> ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))))))))") (param $h#16 anyref) (param (ref $capture)) (result (ref $"('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))))))))))"))
-    i32.const 66
-    array.new_fixed $capture 0
-    struct.new $"('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))))))))))"
-  )
-  (func (;66;) (type $"(raw) ('8 -> ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))))))))))") (param $i#17 anyref) (param (ref $capture)) (result (ref $"('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))))))"))
-    i32.const 67
-    array.new_fixed $capture 0
-    struct.new $"('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))))))"
-  )
-  (func (;67;) (type $"(raw) ('9 -> ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))))))") (param $j#18 anyref) (param (ref $capture)) (result (ref $"('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))))))))"))
-    i32.const 68
-    array.new_fixed $capture 0
-    struct.new $"('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))))))))"
-  )
-  (func (;68;) (type $"(raw) ('10 -> ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))))))))") (param $k#19 anyref) (param (ref $capture)) (result (ref $"('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))))"))
-    i32.const 69
-    array.new_fixed $capture 0
-    struct.new $"('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))))"
-  )
-  (func (;69;) (type $"(raw) ('11 -> ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))))") (param $l#20 anyref) (param (ref $capture)) (result (ref $"('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))))))"))
-    i32.const 70
-    array.new_fixed $capture 0
-    struct.new $"('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))))))"
-  )
-  (func (;70;) (type $"(raw) ('12 -> ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))))))") (param $m#21 anyref) (param (ref $capture)) (result (ref $"('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))"))
-    i32.const 71
-    array.new_fixed $capture 0
-    struct.new $"('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))"
-  )
-  (func (;71;) (type $"(raw) ('13 -> ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))))") (param $n#22 anyref) (param (ref $capture)) (result (ref $"('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))))"))
-    i32.const 72
-    array.new_fixed $capture 0
-    struct.new $"('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))))"
-  )
-  (func (;72;) (type $"(raw) ('14 -> ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))))") (param $o#23 anyref) (param (ref $capture)) (result (ref $"('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))"))
-    i32.const 73
-    array.new_fixed $capture 0
-    struct.new $"('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))"
-  )
-  (func (;73;) (type $"(raw) ('15 -> ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))))") (param $p#24 anyref) (param (ref $capture)) (result (ref $"('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))"))
-    i32.const 74
-    array.new_fixed $capture 0
-    struct.new $"('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))"
-  )
-  (func (;74;) (type $"(raw) ('16 -> ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))))") (param $q#25 anyref) (param (ref $capture)) (result (ref $"('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))"))
-    i32.const 75
-    array.new_fixed $capture 0
-    struct.new $"('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))"
-  )
-  (func (;75;) (type $"(raw) ('17 -> ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))))") (param $r#26 anyref) (param (ref $capture)) (result (ref $"('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))"))
-    i32.const 76
-    array.new_fixed $capture 0
-    struct.new $"('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))"
-  )
-  (func (;76;) (type $"(raw) ('18 -> ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))))") (param $s#27 anyref) (param (ref $capture)) (result (ref $"('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))"))
-    i32.const 77
-    array.new_fixed $capture 0
-    struct.new $"('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))"
-  )
-  (func (;77;) (type $"(raw) ('19 -> ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))))") (param $t#28 anyref) (param (ref $capture)) (result (ref $"('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))"))
-    i32.const 78
-    array.new_fixed $capture 0
-    struct.new $"('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))"
-  )
-  (func (;78;) (type $"(raw) ('20 -> ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))))") (param $u#29 anyref) (param (ref $capture)) (result (ref $"('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))"))
-    i32.const 79
-    array.new_fixed $capture 0
-    struct.new $"('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))"
-  )
-  (func (;79;) (type $"(raw) ('21 -> ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit))))))") (param $v#30 anyref) (param (ref $capture)) (result (ref $"('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))"))
-    i32.const 80
-    array.new_fixed $capture 0
-    struct.new $"('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))"
-  )
-  (func (;80;) (type $"(raw) ('22 -> ('23 -> ('24 -> ('25 -> ('26 -> unit)))))") (param $w#31 anyref) (param (ref $capture)) (result (ref $"('23 -> ('24 -> ('25 -> ('26 -> unit))))"))
-    i32.const 81
-    array.new_fixed $capture 0
-    struct.new $"('23 -> ('24 -> ('25 -> ('26 -> unit))))"
-  )
-  (func (;81;) (type $"(raw) ('23 -> ('24 -> ('25 -> ('26 -> unit))))") (param $x#32 anyref) (param (ref $capture)) (result (ref $"('24 -> ('25 -> ('26 -> unit)))"))
-    i32.const 82
-    array.new_fixed $capture 0
-    struct.new $"('24 -> ('25 -> ('26 -> unit)))"
-  )
-  (func (;82;) (type $"(raw) ('24 -> ('25 -> ('26 -> unit)))") (param $y#33 anyref) (param (ref $capture)) (result (ref $"('25 -> ('26 -> unit))"))
-    i32.const 83
-    array.new_fixed $capture 0
-    struct.new $"('25 -> ('26 -> unit))"
-  )
-  (func (;83;) (type $"(raw) ('25 -> ('26 -> unit))") (param $z#34 anyref) (param (ref $capture)) (result (ref $"('26 -> unit)"))
-    i32.const 84
-    array.new_fixed $capture 0
-    struct.new $"('26 -> unit)"
-  )
-  (func (;84;) (type $"(raw) ('26 -> unit)") (param $unit anyref) (param (ref $capture)) (result (ref $unit))
-    struct.new $unit
-  )
-  (func (;85;) (type $"(raw) (unit -> unit)") (param (ref $unit) (ref $capture)) (result (ref $unit))
-    struct.new $unit
+    local.get 0
+    struct.new $"#type51 A of integer | B of real"
   )
 )

@@ -3,7 +3,9 @@ use super::*;
 pub enum PatternExpressionKind {
     Literal(super::Literal),
     Identifier(String),
+    Path(Vec<String>),
     Tuple(Vec<PatternExpression>),
+    Constructor(Vec<String>, Box<PatternExpression>),
 }
 
 pub type PatternExpression = Expression<PatternExpressionKind>;
@@ -14,6 +16,7 @@ pub fn parse_pattern(iter: it!()) -> Result<PatternExpression> {
     let Some(Token(next, _)) = iter.next() else {
         return Err(iter.report_error(ExpectedExpression, []));
     };
+    const TERMINAL_TOKENS: [TokenKind; 2] = [Colon, Equal];
     let kind = match next {
         // Tuple or unit
         LeftParen => {
@@ -27,15 +30,30 @@ pub fn parse_pattern(iter: it!()) -> Result<PatternExpression> {
                     break;
                 }
             }
-            iter.eat_or_error(RightParen);
+            iter.eat_or_error(RightParen)?;
             if patterns.len() == 0 {
                 e::Literal(super::Literal::Unit)
             } else {
                 e::Tuple(patterns)
             }
         }
-        // Identifier
-        Identifier(name) => e::Identifier(name),
+        // Identifier, path, or constructor
+        Identifier(name) => {
+            let mut path = vec![name];
+            while iter.eat(Colon).is_some() {
+                path.push(iter.eat_ident()?);
+            }
+            if iter
+                .peek(0)
+                .is_some_and(|t| !TERMINAL_TOKENS.contains(&t.0))
+            {
+                e::Constructor(path, Box::new(parse_pattern(iter)?))
+            } else if path.len() == 1 {
+                e::Identifier(path[0].clone())
+            } else {
+                e::Path(path)
+            }
+        }
         // Literals
         IntegerLiteral(i, base) => e::Literal(Literal::Integer(i, base)),
         RealLiteral(r) => e::Literal(Literal::Real(r)),

@@ -2,6 +2,7 @@ mod build_ir;
 pub mod constant;
 mod namespace;
 mod path;
+mod pattern;
 pub mod printing;
 pub mod types;
 
@@ -13,6 +14,7 @@ pub use build_ir::*;
 pub use constant::*;
 use namespace::*;
 pub use path::*;
+pub use pattern::*;
 pub use types::*;
 
 pub type IrPtr = usize;
@@ -70,51 +72,6 @@ pub enum IrKind {
 }
 
 #[derive(Debug, Clone)]
-pub struct Pattern {
-    pub kind: PatternKind,
-    pub type_: TypeRef,
-    pub span: Span,
-}
-
-#[derive(Debug, Clone)]
-pub enum PatternKind {
-    Name(Path),
-    Tuple(Vec<Pattern>),
-    Literal(ConstValue),
-}
-
-impl Pattern {
-    pub fn introduced_names(&self) -> usize {
-        match &self.kind {
-            PatternKind::Name(_) => 1,
-            PatternKind::Tuple(patterns) => patterns
-                .into_iter()
-                .fold(0, |v, p| v + p.introduced_names()),
-            PatternKind::Literal(_) => 0,
-        }
-    }
-
-    pub fn iter_names(&self, f: &mut impl FnMut(&Path, &TypeRef)) {
-        match &self.kind {
-            PatternKind::Name(path) => f(path, &self.type_),
-            PatternKind::Tuple(patterns) => patterns.iter().for_each(|p| p.iter_names(f)),
-            PatternKind::Literal(_) => {}
-        }
-    }
-}
-
-impl Unify for Pattern {
-    fn unify(&mut self, tv: TypeVariable, type_: &Type) {
-        self.type_.borrow_mut().unify(tv, type_);
-        match &mut self.kind {
-            PatternKind::Name(_) => {}
-            PatternKind::Tuple(patterns) => patterns.iter_mut().for_each(|p| p.unify(tv, type_)),
-            PatternKind::Literal(_) => {}
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
 pub struct IrNode {
     pub kind: IrKind,
     pub span: Span,
@@ -143,6 +100,7 @@ impl Unify for IrNode {
 pub enum ModuleItem {
     Let(Pattern, IrPtr),
     Type(Path, TypeRef),
+    Constructor(Path, Constructor),
 }
 
 #[derive(Debug, Clone)]

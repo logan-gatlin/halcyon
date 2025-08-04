@@ -11,6 +11,7 @@ pub fn build_ir(
     let mut ir = vec![];
     let mut value_ns = ValueNameSpace::new(Path::from(module.name.as_str()));
     let mut type_ns = TypeNameSpace::new(Path::from(module.name.as_str()));
+    let mut cons_ns = ConstructorNamespace::new()
     for expr in module.contents {
         use ModuleExpressionKind as e;
         match expr.kind {
@@ -37,8 +38,8 @@ pub fn build_ir(
                 assignee_span,
                 value,
             } => {
-                // Recursive type
-                if matches!(value.kind, TypeDefinitionKind::Sum { .. }) {
+                // Recursive sum type
+                let (mangle, type_) = if matches!(value.kind, TypeDefinitionKind::Sum { .. }) {
                     let mangle = type_ns
                         .define_global(&assignee, Type::TypeVariable(0).into())
                         .span(assignee_span)?;
@@ -46,7 +47,7 @@ pub fn build_ir(
                     let weak = Type::Weak(Rc::downgrade(&type_));
                     type_.borrow_mut().unify(0, &weak);
                     type_ns.update_type(&mangle, type_.clone());
-                    items.push(ModuleItem::Type(mangle, type_));
+                    (mangle, type_)
                 }
                 // Non-recursive type
                 else {
@@ -54,8 +55,26 @@ pub fn build_ir(
                     let mangle = type_ns
                         .define_global(&assignee, type_.clone())
                         .span(expr.span)?;
-                    items.push(ModuleItem::Type(mangle, type_));
+                    (mangle, type_)
+                };
+                if let Type::Sum {
+                    variant_names,
+                    variant_types,
+                } = type_.borrow().clone()
+                {
+                    for (index, (name, parameter_type)) in
+                        variant_names.into_iter().zip(variant_types).enumerate()
+                    {
+                        let name = value_ns.define_global(&name).span(assignee_span)?;
+                        items.push(ModuleItem::Constructor {
+                            name,
+                            index,
+                            parameter: parameter_type,
+                            sum: type_.clone(),
+                        });
+                    }
                 }
+                items.push(ModuleItem::Type(mangle, type_));
             }
             e::Import { name } => {
                 let interface = context.get(&name.clone().into()).ok_or(lint(
