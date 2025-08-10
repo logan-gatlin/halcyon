@@ -33,7 +33,7 @@ pub struct Environment {
     pub constructors: HashMap<Path, Constructor>,
     universe: HashMap<Path, TypeRef>,
     symbols: HashMap<Path, EnvironmentSymbol>,
-    constraints: Vec<ConstraintOrGuard>,
+    pub constraints: Vec<ConstraintOrGuard>,
     type_var_no: usize,
 }
 
@@ -57,7 +57,6 @@ impl Environment {
         let t = TypeScheme::new(self.get_symbol(ident));
         self.symbols
             .insert(ident.clone(), EnvironmentSymbol::Let(t));
-        println!("{:#?}", self.symbols);
     }
 
     pub fn get_symbol(&mut self, ident: &Path) -> TypeRef {
@@ -71,6 +70,19 @@ impl Environment {
 
     pub fn begin_let(&mut self) {
         self.constraints.push(ConstraintOrGuard::LetGuard);
+    }
+
+    pub fn into_solution(self) -> Result<Vec<Substitution>> {
+        solve_constraints(
+            &self
+                .constraints
+                .into_iter()
+                .flat_map(|c| match c {
+                    ConstraintOrGuard::Cons(constraint) => Some(constraint),
+                    ConstraintOrGuard::LetGuard => None,
+                })
+                .collect::<Vec<_>>(),
+        )
     }
 
     pub fn end_let(&mut self) -> Result<Vec<Substitution>> {

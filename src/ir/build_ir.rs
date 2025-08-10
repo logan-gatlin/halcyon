@@ -1,5 +1,3 @@
-use std::rc::Rc;
-
 use super::*;
 use crate::{lint::*, parse::*};
 
@@ -24,13 +22,13 @@ pub fn build_ir(
                         ..
                     },
             } => {
-                let mangle = pattern(&mut value_ns, &mut cons_ns, assignee, true)?;
+                let mangle = pattern(&mut value_ns, &cons_ns, assignee, true)?;
                 let value = value_expr(&mut ir, &mut value_ns, &cons_ns, &type_ns, *value)?;
                 items.push(ModuleItem::Let(mangle, value));
             }
             e::Let { assignee, value } => {
                 let value = value_expr(&mut ir, &mut value_ns, &cons_ns, &type_ns, *value)?;
-                let mangle = pattern(&mut value_ns, &mut cons_ns, assignee, true)?;
+                let mangle = pattern(&mut value_ns, &cons_ns, assignee, true)?;
                 items.push(ModuleItem::Let(mangle, value));
             }
             e::Type {
@@ -41,12 +39,11 @@ pub fn build_ir(
                 // Recursive sum type
                 let (mangle, type_) = if matches!(value.kind, TypeDefinitionKind::Sum { .. }) {
                     let mangle = type_ns
-                        .define_global(&assignee, Type::TypeVariable(0).into())
+                        .define_global(&assignee, Type::Any)
                         .span(assignee_span)?;
+                    type_ns.update_type(&mangle, Type::Named(mangle.clone()));
                     let type_ = type_def(&mut type_ns, *value)?;
-                    let weak = Type::Weak(Rc::downgrade(&type_));
-                    type_.borrow_mut().unify(0, &weak);
-                    type_ns.update_type(&mangle, type_.clone());
+                    Type::new_named_type(mangle.clone(), type_.clone());
                     (mangle, type_)
                 }
                 // Non-recursive type
@@ -60,7 +57,7 @@ pub fn build_ir(
                 if let Type::Sum {
                     variant_names,
                     variant_types,
-                } = type_.borrow().clone()
+                } = type_.clone()
                 {
                     for (index, (name, parameter_type)) in
                         variant_names.into_iter().zip(variant_types).enumerate()
@@ -198,12 +195,12 @@ pub fn value_expr(
             mut types,
             body,
         } => {
-            if arguments.len() == 0 {
+            if arguments.is_empty() {
                 ns.begin_capture();
                 let parameter_span = span;
                 let body = rec!(*body)?;
                 let captures = ns.end_capture();
-                let capture_types = vec![Type::Any.to_ref(); captures.len()];
+                let capture_types = vec![Type::Any; captures.len()];
                 ir::FunctionDef {
                     parameter_name: None,
                     parameter_span,
@@ -215,10 +212,10 @@ pub fn value_expr(
             } else {
                 ns.begin_capture();
                 let (argument, new_arguments) = arguments.split_first().unwrap();
-                let parameter_name = ns.define_local(&argument);
+                let parameter_name = ns.define_local(argument);
                 arguments = new_arguments.to_vec();
                 let (parameter_span, new_spans) = argument_spans.split_first().unwrap();
-                let parameter_span = parameter_span.clone();
+                let parameter_span = *parameter_span;
                 argument_spans = new_spans.to_vec();
                 let (type_, new_type_s) = types.split_first().unwrap();
                 let parameter_type = if let Some(type_) = type_.clone() {
@@ -227,7 +224,7 @@ pub fn value_expr(
                     None
                 };
                 types = new_type_s.to_vec();
-                let body = if arguments.len() == 0 {
+                let body = if arguments.is_empty() {
                     rec!(*body)?
                 } else {
                     rec!(Expression {
@@ -242,7 +239,7 @@ pub fn value_expr(
                 };
                 let captures = ns.end_capture();
                 ns.end_local_scope();
-                let capture_types = vec![Type::Any.to_ref(); captures.len()];
+                let capture_types = vec![Type::Any; captures.len()];
                 ir::FunctionDef {
                     parameter_name: Some(parameter_name),
                     parameter_span,
@@ -306,10 +303,7 @@ pub fn value_expr(
         },
         ModuleField(path) => {
             let path = Path::from(path);
-            ir::ImportedSymbol(
-                path.clone().into(),
-                ns.get_import_type(&path.into()).span(span)?,
-            )
+            ir::ImportedSymbol(path.clone(), ns.get_import_type(&path).span(span)?)
         }
     };
     module[ptr].kind = kind;
@@ -348,7 +342,7 @@ fn pattern(
                 PatternKind::Constructor(cons, Box::new(pattern(ns, cons_ns, *expression, global)?))
             }
         },
-        type_: Type::default().into(),
+        type_: Type::default(),
         span: expr.span,
     })
 }
@@ -360,7 +354,7 @@ pub fn type_def(ns: &mut TypeNameSpace, expr: TypeDefinition) -> Result<TypeRef>
             arguments, body, ..
         } => {
             for (id, argument) in arguments.iter().enumerate() {
-                ns.define_local(argument, Type::TypeVariable(id).to_ref());
+                ns.define_local(argument, Type::TypeVariable(id));
             }
             let t = type_def(ns, *body)?;
             (0..arguments.len()).for_each(|_| ns.end_local_scope());
@@ -369,8 +363,7 @@ pub fn type_def(ns: &mut TypeNameSpace, expr: TypeDefinition) -> Result<TypeRef>
         Structure { lhs, rhs } => Type::Struct {
             member_names: lhs,
             member_types: rhs.into_iter().map(|e| type_expr(ns, e)).try_collect()?,
-        }
-        .to_ref(),
+        },
         Sum {
             variant_names,
             variant_types,
@@ -380,13 +373,12 @@ pub fn type_def(ns: &mut TypeNameSpace, expr: TypeDefinition) -> Result<TypeRef>
                 .into_iter()
                 .map(|e| type_expr(ns, e))
                 .try_collect()?,
-        }
-        .to_ref(),
+        },
         Expression(expression) => type_expr(ns, expression)?,
     })
 }
 
-pub fn type_expr(ns: &TypeNameSpace, expr: TypeExpression) -> Result<TypeRef> {
+pub fn type_expr(ns: &TypeNameSpace, expr: TypeExpression) -> Result<Type> {
     use TypeExpressionKind::*;
     Ok(match expr.kind {
         Identifier(name) => ns.get_type(&name).span(expr.span)?,
@@ -395,8 +387,7 @@ pub fn type_expr(ns: &TypeNameSpace, expr: TypeExpression) -> Result<TypeRef> {
                 .into_iter()
                 .map(|e| type_expr(ns, e))
                 .try_collect()?,
-        )
-        .to_ref(),
+        ),
         ModulePath(items) => ns.get_import_type(&items.into()).span(expr.span)?,
     })
 }

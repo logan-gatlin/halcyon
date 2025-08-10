@@ -2,9 +2,8 @@ use crate::std_hc::BUILTIN_MODULE_NAME;
 
 use super::*;
 
-fn cast(state: &mut ModuleEncoder, to: impl Into<TypeRef>) -> Instruction<'static> {
-    let to = to.into();
-    if let Type::TypeVariable(_) = (*to.borrow()).clone() {
+fn cast(state: &mut ModuleEncoder, to: Type) -> Instruction<'static> {
+    if let Type::TypeVariable(_) = to {
         cast_any()
     } else {
         let type_id = state.get_asm_type(to).id;
@@ -218,9 +217,8 @@ pub fn lower(nodes: &mut IrModule, ptr: IrPtr, state: &mut ModuleEncoder, f: u32
                 struct_type_index: state
                   .get_asm_type(nodes[of].type_.clone()).id,
                 field_index: nodes[of].type_
-                  .borrow()
                   .field_index(&index)
-                  .unwrap(),
+                  .unwrap_or_else(|| panic!("Struct does not contain field {index}")),
               };
             }
         }

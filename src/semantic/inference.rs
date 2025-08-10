@@ -35,13 +35,15 @@ pub fn infer_types(module: &mut IrModule) -> Result<ModuleInterface> {
             }
         }
     }
+    let solution = env.into_solution()?;
+    module.unify_all(&solution);
     Ok(interface)
 }
 
 pub fn infer_pattern(env: &mut Environment, pat: &mut Pattern) -> TypeRef {
     let t = match &mut pat.kind {
         PatternKind::Name(path) => {
-            let t = Type::TypeVariable(env.fresh_type_variable()).to_ref();
+            let t = Type::TypeVariable(env.fresh_type_variable());
             env.define(path.clone(), t.clone());
             t
         }
@@ -50,8 +52,7 @@ pub fn infer_pattern(env: &mut Environment, pat: &mut Pattern) -> TypeRef {
                 .into_iter()
                 .map(|p| infer_pattern(env, p))
                 .collect(),
-        )
-        .to_ref(),
+        ),
         PatternKind::Constructor(constructor, pattern) => {
             check_pattern(env, pattern, constructor.in_type.clone());
             constructor.out_type.clone()
@@ -99,7 +100,7 @@ pub fn infer_ir(env: &mut Environment, module: &mut IrModule, ptr: IrPtr) -> Res
             let in_t = if let Some(in_) = in_ {
                 rec!(in_)?
             } else {
-                Type::Unit.to_ref()
+                Type::Unit
             };
             mk(
                 I::Declaration {
@@ -119,7 +120,7 @@ pub fn infer_ir(env: &mut Environment, module: &mut IrModule, ptr: IrPtr) -> Res
             mk(I::Identifier(path), t)
         }
         I::Tuple(items) => {
-            let t = Type::Product(items.iter().map(|i| rec!(*i)).try_collect()?).to_ref();
+            let t = Type::Product(items.iter().map(|i| rec!(*i)).try_collect()?);
             mk(I::Tuple(items), t)
         }
         I::StructLiteral {
@@ -133,8 +134,7 @@ pub fn infer_ir(env: &mut Environment, module: &mut IrModule, ptr: IrPtr) -> Res
             let t = Type::Struct {
                 member_names: field_names.clone(),
                 member_types: field_types,
-            }
-            .to_ref();
+            };
             mk(
                 I::StructLiteral {
                     field_names,
@@ -148,12 +148,12 @@ pub fn infer_ir(env: &mut Environment, module: &mut IrModule, ptr: IrPtr) -> Res
             let t = if let Type::Struct {
                 member_names,
                 member_types,
-            } = &*of_t.borrow()
+            } = of_t
                 && let Some(index) = member_names.iter().position(|n| n == &index)
             {
                 member_types[index].clone()
             } else {
-                Type::TypeVariable(env.fresh_type_variable()).to_ref()
+                Type::TypeVariable(env.fresh_type_variable())
             };
             mk(I::Field { of, index }, t)
         }
@@ -161,19 +161,19 @@ pub fn infer_ir(env: &mut Environment, module: &mut IrModule, ptr: IrPtr) -> Res
             use BinaryOp::*;
             match op {
                 Plus | Minus | Star | Slash | Percent => {
-                    let t = Type::Integer.to_ref();
+                    let t = Type::Integer;
                     check!(left, t.clone())?;
                     check!(right, t.clone())?;
                     mk(I::Binary { op, left, right }, t)
                 }
                 PlusDot | MinusDot | StarDot | SlashDot => {
-                    let t = Type::Real.to_ref();
+                    let t = Type::Real;
                     check!(left, t.clone())?;
                     check!(right, t.clone())?;
                     mk(I::Binary { op, left, right }, t)
                 }
                 And | Or | Xor => {
-                    let t = Type::Boolean.to_ref();
+                    let t = Type::Boolean;
                     check!(left, t.clone())?;
                     check!(right, t.clone())?;
                     mk(I::Binary { op, left, right }, t)
@@ -182,7 +182,7 @@ pub fn infer_ir(env: &mut Environment, module: &mut IrModule, ptr: IrPtr) -> Res
                     let t1 = rec!(left)?;
                     let t2 = rec!(right)?;
                     env.constraint(t1, t2, span);
-                    mk(I::Binary { op, left, right }, Type::Boolean.to_ref())
+                    mk(I::Binary { op, left, right }, Type::Boolean)
                 }
                 Semicolon => {
                     let _ = rec!(left)?;
@@ -191,7 +191,7 @@ pub fn infer_ir(env: &mut Environment, module: &mut IrModule, ptr: IrPtr) -> Res
                 }
                 Apply => {
                     let arg_t = rec!(left)?;
-                    let return_t = Type::TypeVariable(env.fresh_type_variable()).to_ref();
+                    let return_t = Type::TypeVariable(env.fresh_type_variable());
                     let func_t = Type::func(arg_t, return_t.clone());
                     check!(right, func_t.clone())?;
                     mk(I::Binary { op, left, right }, return_t)
@@ -202,17 +202,17 @@ pub fn infer_ir(env: &mut Environment, module: &mut IrModule, ptr: IrPtr) -> Res
             use UnaryOp::*;
             match op {
                 Minus => {
-                    let t = Type::Integer.to_ref();
+                    let t = Type::Integer;
                     check!(child, t.clone())?;
                     mk(I::Unary { op, child }, t)
                 }
                 MinusDot => {
-                    let t = Type::Real.to_ref();
+                    let t = Type::Real;
                     check!(child, t.clone())?;
                     mk(I::Unary { op, child }, t)
                 }
                 Not => {
-                    let t = Type::Boolean.to_ref();
+                    let t = Type::Boolean;
                     check!(child, t.clone())?;
                     mk(I::Unary { op, child }, t)
                 }
@@ -227,11 +227,11 @@ pub fn infer_ir(env: &mut Environment, module: &mut IrModule, ptr: IrPtr) -> Res
             ..
         } => {
             let param_t = if parameter_name.is_none() {
-                Type::Unit.to_ref()
+                Type::Unit
             } else if let Some(parameter_type) = parameter_type.clone() {
                 parameter_type
             } else {
-                Type::TypeVariable(env.fresh_type_variable()).to_ref()
+                Type::TypeVariable(env.fresh_type_variable())
             };
             if let Some(parameter_name) = parameter_name.clone() {
                 env.define(parameter_name, param_t.clone());
@@ -256,7 +256,7 @@ pub fn infer_ir(env: &mut Environment, module: &mut IrModule, ptr: IrPtr) -> Res
         }
         I::FunctionCall { callee, argument } => {
             let arg_t = rec!(argument)?;
-            let return_t = Type::TypeVariable(env.fresh_type_variable()).to_ref();
+            let return_t = Type::TypeVariable(env.fresh_type_variable());
             let func_t = Type::func(arg_t, return_t.clone());
             check!(callee, func_t.clone())?;
             mk(I::FunctionCall { callee, argument }, return_t)
@@ -266,12 +266,12 @@ pub fn infer_ir(env: &mut Environment, module: &mut IrModule, ptr: IrPtr) -> Res
             then,
             else_,
         } => {
-            check!(predicate, Type::Boolean.to_ref())?;
+            check!(predicate, Type::Boolean)?;
             let then_t = rec!(then)?;
             if let Some(else_) = else_ {
                 check!(else_, then_t.clone())?;
             } else {
-                env.constraint(then_t.clone(), Type::Unit.to_ref(), span);
+                env.constraint(then_t.clone(), Type::Unit, span);
             }
             mk(
                 I::If {

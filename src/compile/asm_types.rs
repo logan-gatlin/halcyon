@@ -1,8 +1,7 @@
 use super::*;
 
 impl ModuleEncoder {
-    pub fn get_asm_type(&mut self, t: impl Into<TypeRef>) -> AsmType {
-        let t = t.into();
+    pub fn get_asm_type(&mut self, t: Type) -> AsmType {
         AsmType {
             val: self.get_valtype(&t, false),
             id: self.get_type_id(&t.clone(), false),
@@ -11,7 +10,7 @@ impl ModuleEncoder {
     }
 
     fn get_type_id(&mut self, t: &TypeRef, raw: bool) -> u32 {
-        match self.get_storage_type(&t, raw) {
+        match self.get_storage_type(t, raw) {
             StorageType::Val(ValType::Ref(RefType {
                 heap_type: HeapType::Concrete(id),
                 ..
@@ -30,8 +29,7 @@ impl ModuleEncoder {
         }
     }
 
-    fn get_storage_type(&mut self, t: &TypeRef, raw: bool) -> StorageType {
-        let t = (*t.borrow()).clone();
+    fn get_storage_type(&mut self, t: &Type, raw: bool) -> StorageType {
         let register = |this: &mut Self, t: Type, rt: RegisteredType| {
             let id = this.type_section.len() as u32;
             this.type_section.push(rt);
@@ -52,7 +50,7 @@ impl ModuleEncoder {
         } else {
             &self.type_map
         }
-        .get(&t)
+        .get(t)
         {
             return StorageType::Val(ValType::Ref(RefType {
                 nullable: false,
@@ -81,13 +79,13 @@ impl ModuleEncoder {
             ),
             Type::Function(_, _) if !raw => {
                 let raw_func_type = StorageType::Val(ValType::I32);
-                let capture_type = self.get_storage_type(&Type::_ClosureCapture.into(), false);
+                let capture_type = self.get_storage_type(&Type::_ClosureCapture, false);
                 RegisteredType::Struct(vec![raw_func_type, capture_type])
             }
             Type::Function(a, b) => RegisteredType::Function(FuncType::new(
                 [
                     self.get_valtype(&a, false),
-                    self.get_valtype(&Type::_ClosureCapture.into(), false),
+                    self.get_valtype(&Type::_ClosureCapture, false),
                 ],
                 [self.get_valtype(&b, false)],
             )),
@@ -101,11 +99,8 @@ impl ModuleEncoder {
                 StorageType::Val(ValType::I32),
                 StorageType::Val(ValType::Ref(RefType::ANYREF)),
             ]),
-            Type::Weak(wk) => {
-                let r = wk.upgrade().unwrap();
-                return self.get_storage_type(&r, raw);
-            }
+            Type::Named(name) => return self.get_storage_type(&Type::get_named_type(&name), raw),
         };
-        register(self, t, rt)
+        register(self, t.clone(), rt)
     }
 }

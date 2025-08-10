@@ -41,10 +41,10 @@ impl ModuleEncoder {
     }
 
     pub fn get_global_id(&self, path: &Path) -> u32 {
-        self.global_map.get(path).unwrap().clone()
+        *self.global_map.get(path).unwrap()
     }
 
-    pub fn make_new_array(&mut self, type_: impl Into<TypeRef>, size: u32) -> Instruction<'static> {
+    pub fn make_new_array(&mut self, type_: Type, size: u32) -> Instruction<'static> {
         Instruction::ArrayNewFixed {
             array_type_index: self.get_asm_type(type_).id,
             array_size: size,
@@ -58,14 +58,13 @@ impl ModuleEncoder {
         }
     }
 
-    pub fn make_struct(&mut self, type_: impl Into<TypeRef>) -> Instruction<'static> {
+    pub fn make_struct(&mut self, type_: Type) -> Instruction<'static> {
         Instruction::StructNew(self.get_asm_type(type_).id)
     }
 
-    pub fn make_unwrap_primitive(&mut self, type_: impl Into<TypeRef>) -> Instruction<'static> {
-        let type_: TypeRef = type_.into();
+    pub fn make_unwrap_primitive(&mut self, type_: Type) -> Instruction<'static> {
         let type_id = self.get_asm_type(type_.clone()).id;
-        match *type_.borrow() {
+        match type_ {
             Type::Integer | Type::Real | Type::Boolean | Type::String | Type::Glyph => StructGet {
                 struct_type_index: type_id,
                 field_index: 0,
@@ -74,7 +73,7 @@ impl ModuleEncoder {
         }
     }
 
-    pub fn new_array(&mut self, function: u32, type_: impl Into<TypeRef>, size: u32) {
+    pub fn new_array(&mut self, function: u32, type_: Type, size: u32) {
         let array_t = self.get_asm_type(type_).id;
         self.push(
             function,
@@ -89,7 +88,7 @@ impl ModuleEncoder {
         self.new_array(function, Type::_ClosureCapture, size);
     }
 
-    pub fn new_struct(&mut self, function: u32, type_: impl Into<TypeRef>) {
+    pub fn new_struct(&mut self, function: u32, type_: Type) {
         let type_id = self.get_asm_type(type_).id;
         self.push(function, Instruction::StructNew(type_id));
     }
@@ -108,12 +107,7 @@ impl ModuleEncoder {
         &self.code_section[index as usize]
     }
 
-    pub fn call_raw_function(
-        &mut self,
-        function: u32,
-        callee_id: u32,
-        callee_type: impl Into<TypeRef>,
-    ) {
+    pub fn call_raw_function(&mut self, function: u32, callee_id: u32, callee_type: Type) {
         self.push(function, I32Const(callee_id as i32));
         let callee_type = self.get_asm_type(callee_type).raw_id;
         self.push(
@@ -150,7 +144,7 @@ impl ModuleEncoder {
                 for b in s.bytes() {
                     self.push(function, I32Const(b as i32));
                 }
-                let array_type_index = self.get_asm_type(Type::String).id as u32;
+                let array_type_index = self.get_asm_type(Type::String).id;
                 self.push(
                     function,
                     ArrayNewFixed {
@@ -170,7 +164,7 @@ impl ModuleEncoder {
     pub fn unwrap_primitive(&mut self, function: u32, type_: impl Into<TypeRef>) {
         let type_ = type_.into();
         let type_id = self.get_asm_type(type_.clone()).id;
-        match *type_.borrow() {
+        match type_ {
             Type::Integer | Type::Real | Type::Boolean | Type::String | Type::Glyph => {
                 self.push(
                     function,

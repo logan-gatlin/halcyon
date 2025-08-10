@@ -1,10 +1,15 @@
 module List = 
   import std
-  type Option = fn t =>
-    Some of t | None of std:unit
 
-  let f = fn a => a
-  let _ = f 1
-  let _ = f 2.0
+  type List = Cons of std:string * List | Nil of std:unit
 
+  let push = fn item list => match list with
+    | Cons of (head, tail) => Cons (head, push item tail)
+    | Nil of () => Cons (item, Nil ())
+
+  let print = fn list => match list with
+    | Cons of (s, l) =>  std:print_string s; print l
+    | Nil => ()
+
+  let () = print (Nil () |> push "one" |> push "two" |> push "three")
 end

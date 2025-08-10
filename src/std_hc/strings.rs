@@ -10,10 +10,10 @@ pub fn make(encoder: &mut ModuleEncoder, interface: &mut ModuleInterface) {
       let name = stringify! {$name};
       interface.values.insert(
         Path::from(BUILTIN_MODULE_NAME).child(name),
-        Type::curry(&[$($param_type.to_ref()),*], $return_type.to_ref()),
+        Type::curry(&[$($param_type),*], $return_type),
       );
       f = make_function(
-        e, name, vec![$($param_type.to_ref(),)*], $return_type.to_ref()
+        e, name, vec![$($param_type,)*], $return_type
       );
     };
   }

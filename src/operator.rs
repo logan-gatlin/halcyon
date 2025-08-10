@@ -101,13 +101,11 @@ impl BinaryOp {
     ];
 
     pub fn get_curry_type(&self) -> TypeRef {
-        let Type::Function(_, a) = self.get_type().borrow().clone() else {
+        let Type::Function(_, a) = self.get_type().clone() else {
             panic!()
         };
-        let Type::Function(a, b) = a.borrow().clone() else {
-            panic!()
-        };
-        Type::func(a, b)
+        let Type::Function(a, b) = *a else { panic!() };
+        Type::Function(a, b)
     }
 
     pub fn parameter_type(&self) -> TypeRef {

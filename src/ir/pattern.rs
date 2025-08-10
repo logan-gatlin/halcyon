@@ -39,7 +39,7 @@ impl Pattern {
 
 impl Unify for Pattern {
     fn unify(&mut self, tv: TypeVariable, type_: &Type) {
-        self.type_.borrow_mut().unify(tv, type_);
+        self.type_.unify(tv, type_);
         match &mut self.kind {
             PatternKind::Name(_) => {}
             PatternKind::Tuple(patterns) => patterns.iter_mut().for_each(|p| p.unify(tv, type_)),

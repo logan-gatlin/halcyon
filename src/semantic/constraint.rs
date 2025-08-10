@@ -14,14 +14,13 @@ pub fn solve_constraints(constraints: &[Constraint]) -> Result<Vec<Substitution>
     let mut solution = vec![];
     while let Some(con) = cons.pop() {
         let span = con.2;
-        // This is gross
-        let t1 = (*con.0.borrow()).clone();
-        let t2 = (*con.1.borrow()).clone();
+        let t1 = con.0;
+        let t2 = con.1;
         match (t1, t2) {
             (t1, t2) if t1 == t2 => {}
             (Type::Function(p1, r1), Type::Function(p2, r2)) => {
-                cons.push(Constraint(p1, p2, span));
-                cons.push(Constraint(r1, r2, span));
+                cons.push(Constraint(*p1, *p2, span));
+                cons.push(Constraint(*r1, *r2, span));
             }
             (t, Type::TypeVariable(tv)) | (Type::TypeVariable(tv), t)
                 if !t.contains_type_var(tv) =>
@@ -84,7 +83,7 @@ pub trait Unify {
     fn unify(&mut self, tv: TypeVariable, type_: &Type);
     fn unify_all(&mut self, subs: &[Substitution]) {
         for Substitution(tv, t) in subs {
-            self.unify(*tv, &(t.borrow()));
+            self.unify(*tv, t);
         }
     }
 }
@@ -110,14 +109,8 @@ where
 
 impl Unify for Constraint {
     fn unify(&mut self, tv: TypeVariable, type_: &Type) {
-        self.0.borrow_mut().unify(tv, type_);
-        self.1.borrow_mut().unify(tv, type_);
-    }
-}
-
-impl Unify for TypeRef {
-    fn unify(&mut self, tv: TypeVariable, type_: &Type) {
-        self.borrow_mut().unify(tv, type_);
+        self.0.unify(tv, type_);
+        self.1.unify(tv, type_);
     }
 }
 
@@ -131,20 +124,20 @@ impl Unify for Type {
             }
             Type::Struct { member_types, .. } => {
                 member_types.iter_mut().for_each(|t| {
-                    t.borrow_mut().unify(tv, type_);
+                    t.unify(tv, type_);
                 });
             }
             Type::Product(items) => items.iter_mut().for_each(|i| {
-                i.borrow_mut().unify(tv, type_);
+                i.unify(tv, type_);
             }),
-            Type::Sum { variant_types, .. } => variant_types
-                .iter_mut()
-                .for_each(|t| t.borrow_mut().unify(tv, type_)),
-            Type::Function(a, b) => {
-                a.borrow_mut().unify(tv, type_);
-                b.borrow_mut().unify(tv, type_);
+            Type::Sum { variant_types, .. } => {
+                variant_types.iter_mut().for_each(|t| t.unify(tv, type_))
             }
-            Type::Weak(_)
+            Type::Function(a, b) => {
+                a.unify(tv, type_);
+                b.unify(tv, type_);
+            }
+            Type::Named(_)
             | Type::Any
             | Type::_ClosureCapture
             | Type::Unit
@@ -159,12 +152,12 @@ impl Unify for Type {
 
 impl std::fmt::Display for Constraint {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} == {}", self.0.borrow(), self.1.borrow())
+        write!(f, "{} == {}", self.0, self.1)
     }
 }
 
 impl std::fmt::Display for Substitution {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "'{} <- {}", self.0, self.1.borrow())
+        write!(f, "'{} <- {}", self.0, self.1)
     }
 }

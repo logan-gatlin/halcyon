@@ -1,14 +1,12 @@
-use crate::semantic::{Substitution, Unify};
+use crate::{ir::Path, semantic::Unify};
 
 use super::TypeVariable;
 use std::{
-    cell::RefCell,
     collections::HashMap,
-    rc::{Rc, Weak},
+    sync::{Mutex, OnceLock},
 };
 
-pub type TypeRef = Rc<RefCell<Type>>;
-pub type WeakTypeRef = Weak<RefCell<Type>>;
+pub type TypeRef = Type;
 
 #[derive(Debug, Clone)]
 pub struct TypeScheme {
@@ -17,21 +15,28 @@ pub struct TypeScheme {
 }
 
 impl TypeScheme {
-    pub fn new(t: impl Into<TypeRef>) -> Self {
+    pub fn new(t: Type) -> Self {
         let inner: TypeRef = t.into();
         let mut map = HashMap::new();
         let mut variables = 0;
-        inner
-            .borrow_mut()
-            .map_new_type_variables(&mut map, &mut variables);
+        inner.map_new_type_variables(&mut map, &mut variables);
         Self { variables, inner }
     }
 
-    pub fn instantiate(mut self, mut fresh_type_var: impl FnMut() -> TypeVariable) -> TypeRef {
+    pub fn instantiate(mut self, mut fresh_type_var: impl FnMut() -> TypeVariable) -> Type {
         for i in 0..self.variables {
             self.inner.unify(i, &Type::TypeVariable(fresh_type_var()))
         }
         self.inner
+    }
+
+    pub fn instantiate_default(self) -> Type {
+        let mut count = 0;
+        self.instantiate(|| {
+            let c = count;
+            count += 1;
+            c
+        })
     }
 }
 
@@ -66,16 +71,29 @@ pub enum Type {
         variant_types: Vec<TypeRef>,
     },
     /// Function type
-    Function(TypeRef, TypeRef),
+    Function(Box<TypeRef>, Box<TypeRef>),
     /// Placeholder until arrays are implemented, so I can
     /// generate `anyref` array in type section
     _ClosureCapture,
-    Weak(WeakTypeRef),
+    Named(Path),
 }
 
+static UNIVERSE: OnceLock<Mutex<HashMap<Path, Type>>> = OnceLock::new();
+
 impl Type {
-    pub fn to_ref(self) -> TypeRef {
-        Rc::new(RefCell::new(self))
+    pub fn new_named_type(path: Path, t: Type) {
+        let map = UNIVERSE.get_or_init(|| Mutex::new(HashMap::new()));
+        let mut guard = map.lock().unwrap();
+        guard.insert(path.clone(), t);
+    }
+
+    pub fn get_named_type(path: &Path) -> Type {
+        let map = UNIVERSE.get_or_init(|| Mutex::new(HashMap::new()));
+        let guard = map.lock().unwrap();
+        guard
+            .get(path)
+            .expect(&format!("No named type: {path}"))
+            .clone()
     }
 
     pub fn map_new_type_variables(
@@ -84,7 +102,7 @@ impl Type {
         current: &mut TypeVariable,
     ) {
         match &self {
-            Type::Weak(_)
+            Type::Named(_)
             | Type::Any
             | Type::_ClosureCapture
             | Type::Unit
@@ -110,15 +128,15 @@ impl Type {
                 ..
             } => items
                 .into_iter()
-                .for_each(|t| t.borrow().map_new_type_variables(map, current)),
+                .for_each(|t| t.map_new_type_variables(map, current)),
             Type::Function(param_type, return_type) => {
-                param_type.borrow().map_new_type_variables(map, current);
-                return_type.borrow().map_new_type_variables(map, current);
+                param_type.map_new_type_variables(map, current);
+                return_type.map_new_type_variables(map, current);
             }
         }
     }
 
-    pub fn curry(params: &[TypeRef], returns: TypeRef) -> TypeRef {
+    pub fn curry(params: &[Type], returns: Type) -> Type {
         match params {
             [] => returns,
             [p] => Type::func(p.clone(), returns),
@@ -128,17 +146,17 @@ impl Type {
 
     pub fn primitives() -> Vec<(TypeRef, &'static str)> {
         vec![
-            (Self::Unit.to_ref(), "unit"),
-            (Self::Integer.to_ref(), "integer"),
-            (Self::Real.to_ref(), "real"),
-            (Self::Boolean.to_ref(), "boolean"),
-            (Self::String.to_ref(), "string"),
-            (Self::Glyph.to_ref(), "glyph"),
+            (Self::Unit, "unit"),
+            (Self::Integer, "integer"),
+            (Self::Real, "real"),
+            (Self::Boolean, "boolean"),
+            (Self::String, "string"),
+            (Self::Glyph, "glyph"),
         ]
     }
 
-    pub fn func(parameter: impl Into<TypeRef>, returns: impl Into<TypeRef>) -> TypeRef {
-        Type::Function(parameter.into(), returns.into()).to_ref()
+    pub fn func(parameter: Type, returns: Type) -> TypeRef {
+        Type::Function(parameter.into(), returns.into())
     }
 
     pub fn field_index(&self, name: &str) -> Option<u32> {
@@ -167,43 +185,39 @@ impl Type {
             Type::TypeVariable(t) => tv == *t,
             Type::Struct { member_types, .. } => member_types
                 .into_iter()
-                .fold(false, |accum, x| accum || x.borrow().contains_type_var(tv)),
+                .fold(false, |accum, x| accum || x.contains_type_var(tv)),
             Type::Product(items) => items
                 .into_iter()
-                .fold(false, |accum, x| accum || x.borrow().contains_type_var(tv)),
+                .fold(false, |accum, x| accum || x.contains_type_var(tv)),
             Type::Sum { variant_types, .. } => variant_types
                 .into_iter()
-                .fold(false, |accum, x| accum || x.borrow().contains_type_var(tv)),
-            Type::Function(a, b) => {
-                a.borrow().contains_type_var(tv) || b.borrow().contains_type_var(tv)
-            }
+                .fold(false, |accum, x| accum || x.contains_type_var(tv)),
+            Type::Function(a, b) => a.contains_type_var(tv) || b.contains_type_var(tv),
             _ => false,
         }
     }
 
-    pub fn product(a: TypeRef, b: TypeRef) -> TypeRef {
-        let a_ = &*a.borrow();
-        let b_ = &*b.borrow();
-        if let Type::Product(v) = a_ {
+    pub fn product(a: Type, b: Type) -> TypeRef {
+        if let Type::Product(v) = a {
             let mut new = v.clone();
-            if let Type::Product(v2) = b_ {
+            if let Type::Product(v2) = b {
                 new.append(&mut v2.clone());
-                Type::Product(new).to_ref()
+                Type::Product(new)
             } else {
                 new.push(b.clone());
-                Type::Product(new).to_ref()
+                Type::Product(new)
             }
-        } else if let Type::Product(v) = b_ {
+        } else if let Type::Product(v) = b {
             let mut new = v.clone();
-            if let Type::Product(v2) = a_ {
+            if let Type::Product(v2) = a {
                 new.append(&mut v2.clone());
-                Type::Product(new).to_ref()
+                Type::Product(new)
             } else {
                 new.push(a.clone());
-                Type::Product(new).to_ref()
+                Type::Product(new)
             }
         } else {
-            Type::Product(vec![a.clone(), b.clone()]).to_ref()
+            Type::Product(vec![a.clone(), b.clone()])
         }
     }
 }
@@ -266,10 +280,10 @@ impl PartialEq for Type {
                 },
             ) => t1 == t2 && n1 == n2,
             (t::TypeVariable(_), t::TypeVariable(_)) => true,
-            (t::Weak(a), t::Weak(b)) => a.as_ptr() == b.as_ptr(),
-            (t::Weak(w), a) | (a, t::Weak(w)) => {
-                let b = w.upgrade().unwrap();
-                let val = a == (&*b.borrow());
+            (t::Named(a), t::Named(b)) => a == b,
+            (t::Named(n), a) | (a, t::Named(n)) => {
+                let b = Self::get_named_type(n);
+                let val = a == &b;
                 val
             }
             _ => false,
@@ -278,12 +292,6 @@ impl PartialEq for Type {
 }
 
 impl Eq for Type {}
-
-impl Into<TypeRef> for Type {
-    fn into(self) -> TypeRef {
-        self.to_ref()
-    }
-}
 
 impl std::hash::Hash for Type {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -298,12 +306,12 @@ impl std::hash::Hash for Type {
             } => {
                 names.hash(state);
                 types.iter().for_each(|t| {
-                    t.borrow().hash(state);
+                    t.hash(state);
                 })
             }
             Type::Function(a, b) => {
-                a.borrow().hash(state);
-                b.borrow().hash(state);
+                a.hash(state);
+                b.hash(state);
             }
             Type::Any => {
                 "any".hash(state);
@@ -315,10 +323,10 @@ impl std::hash::Hash for Type {
             Type::Product(items) => {
                 "tuple".hash(state);
                 for item in items {
-                    item.borrow().hash(state);
+                    item.hash(state);
                 }
             }
-            Type::Weak(_)
+            Type::Named(_)
             | Type::Unit
             | Type::_ClosureCapture
             | Type::Integer
@@ -350,19 +358,19 @@ impl std::fmt::Display for Type {
                 let fields = member_names
                     .into_iter()
                     .zip(member_types)
-                    .map(|(name, type_)| format!("{name}: {}", type_.borrow()))
+                    .map(|(name, type_)| format!("{name}: {type_}"))
                     .collect::<Vec<_>>()
                     .join(", ");
                 write!(f, "{{ {fields} }}")
             }
-            Type::Function(a, b) => write!(f, "({} -> {})", a.borrow(), b.borrow()),
+            Type::Function(a, b) => write!(f, "({a} -> {b})"),
             Type::TypeVariable(id) => write!(f, "'{id}"),
             Type::Product(items) => write!(
                 f,
                 "({})",
                 items
                     .into_iter()
-                    .map(|i| format!("{}", i.borrow()))
+                    .map(|i| format!("{}", i))
                     .collect::<Vec<_>>()
                     .join(" * ")
             ),
@@ -375,13 +383,12 @@ impl std::fmt::Display for Type {
                 variant_names
                     .into_iter()
                     .zip(variant_types)
-                    .map(|(name, type_)| format!("{name} of {}", type_.borrow()))
+                    .map(|(name, type_)| format!("{name} of {type_}"))
                     .collect::<Vec<_>>()
                     .join(" | ")
             ),
-            Type::Weak(w) => {
-                w.upgrade().unwrap();
-                write!(f, "(cycle)")
+            Type::Named(name) => {
+                write!(f, "{name}")
             }
         }
     }

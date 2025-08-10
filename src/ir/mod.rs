@@ -78,15 +78,15 @@ pub struct IrNode {
 
 impl Unify for IrNode {
     fn unify(&mut self, tv: TypeVariable, type_: &Type) {
-        self.type_.borrow_mut().unify(tv, type_);
+        self.type_.unify(tv, type_);
         match &mut self.kind {
             IrKind::FunctionDef { capture_types, .. } => {
-                capture_types.into_iter().for_each(|old_t| {
+                capture_types.iter_mut().for_each(|old_t| {
                     old_t.unify(tv, type_);
                 })
             }
             IrKind::Match { predicates, .. } => {
-                predicates.into_iter().for_each(|p| p.unify(tv, type_))
+                predicates.iter_mut().for_each(|p| p.unify(tv, type_))
             }
             IrKind::Declaration { assignee, .. } => assignee.unify(tv, type_),
             _ => {}
@@ -113,7 +113,7 @@ impl Unify for IrModule {
     fn unify(&mut self, tv: TypeVariable, type_: &Type) {
         self.universe
             .iter_mut()
-            .for_each(|(_, t)| t.borrow_mut().unify(tv, type_));
+            .for_each(|(_, t)| t.unify(tv, type_));
         self.nodes.iter_mut().for_each(|n| n.unify(tv, type_));
     }
 }

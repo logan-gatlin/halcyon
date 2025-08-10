@@ -21,10 +21,10 @@ fn primitive_funcs(encoder: &mut ModuleEncoder, interface: &mut ModuleInterface)
       let name = stringify! {$name};
       interface.values.insert(
         Path::from(BUILTIN_MODULE_NAME).child(name),
-        Type::curry(&[$($param_type.to_ref()),*], $return_type.to_ref()),
+        Type::curry(&[$($param_type),*], $return_type),
       );
       f = make_function(
-        e, name, vec![$($param_type.to_ref(),)*], $return_type.to_ref()
+        e, name, vec![$($param_type,)*], $return_type
       );
     };
   }
@@ -52,7 +52,7 @@ fn primitive_types(interface: &mut ModuleInterface) {
     .for_each(|(name, type_)| {
         interface
             .types
-            .insert(Path::from(BUILTIN_MODULE_NAME).child(name), type_.to_ref());
+            .insert(Path::from(BUILTIN_MODULE_NAME).child(name), type_);
     });
 }
 
@@ -62,7 +62,7 @@ fn operator_assembly(encoder: &mut ModuleEncoder, interface: &mut ModuleInterfac
     {
         use UnaryOp::*;
         // Integer negate (-)
-        let type_ = Type::Integer.to_ref();
+        let type_ = Type::Integer;
         let f = make_function(e, &format!("{Minus}"), vec![type_.clone()], type_.clone());
         e.push(f, I64Const(0));
         e.get_symbol(f, &Path::from("0"));
@@ -70,7 +70,7 @@ fn operator_assembly(encoder: &mut ModuleEncoder, interface: &mut ModuleInterfac
         e.push(f, I64Sub);
         e.new_struct(f, type_.clone());
         // Real negate (-)
-        let type_ = Type::Real.to_ref();
+        let type_ = Type::Real;
         let f = make_function(
             e,
             &format!("{MinusDot}"),
@@ -83,7 +83,7 @@ fn operator_assembly(encoder: &mut ModuleEncoder, interface: &mut ModuleInterfac
         e.push(f, F64Sub);
         e.new_struct(f, type_.clone());
         // Boolean negate (not)
-        let type_ = Type::Boolean.to_ref();
+        let type_ = Type::Boolean;
         let f = make_function(e, &format!("{Not}"), vec![type_.clone()], type_.clone());
         e.get_symbol(f, &Path::from("0"));
         e.unwrap_primitive(f, type_.clone());
@@ -146,11 +146,8 @@ fn operator_assembly(encoder: &mut ModuleEncoder, interface: &mut ModuleInterfac
             let f = make_function(
                 e,
                 &format!("{op}"),
-                vec![
-                    Type::TypeVariable(0).to_ref(),
-                    Type::TypeVariable(0).to_ref(),
-                ],
-                Type::Boolean.to_ref(),
+                vec![Type::TypeVariable(0), Type::TypeVariable(0)],
+                Type::Boolean,
             );
 
             let a = e.func_mut(f).get_local_id(&Path::from("0"));

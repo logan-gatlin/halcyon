@@ -22,11 +22,11 @@ impl FunctionEncoder {
     }
 
     pub fn get_local_id(&mut self, mangle: &Path) -> u32 {
-        self.local_names.get(&mangle).unwrap().clone()
+        *self.local_names.get(mangle).unwrap()
     }
 
     pub fn has_local(&self, mangle: &Path) -> bool {
-        self.local_names.contains_key(&mangle)
+        self.local_names.contains_key(mangle)
     }
 
     pub fn new_temporary(&mut self, type_: ValType) -> u32 {
@@ -83,11 +83,11 @@ impl ModuleEncoder {
     }
 
     pub fn get_local(&self, f: u32, local: impl Into<Path>) -> Instruction<'static> {
-        let local = self.func(f).local_names.get(&local.into()).unwrap().clone();
+        let local = *self.func(f).local_names.get(&local.into()).unwrap();
         Instruction::LocalGet(local)
     }
 
-    pub fn new_local(&mut self, f: u32, name: impl Into<Path>, t: impl Into<TypeRef>) -> u32 {
+    pub fn new_local(&mut self, f: u32, name: impl Into<Path>, t: Type) -> u32 {
         let t = self.get_asm_type(t);
         self.func_mut(f).new_local(name, t.val)
     }
@@ -109,10 +109,10 @@ impl ModuleEncoder {
         capture_types: Vec<TypeRef>,
     ) -> u32 {
         let type_ = type_.into();
-        let Type::Function(parameter_type, _) = (*type_.borrow()).clone() else {
+        let Type::Function(parameter_type, _) = type_.clone() else {
             panic!()
         };
-        let parameter_type = self.get_asm_type(parameter_type).val;
+        let parameter_type = self.get_asm_type(*parameter_type).val;
         let closure_type_id = self.get_asm_type(Type::_ClosureCapture).id;
         let capture_types = capture_types.iter().map(|t| self.get_valtype(t, false));
         let mut code = FunctionEncoder {
@@ -157,7 +157,6 @@ impl ModuleEncoder {
         mut parameter_types: Vec<TypeRef>,
         return_type: TypeRef,
     ) -> (u32, u32) {
-        let ftype = Type::curry(&parameter_types, return_type.clone());
         parameter_names.reverse();
         parameter_types.reverse();
         let mut tail = 0;
@@ -167,7 +166,6 @@ impl ModuleEncoder {
             vec![],
             vec![],
             return_type,
-            ftype,
             &mut tail,
         );
         (head, tail)
@@ -179,13 +177,12 @@ impl ModuleEncoder {
         mut parameter_types: Vec<TypeRef>,
         mut capture_names: Vec<Path>,
         mut capture_types: Vec<TypeRef>,
-        return_type: TypeRef,
         ftype: TypeRef,
         tail: &mut u32,
     ) -> u32 {
         let name = parameter_names.pop().unwrap();
         let type_ = parameter_types.pop().unwrap();
-        let Type::Function(_, r) = ftype.borrow().clone() else {
+        let Type::Function(_, r) = ftype.clone() else {
             unreachable! {}
         };
         let f = self.new_function(
@@ -198,14 +195,13 @@ impl ModuleEncoder {
         let new_ftype = r;
         capture_names.push(name);
         capture_types.push(type_.clone());
-        if parameter_names.len() != 0 {
+        if !parameter_names.is_empty() {
             let tail = self.curry(
                 parameter_names,
                 parameter_types,
                 capture_names.clone(),
                 capture_types.clone(),
-                return_type,
-                new_ftype,
+                *new_ftype,
                 tail,
             );
             self.push(f, I32Const(tail as i32));

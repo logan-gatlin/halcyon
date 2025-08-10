@@ -33,6 +33,5 @@ impl ConstValue {
             ConstValue::String(_) => Type::String,
             ConstValue::Glyph(_) => Type::Glyph,
         }
-        .to_ref()
     }
 }

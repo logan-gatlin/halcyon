@@ -21,9 +21,6 @@ use semantic::*;
 use std_hc::*;
 use token::*;
 
-// TODO:
-// Parametric types
-
 pub use lint::*;
 
 pub fn execute(wasm: Vec<u8>) {

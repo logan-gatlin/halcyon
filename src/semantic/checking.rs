@@ -4,7 +4,7 @@ pub fn check_ir(
     env: &mut Environment,
     module: &mut IrModule,
     ptr: IrPtr,
-    expect: TypeRef,
+    expect: Type,
 ) -> Result<()> {
     macro_rules! infer {
         ($ptr:expr) => {
@@ -17,9 +17,8 @@ pub fn check_ir(
         };
     }
     let span = module.nodes[ptr].span;
-    let expect_t = (*expect.borrow()).clone();
     use IrKind as I;
-    match (module.nodes[ptr].kind.clone(), expect_t) {
+    match (module.nodes[ptr].kind.clone(), &expect) {
         (
             I::If {
                 predicate,
@@ -28,7 +27,7 @@ pub fn check_ir(
             },
             _,
         ) => {
-            rec!(predicate, Type::Boolean.to_ref())?;
+            rec!(predicate, Type::Boolean)?;
             rec!(then, expect.clone())?;
             if let Some(else_) = else_ {
                 rec!(else_, expect.clone())?;
@@ -37,7 +36,7 @@ pub fn check_ir(
         (I::Tuple(items), Type::Product(types)) if items.len() == types.len() => items
             .into_iter()
             .zip(types)
-            .try_for_each(|(i, t)| rec!(i, t))?,
+            .try_for_each(|(i, t)| rec!(i, t.clone()))?,
         (
             I::FunctionDef {
                 parameter_name,
@@ -48,17 +47,17 @@ pub fn check_ir(
                 ..
             },
             Type::Function(expect_param, expect_return),
-        ) if (parameter_name.is_none() && expect_param == Type::Unit.to_ref())
+        ) if (parameter_name.is_none() && **expect_param == Type::Unit)
             || parameter_name.is_some() =>
         {
             if let Some(parameter_name) = parameter_name.clone() {
-                env.define(parameter_name.clone(), expect_param);
+                env.define(parameter_name.clone(), *expect_param.clone());
             }
             let capture_types = captures
                 .iter()
                 .map(|p| env.get_symbol(p))
                 .collect::<Vec<_>>();
-            rec!(body, expect_return)?;
+            rec!(body, *expect_return.clone())?;
             module.nodes[ptr].kind = IrKind::FunctionDef {
                 parameter_name,
                 parameter_span,
@@ -78,9 +77,8 @@ pub fn check_ir(
     Ok(())
 }
 
-pub fn check_pattern(env: &mut Environment, pat: &mut Pattern, expect: TypeRef) {
-    let expect_t = (&*expect.borrow()).clone();
-    match (&mut pat.kind, expect_t) {
+pub fn check_pattern(env: &mut Environment, pat: &mut Pattern, expect: Type) {
+    match (&mut pat.kind, &expect) {
         (PatternKind::Name(path), _) => {
             env.define(path.clone(), expect.clone());
             pat.type_ = expect.clone();
@@ -88,7 +86,7 @@ pub fn check_pattern(env: &mut Environment, pat: &mut Pattern, expect: TypeRef) 
         (PatternKind::Tuple(pats), Type::Product(types)) if pats.len() == types.len() => pats
             .into_iter()
             .zip(types)
-            .for_each(|(pat, t)| check_pattern(env, pat, t)),
+            .for_each(|(pat, t)| check_pattern(env, pat, t.clone())),
         _ => {
             let actual = infer_pattern(env, pat);
             env.constraint(actual, expect.clone(), pat.span);

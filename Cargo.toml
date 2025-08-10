@@ -12,6 +12,7 @@ toml = {version = "0.9", default-features = false, features = ["parse", "serde"]
 wasmparser = {version = "0.235"}
 wasmprinter = "0.235"
 wasmtime = {version = "34.0", default-features = false, features = ["runtime", "cranelift", "gc", "gc-drc"]}
+clippy = "0.0.302"
 
 [profile.release]
 strip = true

@@ -25,7 +25,7 @@ impl NameSpace {
 
 impl NameSpace {
     fn define_global(&mut self, name: &str) -> Result<Path> {
-        assert!(self.state.len() == 0);
+        assert!(self.state.is_empty());
         let name = if name == "_" {
             let salt = self.salt;
             self.salt += 1;

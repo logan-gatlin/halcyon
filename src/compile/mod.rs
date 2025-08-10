@@ -139,7 +139,7 @@ impl ModuleEncoder {
                     .map(|(type_, id)| (id, format!("(raw) {}", type_))),
             )
             .collect::<Vec<_>>();
-        type_names_map.sort_by(|(id1, _), (id2, _)| id1.cmp(&id2));
+        type_names_map.sort_by(|(id1, _), (id2, _)| id1.cmp(id2));
         name_section.types(&type_names_map.into_iter().fold(
             NameMap::new(),
             |mut names, (id, type_)| {
@@ -274,11 +274,10 @@ impl ModuleEncoder {
                 RegisteredType::Function(func_type) => ts.ty().func_type(func_type),
                 RegisteredType::Array(storage_type) => ts.ty().array(storage_type, true),
                 RegisteredType::Struct(storage_types) => {
-                    ts.ty()
-                        .struct_(storage_types.into_iter().map(|t| FieldType {
-                            element_type: *t,
-                            mutable: false,
-                        }))
+                    ts.ty().struct_(storage_types.iter().map(|t| FieldType {
+                        element_type: *t,
+                        mutable: false,
+                    }))
                 }
             }
         }

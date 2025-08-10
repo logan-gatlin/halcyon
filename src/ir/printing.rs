@@ -10,7 +10,7 @@ impl Into<SExpression> for &Pattern {
                 sexpr("constructor", [Into::<SExpression>::into(&**pattern)])
             }
         };
-        se.push_front(format!("(type {})", self.type_.borrow()).as_str().into());
+        se.push_front(format!("(type {})", self.type_).as_str().into());
         se
     }
 }
@@ -90,9 +90,7 @@ impl IrModule {
                             captures
                                 .into_iter()
                                 .zip(capture_types.into_iter())
-                                .map(|(cap, ty)| {
-                                    sexpr(cap, [format!("{}", ty.borrow()).as_str().into()])
-                                }),
+                                .map(|(cap, ty)| sexpr(cap, [format!("{}", ty).as_str().into()])),
                         ))
                     },
                     Some(sexpr("body", [self.sexpr(*body)])),
@@ -160,7 +158,7 @@ impl IrModule {
             ),
             h::ImportedSymbol(name, _) => sexpr("module-import", [name.into()]),
         };
-        se.push_front(format!("(type {})", node.type_.borrow()).as_str().into());
+        se.push_front(format!("(type {})", node.type_).as_str().into());
         se
     }
 }
@@ -185,21 +183,15 @@ impl std::fmt::Display for IrModule {
                             "type",
                             [
                                 sexpr("name", [name.into()]),
-                                sexpr("value", [format!("{}", type_.borrow()).as_str().into()]),
+                                sexpr("value", [format!("{}", type_).as_str().into()]),
                             ],
                         ),
                         ModuleItem::Constructor(name, cons) => sexpr(
                             "constructor",
                             [
                                 sexpr("name", [name.into()]),
-                                sexpr(
-                                    "from",
-                                    [format!("{}", cons.in_type.borrow()).as_str().into()],
-                                ),
-                                sexpr(
-                                    "to",
-                                    [format!("{}", cons.out_type.borrow()).as_str().into()],
-                                ),
+                                sexpr("from", [format!("{}", cons.in_type).as_str().into()]),
+                                sexpr("to", [format!("{}", cons.out_type).as_str().into()]),
                             ],
                         ),
                     }
