@@ -4,18 +4,16 @@ mod namespace;
 mod path;
 mod pattern;
 pub mod printing;
-pub mod types;
 
 use std::collections::HashMap;
 
-use crate::{lint::*, operator::*, semantic::ModuleInterface};
+use crate::{lint::*, operator::*, semantic::*};
 
 pub use build_ir::*;
 pub use constant::*;
-use namespace::*;
+pub use namespace::*;
 pub use path::*;
 pub use pattern::*;
-pub use types::*;
 
 pub type IrPtr = usize;
 
@@ -84,7 +82,7 @@ impl Unify for IrNode {
         match &mut self.kind {
             IrKind::FunctionDef { capture_types, .. } => {
                 capture_types.into_iter().for_each(|old_t| {
-                    old_t.borrow_mut().unify(tv, type_);
+                    old_t.unify(tv, type_);
                 })
             }
             IrKind::Match { predicates, .. } => {

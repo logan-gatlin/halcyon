@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use super::*;
 
 pub type TypeDefinition = Expression<TypeDefinitionKind>;
@@ -5,6 +7,10 @@ pub type TypeExpression = Expression<TypeExpressionKind>;
 
 #[derive(Debug, Clone)]
 pub enum TypeDefinitionKind {
+    Function {
+        arguments: Vec<String>,
+        body: Box<TypeDefinition>,
+    },
     Structure {
         lhs: Vec<String>,
         rhs: Vec<TypeExpression>,
@@ -31,6 +37,31 @@ pub fn parse_type_definition(iter: it!()) -> Result<TypeDefinition> {
         [],
     ))?;
     let kind = match &next.0 {
+        // Function
+        Fn => {
+            iter.skip(1);
+            let mut arguments = vec![];
+            let mut argument_spans = vec![];
+            loop {
+                if iter.eat(FatArrow).is_some() {
+                    break;
+                }
+                arguments.push(iter.eat_ident()?);
+                argument_spans.push(iter.last_span);
+            }
+            let mut parameter_set = HashSet::new();
+            for i in 0..arguments.len() {
+                if !parameter_set.insert(&arguments[i]) {
+                    return Err(lint(
+                        NameLint::ParamRedefinition,
+                        argument_spans[i],
+                        ["function".to_string(), arguments[i].clone()],
+                    ));
+                }
+            }
+            let body = Box::new(parse_type_definition(iter)?);
+            TypeDefinitionKind::Function { arguments, body }
+        }
         // Structure
         LeftBrace => {
             let mut lhs = vec![];

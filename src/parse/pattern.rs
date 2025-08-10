@@ -3,7 +3,6 @@ use super::*;
 pub enum PatternExpressionKind {
     Literal(super::Literal),
     Identifier(String),
-    Path(Vec<String>),
     Tuple(Vec<PatternExpression>),
     Constructor(Vec<String>, Box<PatternExpression>),
 }
@@ -16,7 +15,6 @@ pub fn parse_pattern(iter: it!()) -> Result<PatternExpression> {
     let Some(Token(next, _)) = iter.next() else {
         return Err(iter.report_error(ExpectedExpression, []));
     };
-    const TERMINAL_TOKENS: [TokenKind; 2] = [Colon, Equal];
     let kind = match next {
         // Tuple or unit
         LeftParen => {
@@ -43,15 +41,10 @@ pub fn parse_pattern(iter: it!()) -> Result<PatternExpression> {
             while iter.eat(Colon).is_some() {
                 path.push(iter.eat_ident()?);
             }
-            if iter
-                .peek(0)
-                .is_some_and(|t| !TERMINAL_TOKENS.contains(&t.0))
-            {
-                e::Constructor(path, Box::new(parse_pattern(iter)?))
-            } else if path.len() == 1 {
-                e::Identifier(path[0].clone())
-            } else {
-                e::Path(path)
+            match iter.eat_or_error(Of) {
+                Ok(_) => e::Constructor(path, Box::new(parse_pattern(iter)?)),
+                Err(_) if path.len() == 1 => e::Identifier(path[0].clone()),
+                Err(e) => return Err(e),
             }
         }
         // Literals

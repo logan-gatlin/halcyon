@@ -1,13 +1,39 @@
+use crate::semantic::{Substitution, Unify};
+
+use super::TypeVariable;
 use std::{
     cell::RefCell,
+    collections::HashMap,
     rc::{Rc, Weak},
 };
 
-use crate::semantic::Substitution;
-
-pub type TypeVariable = usize;
 pub type TypeRef = Rc<RefCell<Type>>;
 pub type WeakTypeRef = Weak<RefCell<Type>>;
+
+#[derive(Debug, Clone)]
+pub struct TypeScheme {
+    variables: usize,
+    inner: TypeRef,
+}
+
+impl TypeScheme {
+    pub fn new(t: impl Into<TypeRef>) -> Self {
+        let inner: TypeRef = t.into();
+        let mut map = HashMap::new();
+        let mut variables = 0;
+        inner
+            .borrow_mut()
+            .map_new_type_variables(&mut map, &mut variables);
+        Self { variables, inner }
+    }
+
+    pub fn instantiate(mut self, mut fresh_type_var: impl FnMut() -> TypeVariable) -> TypeRef {
+        for i in 0..self.variables {
+            self.inner.unify(i, &Type::TypeVariable(fresh_type_var()))
+        }
+        self.inner
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum Type {
@@ -42,43 +68,22 @@ pub enum Type {
     /// Function type
     Function(TypeRef, TypeRef),
     /// Placeholder until arrays are implemented, so I can
-    /// generate ANYREF array in type section
+    /// generate `anyref` array in type section
     _ClosureCapture,
     Weak(WeakTypeRef),
 }
 
-pub trait Unify {
-    fn unify(&mut self, tv: TypeVariable, type_: &Type);
-    fn unify_all(&mut self, subs: &[Substitution]) {
-        for Substitution(tv, t) in subs {
-            self.unify(*tv, &(t.borrow()));
-        }
+impl Type {
+    pub fn to_ref(self) -> TypeRef {
+        Rc::new(RefCell::new(self))
     }
-}
 
-impl Unify for Type {
-    fn unify(&mut self, tv: TypeVariable, type_: &Type) {
-        match self {
-            Type::TypeVariable(t) => {
-                if *t == tv {
-                    *self = type_.clone();
-                }
-            }
-            Type::Struct { member_types, .. } => {
-                member_types.iter_mut().for_each(|t| {
-                    t.borrow_mut().unify(tv, type_);
-                });
-            }
-            Type::Product(items) => items.iter_mut().for_each(|i| {
-                i.borrow_mut().unify(tv, type_);
-            }),
-            Type::Sum { variant_types, .. } => variant_types
-                .iter_mut()
-                .for_each(|t| t.borrow_mut().unify(tv, type_)),
-            Type::Function(a, b) => {
-                a.borrow_mut().unify(tv, type_);
-                b.borrow_mut().unify(tv, type_);
-            }
+    pub fn map_new_type_variables(
+        &self,
+        map: &mut HashMap<TypeVariable, TypeVariable>,
+        current: &mut TypeVariable,
+    ) {
+        match &self {
             Type::Weak(_)
             | Type::Any
             | Type::_ClosureCapture
@@ -88,13 +93,29 @@ impl Unify for Type {
             | Type::Boolean
             | Type::String
             | Type::Glyph => {}
+            Type::TypeVariable(tv) => {
+                if !map.contains_key(tv) {
+                    let new_tv = *current;
+                    *current += 1;
+                    map.insert(*tv, new_tv);
+                }
+            }
+            Type::Sum {
+                variant_types: items,
+                ..
+            }
+            | Type::Product(items)
+            | Type::Struct {
+                member_types: items,
+                ..
+            } => items
+                .into_iter()
+                .for_each(|t| t.borrow().map_new_type_variables(map, current)),
+            Type::Function(param_type, return_type) => {
+                param_type.borrow().map_new_type_variables(map, current);
+                return_type.borrow().map_new_type_variables(map, current);
+            }
         }
-    }
-}
-
-impl Type {
-    pub fn to_ref(self) -> TypeRef {
-        Rc::new(RefCell::new(self))
     }
 
     pub fn curry(params: &[TypeRef], returns: TypeRef) -> TypeRef {
@@ -195,7 +216,7 @@ impl Default for Type {
 
 impl PartialOrd for Type {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        use crate::ir::Type::*;
+        use Type::*;
         use std::cmp::Ordering::*;
         Some(match (self, other) {
             (Any, _) | (_, Any) => return None,
@@ -234,9 +255,23 @@ impl PartialEq for Type {
             ) => names1 == names2 && types1 == types2,
             (t::Function(p1, r1), t::Function(p2, r2)) => p1 == p2 && r1 == r2,
             (t::Product(t1), t::Product(t2)) => t1 == t2,
-            //(t::Sum(v1), t::Sum(v2)) => v1 == v2,
+            (
+                t::Sum {
+                    variant_names: n1,
+                    variant_types: t1,
+                },
+                t::Sum {
+                    variant_names: n2,
+                    variant_types: t2,
+                },
+            ) => t1 == t2 && n1 == n2,
             (t::TypeVariable(_), t::TypeVariable(_)) => true,
-            (t::Weak(_), t::Weak(_)) => true,
+            (t::Weak(a), t::Weak(b)) => a.as_ptr() == b.as_ptr(),
+            (t::Weak(w), a) | (a, t::Weak(w)) => {
+                let b = w.upgrade().unwrap();
+                let val = a == (&*b.borrow());
+                val
+            }
             _ => false,
         }
     }

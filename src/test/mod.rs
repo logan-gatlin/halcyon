@@ -13,4 +13,12 @@ macro_rules! test {
   }
 }
 
-test!(literals, operators, function, control_flow, types, fizzbuzz);
+test!(
+    literals,
+    operators,
+    function,
+    control_flow,
+    types,
+    fizzbuzz,
+    list
+);

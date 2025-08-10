@@ -1,5 +1,5 @@
 use crate::{
-    ir::{Type, TypeRef},
+    semantic::{Type, TypeRef},
     token::*,
 };
 

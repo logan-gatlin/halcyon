@@ -34,45 +34,22 @@
   (type $"(string -> string)" (;32;) (struct (field i32) (field (ref $capture))))
   (type $"(raw) (string -> (string -> string))" (;33;) (func (param (ref $string) (ref $capture)) (result (ref $"(string -> string)"))))
   (type $"(raw) (string -> string)" (;34;) (func (param (ref $string) (ref $capture)) (result (ref $string))))
-  (type $"(unit -> '4)" (;35;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (unit -> '4)" (;36;) (func (param (ref $unit) (ref $capture)) (result anyref)))
+  (type $"(unit -> '1)" (;35;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (unit -> '1)" (;36;) (func (param (ref $unit) (ref $capture)) (result anyref)))
   (type $"(unit -> '2)" (;37;) (struct (field i32) (field (ref $capture))))
   (type $"(raw) (unit -> '2)" (;38;) (func (param (ref $unit) (ref $capture)) (result anyref)))
   (type $"(boolean -> unit)" (;39;) (struct (field i32) (field (ref $capture))))
   (type $"(raw) (boolean -> unit)" (;40;) (func (param (ref $boolean) (ref $capture)) (result (ref $unit))))
-  (type $"(integer -> A of integer | B of real)" (;41;) (struct (field i32) (field (ref $capture))))
-  (type $"A of integer | B of real" (;42;) (struct (field i32) (field anyref)))
-  (type $"(raw) (integer -> A of integer | B of real)" (;43;) (func (param (ref $integer) (ref $capture)) (result (ref $"A of integer | B of real"))))
-  (type $"#type44 A of integer | B of real" (@name "A of integer | B of real") (;44;) (struct (field i32) (field anyref)))
-  (type $"#type45 A of integer | B of real" (@name "A of integer | B of real") (;45;) (struct (field i32) (field anyref)))
-  (type $"(raw) A of integer | B of real" (;46;) (struct (field i32) (field anyref)))
-  (type $"(real -> A of integer | B of real)" (;47;) (struct (field i32) (field (ref $capture))))
-  (type $"#type48 A of integer | B of real" (@name "A of integer | B of real") (;48;) (struct (field i32) (field anyref)))
-  (type $"(raw) (real -> A of integer | B of real)" (;49;) (func (param (ref $real) (ref $capture)) (result (ref $"#type48 A of integer | B of real"))))
-  (type $"#type50 A of integer | B of real" (@name "A of integer | B of real") (;50;) (struct (field i32) (field anyref)))
-  (type $"#type51 A of integer | B of real" (@name "A of integer | B of real") (;51;) (struct (field i32) (field anyref)))
-  (type $"#type52 (raw) A of integer | B of real" (@name "(raw) A of integer | B of real") (;52;) (struct (field i32) (field anyref)))
-  (type $"#type53 A of integer | B of real" (@name "A of integer | B of real") (;53;) (struct (field i32) (field anyref)))
-  (type $"#type54 A of integer | B of real" (@name "A of integer | B of real") (;54;) (struct (field i32) (field anyref)))
-  (type $"#type55 (raw) A of integer | B of real" (@name "(raw) A of integer | B of real") (;55;) (struct (field i32) (field anyref)))
-  (type $"#type56 A of integer | B of real" (@name "A of integer | B of real") (;56;) (struct (field i32) (field anyref)))
-  (type $"#type57 A of integer | B of real" (@name "A of integer | B of real") (;57;) (struct (field i32) (field anyref)))
-  (type $"#type58 (raw) A of integer | B of real" (@name "(raw) A of integer | B of real") (;58;) (struct (field i32) (field anyref)))
-  (type $"#type59 A of integer | B of real" (@name "A of integer | B of real") (;59;) (struct (field i32) (field anyref)))
-  (type $"#type60 A of integer | B of real" (@name "A of integer | B of real") (;60;) (struct (field i32) (field anyref)))
-  (type $"#type61 (raw) A of integer | B of real" (@name "(raw) A of integer | B of real") (;61;) (struct (field i32) (field anyref)))
-  (type $"#type62 A of integer | B of real" (@name "A of integer | B of real") (;62;) (struct (field i32) (field anyref)))
-  (type $"#type63 A of integer | B of real" (@name "A of integer | B of real") (;63;) (struct (field i32) (field anyref)))
-  (type $"#type64 (raw) A of integer | B of real" (@name "(raw) A of integer | B of real") (;64;) (struct (field i32) (field anyref)))
-  (type $"#type65 A of integer | B of real" (@name "A of integer | B of real") (;65;) (struct (field i32) (field anyref)))
-  (type $"#type66 A of integer | B of real" (@name "A of integer | B of real") (;66;) (struct (field i32) (field anyref)))
-  (type $"#type67 (raw) A of integer | B of real" (@name "(raw) A of integer | B of real") (;67;) (struct (field i32) (field anyref)))
-  (type $"#type68 A of integer | B of real" (@name "A of integer | B of real") (;68;) (struct (field i32) (field anyref)))
-  (type $"#type69 A of integer | B of real" (@name "A of integer | B of real") (;69;) (struct (field i32) (field anyref)))
-  (type $"#type70 (raw) A of integer | B of real" (@name "(raw) A of integer | B of real") (;70;) (struct (field i32) (field anyref)))
+  (type $"('3 -> Some of '3 | None of unit)" (;41;) (struct (field i32) (field (ref $capture))))
+  (type $"Some of '3 | None of unit" (;42;) (struct (field i32) (field anyref)))
+  (type $"(raw) ('3 -> Some of '3 | None of unit)" (;43;) (func (param anyref (ref $capture)) (result (ref $"Some of '3 | None of unit"))))
+  (type $"(unit -> Some of '3 | None of unit)" (;44;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (unit -> Some of '3 | None of unit)" (;45;) (func (param (ref $unit) (ref $capture)) (result (ref $"Some of '3 | None of unit"))))
+  (type $"(integer -> Some of '3 | None of unit)" (;46;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (integer -> Some of '3 | None of unit)" (;47;) (func (param (ref $integer) (ref $capture)) (result (ref $"Some of '3 | None of unit"))))
   (import "sys" "print_string" (func (;0;) (type 30)))
   (import "sys" "memory" (memory (;0;) 1))
-  (table (;0;) 54 54 funcref)
+  (table (;0;) 55 55 funcref)
   (global (;0;) (mut (ref null $"(integer -> integer)")) ref.null $"(integer -> integer)")
   (global (;1;) (mut (ref null $"(real -> real)")) ref.null $"(real -> real)")
   (global (;2;) (mut (ref null $"(boolean -> boolean)")) ref.null $"(boolean -> boolean)")
@@ -98,15 +75,16 @@
   (global (;22;) (mut (ref null $"(string -> integer)")) ref.null $"(string -> integer)")
   (global (;23;) (mut (ref null $"(string -> unit)")) ref.null $"(string -> unit)")
   (global (;24;) (mut (ref null $"(string -> (string -> string))")) ref.null $"(string -> (string -> string))")
-  (global (;25;) (mut (ref null $"(unit -> '4)")) ref.null $"(unit -> '4)")
+  (global (;25;) (mut (ref null $"(unit -> '1)")) ref.null $"(unit -> '1)")
   (global (;26;) (mut (ref null $"(boolean -> unit)")) ref.null $"(boolean -> unit)")
   (global (;27;) (mut (ref null $"(string -> integer)")) ref.null $"(string -> integer)")
   (global (;28;) (mut (ref null $"(string -> unit)")) ref.null $"(string -> unit)")
   (global (;29;) (mut (ref null $"(string -> (string -> string))")) ref.null $"(string -> (string -> string))")
-  (global (;30;) (mut (ref null $"(integer -> A of integer | B of real)")) ref.null $"(integer -> A of integer | B of real)")
-  (global (;31;) (mut (ref null $"(real -> A of integer | B of real)")) ref.null $"(real -> A of integer | B of real)")
-  (global (;32;) (mut (ref null $"#type54 A of integer | B of real")) ref.null $"#type54 A of integer | B of real")
-  (global (;33;) (mut (ref null $"#type63 A of integer | B of real")) ref.null $"#type63 A of integer | B of real")
+  (global (;30;) (mut (ref null $"('3 -> Some of '3 | None of unit)")) ref.null $"('3 -> Some of '3 | None of unit)")
+  (global (;31;) (mut (ref null $"(unit -> Some of '3 | None of unit)")) ref.null $"(unit -> Some of '3 | None of unit)")
+  (global (;32;) (mut (ref null $"(integer -> Some of '3 | None of unit)")) ref.null $"(integer -> Some of '3 | None of unit)")
+  (global (;33;) (mut (ref null $"Some of '3 | None of unit")) ref.null $"Some of '3 | None of unit")
+  (global (;34;) (mut (ref null $"(integer -> Some of '3 | None of unit)")) ref.null $"(integer -> Some of '3 | None of unit)")
   (export "builtin:UnaryOp-" (global 0))
   (export "builtin:UnaryOp-." (global 1))
   (export "builtin:UnaryOpnot" (global 2))
@@ -137,14 +115,15 @@
   (export "std:string_length" (global 27))
   (export "std:print_string" (global 28))
   (export "std:string_concatenate" (global 29))
-  (export "A:A" (global 30))
-  (export "A:B" (global 31))
-  (export "A:a" (global 32))
-  (export "A:b" (global 33))
+  (export "List:Some" (global 30))
+  (export "List:None" (global 31))
+  (export "List:f" (global 32))
+  (export "List:a" (global 33))
+  (export "List:b" (global 34))
   (start 1)
-  (elem (;0;) (i32.const 0) func 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 0 44 45 46 47 48 49 50 51 52 53)
+  (elem (;0;) (i32.const 0) func 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 0 44 45 46 47 48 49 50 51 52 53 54)
   (func (;1;) (type 0)
-    (local $0 (ref $"(unit -> '4)")) (local (ref $"(boolean -> unit)") (ref $"(string -> integer)") (ref $"(string -> unit)") (ref $"(string -> (string -> string))") (ref $"(integer -> A of integer | B of real)") (ref $"#type59 A of integer | B of real") (ref $"(real -> A of integer | B of real)") (ref $"#type68 A of integer | B of real"))
+    (local $0 (ref $"(unit -> '1)")) (local (ref $"(boolean -> unit)") (ref $"(string -> integer)") (ref $"(string -> unit)") (ref $"(string -> (string -> string))") (ref $"(integer -> Some of '3 | None of unit)") (ref $"Some of '3 | None of unit") (ref $"(integer -> Some of '3 | None of unit)") (ref $"(integer -> Some of '3 | None of unit)"))
     i32.const 1
     array.new_fixed $capture 0
     struct.new $"(integer -> integer)"
@@ -247,86 +226,69 @@
     global.set 24
     i32.const 46
     array.new_fixed $capture 0
-    struct.new $"(unit -> '4)"
+    struct.new $"(unit -> '1)"
     local.set $0
     local.get $0
     global.set 25
-    i32.const 1
-    drop
     i32.const 47
     array.new_fixed $capture 0
     struct.new $"(boolean -> unit)"
     local.set 1
     local.get 1
     global.set 26
-    i32.const 1
-    drop
     i32.const 48
     array.new_fixed $capture 0
     struct.new $"(string -> integer)"
     local.set 2
     local.get 2
     global.set 27
-    i32.const 1
-    drop
     i32.const 49
     array.new_fixed $capture 0
     struct.new $"(string -> unit)"
     local.set 3
     local.get 3
     global.set 28
-    i32.const 1
-    drop
     i32.const 50
     array.new_fixed $capture 0
     struct.new $"(string -> (string -> string))"
     local.set 4
     local.get 4
     global.set 29
-    i32.const 1
-    drop
     i32.const 52
     array.new_fixed $capture 0
-    struct.new $"(integer -> A of integer | B of real)"
+    struct.new $"('3 -> Some of '3 | None of unit)"
     global.set 30
     i32.const 53
     array.new_fixed $capture 0
-    struct.new $"(real -> A of integer | B of real)"
+    struct.new $"(unit -> Some of '3 | None of unit)"
     global.set 31
-    global.get 30
-    ref.as_non_null
-    ref.cast (ref $"(integer -> A of integer | B of real)")
+    i32.const 54
+    array.new_fixed $capture 0
+    struct.new $"(integer -> Some of '3 | None of unit)"
     local.set 5
+    local.get 5
+    global.set 32
+    global.get 32
+    ref.as_non_null
+    ref.cast (ref $"(integer -> Some of '3 | None of unit)")
+    local.set 7
     i64.const 1
     struct.new $integer
-    local.get 5
-    struct.get $"(integer -> A of integer | B of real)" 1
-    local.get 5
-    struct.get $"(integer -> A of integer | B of real)" 0
-    call_indirect (type $"(raw) (integer -> A of integer | B of real)")
-    ref.cast (ref $"#type57 A of integer | B of real")
+    local.get 7
+    struct.get $"(integer -> Some of '3 | None of unit)" 1
+    local.get 7
+    struct.get $"(integer -> Some of '3 | None of unit)" 0
+    call_indirect (type $"(raw) (integer -> Some of '3 | None of unit)")
+    ref.cast (ref $"Some of '3 | None of unit")
     local.set 6
     local.get 6
-    global.set 32
-    i32.const 1
-    drop
-    global.get 31
+    global.set 33
+    global.get 32
     ref.as_non_null
-    ref.cast (ref $"(real -> A of integer | B of real)")
-    local.set 7
-    f64.const 0x1p+0 (;=1;)
-    struct.new $real
-    local.get 7
-    struct.get $"(real -> A of integer | B of real)" 1
-    local.get 7
-    struct.get $"(real -> A of integer | B of real)" 0
-    call_indirect (type $"(raw) (real -> A of integer | B of real)")
-    ref.cast (ref $"#type66 A of integer | B of real")
+    ref.cast (ref $"(integer -> Some of '3 | None of unit)")
     local.set 8
     local.get 8
-    global.set 33
-    i32.const 1
-    drop
+    global.set 34
   )
   (func (;2;) (type $"(raw) (integer -> integer)") (param $0 (ref $integer)) (param (ref $capture)) (result (ref $integer))
     i64.const 0
@@ -1406,7 +1368,7 @@
     array.copy $string $string
     local.get 5
   )
-  (func (;46;) (type $"(raw) (unit -> '4)") (param $condition#0 (ref $unit)) (param (ref $capture)) (result anyref)
+  (func (;46;) (type $"(raw) (unit -> '1)") (param $condition#0 (ref $unit)) (param (ref $capture)) (result anyref)
     (local (ref $"(unit -> '2)"))
     global.get 21
     ref.as_non_null
@@ -1420,7 +1382,7 @@
     ref.cast (ref any)
   )
   (func (;47;) (type $"(raw) (boolean -> unit)") (param $s#1 (ref $boolean)) (param (ref $capture)) (result (ref $unit))
-    (local (ref $"(unit -> '4)"))
+    (local (ref $"(unit -> '1)"))
     local.get $s#1
     ref.cast (ref $boolean)
     struct.get $boolean 0
@@ -1429,14 +1391,14 @@
     else
       global.get 25
       ref.as_non_null
-      ref.cast (ref $"(unit -> '4)")
+      ref.cast (ref $"(unit -> '1)")
       local.set 2
       struct.new $unit
       local.get 2
-      struct.get $"(unit -> '4)" 1
+      struct.get $"(unit -> '1)" 1
       local.get 2
-      struct.get $"(unit -> '4)" 0
-      call_indirect (type $"(raw) (unit -> '4)")
+      struct.get $"(unit -> '1)" 0
+      call_indirect (type $"(raw) (unit -> '1)")
       ref.cast (ref $unit)
     end
   )
@@ -1503,14 +1465,29 @@
     call_indirect (type $"(raw) (string -> string)")
     ref.cast (ref $string)
   )
-  (func (;52;) (type $"(raw) (integer -> A of integer | B of real)") (param $a (ref $integer)) (param (ref $capture)) (result (ref $"A of integer | B of real"))
+  (func (;52;) (type $"(raw) ('3 -> Some of '3 | None of unit)") (param $a anyref) (param (ref $capture)) (result (ref $"Some of '3 | None of unit"))
     i32.const 0
     local.get $a
-    struct.new $"#type45 A of integer | B of real"
+    struct.new $"Some of '3 | None of unit"
   )
-  (func (;53;) (type $"(raw) (real -> A of integer | B of real)") (param (ref $real) (ref $capture)) (result (ref $"#type48 A of integer | B of real"))
+  (func (;53;) (type $"(raw) (unit -> Some of '3 | None of unit)") (param $a#0 (ref $unit)) (param (ref $capture)) (result (ref $"Some of '3 | None of unit"))
     i32.const 1
+    local.get $a#0
+    struct.new $"Some of '3 | None of unit"
+  )
+  (func (;54;) (type $"(raw) (integer -> Some of '3 | None of unit)") (param (ref $integer) (ref $capture)) (result (ref $"Some of '3 | None of unit"))
+    (local (ref $"('3 -> Some of '3 | None of unit)"))
+    global.get 30
+    ref.as_non_null
+    ref.cast (ref $"('3 -> Some of '3 | None of unit)")
+    local.set 2
     local.get 0
-    struct.new $"#type51 A of integer | B of real"
+    ref.cast (ref $integer)
+    local.get 2
+    struct.get $"('3 -> Some of '3 | None of unit)" 1
+    local.get 2
+    struct.get $"('3 -> Some of '3 | None of unit)" 0
+    call_indirect (type $"(raw) ('3 -> Some of '3 | None of unit)")
+    ref.cast (ref $"Some of '3 | None of unit")
   )
 )

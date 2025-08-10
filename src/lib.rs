@@ -22,7 +22,6 @@ use std_hc::*;
 use token::*;
 
 // TODO:
-// Sum types
 // Parametric types
 
 pub use lint::*;

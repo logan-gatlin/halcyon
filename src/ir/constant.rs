@@ -1,4 +1,4 @@
-use crate::ir::{Type, TypeRef};
+use crate::semantic::{Type, TypeRef};
 
 #[derive(Clone, Debug)]
 pub enum ConstValue {

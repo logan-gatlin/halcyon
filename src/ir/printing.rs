@@ -6,6 +6,9 @@ impl Into<SExpression> for &Pattern {
             PatternKind::Name(path) => sexpr(path, []),
             PatternKind::Tuple(patterns) => sexpr("tuple", patterns.iter().map(|p| p.into())),
             PatternKind::Literal(const_value) => sexpr(format!("{const_value}"), []),
+            PatternKind::Constructor(_path, pattern) => {
+                sexpr("constructor", [Into::<SExpression>::into(&**pattern)])
+            }
         };
         se.push_front(format!("(type {})", self.type_.borrow()).as_str().into());
         se
@@ -185,17 +188,18 @@ impl std::fmt::Display for IrModule {
                                 sexpr("value", [format!("{}", type_.borrow()).as_str().into()]),
                             ],
                         ),
-                        ModuleItem::Constructor {
-                            name,
-                            parameter,
-                            sum,
-                            ..
-                        } => sexpr(
+                        ModuleItem::Constructor(name, cons) => sexpr(
                             "constructor",
                             [
                                 sexpr("name", [name.into()]),
-                                sexpr("from", [format!("{}", parameter.borrow()).as_str().into()]),
-                                sexpr("to", [format!("{}", sum.borrow()).as_str().into()]),
+                                sexpr(
+                                    "from",
+                                    [format!("{}", cons.in_type.borrow()).as_str().into()],
+                                ),
+                                sexpr(
+                                    "to",
+                                    [format!("{}", cons.out_type.borrow()).as_str().into()],
+                                ),
                             ],
                         ),
                     }

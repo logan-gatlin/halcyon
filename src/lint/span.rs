@@ -1,6 +1,6 @@
 use std::ops::{Add, AddAssign};
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Span {
     pub start: usize,
     pub width: usize,

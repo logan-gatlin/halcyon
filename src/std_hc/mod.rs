@@ -3,7 +3,7 @@ mod strings;
 
 use std::collections::HashMap;
 
-use crate::{Handle, compile::ModuleEncoder, ir::*, operator::*, semantic::ModuleInterface};
+use crate::{Handle, compile::ModuleEncoder, ir::*, operator::*, semantic::*};
 
 pub const BUILTIN_MODULE_NAME: &str = "builtin";
 pub const STDLIB_MODULE_NAME: &str = "std";

@@ -1,9 +1,10 @@
-module A = 
+module List = 
   import std
-  type v = A of std:integer | B of std:real
-  let a = A 1
-  let b = B 1.0
-  let c = match a with
-    | A a => a == 1
-    | B b => b == 1.0
+  type Option = fn t =>
+    Some of t | None of std:unit
+
+  let f = fn a => a
+  let _ = f 1
+  let _ = f 2.0
+
 end

@@ -86,49 +86,84 @@ fn binary_op_second_half(
 pub fn lower_pattern(
     pattern: Pattern,
     state: &mut ModuleEncoder,
-    temp: u32,
+    temporary: u32,
     f: u32,
     is_global: bool,
 ) {
+    macro_rules! asm {
+        ($($e:expr);*;) => {
+            let __temp = [$($e,)*];
+            state.func_mut(f).extend(&__temp);
+        };
+    }
     match pattern.kind {
         PatternKind::Name(path) => {
-            state.push(f, LocalGet(temp));
+            state.push(f, LocalGet(temporary));
             if !is_global {
-                let local = state.new_local(f, path, pattern.type_);
+                let local = state.new_local(f, path.clone(), pattern.type_);
                 state.push(f, LocalSet(local));
             } else {
                 let global_id = state.get_global_id(&path);
                 state.push(f, GlobalSet(global_id));
             }
-            state.push(f, I32Const(1));
         }
         PatternKind::Tuple(patterns) => {
             let struct_t = state.get_asm_type(pattern.type_.clone());
-            let num_patterns = patterns.len();
             for (id, p) in patterns.into_iter().enumerate() {
-                state.push(f, LocalGet(temp));
-                state.push(
-                    f,
+                let temporary_t = state.get_asm_type(p.type_.clone());
+                let next_temporary = state.func_mut(f).new_temporary(temporary_t.val);
+                asm! {
+                    LocalGet(temporary);
                     StructGet {
                         struct_type_index: struct_t.id,
                         field_index: id as u32,
-                    },
-                );
-                let temporary_t = state.get_asm_type(p.type_.clone());
-                let temp = state.func_mut(f).new_temporary(temporary_t.val);
-                state.push(f, LocalSet(temp));
-                lower_pattern(p, state, temp, f, is_global);
-            }
-            for _ in 0..(num_patterns.checked_sub(1).unwrap_or(0)) {
-                state.push(f, I32And);
+                    };
+                    LocalSet(next_temporary);
+                }
+                lower_pattern(p, state, next_temporary, f, is_global);
             }
         }
+        PatternKind::Constructor(
+            Constructor {
+                variant,
+                in_type,
+                out_type,
+            },
+            pat,
+        ) => {
+            let out_t = state.get_asm_type(out_type);
+            let in_t = state.get_asm_type(in_type.clone());
+            let next_temporary = state.func_mut(f).new_temporary(in_t.val);
+            asm! {
+                I32Const(variant as i32);
+                LocalGet(temporary);
+                StructGet {
+                    struct_type_index: out_t.id,
+                    field_index: 0,
+                };
+                I32Eq;
+                I32Const(1);
+                I32Xor;
+                BrIf(0);
+                LocalGet(temporary);
+                StructGet {
+                    struct_type_index: out_t.id,
+                    field_index: 1,
+                };
+                cast(state, in_type);
+                LocalSet(next_temporary);
+            }
+            lower_pattern(*pat, state, next_temporary, f, is_global);
+        }
         PatternKind::Literal(const_value) => {
-            state.push(f, LocalGet(temp));
+            state.push(f, LocalGet(temporary));
             let temp = binary_op_first_half(BinaryOp::DoubleEqual, state, f);
             state.push_constant(f, const_value);
             binary_op_second_half(BinaryOp::DoubleEqual, temp, state, f);
             state.unwrap_primitive(f, Type::Boolean);
+            state.push(f, I32Const(1));
+            state.push(f, I32Xor);
+            state.push(f, BrIf(0));
         }
     }
 }
@@ -153,9 +188,10 @@ pub fn lower(nodes: &mut IrModule, ptr: IrPtr, state: &mut ModuleEncoder, f: u32
             let value_t = state.get_asm_type(nodes[value].type_.clone());
             let temporary = state.func_mut(f).new_temporary(value_t.val);
             lower(nodes, value, state, f);
-            asm! {LocalSet(temporary); }
+            asm! {
+                LocalSet(temporary);
+            }
             lower_pattern(assignee, state, temporary, f, false);
-            asm! { Drop; }
             if let Some(in_) = in_ {
                 lower(nodes, in_, state, f);
             } else {
@@ -196,6 +232,33 @@ pub fn lower(nodes: &mut IrModule, ptr: IrPtr, state: &mut ModuleEncoder, f: u32
             lower(nodes, left, state, f);
             state.push(f, Drop);
             lower(nodes, right, state, f);
+        }
+        h::Binary {
+            op: BinaryOp::Apply,
+            left,
+            right,
+        } => {
+            let callee_type = state.get_asm_type(nodes[right].type_.clone());
+            let function_temporary = state.func_mut(f).new_temporary(callee_type.val);
+            lower(nodes, left, state, f);
+            lower(nodes, right, state, f);
+            asm! { LocalTee(function_temporary); }
+            asm! {
+              StructGet {
+                struct_type_index: callee_type.id,
+                field_index: 1,
+              };
+              LocalGet(function_temporary);
+              StructGet {
+                struct_type_index: callee_type.id,
+                field_index: 0,
+              };
+              CallIndirect {
+                type_index: callee_type.raw_id,
+                table_index: 0,
+              };
+              cast(state, this_t);
+            }
         }
         h::Binary { op, left, right } => {
             lower(nodes, left, state, f);
@@ -254,17 +317,20 @@ pub fn lower(nodes: &mut IrModule, ptr: IrPtr, state: &mut ModuleEncoder, f: u32
             lower(nodes, scrutinee, state, f);
             let scrutinee_temp = state.func_mut(f).new_temporary(scrutinee_t.val);
             asm! { LocalSet(scrutinee_temp); }
-            let num_branches = branches.len();
+            asm! { Block(BlockType::Result(branches_t.val)); }
             for (p, b) in predicates.into_iter().zip(branches) {
+                asm! { Block(BlockType::Empty); }
                 lower_pattern(p, state, scrutinee_temp, f, false);
-                asm! { If(BlockType::Result(branches_t.val)); }
                 lower(nodes, b, state, f);
-                asm! { Else; }
+                asm! {
+                    Br(1);
+                    End;
+                }
             }
-            asm! { Unreachable; }
-            (0..num_branches).for_each(|_| {
-                asm! { End; }
-            });
+            asm! {
+               Unreachable;
+               End;
+            }
         }
         h::FunctionDef {
             parameter_name,

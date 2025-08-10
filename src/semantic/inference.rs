@@ -1,256 +1,320 @@
+use crate::operator::{BinaryOp, UnaryOp};
+
 use super::*;
 
-pub fn infer_pattern(pattern: &mut Pattern, environment: &mut Environment) -> TypeRef {
-    let type_ = match &mut pattern.kind {
+pub fn infer_types(module: &mut IrModule) -> Result<ModuleInterface> {
+    let mut interface = ModuleInterface::default();
+    let mut env = Environment::new();
+    for id in 0..module.items.len() {
+        match module.items[id].clone() {
+            ModuleItem::Let(mut pattern, ptr) => {
+                env.begin_let();
+                let pattern_t = infer_pattern(&mut env, &mut pattern);
+                let body_t = infer_ir(&mut env, module, ptr)?;
+                env.constraint(pattern_t, body_t, module.nodes[ptr].span);
+                let solution = env.end_let()?;
+                module.unify_all(&solution);
+                pattern.iter_names(&mut |n, _| {
+                    env.make_let_bound(n);
+                    interface.values.insert(n.clone(), env.get_symbol(n));
+                });
+                pattern.unify_all(&solution);
+                module.items[id] = ModuleItem::Let(pattern, ptr);
+            }
+            ModuleItem::Type(path, t) => {
+                interface.types.insert(path, t);
+            }
+            ModuleItem::Constructor(path, constructor) => {
+                env.constructors.insert(path.clone(), constructor.clone());
+                env.define(
+                    path.clone(),
+                    Type::func(constructor.in_type.clone(), constructor.out_type.clone()),
+                );
+                env.make_let_bound(&path);
+                interface.constructors.insert(path, constructor);
+            }
+        }
+    }
+    Ok(interface)
+}
+
+pub fn infer_pattern(env: &mut Environment, pat: &mut Pattern) -> TypeRef {
+    let t = match &mut pat.kind {
         PatternKind::Name(path) => {
-            let t = environment.fresh_type_var();
-            environment.insert_value_type(path.clone(), t.clone(), false);
+            let t = Type::TypeVariable(env.fresh_type_variable()).to_ref();
+            env.define(path.clone(), t.clone());
             t
         }
         PatternKind::Tuple(patterns) => Type::Product(
             patterns
                 .into_iter()
-                .map(|p| infer_pattern(p, environment))
+                .map(|p| infer_pattern(env, p))
                 .collect(),
         )
-        .into(),
+        .to_ref(),
+        PatternKind::Constructor(constructor, pattern) => {
+            check_pattern(env, pattern, constructor.in_type.clone());
+            constructor.out_type.clone()
+        }
         PatternKind::Literal(const_value) => const_value.type_of(),
     };
-    pattern.type_ = type_.clone();
-    type_
+    pat.type_ = t.clone();
+    t
 }
 
-pub fn type_inference(
-    nodes: &mut IrModule,
-    ptr: IrPtr,
-    environment: &mut Environment,
-    constraints: &mut Vec<TypeConstraint>,
-) -> Result<TypeRef> {
-    use IrKind as h;
-    use TypeConstraint as tc;
+pub fn infer_ir(env: &mut Environment, module: &mut IrModule, ptr: IrPtr) -> Result<TypeRef> {
     macro_rules! rec {
-        ($e:expr) => {
-            type_inference(nodes, $e, environment, constraints)
+        ($ptr:expr) => {
+            infer_ir(env, module, $ptr)
         };
     }
-    let span = nodes[ptr].span;
-    let type_ = match nodes[ptr].kind.clone() {
-        h::ImportedSymbol(name, type_) => {
-            environment.insert_value_type(name.clone(), type_.clone(), true);
-            environment.get_value_type(&name)
-        }
-        // Let declarations
-        h::Declaration {
+    macro_rules! check {
+        ($ptr:expr, $expect:expr) => {
+            check_ir(env, module, $ptr, $expect)
+        };
+    }
+    let span = module.nodes[ptr].span;
+    let mk = |k, t: TypeRef| IrNode {
+        kind: k,
+        span,
+        type_: t,
+    };
+    use IrKind as I;
+    module.nodes[ptr] = match module.nodes[ptr].kind.clone() {
+        I::Declaration {
             mut assignee,
             value,
             in_,
         } => {
-            let mut new_constraints = constraints.clone();
-            let recursive_type_placeholder = infer_pattern(&mut assignee, environment);
-            nodes[ptr].kind = h::Declaration {
-                assignee: assignee.clone(),
-                value,
-                in_: in_.clone(),
-            };
-            type_inference(nodes, value, environment, &mut new_constraints)?;
-            new_constraints.push(tc(
-                recursive_type_placeholder.clone(),
-                nodes[value].type_.clone(),
-                span,
-            ));
-            let solution = unification(&new_constraints)?;
-            assignee.unify_all(&solution);
-            apply_solution(nodes, ptr, solution);
-            let second_solution = unification(&check_structs(environment, nodes, ptr)?)?;
-            assignee.unify_all(&second_solution);
-            apply_solution(nodes, ptr, second_solution);
-            assignee.iter_names(&mut |name, type_| {
-                environment.insert_value_type(name.clone(), type_.clone(), true);
+            env.begin_let();
+            let t = infer_pattern(env, &mut assignee);
+            let value_t = rec!(value)?;
+            env.constraint(t, value_t, span);
+            let solution = env.end_let()?;
+            module.unify_all(&solution);
+            assignee.iter_names(&mut |name, _| {
+                env.make_let_bound(name);
             });
-            if let Some(in_) = in_ {
+            assignee.unify_all(&solution);
+            let in_t = if let Some(in_) = in_ {
                 rec!(in_)?
             } else {
                 Type::Unit.to_ref()
-            }
+            };
+            mk(
+                I::Declaration {
+                    assignee,
+                    value,
+                    in_,
+                },
+                in_t,
+            )
         }
-        h::Immediate(c) => match c {
-            ConstValue::Unit => Type::Unit,
-            ConstValue::Integer(_) => Type::Integer,
-            ConstValue::Real(_) => Type::Real,
-            ConstValue::Boolean(_) => Type::Boolean,
-            ConstValue::String { .. } => Type::String,
-            ConstValue::Glyph(_) => Type::Glyph,
+        I::Immediate(const_value) => {
+            let t = const_value.type_of();
+            mk(I::Immediate(const_value), t)
         }
-        .to_ref(),
-        h::Identifier(i) => environment.get_value_type(&i).clone(),
-        h::Tuple(items) => {
-            Type::Product(items.into_iter().map(|i| rec!(i)).try_collect()?).to_ref()
+        I::Identifier(path) => {
+            let t = env.get_symbol(&path);
+            mk(I::Identifier(path), t)
         }
-        h::StructLiteral {
+        I::Tuple(items) => {
+            let t = Type::Product(items.iter().map(|i| rec!(*i)).try_collect()?).to_ref();
+            mk(I::Tuple(items), t)
+        }
+        I::StructLiteral {
             field_names,
             field_values,
-            ..
-        } => Type::Struct {
-            member_names: field_names,
-            member_types: field_values.into_iter().map(|v| rec!(v)).try_collect()?,
-        }
-        .to_ref(),
-        h::Field { of, .. } => {
-            rec!(of)?;
-            environment.fresh_type_var()
-        }
-        h::Binary { op, left, right } => {
-            let left_t = rec!(left)?;
-            let right_t = rec!(right)?;
-            use BinaryOp::*;
-            match op {
-                Semicolon => right_t,
-                Star | Slash | Percent | Plus | Minus => {
-                    constraints.extend_from_slice(&[
-                        tc(left_t.clone(), right_t.clone(), span),
-                        tc(Type::Integer.to_ref(), left_t, nodes[left].span),
-                        tc(Type::Integer.to_ref(), right_t, nodes[right].span),
-                    ]);
-                    Type::Integer.to_ref()
-                }
-                StarDot | SlashDot | PlusDot | MinusDot => {
-                    constraints.extend_from_slice(&[
-                        tc(left_t.clone(), right_t.clone(), span),
-                        tc(Type::Real.to_ref(), left_t, nodes[left].span),
-                        tc(Type::Real.to_ref(), right_t, nodes[right].span),
-                    ]);
-                    Type::Real.to_ref()
-                }
-                And | Or | Xor => {
-                    constraints.extend_from_slice(&[
-                        tc(left_t.clone(), right_t.clone(), span),
-                        tc(Type::Boolean.to_ref(), left_t, nodes[left].span),
-                        tc(Type::Boolean.to_ref(), right_t, nodes[right].span),
-                    ]);
-                    Type::Boolean.to_ref()
-                }
-                DoubleEqual | BangEqual | Less | LessEqual | Greater | GreaterEqual => {
-                    constraints.push(tc(left_t.clone(), right_t.clone(), span));
-                    constraints.push(tc(left_t, right_t, nodes[right].span));
-                    Type::Boolean.to_ref()
-                }
-                _ => todo!(),
-            }
-        }
-        h::Unary { op, child } => {
-            let child_t = rec!(child)?;
-            use UnaryOp::*;
-            let expect_t = match op {
-                Not => Type::Boolean,
-                MinusDot => Type::Real,
-                Minus => Type::Integer,
+        } => {
+            let field_types = field_values
+                .iter()
+                .map(|i| rec!(*i))
+                .try_collect::<Vec<_>>()?;
+            let t = Type::Struct {
+                member_names: field_names.clone(),
+                member_types: field_types,
             }
             .to_ref();
-            constraints.push(tc(expect_t.clone(), child_t, nodes[child].span));
-            expect_t
+            mk(
+                I::StructLiteral {
+                    field_names,
+                    field_values,
+                },
+                t,
+            )
         }
-        h::FunctionDef {
+        I::Field { of, index } => {
+            let of_t = rec!(of)?;
+            let t = if let Type::Struct {
+                member_names,
+                member_types,
+            } = &*of_t.borrow()
+                && let Some(index) = member_names.iter().position(|n| n == &index)
+            {
+                member_types[index].clone()
+            } else {
+                Type::TypeVariable(env.fresh_type_variable()).to_ref()
+            };
+            mk(I::Field { of, index }, t)
+        }
+        I::Binary { op, left, right } => {
+            use BinaryOp::*;
+            match op {
+                Plus | Minus | Star | Slash | Percent => {
+                    let t = Type::Integer.to_ref();
+                    check!(left, t.clone())?;
+                    check!(right, t.clone())?;
+                    mk(I::Binary { op, left, right }, t)
+                }
+                PlusDot | MinusDot | StarDot | SlashDot => {
+                    let t = Type::Real.to_ref();
+                    check!(left, t.clone())?;
+                    check!(right, t.clone())?;
+                    mk(I::Binary { op, left, right }, t)
+                }
+                And | Or | Xor => {
+                    let t = Type::Boolean.to_ref();
+                    check!(left, t.clone())?;
+                    check!(right, t.clone())?;
+                    mk(I::Binary { op, left, right }, t)
+                }
+                DoubleEqual | BangEqual | Less | LessEqual | Greater | GreaterEqual => {
+                    let t1 = rec!(left)?;
+                    let t2 = rec!(right)?;
+                    env.constraint(t1, t2, span);
+                    mk(I::Binary { op, left, right }, Type::Boolean.to_ref())
+                }
+                Semicolon => {
+                    let _ = rec!(left)?;
+                    let t = rec!(right)?;
+                    mk(I::Binary { op, left, right }, t)
+                }
+                Apply => {
+                    let arg_t = rec!(left)?;
+                    let return_t = Type::TypeVariable(env.fresh_type_variable()).to_ref();
+                    let func_t = Type::func(arg_t, return_t.clone());
+                    check!(right, func_t.clone())?;
+                    mk(I::Binary { op, left, right }, return_t)
+                }
+            }
+        }
+        I::Unary { op, child } => {
+            use UnaryOp::*;
+            match op {
+                Minus => {
+                    let t = Type::Integer.to_ref();
+                    check!(child, t.clone())?;
+                    mk(I::Unary { op, child }, t)
+                }
+                MinusDot => {
+                    let t = Type::Real.to_ref();
+                    check!(child, t.clone())?;
+                    mk(I::Unary { op, child }, t)
+                }
+                Not => {
+                    let t = Type::Boolean.to_ref();
+                    check!(child, t.clone())?;
+                    mk(I::Unary { op, child }, t)
+                }
+            }
+        }
+        I::FunctionDef {
             parameter_name,
+            parameter_span,
             parameter_type,
+            captures,
             body,
             ..
         } => {
-            let parameter_type = match (&parameter_name, parameter_type) {
-                (Some(_), Some(type_)) => type_,
-                (None, None) => Type::Unit.to_ref(),
-                (Some(_), None) => environment.fresh_type_var(),
-                (None, Some(_)) => panic!(),
+            let param_t = if parameter_name.is_none() {
+                Type::Unit.to_ref()
+            } else if let Some(parameter_type) = parameter_type.clone() {
+                parameter_type
+            } else {
+                Type::TypeVariable(env.fresh_type_variable()).to_ref()
             };
-            environment.insert_value_type(
-                parameter_name.unwrap_or("()".into()),
-                parameter_type.clone(),
-                false,
-            );
-            let return_type = rec!(body)?;
-            Type::func(parameter_type, return_type)
+            if let Some(parameter_name) = parameter_name.clone() {
+                env.define(parameter_name, param_t.clone());
+            }
+            let body_t = rec!(body)?;
+            let func_t = Type::func(param_t, body_t);
+            let capture_types = captures
+                .iter()
+                .map(|p| env.get_symbol(p))
+                .collect::<Vec<_>>();
+            mk(
+                I::FunctionDef {
+                    parameter_name,
+                    parameter_span,
+                    parameter_type,
+                    captures,
+                    capture_types,
+                    body,
+                },
+                func_t,
+            )
         }
-        h::FunctionCall { callee, argument } => {
-            let tv = environment.fresh_type_var();
-            let callee_t = rec!(callee)?;
+        I::FunctionCall { callee, argument } => {
             let arg_t = rec!(argument)?;
-            constraints.push(tc(
-                callee_t,
-                Type::func(arg_t, tv.clone()),
-                nodes[argument].span,
-            ));
-            tv
+            let return_t = Type::TypeVariable(env.fresh_type_variable()).to_ref();
+            let func_t = Type::func(arg_t, return_t.clone());
+            check!(callee, func_t.clone())?;
+            mk(I::FunctionCall { callee, argument }, return_t)
         }
-        h::If {
+        I::If {
             predicate,
             then,
             else_,
         } => {
-            let tv = environment.fresh_type_var();
-            let pred_t = rec!(predicate)?;
+            check!(predicate, Type::Boolean.to_ref())?;
             let then_t = rec!(then)?;
-            let else_t = if let Some(else_) = else_ {
-                rec!(else_)?
+            if let Some(else_) = else_ {
+                check!(else_, then_t.clone())?;
             } else {
-                Type::Unit.to_ref()
-            };
-            constraints.extend_from_slice(&[
-                tc(pred_t, Type::Boolean.to_ref(), nodes[predicate].span),
-                tc(then_t, tv.clone(), nodes[then].span),
-                tc(
-                    else_t,
-                    tv.clone(),
-                    if let Some(else_) = else_ {
-                        nodes[else_].span
-                    } else {
-                        nodes[then].span
-                    },
-                ),
-            ]);
-            tv
+                env.constraint(then_t.clone(), Type::Unit.to_ref(), span);
+            }
+            mk(
+                I::If {
+                    predicate,
+                    then,
+                    else_,
+                },
+                then_t,
+            )
         }
-        h::Match {
+        I::Match {
             scrutinee,
             mut predicates,
             branches,
         } => {
             let scrutinee_t = rec!(scrutinee)?;
-            for p in &mut predicates {
-                let predicate_t = infer_pattern(p, environment);
-                constraints.push(tc(scrutinee_t.clone(), predicate_t, p.span));
-            }
-            nodes[ptr].kind = h::Match {
-                scrutinee,
-                predicates,
-                branches: branches.clone(),
-            };
-            let branches_t = match branches.as_slice() {
-                [] => Type::Unit.to_ref(),
-                [a] => rec!(*a)?,
-                b @ [a, ..] => {
-                    let branch_t = rec!(*a)?;
-                    for b in &b[1..] {
-                        let new_t = rec!(*b)?;
-                        constraints.push(tc(branch_t.clone(), new_t, nodes[*b].span));
-                    }
-                    branch_t
-                }
-            };
-            branches_t
-        }
-    };
-    if let h::FunctionDef {
-        captures,
-        capture_types,
-        ..
-    } = &mut nodes[ptr].kind
-    {
-        captures
-            .into_iter()
-            .zip(capture_types.into_iter())
-            .for_each(|(cap, ty)| {
-                *ty = environment.get_value_type(cap);
+            predicates
+                .iter_mut()
+                .for_each(|p| check_pattern(env, p, scrutinee_t.clone()));
+            predicates.iter().fold(scrutinee_t, |a, b| {
+                env.constraint(a.clone(), b.type_.clone(), b.span);
+                a
             });
-    }
-    nodes[ptr].type_ = type_.clone();
-    Ok(type_)
+            let branch_t = branches.iter().map(|b| rec!(*b)).try_collect::<Vec<_>>()?;
+            let branch_t = branch_t
+                .iter()
+                .fold(branch_t.first().unwrap().clone(), |a, b| {
+                    env.constraint(a.clone(), b.clone(), span);
+                    a.clone()
+                });
+            mk(
+                I::Match {
+                    scrutinee,
+                    predicates,
+                    branches,
+                },
+                branch_t,
+            )
+        }
+        I::ImportedSymbol(path, type_) => mk(
+            I::ImportedSymbol(path, type_.clone()),
+            TypeScheme::new(type_).instantiate(|| env.fresh_type_variable()),
+        ),
+    };
+    Ok(module.nodes[ptr].type_.clone())
 }

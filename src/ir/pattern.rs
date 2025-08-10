@@ -11,7 +11,7 @@ pub struct Pattern {
 pub enum PatternKind {
     Name(Path),
     Tuple(Vec<Pattern>),
-    Constructor(Path, Box<Pattern>),
+    Constructor(Constructor, Box<Pattern>),
     Literal(ConstValue),
 }
 
