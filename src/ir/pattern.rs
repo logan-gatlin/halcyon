@@ -20,7 +20,7 @@ impl Pattern {
         match &self.kind {
             PatternKind::Name(_) => 1,
             PatternKind::Tuple(patterns) => patterns
-                .into_iter()
+                .iter()
                 .fold(0, |v, p| v + p.introduced_names()),
             PatternKind::Literal(_) => 0,
             PatternKind::Constructor(_, pattern) => pattern.introduced_names(),

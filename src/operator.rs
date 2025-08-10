@@ -114,17 +114,17 @@ impl BinaryOp {
             | BinaryOp::Star
             | BinaryOp::Slash
             | BinaryOp::Percent
-            | BinaryOp::Plus => Type::Integer.into(),
+            | BinaryOp::Plus => Type::Integer,
             BinaryOp::PlusDot | BinaryOp::StarDot | BinaryOp::SlashDot | BinaryOp::MinusDot => {
-                Type::Real.into()
+                Type::Real
             }
-            BinaryOp::And | BinaryOp::Xor | BinaryOp::Or => Type::Boolean.into(),
+            BinaryOp::And | BinaryOp::Xor | BinaryOp::Or => Type::Boolean,
             BinaryOp::DoubleEqual
             | BinaryOp::BangEqual
             | BinaryOp::Less
             | BinaryOp::LessEqual
             | BinaryOp::Greater
-            | BinaryOp::GreaterEqual => Type::TypeVariable(0).into(),
+            | BinaryOp::GreaterEqual => Type::TypeVariable(0),
             BinaryOp::Apply | BinaryOp::Semicolon => panic!(),
         }
     }
@@ -135,9 +135,9 @@ impl BinaryOp {
             | BinaryOp::Star
             | BinaryOp::Slash
             | BinaryOp::Percent
-            | BinaryOp::Plus => Type::Integer.into(),
+            | BinaryOp::Plus => Type::Integer,
             BinaryOp::PlusDot | BinaryOp::StarDot | BinaryOp::SlashDot | BinaryOp::MinusDot => {
-                Type::Real.into()
+                Type::Real
             }
             BinaryOp::DoubleEqual
             | BinaryOp::BangEqual
@@ -147,7 +147,7 @@ impl BinaryOp {
             | BinaryOp::GreaterEqual
             | BinaryOp::And
             | BinaryOp::Xor
-            | BinaryOp::Or => Type::Boolean.into(),
+            | BinaryOp::Or => Type::Boolean,
             BinaryOp::Apply | BinaryOp::Semicolon => panic!(),
         }
     }

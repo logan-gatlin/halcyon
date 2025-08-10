@@ -1,16 +1,12 @@
 use std::ops::{Add, AddAssign};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Default)]
 pub struct Span {
     pub start: usize,
     pub width: usize,
 }
 
-impl Default for Span {
-    fn default() -> Self {
-        Span { start: 0, width: 0 }
-    }
-}
 
 impl Add<Span> for Span {
     type Output = Span;

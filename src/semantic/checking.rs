@@ -84,12 +84,13 @@ pub fn check_pattern(env: &mut Environment, pat: &mut Pattern, expect: Type) {
             pat.type_ = expect.clone();
         }
         (PatternKind::Tuple(pats), Type::Product(types)) if pats.len() == types.len() => pats
-            .into_iter()
+            .iter_mut()
             .zip(types)
             .for_each(|(pat, t)| check_pattern(env, pat, t.clone())),
         _ => {
             let actual = infer_pattern(env, pat);
             env.constraint(actual, expect.clone(), pat.span);
+            return;
         }
     }
     pat.type_ = expect;

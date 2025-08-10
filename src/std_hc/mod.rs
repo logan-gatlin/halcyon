@@ -6,7 +6,6 @@ use std::collections::HashMap;
 use crate::{Handle, compile::ModuleEncoder, ir::*, operator::*, semantic::*};
 
 pub const BUILTIN_MODULE_NAME: &str = "builtin";
-pub const STDLIB_MODULE_NAME: &str = "std";
 
 const TRUE: wasm_encoder::Instruction<'static> = wasm_encoder::Instruction::I32Const(1);
 const FALSE: wasm_encoder::Instruction<'static> = wasm_encoder::Instruction::I32Const(0);
@@ -25,16 +24,13 @@ pub fn make_std_module(
     let input = include_str!("stdlib.hc");
     let linter = crate::Linter::new(input.to_string());
     let tokens = crate::tokenize(input.chars()).handle(&linter);
-    let parsed_module = crate::parse(tokens)
-        .handle(&linter)
-        .first()
-        .expect("stdlib.hc is empty")
-        .clone();
-    let mut ir_module = crate::build_ir(parsed_module, interfaces).handle(&linter);
-    let std_interface = crate::type_solve(&mut ir_module).handle(&linter);
-    e.encode_ir(ir_module);
-    // Finalize stdlib
-    interfaces.insert(Path::from(STDLIB_MODULE_NAME), std_interface);
+    for parsed_module in crate::parse(tokens).handle(&linter) {
+        let mut ir_module = crate::build_ir(parsed_module.clone(), interfaces).handle(&linter);
+        let interface = crate::type_solve(&mut ir_module).handle(&linter);
+        println!("{ir_module}");
+        interfaces.insert(Path::from(parsed_module.name), interface);
+        e.encode_ir(ir_module);
+    }
 }
 
 fn make_function(
@@ -46,7 +42,6 @@ fn make_function(
     let this_type = Type::curry(&parameter_types, return_type.clone());
     let (head, tail) = encoder.new_curried_function(
         (0..parameter_types.len())
-            .into_iter()
             .map(|i| format!("{i}").into())
             .collect(),
         parameter_types,

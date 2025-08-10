@@ -127,12 +127,12 @@ fn operator_assembly(encoder: &mut ModuleEncoder, interface: &mut ModuleInterfac
     });
     // Binary comparison ops
     {
-        let integer_type = e.get_asm_type(Type::Integer).id;
-        let real_type = e.get_asm_type(Type::Real).id;
-        let boolean_type = e.get_asm_type(Type::Boolean).id;
-        let glyph_type = e.get_asm_type(Type::Glyph).id;
-        let unit_type = e.get_asm_type(Type::Unit).id;
-        let string_type = e.get_asm_type(Type::String).id;
+        let integer_type = e.get_asm_type(Type::Integer).id.unwrap();
+        let real_type = e.get_asm_type(Type::Real).id.unwrap();
+        let boolean_type = e.get_asm_type(Type::Boolean).id.unwrap();
+        let glyph_type = e.get_asm_type(Type::Glyph).id.unwrap();
+        let unit_type = e.get_asm_type(Type::Unit).id.unwrap();
+        let string_type = e.get_asm_type(Type::String).id.unwrap();
         [
             (DoubleEqual, I64Eq, F64Eq, I32Eq, TRUE),
             (BangEqual, I64Ne, F64Ne, I32Ne, FALSE),

@@ -21,7 +21,7 @@ impl FunctionEncoder {
         id
     }
 
-    pub fn get_local_id(&mut self, mangle: &Path) -> u32 {
+    pub fn get_local_id(&self, mangle: &Path) -> u32 {
         *self.local_names.get(mangle).unwrap()
     }
 
@@ -112,16 +112,30 @@ impl ModuleEncoder {
         let Type::Function(parameter_type, _) = type_.clone() else {
             panic!()
         };
-        let parameter_type = self.get_asm_type(*parameter_type).val;
-        let closure_type_id = self.get_asm_type(Type::_ClosureCapture).id;
-        let capture_types = capture_types.iter().map(|t| self.get_valtype(t, false));
+        let parameter_valtype = if matches!(*parameter_type, Type::TypeVariable(_)) {
+            ValType::Ref(RefType::ANYREF)
+        } else {
+            self.get_asm_type(*parameter_type.clone()).val
+        };
+        let closure_type_id = self.get_asm_type(Type::_ClosureCapture).id.unwrap();
+        let capture_types = capture_types
+            .iter()
+            .map(|t| self.get_valtype(t, false))
+            .collect::<Vec<_>>();
         let mut code = FunctionEncoder {
-            local_names: [(parameter_name, 0)].into_iter().collect(),
-            parameter: Some(parameter_type),
+            local_names: [(parameter_name.clone(), 0)].into_iter().collect(),
+            parameter: Some(parameter_valtype),
             closure_capture: true,
             locals: vec![],
             instrs: vec![],
         };
+        println!("{parameter_name} {parameter_valtype:?}");
+        let parameter_local = code.new_local(parameter_name, parameter_valtype);
+        code.push(LocalGet(0));
+        if let Some(id) = self.get_asm_type(*parameter_type).id {
+            code.push(RefCastNonNull(HeapType::Concrete(id)));
+        }
+        code.push(LocalSet(parameter_local));
         capture_names
             .into_iter()
             .zip(capture_types)
@@ -138,7 +152,7 @@ impl ModuleEncoder {
                 code.push(i::RefCastNonNull(heap_type));
                 code.push(i::LocalSet(local));
             });
-        let type_id = self.get_asm_type(type_).raw_id;
+        let type_id = self.get_asm_type(type_).raw_id.unwrap();
         self.function_section.push(type_id);
         let code_id = self.code_section.len() as u32;
         self.code_section.push(code);
@@ -157,6 +171,7 @@ impl ModuleEncoder {
         mut parameter_types: Vec<TypeRef>,
         return_type: TypeRef,
     ) -> (u32, u32) {
+        let ftype = Type::curry(&parameter_types, return_type.clone());
         parameter_names.reverse();
         parameter_types.reverse();
         let mut tail = 0;
@@ -165,7 +180,7 @@ impl ModuleEncoder {
             parameter_types,
             vec![],
             vec![],
-            return_type,
+            ftype,
             &mut tail,
         );
         (head, tail)

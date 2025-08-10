@@ -5,6 +5,11 @@ pub type TypeVariable = usize;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Constraint(pub TypeRef, pub TypeRef, pub Span);
 
+fn print_constraints(cons: &[Constraint]) {
+    cons.iter().for_each(|c| print!("{c} ;; "));
+    println!();
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Substitution(pub TypeVariable, pub TypeRef);
 
@@ -17,7 +22,7 @@ pub fn solve_constraints(constraints: &[Constraint]) -> Result<Vec<Substitution>
         let t1 = con.0;
         let t2 = con.1;
         match (t1, t2) {
-            (t1, t2) if t1 == t2 => {}
+            (t1, t2) if t1.strict_eq(&t2) => {}
             (Type::Function(p1, r1), Type::Function(p2, r2)) => {
                 cons.push(Constraint(*p1, *p2, span));
                 cons.push(Constraint(*r1, *r2, span));
@@ -29,7 +34,7 @@ pub fn solve_constraints(constraints: &[Constraint]) -> Result<Vec<Substitution>
                     t1.unify(tv, &t);
                     t2.unify(tv, &t);
                 });
-                solution.push(Substitution(tv, t.into()));
+                solution.push(Substitution(tv, t));
             }
             (Type::Product(p1), Type::Product(p2)) if p1.len() == p2.len() => cons
                 .extend_from_slice(

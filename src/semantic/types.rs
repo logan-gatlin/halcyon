@@ -11,16 +11,18 @@ pub type TypeRef = Type;
 #[derive(Debug, Clone)]
 pub struct TypeScheme {
     variables: usize,
-    inner: TypeRef,
+    inner: Type,
 }
 
 impl TypeScheme {
-    pub fn new(t: Type) -> Self {
-        let inner: TypeRef = t.into();
+    pub fn new(mut t: Type) -> Self {
         let mut map = HashMap::new();
         let mut variables = 0;
-        inner.map_new_type_variables(&mut map, &mut variables);
-        Self { variables, inner }
+        t.map_new_type_variables(&mut map, &mut variables);
+        Self {
+            variables,
+            inner: t,
+        }
     }
 
     pub fn instantiate(mut self, mut fresh_type_var: impl FnMut() -> TypeVariable) -> Type {
@@ -92,16 +94,16 @@ impl Type {
         let guard = map.lock().unwrap();
         guard
             .get(path)
-            .expect(&format!("No named type: {path}"))
+            .unwrap_or_else(|| panic!("No named type: {path}"))
             .clone()
     }
 
     pub fn map_new_type_variables(
-        &self,
+        &mut self,
         map: &mut HashMap<TypeVariable, TypeVariable>,
         current: &mut TypeVariable,
     ) {
-        match &self {
+        match self {
             Type::Named(_)
             | Type::Any
             | Type::_ClosureCapture
@@ -112,10 +114,13 @@ impl Type {
             | Type::String
             | Type::Glyph => {}
             Type::TypeVariable(tv) => {
-                if !map.contains_key(tv) {
+                if let Some(key) = map.get(tv) {
+                    *tv = *key;
+                } else {
                     let new_tv = *current;
                     *current += 1;
                     map.insert(*tv, new_tv);
+                    *tv = new_tv;
                 }
             }
             Type::Sum {
@@ -127,7 +132,7 @@ impl Type {
                 member_types: items,
                 ..
             } => items
-                .into_iter()
+                .iter_mut()
                 .for_each(|t| t.map_new_type_variables(map, current)),
             Type::Function(param_type, return_type) => {
                 param_type.map_new_type_variables(map, current);
@@ -177,21 +182,65 @@ impl Type {
     }
 
     pub fn ambiguous(&self) -> bool {
-        if let Self::Any = self { true } else { false }
+        matches!(self, Self::Any)
+    }
+
+    pub fn strict_eq(&self, other: &Type) -> bool {
+        use Type as t;
+        match (self, other) {
+            (t::Any, t::Any) => {
+                panic!("Tried to compare ambiguous types")
+            }
+            (t::_ClosureCapture, t::_ClosureCapture)
+            | (t::Unit, t::Unit)
+            | (t::Integer, t::Integer)
+            | (t::Real, t::Real)
+            | (t::Boolean, t::Boolean)
+            | (t::Glyph, t::Glyph)
+            | (t::String, t::String) => true,
+            (
+                t::Struct {
+                    member_names: names1,
+                    member_types: types1,
+                },
+                t::Struct {
+                    member_names: names2,
+                    member_types: types2,
+                },
+            ) => names1 == names2 && types1 == types2,
+            (t::Function(p1, r1), t::Function(p2, r2)) => p1 == p2 && r1 == r2,
+            (t::Product(t1), t::Product(t2)) => t1 == t2,
+            (
+                t::Sum {
+                    variant_names: n1,
+                    variant_types: t1,
+                },
+                t::Sum {
+                    variant_names: n2,
+                    variant_types: t2,
+                },
+            ) => t1 == t2 && n1 == n2,
+            (t::TypeVariable(t1), t::TypeVariable(t2)) => t1 == t2,
+            (t::Named(a), t::Named(b)) => a == b,
+            (t::Named(n), a) | (a, t::Named(n)) => {
+                let b = Self::get_named_type(n);
+
+                a == &b
+            }
+            _ => false,
+        }
     }
 
     pub fn contains_type_var(&self, tv: TypeVariable) -> bool {
         match self {
             Type::TypeVariable(t) => tv == *t,
-            Type::Struct { member_types, .. } => member_types
-                .into_iter()
-                .fold(false, |accum, x| accum || x.contains_type_var(tv)),
-            Type::Product(items) => items
-                .into_iter()
-                .fold(false, |accum, x| accum || x.contains_type_var(tv)),
-            Type::Sum { variant_types, .. } => variant_types
-                .into_iter()
-                .fold(false, |accum, x| accum || x.contains_type_var(tv)),
+            Type::Struct { member_types, .. } => {
+                member_types.iter().any(|x| x.contains_type_var(tv))
+            }
+            Type::Product(items) => items.iter().any(|x| x.contains_type_var(tv)),
+            Type::Sum { variant_types, .. } => {
+                variant_types.iter().any(|x| x.contains_type_var(tv))
+            }
             Type::Function(a, b) => a.contains_type_var(tv) || b.contains_type_var(tv),
             _ => false,
         }
@@ -283,8 +332,8 @@ impl PartialEq for Type {
             (t::Named(a), t::Named(b)) => a == b,
             (t::Named(n), a) | (a, t::Named(n)) => {
                 let b = Self::get_named_type(n);
-                let val = a == &b;
-                val
+
+                a == &b
             }
             _ => false,
         }
@@ -356,7 +405,7 @@ impl std::fmt::Display for Type {
                 member_types,
             } => {
                 let fields = member_names
-                    .into_iter()
+                    .iter()
                     .zip(member_types)
                     .map(|(name, type_)| format!("{name}: {type_}"))
                     .collect::<Vec<_>>()
@@ -369,7 +418,7 @@ impl std::fmt::Display for Type {
                 f,
                 "({})",
                 items
-                    .into_iter()
+                    .iter()
                     .map(|i| format!("{}", i))
                     .collect::<Vec<_>>()
                     .join(" * ")
@@ -381,7 +430,7 @@ impl std::fmt::Display for Type {
                 f,
                 "{}",
                 variant_names
-                    .into_iter()
+                    .iter()
                     .zip(variant_types)
                     .map(|(name, type_)| format!("{name} of {type_}"))
                     .collect::<Vec<_>>()

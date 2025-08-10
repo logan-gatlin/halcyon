@@ -36,8 +36,11 @@ pub fn build_ir(
                 assignee_span,
                 value,
             } => {
-                // Recursive sum type
-                let (mangle, type_) = if matches!(value.kind, TypeDefinitionKind::Sum { .. }) {
+                // Recursive type
+                let (mangle, type_) = if matches!(
+                    value.kind,
+                    TypeDefinitionKind::Sum { .. } | TypeDefinitionKind::Function { .. }
+                ) {
                     let mangle = type_ns
                         .define_global(&assignee, Type::Any)
                         .span(assignee_span)?;
@@ -80,6 +83,7 @@ pub fn build_ir(
                     expr.span,
                     [name.clone()],
                 ))?;
+                cons_ns.import_module(interface.constructors.clone());
                 value_ns.import_module(interface.values.clone());
                 type_ns.import_module(interface.types.clone());
             }
@@ -337,7 +341,7 @@ fn pattern(
                 let cons = if items.len() == 1 {
                     cons_ns.get(&items[0]).span(expr.span)
                 } else {
-                    panic!()
+                    cons_ns.get_import(&Path::from(items))
                 }?;
                 PatternKind::Constructor(cons, Box::new(pattern(ns, cons_ns, *expression, global)?))
             }

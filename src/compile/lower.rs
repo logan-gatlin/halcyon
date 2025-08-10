@@ -6,7 +6,7 @@ fn cast(state: &mut ModuleEncoder, to: Type) -> Instruction<'static> {
     if let Type::TypeVariable(_) = to {
         cast_any()
     } else {
-        let type_id = state.get_asm_type(to).id;
+        let type_id = state.get_asm_type(to).id.unwrap();
         Instruction::RefCastNonNull(HeapType::Concrete(type_id))
     }
 }
@@ -33,18 +33,19 @@ fn binary_op_first_half(op: BinaryOp, state: &mut ModuleEncoder, f: u32) -> u32 
     asm! {
       LocalTee(operator_temporary);
       StructGet {
-        struct_type_index: operator_type.id,
+        struct_type_index: operator_type.id.unwrap(),
         field_index: 1,
       };
       LocalGet(operator_temporary);
       StructGet {
-        struct_type_index: operator_type.id,
+        struct_type_index: operator_type.id.unwrap(),
         field_index: 0,
       };
       CallIndirect {
-        type_index: operator_type.raw_id,
+        type_index: operator_type.raw_id.unwrap(),
         table_index: 0,
       };
+      RefCastNonNull(HeapType::Concrete(curried_operator_type.id.unwrap()));
       LocalSet(curried_operator_temporary);
     }
     curried_operator_temporary
@@ -64,21 +65,23 @@ fn binary_op_second_half(
             };
         }
     let curried_operator_type = state.get_asm_type(op.get_curry_type());
+    let return_type = state.get_asm_type(op.return_type()).id.unwrap();
     asm! {
       LocalGet(curried_operator_temporary);
       StructGet {
-        struct_type_index: curried_operator_type.id,
+        struct_type_index: curried_operator_type.id.unwrap(),
         field_index: 1,
       };
       LocalGet(curried_operator_temporary);
       StructGet {
-        struct_type_index: curried_operator_type.id,
+        struct_type_index: curried_operator_type.id.unwrap(),
         field_index: 0,
       };
       CallIndirect {
-        type_index: curried_operator_type.raw_id,
+        type_index: curried_operator_type.raw_id.unwrap(),
         table_index: 0,
       };
+      RefCastNonNull(HeapType::Concrete(return_type));
     }
 }
 
@@ -114,7 +117,7 @@ pub fn lower_pattern(
                 asm! {
                     LocalGet(temporary);
                     StructGet {
-                        struct_type_index: struct_t.id,
+                        struct_type_index: struct_t.id.unwrap(),
                         field_index: id as u32,
                     };
                     LocalSet(next_temporary);
@@ -131,13 +134,17 @@ pub fn lower_pattern(
             pat,
         ) => {
             let out_t = state.get_asm_type(out_type);
+            let Type::Sum { variant_types, .. } = pattern.type_.clone() else {
+                panic!();
+            };
+            let in_type = variant_types[variant].clone();
             let in_t = state.get_asm_type(in_type.clone());
             let next_temporary = state.func_mut(f).new_temporary(in_t.val);
             asm! {
                 I32Const(variant as i32);
                 LocalGet(temporary);
                 StructGet {
-                    struct_type_index: out_t.id,
+                    struct_type_index: out_t.id.unwrap(),
                     field_index: 0,
                 };
                 I32Eq;
@@ -146,7 +153,7 @@ pub fn lower_pattern(
                 BrIf(0);
                 LocalGet(temporary);
                 StructGet {
-                    struct_type_index: out_t.id,
+                    struct_type_index: out_t.id.unwrap(),
                     field_index: 1,
                 };
                 cast(state, in_type);
@@ -200,7 +207,6 @@ pub fn lower(nodes: &mut IrModule, ptr: IrPtr, state: &mut ModuleEncoder, f: u32
         h::Immediate(const_value) => state.push_constant(f, const_value),
         h::Identifier(mangle) => {
             state.get_symbol(f, &mangle);
-            asm! { cast(state, this_t); }
         }
         h::Tuple(items)
         | h::StructLiteral {
@@ -215,7 +221,7 @@ pub fn lower(nodes: &mut IrModule, ptr: IrPtr, state: &mut ModuleEncoder, f: u32
             asm! {
               StructGet {
                 struct_type_index: state
-                  .get_asm_type(nodes[of].type_.clone()).id,
+                  .get_asm_type(nodes[of].type_.clone()).id.unwrap(),
                 field_index: nodes[of].type_
                   .field_index(&index)
                   .unwrap_or_else(|| panic!("Struct does not contain field {index}")),
@@ -243,16 +249,16 @@ pub fn lower(nodes: &mut IrModule, ptr: IrPtr, state: &mut ModuleEncoder, f: u32
             asm! { LocalTee(function_temporary); }
             asm! {
               StructGet {
-                struct_type_index: callee_type.id,
+                struct_type_index: callee_type.id.unwrap(),
                 field_index: 1,
               };
               LocalGet(function_temporary);
               StructGet {
-                struct_type_index: callee_type.id,
+                struct_type_index: callee_type.id.unwrap(),
                 field_index: 0,
               };
               CallIndirect {
-                type_index: callee_type.raw_id,
+                type_index: callee_type.raw_id.unwrap(),
                 table_index: 0,
               };
               cast(state, this_t);
@@ -272,16 +278,16 @@ pub fn lower(nodes: &mut IrModule, ptr: IrPtr, state: &mut ModuleEncoder, f: u32
             asm! {
               LocalTee(temporary);
               StructGet {
-                struct_type_index: operator_type.id,
+                struct_type_index: operator_type.id.unwrap(),
                 field_index: 1,
               };
               LocalGet(temporary);
               StructGet {
-                struct_type_index: operator_type.id,
+                struct_type_index: operator_type.id.unwrap(),
                 field_index: 0,
               };
               CallIndirect {
-                type_index: operator_type.raw_id,
+                type_index: operator_type.raw_id.unwrap(),
                 table_index: 0,
               };
             };
@@ -370,16 +376,16 @@ pub fn lower(nodes: &mut IrModule, ptr: IrPtr, state: &mut ModuleEncoder, f: u32
             asm! {
               LocalGet(function_temporary);
               StructGet {
-                struct_type_index: callee_type.id,
+                struct_type_index: callee_type.id.unwrap(),
                 field_index: 1,
               };
               LocalGet(function_temporary);
               StructGet {
-                struct_type_index: callee_type.id,
+                struct_type_index: callee_type.id.unwrap(),
                 field_index: 0,
               };
               CallIndirect {
-                type_index: callee_type.raw_id,
+                type_index: callee_type.raw_id.unwrap(),
                 table_index: 0,
               };
               cast(state, this_t);

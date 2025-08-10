@@ -143,7 +143,7 @@ pub fn parse_type_expression(iter: it!()) -> Result<TypeExpression> {
         [] => unreachable!(),
         [primary] => {
             iter.end_span();
-            return Ok(primary.clone());
+            Ok(primary.clone())
         }
         [..] => Ok(TypeExpression {
             kind: TypeExpressionKind::Product(product),

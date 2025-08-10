@@ -38,13 +38,6 @@ enum RegisteredType {
     Struct(Vec<StorageType>),
 }
 
-#[derive(Debug, Clone)]
-pub struct AsmType {
-    pub id: u32,
-    pub raw_id: u32,
-    pub val: ValType,
-}
-
 #[derive(Debug, Clone, Default)]
 pub struct ModuleEncoder {
     pub main_fn: u32,
@@ -108,9 +101,9 @@ impl ModuleEncoder {
         }
     }
 
-    pub fn new_global(&mut self, mangle: Path, type_: impl Into<TypeRef>) -> u32 {
+    pub fn new_global(&mut self, mangle: Path, type_: Type) -> u32 {
         let id = self.global_section.len() as u32;
-        let type_ = self.get_asm_type(type_.into().clone()).id;
+        let type_ = self.get_asm_type(type_.clone()).id.unwrap();
         self.global_section.push(type_);
         self.export_section.push(Export {
             name: mangle.to_string(),

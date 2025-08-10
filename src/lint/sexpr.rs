@@ -37,7 +37,7 @@ fn indent(s: impl Into<String>, indent: &str) -> String {
 
 impl std::fmt::Display for SExpression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.children.len() == 0 {
+        if self.children.is_empty() {
             write!(f, "{}", self.this)
         } else {
             let children = self
@@ -51,8 +51,8 @@ impl std::fmt::Display for SExpression {
     }
 }
 
-impl Into<SExpression> for &str {
-    fn into(self) -> SExpression {
-        sexpr(format!("{self}"), [])
+impl From<&str> for SExpression {
+    fn from(val: &str) -> Self {
+        sexpr(val.to_string(), [])
     }
 }

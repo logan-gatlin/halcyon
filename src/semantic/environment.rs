@@ -1,20 +1,6 @@
 use super::*;
 
 #[derive(Debug, Clone)]
-enum ConstraintOrGuard {
-    Cons(Constraint),
-    LetGuard,
-}
-
-impl Unify for ConstraintOrGuard {
-    fn unify(&mut self, tv: TypeVariable, type_: &Type) {
-        if let Self::Cons(c) = self {
-            c.unify(tv, type_);
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
 pub enum EnvironmentSymbol {
     Let(TypeScheme),
     Free(TypeRef),
@@ -31,16 +17,14 @@ impl Unify for EnvironmentSymbol {
 #[derive(Debug, Default)]
 pub struct Environment {
     pub constructors: HashMap<Path, Constructor>,
-    universe: HashMap<Path, TypeRef>,
     symbols: HashMap<Path, EnvironmentSymbol>,
-    pub constraints: Vec<ConstraintOrGuard>,
+    constraints: Vec<Vec<Constraint>>,
     type_var_no: usize,
 }
 
 impl Unify for Environment {
     fn unify(&mut self, tv: TypeVariable, type_: &Type) {
         self.symbols.unify(tv, type_);
-        self.constraints.unify(tv, type_);
     }
 }
 
@@ -69,52 +53,30 @@ impl Environment {
     }
 
     pub fn begin_let(&mut self) {
-        self.constraints.push(ConstraintOrGuard::LetGuard);
-    }
-
-    pub fn into_solution(self) -> Result<Vec<Substitution>> {
-        solve_constraints(
-            &self
-                .constraints
-                .into_iter()
-                .flat_map(|c| match c {
-                    ConstraintOrGuard::Cons(constraint) => Some(constraint),
-                    ConstraintOrGuard::LetGuard => None,
-                })
-                .collect::<Vec<_>>(),
-        )
+        self.constraints.push(vec![]);
     }
 
     pub fn end_let(&mut self) -> Result<Vec<Substitution>> {
-        let Some((pos, ConstraintOrGuard::LetGuard)) = self
-            .constraints
-            .iter()
-            .enumerate()
-            .rfind(|s| matches!(s.1, ConstraintOrGuard::LetGuard))
-        else {
-            unreachable!("Called `end_let()` outside of a let expression")
-        };
-        let cons = self
-            .constraints
-            .split_off(pos + 1)
-            .into_iter()
-            .map(|c| {
-                if let ConstraintOrGuard::Cons(c) = c {
-                    c
-                } else {
-                    unreachable!()
-                }
-            })
-            .collect::<Vec<_>>();
-        self.constraints.pop();
+        let cons = self.constraints.pop().unwrap();
         let solution = solve_constraints(&cons)?;
         self.unify_all(&solution);
+        if self.constraints.is_empty() {
+            self.type_var_no = 0;
+        }
         Ok(solution)
     }
 
     pub fn constraint(&mut self, a: TypeRef, b: TypeRef, span: Span) {
         self.constraints
-            .push(ConstraintOrGuard::Cons(Constraint(a, b, span)));
+            .last_mut()
+            .unwrap()
+            .push(Constraint(a, b, span));
+    }
+
+    pub fn print_constraints(&self) {
+        for c in self.constraints.last().unwrap() {
+            println!("{c}");
+        }
     }
 
     pub fn fresh_type_variable(&mut self) -> TypeVariable {

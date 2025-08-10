@@ -255,7 +255,7 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
             start: self.index,
             width: 0,
         };
-        if self.ended == true {
+        if self.ended {
             return t(EOF, position);
         }
         let current = match self.next_char() {
@@ -276,7 +276,7 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
                     break;
                 }
                 _ = self.next_char();
-                buffer.push(c.clone());
+                buffer.push(c);
             }
             position.width = buffer.chars().count();
             return t(Whitespace(buffer), position);
@@ -288,14 +288,13 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
             let mut buffer = String::new();
             while let Some(current) = self.next_char() {
                 // Ignore /* */ inside strings
-                if '\"' == current {
-                    if let Some(inner_string) = self.delimited('\"') {
+                if '\"' == current
+                    && let Some(inner_string) = self.delimited('\"') {
                         buffer.push('\"');
                         buffer.push_str(&inner_string);
                         buffer.push('\"');
                         continue;
                     }
-                }
                 if let ('/', Some('*')) = (current, self.peek(0)) {
                     comment_level += 1;
                 } else if let ('*', Some('/')) = (current, self.peek(0)) {
@@ -515,7 +514,7 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
                 "type" => Type,
                 _ => Identifier(buffer),
             };
-            return t(kind, position);
+            t(kind, position)
         }
     }
 }
@@ -584,7 +583,7 @@ fn parse_single_escape(
 }
 
 fn hex_digit(c: char) -> Option<u32> {
-    if ('0'..='9').contains(&c) {
+    if c.is_ascii_digit() {
         Some(c as u32 - '0' as u32)
     } else if ('a'..='f').contains(&c) {
         Some(c as u32 - 'a' as u32 + 10)

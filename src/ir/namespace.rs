@@ -151,13 +151,10 @@ impl ValueNameSpace {
 
     pub fn get(&mut self, name: &str) -> Result<Path> {
         let mangle = self.ns.get(name)?;
-        match self.depth_table.get(&mangle) {
-            Some(depth) => {
-                for capture in (*depth)..(self.capture_list.len()) {
-                    self.capture_list[capture].push(mangle.clone());
-                }
+        if let Some(depth) = self.depth_table.get(&mangle) {
+            for capture in (*depth)..(self.capture_list.len()) {
+                self.capture_list[capture].push(mangle.clone());
             }
-            None => {}
         }
         Ok(mangle)
     }
@@ -182,6 +179,12 @@ pub struct Constructor {
     pub variant: usize,
     pub in_type: TypeRef,
     pub out_type: TypeRef,
+}
+
+impl Constructor {
+    pub fn function_type(&self) -> Type {
+        Type::func(self.in_type.clone(), self.out_type.clone())
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -209,6 +212,21 @@ impl ConstructorNameSpace {
         self.constructor_map.insert(path, cons);
         Ok(())
     }
+
+    pub fn import_module(&mut self, items: impl IntoIterator<Item = (Path, Constructor)>) {
+        for (name, cons) in items {
+            self.constructor_map.insert(name, cons);
+        }
+    }
+
+    pub fn get_import(&self, path: &Path) -> Result<Constructor> {
+        println!("{:#?}", self.constructor_map);
+        self.constructor_map
+            .get(path)
+            .ok_or(lint_nospan(NameLint::UndefinedName))
+            .context(path)
+            .cloned()
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -228,7 +246,7 @@ impl TypeNameSpace {
         }
     }
 
-    pub fn get_type(&self, name: &String) -> Result<TypeRef> {
+    pub fn get_type(&self, name: &str) -> Result<TypeRef> {
         let mangle = self.get(name)?;
         Ok(self.type_map.get(&mangle).unwrap().clone())
     }
@@ -238,7 +256,7 @@ impl TypeNameSpace {
     }
 
     pub fn define_local(&mut self, name: &str, type_: TypeRef) -> Path {
-        let mangle = self.ns.define_local(&name);
+        let mangle = self.ns.define_local(name);
         self.type_map.insert(mangle.clone(), type_);
         mangle
     }
@@ -263,7 +281,7 @@ impl TypeNameSpace {
             .cloned()
     }
 
-    pub fn to_universe(self) -> HashMap<Path, TypeRef> {
-        self.type_map
+    pub fn to_universe(&self) -> HashMap<Path, TypeRef> {
+        self.type_map.clone()
     }
 }

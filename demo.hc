@@ -1,15 +1,23 @@
 module List = 
   import std
+  import opt
+  import list
+  import string
 
-  type List = Cons of std:string * List | Nil of std:unit
+  let o = opt:None ()
+  let () = o
+    |> opt:iterate std:print_string
 
-  let push = fn item list => match list with
-    | Cons of (head, tail) => Cons (head, push item tail)
-    | Nil of () => Cons (item, Nil ())
+  let l1 = list:Nil ()
+    |> list:push "Hello"
+    |> list:push "World"
 
-  let print = fn list => match list with
-    | Cons of (s, l) =>  std:print_string s; print l
-    | Nil => ()
+  let len = std:assert (list:length l1 == 2)
 
-  let () = print (Nil () |> push "one" |> push "two" |> push "three")
+  let l2 = list:Nil ()
+    |> list:push "Hello"
+    |> list:push "Sailor"
+
+  let l3 = list:concatenate l1 l2
+  let () = list:fold string:concatenate "" l3 |> std:print_string
 end

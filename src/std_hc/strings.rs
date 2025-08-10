@@ -24,22 +24,25 @@ pub fn make(encoder: &mut ModuleEncoder, interface: &mut ModuleInterface) {
     };
   }
     // String length
-    func! { fn string_length(Type::String) -> (Type::Integer) };
-    asm! {
-      LocalGet(0);
-      ArrayLen;
-      I64ExtendI32U;
-      e.make_struct(Type::Integer);
+    {
+        func! { fn string_length(Type::String) -> (Type::Integer) };
+        let param = e.func(f).get_local_id(&"0".into());
+        asm! {
+          LocalGet(param);
+          ArrayLen;
+          I64ExtendI32U;
+          e.make_struct(Type::Integer);
+        }
     }
 
     // Print string
     {
         func! { fn print_string (Type::String) -> (Type::Unit) };
         let (import_id, import_type) = e.new_import("sys", "print_string", [ValType::I32; 2], []);
-        let param = 0;
+        let param = e.func(f).get_local_id(&"0".into());
         let index = e.func_mut(f).new_local("index", ValType::I32);
         let length = e.func_mut(f).new_local("length", ValType::I32);
-        let string_type = e.get_asm_type(Type::String).id;
+        let string_type = e.get_asm_type(Type::String).id.unwrap();
         asm! {
           I32Const(0);
           LocalSet(index);
@@ -95,7 +98,7 @@ pub fn make(encoder: &mut ModuleEncoder, interface: &mut ModuleInterface) {
           I32Add;
           // First copy
           // Destination string
-          ArrayNewDefault(string_type.id);
+          ArrayNewDefault(string_type.id.unwrap());
           LocalTee(s);
           // Destination offset
           I32Const(0);
@@ -105,7 +108,7 @@ pub fn make(encoder: &mut ModuleEncoder, interface: &mut ModuleInterface) {
           I32Const(0);
           // Length
           LocalGet(length1);
-          ArrayCopy { array_type_index_dst: string_type.id, array_type_index_src: string_type.id };
+          ArrayCopy { array_type_index_dst: string_type.id.unwrap(), array_type_index_src: string_type.id.unwrap() };
           // Second copy
           // Destination string
           LocalGet(s);
@@ -117,7 +120,7 @@ pub fn make(encoder: &mut ModuleEncoder, interface: &mut ModuleInterface) {
           I32Const(0);
           // Length
           LocalGet(length2);
-          ArrayCopy { array_type_index_dst: string_type.id, array_type_index_src: string_type.id };
+          ArrayCopy { array_type_index_dst: string_type.id.unwrap(), array_type_index_src: string_type.id.unwrap() };
           LocalGet(s);
         }
     }

@@ -3,46 +3,212 @@
   (type $integer (;1;) (struct (field i64)))
   (type $capture (;2;) (array (mut anyref)))
   (type $"(integer -> integer)" (;3;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (integer -> integer)" (;4;) (func (param (ref $integer) (ref $capture)) (result (ref $integer))))
+  (type $"(raw) (integer -> integer)" (;4;) (func (param anyref (ref $capture)) (result anyref)))
   (type $real (;5;) (struct (field f64)))
   (type $"(real -> real)" (;6;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (real -> real)" (;7;) (func (param (ref $real) (ref $capture)) (result (ref $real))))
+  (type $"(raw) (real -> real)" (;7;) (func (param anyref (ref $capture)) (result anyref)))
   (type $boolean (;8;) (struct (field i32)))
   (type $"(boolean -> boolean)" (;9;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (boolean -> boolean)" (;10;) (func (param (ref $boolean) (ref $capture)) (result (ref $boolean))))
+  (type $"(raw) (boolean -> boolean)" (;10;) (func (param anyref (ref $capture)) (result anyref)))
   (type $"(integer -> (integer -> integer))" (;11;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (integer -> (integer -> integer))" (;12;) (func (param (ref $integer) (ref $capture)) (result (ref $"(integer -> integer)"))))
+  (type $"(raw) (integer -> (integer -> integer))" (;12;) (func (param anyref (ref $capture)) (result anyref)))
   (type $"(real -> (real -> real))" (;13;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (real -> (real -> real))" (;14;) (func (param (ref $real) (ref $capture)) (result (ref $"(real -> real)"))))
+  (type $"(raw) (real -> (real -> real))" (;14;) (func (param anyref (ref $capture)) (result anyref)))
   (type $"(boolean -> (boolean -> boolean))" (;15;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (boolean -> (boolean -> boolean))" (;16;) (func (param (ref $boolean) (ref $capture)) (result (ref $"(boolean -> boolean)"))))
+  (type $"(raw) (boolean -> (boolean -> boolean))" (;16;) (func (param anyref (ref $capture)) (result anyref)))
   (type $glyph (;17;) (struct (field i32)))
   (type $unit (;18;) (struct))
   (type $string (;19;) (array (mut i8)))
   (type $"('0 -> ('0 -> boolean))" (;20;) (struct (field i32) (field (ref $capture))))
-  (type $"('0 -> boolean)" (;21;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) ('0 -> ('0 -> boolean))" (;22;) (func (param anyref (ref $capture)) (result (ref $"('0 -> boolean)"))))
-  (type $"(raw) ('0 -> boolean)" (;23;) (func (param anyref (ref $capture)) (result (ref $boolean))))
+  (type $"(raw) ('0 -> ('0 -> boolean))" (;21;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"('0 -> boolean)" (;22;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) ('0 -> boolean)" (;23;) (func (param anyref (ref $capture)) (result anyref)))
   (type $"(unit -> '0)" (;24;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (unit -> '0)" (;25;) (func (param (ref $unit) (ref $capture)) (result anyref)))
+  (type $"(raw) (unit -> '0)" (;25;) (func (param anyref (ref $capture)) (result anyref)))
   (type $"(string -> integer)" (;26;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (string -> integer)" (;27;) (func (param (ref $string) (ref $capture)) (result (ref $integer))))
+  (type $"(raw) (string -> integer)" (;27;) (func (param anyref (ref $capture)) (result anyref)))
   (type $"(string -> unit)" (;28;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (string -> unit)" (;29;) (func (param (ref $string) (ref $capture)) (result (ref $unit))))
+  (type $"(raw) (string -> unit)" (;29;) (func (param anyref (ref $capture)) (result anyref)))
   (type (;30;) (func (param i32 i32)))
   (type $"(string -> (string -> string))" (;31;) (struct (field i32) (field (ref $capture))))
-  (type $"(string -> string)" (;32;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (string -> (string -> string))" (;33;) (func (param (ref $string) (ref $capture)) (result (ref $"(string -> string)"))))
-  (type $"(raw) (string -> string)" (;34;) (func (param (ref $string) (ref $capture)) (result (ref $string))))
+  (type $"(raw) (string -> (string -> string))" (;32;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(string -> string)" (;33;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (string -> string)" (;34;) (func (param anyref (ref $capture)) (result anyref)))
   (type $"(unit -> '1)" (;35;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (unit -> '1)" (;36;) (func (param (ref $unit) (ref $capture)) (result anyref)))
+  (type $"(raw) (unit -> '1)" (;36;) (func (param anyref (ref $capture)) (result anyref)))
   (type $"(unit -> '2)" (;37;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (unit -> '2)" (;38;) (func (param (ref $unit) (ref $capture)) (result anyref)))
+  (type $"(raw) (unit -> '2)" (;38;) (func (param anyref (ref $capture)) (result anyref)))
   (type $"(boolean -> unit)" (;39;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (boolean -> unit)" (;40;) (func (param (ref $boolean) (ref $capture)) (result (ref $unit))))
+  (type $"(raw) (boolean -> unit)" (;40;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(unit -> '4)" (;41;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (unit -> '4)" (;42;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"('0 -> Some of '0 | None of unit)" (;43;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) ('0 -> Some of '0 | None of unit)" (;44;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"Some of '0 | None of unit" (;45;) (struct (field i32) (field anyref)))
+  (type $"(unit -> Some of '0 | None of unit)" (;46;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (unit -> Some of '0 | None of unit)" (;47;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(('3 -> '6) -> (Some of '3 | None of unit -> Some of '6 | None of unit))" (;48;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (('3 -> '6) -> (Some of '3 | None of unit -> Some of '6 | None of unit))" (;49;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"('3 -> '6)" (;50;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) ('3 -> '6)" (;51;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"Some of '3 | None of unit" (;52;) (struct (field i32) (field anyref)))
+  (type $"(Some of '3 | None of unit -> Some of '6 | None of unit)" (;53;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (Some of '3 | None of unit -> Some of '6 | None of unit)" (;54;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"Some of '6 | None of unit" (;55;) (struct (field i32) (field anyref)))
+  (type $"('6 -> Some of '6 | None of unit)" (;56;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) ('6 -> Some of '6 | None of unit)" (;57;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(unit -> Some of '8 | None of unit)" (;58;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (unit -> Some of '8 | None of unit)" (;59;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"Some of '8 | None of unit" (;60;) (struct (field i32) (field anyref)))
+  (type $"(('6 -> '7) -> (Some of '9 | None of unit -> unit))" (;61;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (('6 -> '7) -> (Some of '9 | None of unit -> unit))" (;62;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"('6 -> '7)" (;63;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) ('6 -> '7)" (;64;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"Some of '9 | None of unit" (;65;) (struct (field i32) (field anyref)))
+  (type $"(Some of '9 | None of unit -> unit)" (;66;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (Some of '9 | None of unit -> unit)" (;67;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(Some of '9 | None of unit -> Some of '10 | None of unit)" (;68;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (Some of '9 | None of unit -> Some of '10 | None of unit)" (;69;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(('9 -> '10) -> (Some of '9 | None of unit -> Some of '10 | None of unit))" (;70;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (('9 -> '10) -> (Some of '9 | None of unit -> Some of '10 | None of unit))" (;71;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"('6 -> '6)" (;72;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) ('6 -> '6)" (;73;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"Some of '10 | None of unit" (;74;) (struct (field i32) (field anyref)))
+  (type $"(Some of '5 | None of unit -> '5)" (;75;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (Some of '5 | None of unit -> '5)" (;76;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"Some of '5 | None of unit" (;77;) (struct (field i32) (field anyref)))
+  (type $"(unit -> '7)" (;78;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (unit -> '7)" (;79;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(Some of '3 | None of unit -> boolean)" (;80;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (Some of '3 | None of unit -> boolean)" (;81;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(Some of '4 | None of unit -> boolean)" (;82;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (Some of '4 | None of unit -> boolean)" (;83;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"Some of '4 | None of unit" (;84;) (struct (field i32) (field anyref)))
+  (type $"(('0 * list:t) -> Cons of ('0 * list:t) | Nil of unit)" (;85;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (('0 * list:t) -> Cons of ('0 * list:t) | Nil of unit)" (;86;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"Cons of ('0 * list:t) | Nil of unit" (;87;) (struct (field i32) (field anyref)))
+  (type $"('0 * list:t)" (;88;) (struct (field anyref) (field (ref $"Cons of ('0 * list:t) | Nil of unit"))))
+  (type $"(unit -> Cons of ('0 * list:t) | Nil of unit)" (;89;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (unit -> Cons of ('0 * list:t) | Nil of unit)" (;90;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(('3 -> '9) -> (list:t -> list:t))" (;91;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (('3 -> '9) -> (list:t -> list:t))" (;92;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"('3 -> '9)" (;93;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) ('3 -> '9)" (;94;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(('3 -> '9) -> (Cons of ('3 * list:t) | Nil of unit -> Cons of ('9 * list:t) | Nil of unit))" (;95;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (('3 -> '9) -> (Cons of ('3 * list:t) | Nil of unit -> Cons of ('9 * list:t) | Nil of unit))" (;96;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"Cons of ('3 * list:t) | Nil of unit" (;97;) (struct (field i32) (field anyref)))
+  (type $"(Cons of ('3 * list:t) | Nil of unit -> Cons of ('9 * list:t) | Nil of unit)" (;98;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (Cons of ('3 * list:t) | Nil of unit -> Cons of ('9 * list:t) | Nil of unit)" (;99;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"Cons of ('9 * list:t) | Nil of unit" (;100;) (struct (field i32) (field anyref)))
+  (type $"('3 * list:t)" (;101;) (struct (field anyref) (field (ref $"Cons of ('0 * list:t) | Nil of unit"))))
+  (type $"(('9 * list:t) -> Cons of ('9 * list:t) | Nil of unit)" (;102;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (('9 * list:t) -> Cons of ('9 * list:t) | Nil of unit)" (;103;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(list:t -> list:t)" (;104;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (list:t -> list:t)" (;105;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"('9 * list:t)" (;106;) (struct (field anyref) (field (ref $"Cons of ('0 * list:t) | Nil of unit"))))
+  (type $"(unit -> Cons of ('11 * list:t) | Nil of unit)" (;107;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (unit -> Cons of ('11 * list:t) | Nil of unit)" (;108;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"Cons of ('11 * list:t) | Nil of unit" (;109;) (struct (field i32) (field anyref)))
+  (type $"(('6 -> '7) -> (list:t -> unit))" (;110;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (('6 -> '7) -> (list:t -> unit))" (;111;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(list:t -> unit)" (;112;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (list:t -> unit)" (;113;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(('9 -> '10) -> (list:t -> list:t))" (;114;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (('9 -> '10) -> (list:t -> list:t))" (;115;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"('3 -> (list:t -> list:t))" (;116;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) ('3 -> (list:t -> list:t))" (;117;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"('3 -> (Cons of ('10 * list:t) | Nil of unit -> Cons of ('10 * list:t) | Nil of unit))" (;118;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) ('3 -> (Cons of ('10 * list:t) | Nil of unit -> Cons of ('10 * list:t) | Nil of unit))" (;119;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"Cons of ('10 * list:t) | Nil of unit" (;120;) (struct (field i32) (field anyref)))
+  (type $"(Cons of ('10 * list:t) | Nil of unit -> Cons of ('10 * list:t) | Nil of unit)" (;121;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (Cons of ('10 * list:t) | Nil of unit -> Cons of ('10 * list:t) | Nil of unit)" (;122;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"('10 * list:t)" (;123;) (struct (field anyref) (field (ref $"Cons of ('0 * list:t) | Nil of unit"))))
+  (type $"(('10 * list:t) -> Cons of ('10 * list:t) | Nil of unit)" (;124;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (('10 * list:t) -> Cons of ('10 * list:t) | Nil of unit)" (;125;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(('14 * list:t) -> Cons of ('14 * list:t) | Nil of unit)" (;126;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (('14 * list:t) -> Cons of ('14 * list:t) | Nil of unit)" (;127;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(unit -> Cons of ('12 * list:t) | Nil of unit)" (;128;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (unit -> Cons of ('12 * list:t) | Nil of unit)" (;129;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"Cons of ('12 * list:t) | Nil of unit" (;130;) (struct (field i32) (field anyref)))
+  (type $"('3 * Cons of ('12 * list:t) | Nil of unit)" (;131;) (struct (field anyref) (field (ref $"Cons of ('12 * list:t) | Nil of unit"))))
+  (type $"Cons of ('14 * list:t) | Nil of unit" (;132;) (struct (field i32) (field anyref)))
+  (type $"(list:t -> integer)" (;133;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (list:t -> integer)" (;134;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(Cons of ('3 * list:t) | Nil of unit -> integer)" (;135;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (Cons of ('3 * list:t) | Nil of unit -> integer)" (;136;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(('9 -> ('6 -> '9)) -> ('4 -> (list:t -> '6)))" (;137;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (('9 -> ('6 -> '9)) -> ('4 -> (list:t -> '6)))" (;138;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"('9 -> ('6 -> '9))" (;139;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) ('9 -> ('6 -> '9))" (;140;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(('9 -> ('6 -> '9)) -> ('9 -> (Cons of ('4 * list:t) | Nil of unit -> '9)))" (;141;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (('9 -> ('6 -> '9)) -> ('9 -> (Cons of ('4 * list:t) | Nil of unit -> '9)))" (;142;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"('9 -> (Cons of ('4 * list:t) | Nil of unit -> '9))" (;143;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) ('9 -> (Cons of ('4 * list:t) | Nil of unit -> '9))" (;144;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"Cons of ('4 * list:t) | Nil of unit" (;145;) (struct (field i32) (field anyref)))
+  (type $"(Cons of ('4 * list:t) | Nil of unit -> '9)" (;146;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (Cons of ('4 * list:t) | Nil of unit -> '9)" (;147;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"('4 * list:t)" (;148;) (struct (field anyref) (field (ref $"Cons of ('0 * list:t) | Nil of unit"))))
+  (type $"('6 -> '9)" (;149;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) ('6 -> '9)" (;150;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(list:t -> '6)" (;151;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (list:t -> '6)" (;152;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"('4 -> (list:t -> '6))" (;153;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) ('4 -> (list:t -> '6))" (;154;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(list:t -> (Cons of ('11 * list:t) | Nil of unit -> list:t))" (;155;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (list:t -> (Cons of ('11 * list:t) | Nil of unit -> list:t))" (;156;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(Cons of ('11 * list:t) | Nil of unit -> (Cons of ('11 * list:t) | Nil of unit -> Cons of ('11 * list:t) | Nil of unit))" (;157;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (Cons of ('11 * list:t) | Nil of unit -> (Cons of ('11 * list:t) | Nil of unit -> Cons of ('11 * list:t) | Nil of unit))" (;158;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(Cons of ('11 * list:t) | Nil of unit -> Cons of ('11 * list:t) | Nil of unit)" (;159;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (Cons of ('11 * list:t) | Nil of unit -> Cons of ('11 * list:t) | Nil of unit)" (;160;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"('11 * list:t)" (;161;) (struct (field anyref) (field (ref $"Cons of ('0 * list:t) | Nil of unit"))))
+  (type $"(('11 * list:t) -> Cons of ('11 * list:t) | Nil of unit)" (;162;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (('11 * list:t) -> Cons of ('11 * list:t) | Nil of unit)" (;163;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(Cons of ('11 * list:t) | Nil of unit -> list:t)" (;164;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (Cons of ('11 * list:t) | Nil of unit -> list:t)" (;165;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(integer -> (list:t -> Some of '8 | None of unit))" (;166;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (integer -> (list:t -> Some of '8 | None of unit))" (;167;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(integer -> (Cons of ('8 * list:t) | Nil of unit -> Some of '8 | None of unit))" (;168;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (integer -> (Cons of ('8 * list:t) | Nil of unit -> Some of '8 | None of unit))" (;169;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"Cons of ('8 * list:t) | Nil of unit" (;170;) (struct (field i32) (field anyref)))
+  (type $"(Cons of ('8 * list:t) | Nil of unit -> Some of '8 | None of unit)" (;171;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (Cons of ('8 * list:t) | Nil of unit -> Some of '8 | None of unit)" (;172;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(integer * Cons of ('8 * list:t) | Nil of unit)" (;173;) (struct (field (ref $integer)) (field (ref $"Cons of ('8 * list:t) | Nil of unit"))))
+  (type $"('8 * list:t)" (;174;) (struct (field anyref) (field (ref $"Cons of ('0 * list:t) | Nil of unit"))))
+  (type $"('8 -> Some of '8 | None of unit)" (;175;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) ('8 -> Some of '8 | None of unit)" (;176;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"Cons of ('5 * list:t) | Nil of unit" (;177;) (struct (field i32) (field anyref)))
+  (type $"('5 * list:t)" (;178;) (struct (field anyref) (field (ref $"Cons of ('0 * list:t) | Nil of unit"))))
+  (type $"(list:t -> Some of '8 | None of unit)" (;179;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (list:t -> Some of '8 | None of unit)" (;180;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"Cons of ('6 * list:t) | Nil of unit" (;181;) (struct (field i32) (field anyref)))
+  (type $"(unit -> Some of '12 | None of unit)" (;182;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (unit -> Some of '12 | None of unit)" (;183;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"Some of '12 | None of unit" (;184;) (struct (field i32) (field anyref)))
+  (type $"Some of '2 | None of unit" (;185;) (struct (field i32) (field anyref)))
+  (type $"(unit -> Some of '2 | None of unit)" (;186;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (unit -> Some of '2 | None of unit)" (;187;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(Some of '6 | None of unit -> unit)" (;188;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (Some of '6 | None of unit -> unit)" (;189;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"((string -> unit) -> (Some of '6 | None of unit -> unit))" (;190;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) ((string -> unit) -> (Some of '6 | None of unit -> unit))" (;191;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(unit -> Cons of ('2 * list:t) | Nil of unit)" (;192;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (unit -> Cons of ('2 * list:t) | Nil of unit)" (;193;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"Cons of ('2 * list:t) | Nil of unit" (;194;) (struct (field i32) (field anyref)))
+  (type $"(string -> (list:t -> list:t))" (;195;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (string -> (list:t -> list:t))" (;196;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(Cons of ('3 * list:t) | Nil of unit -> list:t)" (;197;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (Cons of ('3 * list:t) | Nil of unit -> list:t)" (;198;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(list:t -> (Cons of ('3 * list:t) | Nil of unit -> list:t))" (;199;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (list:t -> (Cons of ('3 * list:t) | Nil of unit -> list:t))" (;200;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(list:t -> string)" (;201;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (list:t -> string)" (;202;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(string -> (list:t -> string))" (;203;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (string -> (list:t -> string))" (;204;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"((string -> (string -> string)) -> (string -> (list:t -> string)))" (;205;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) ((string -> (string -> string)) -> (string -> (list:t -> string)))" (;206;) (func (param anyref (ref $capture)) (result anyref)))
   (import "sys" "print_string" (func (;0;) (type 30)))
   (import "sys" "memory" (memory (;0;) 1))
-  (table (;0;) 52 52 funcref)
+  (table (;0;) 80 80 funcref)
   (global (;0;) (mut (ref null $"(integer -> integer)")) ref.null $"(integer -> integer)")
   (global (;1;) (mut (ref null $"(real -> real)")) ref.null $"(real -> real)")
   (global (;2;) (mut (ref null $"(boolean -> boolean)")) ref.null $"(boolean -> boolean)")
@@ -70,52 +236,31 @@
   (global (;24;) (mut (ref null $"(string -> (string -> string))")) ref.null $"(string -> (string -> string))")
   (global (;25;) (mut (ref null $"(unit -> '1)")) ref.null $"(unit -> '1)")
   (global (;26;) (mut (ref null $"(boolean -> unit)")) ref.null $"(boolean -> unit)")
-  (global (;27;) (mut (ref null $"(string -> integer)")) ref.null $"(string -> integer)")
-  (global (;28;) (mut (ref null $"(string -> unit)")) ref.null $"(string -> unit)")
+  (global (;27;) (mut (ref null $"(string -> unit)")) ref.null $"(string -> unit)")
+  (global (;28;) (mut (ref null $"(string -> integer)")) ref.null $"(string -> integer)")
   (global (;29;) (mut (ref null $"(string -> (string -> string))")) ref.null $"(string -> (string -> string))")
-  (global (;30;) (mut (ref null $unit)) ref.null $unit)
-  (global (;31;) (mut (ref null $unit)) ref.null $unit)
-  (global (;32;) (mut (ref null $unit)) ref.null $unit)
-  (global (;33;) (mut (ref null $unit)) ref.null $unit)
-  (global (;34;) (mut (ref null $unit)) ref.null $unit)
-  (global (;35;) (mut (ref null $unit)) ref.null $unit)
-  (global (;36;) (mut (ref null $unit)) ref.null $unit)
-  (global (;37;) (mut (ref null $unit)) ref.null $unit)
-  (global (;38;) (mut (ref null $unit)) ref.null $unit)
-  (global (;39;) (mut (ref null $unit)) ref.null $unit)
-  (global (;40;) (mut (ref null $unit)) ref.null $unit)
-  (global (;41;) (mut (ref null $unit)) ref.null $unit)
-  (global (;42;) (mut (ref null $unit)) ref.null $unit)
-  (global (;43;) (mut (ref null $unit)) ref.null $unit)
-  (global (;44;) (mut (ref null $unit)) ref.null $unit)
-  (global (;45;) (mut (ref null $unit)) ref.null $unit)
-  (global (;46;) (mut (ref null $unit)) ref.null $unit)
-  (global (;47;) (mut (ref null $unit)) ref.null $unit)
-  (global (;48;) (mut (ref null $unit)) ref.null $unit)
+  (global (;30;) (mut (ref null $"(string -> unit)")) ref.null $"(string -> unit)")
+  (global (;31;) (mut (ref null $"('0 -> Some of '0 | None of unit)")) ref.null $"('0 -> Some of '0 | None of unit)")
+  (global (;32;) (mut (ref null $"(unit -> Some of '0 | None of unit)")) ref.null $"(unit -> Some of '0 | None of unit)")
+  (global (;33;) (mut (ref null $"(('3 -> '6) -> (Some of '3 | None of unit -> Some of '6 | None of unit))")) ref.null $"(('3 -> '6) -> (Some of '3 | None of unit -> Some of '6 | None of unit))")
+  (global (;34;) (mut (ref null $"(('6 -> '7) -> (Some of '9 | None of unit -> unit))")) ref.null $"(('6 -> '7) -> (Some of '9 | None of unit -> unit))")
+  (global (;35;) (mut (ref null $"(Some of '5 | None of unit -> '5)")) ref.null $"(Some of '5 | None of unit -> '5)")
+  (global (;36;) (mut (ref null $"(Some of '3 | None of unit -> boolean)")) ref.null $"(Some of '3 | None of unit -> boolean)")
+  (global (;37;) (mut (ref null $"(Some of '4 | None of unit -> boolean)")) ref.null $"(Some of '4 | None of unit -> boolean)")
+  (global (;38;) (mut (ref null $"(('0 * list:t) -> Cons of ('0 * list:t) | Nil of unit)")) ref.null $"(('0 * list:t) -> Cons of ('0 * list:t) | Nil of unit)")
+  (global (;39;) (mut (ref null $"(unit -> Cons of ('0 * list:t) | Nil of unit)")) ref.null $"(unit -> Cons of ('0 * list:t) | Nil of unit)")
+  (global (;40;) (mut (ref null $"(('3 -> '9) -> (list:t -> list:t))")) ref.null $"(('3 -> '9) -> (list:t -> list:t))")
+  (global (;41;) (mut (ref null $"(('6 -> '7) -> (list:t -> unit))")) ref.null $"(('6 -> '7) -> (list:t -> unit))")
+  (global (;42;) (mut (ref null $"('3 -> (list:t -> list:t))")) ref.null $"('3 -> (list:t -> list:t))")
+  (global (;43;) (mut (ref null $"(list:t -> integer)")) ref.null $"(list:t -> integer)")
+  (global (;44;) (mut (ref null $"(('9 -> ('6 -> '9)) -> ('4 -> (list:t -> '6)))")) ref.null $"(('9 -> ('6 -> '9)) -> ('4 -> (list:t -> '6)))")
+  (global (;45;) (mut (ref null $"(list:t -> (Cons of ('11 * list:t) | Nil of unit -> list:t))")) ref.null $"(list:t -> (Cons of ('11 * list:t) | Nil of unit -> list:t))")
+  (global (;46;) (mut (ref null $"(integer -> (list:t -> Some of '8 | None of unit))")) ref.null $"(integer -> (list:t -> Some of '8 | None of unit))")
+  (global (;47;) (mut (ref null $"Some of '2 | None of unit")) ref.null $"Some of '2 | None of unit")
+  (global (;48;) (mut (ref null $"Cons of ('0 * list:t) | Nil of unit")) ref.null $"Cons of ('0 * list:t) | Nil of unit")
   (global (;49;) (mut (ref null $unit)) ref.null $unit)
-  (global (;50;) (mut (ref null $unit)) ref.null $unit)
-  (global (;51;) (mut (ref null $unit)) ref.null $unit)
-  (global (;52;) (mut (ref null $unit)) ref.null $unit)
-  (global (;53;) (mut (ref null $unit)) ref.null $unit)
-  (global (;54;) (mut (ref null $unit)) ref.null $unit)
-  (global (;55;) (mut (ref null $unit)) ref.null $unit)
-  (global (;56;) (mut (ref null $unit)) ref.null $unit)
-  (global (;57;) (mut (ref null $unit)) ref.null $unit)
-  (global (;58;) (mut (ref null $unit)) ref.null $unit)
-  (global (;59;) (mut (ref null $unit)) ref.null $unit)
-  (global (;60;) (mut (ref null $unit)) ref.null $unit)
-  (global (;61;) (mut (ref null $unit)) ref.null $unit)
-  (global (;62;) (mut (ref null $unit)) ref.null $unit)
-  (global (;63;) (mut (ref null $unit)) ref.null $unit)
-  (global (;64;) (mut (ref null $unit)) ref.null $unit)
-  (global (;65;) (mut (ref null $unit)) ref.null $unit)
-  (global (;66;) (mut (ref null $unit)) ref.null $unit)
-  (global (;67;) (mut (ref null $unit)) ref.null $unit)
-  (global (;68;) (mut (ref null $unit)) ref.null $unit)
-  (global (;69;) (mut (ref null $unit)) ref.null $unit)
-  (global (;70;) (mut (ref null $unit)) ref.null $unit)
-  (global (;71;) (mut (ref null $unit)) ref.null $unit)
-  (global (;72;) (mut (ref null $unit)) ref.null $unit)
+  (global (;50;) (mut (ref null $"Cons of ('0 * list:t) | Nil of unit")) ref.null $"Cons of ('0 * list:t) | Nil of unit")
+  (global (;51;) (mut (ref null $"Cons of ('0 * list:t) | Nil of unit")) ref.null $"Cons of ('0 * list:t) | Nil of unit")
   (export "builtin:UnaryOp-" (global 0))
   (export "builtin:UnaryOp-." (global 1))
   (export "builtin:UnaryOpnot" (global 2))
@@ -143,56 +288,35 @@
   (export "builtin:string_concatenate" (global 24))
   (export "std:panic" (global 25))
   (export "std:assert" (global 26))
-  (export "std:string_length" (global 27))
-  (export "std:print_string" (global 28))
-  (export "std:string_concatenate" (global 29))
-  (export "OpTest:_#0" (global 30))
-  (export "OpTest:_#1" (global 31))
-  (export "OpTest:_#2" (global 32))
-  (export "OpTest:_#3" (global 33))
-  (export "OpTest:_#4" (global 34))
-  (export "OpTest:_#5" (global 35))
-  (export "OpTest:_#6" (global 36))
-  (export "OpTest:_#7" (global 37))
-  (export "OpTest:_#8" (global 38))
-  (export "OpTest:_#9" (global 39))
-  (export "OpTest:_#10" (global 40))
-  (export "OpTest:_#11" (global 41))
-  (export "OpTest:_#12" (global 42))
-  (export "OpTest:_#13" (global 43))
-  (export "OpTest:_#14" (global 44))
-  (export "OpTest:_#15" (global 45))
-  (export "OpTest:_#16" (global 46))
-  (export "OpTest:_#17" (global 47))
-  (export "OpTest:_#18" (global 48))
-  (export "OpTest:_#19" (global 49))
-  (export "OpTest:_#20" (global 50))
-  (export "OpTest:_#21" (global 51))
-  (export "OpTest:_#22" (global 52))
-  (export "OpTest:_#23" (global 53))
-  (export "OpTest:_#24" (global 54))
-  (export "OpTest:_#25" (global 55))
-  (export "OpTest:_#26" (global 56))
-  (export "OpTest:_#27" (global 57))
-  (export "OpTest:_#28" (global 58))
-  (export "OpTest:_#29" (global 59))
-  (export "OpTest:_#30" (global 60))
-  (export "OpTest:_#31" (global 61))
-  (export "OpTest:_#32" (global 62))
-  (export "OpTest:_#33" (global 63))
-  (export "OpTest:_#34" (global 64))
-  (export "OpTest:_#35" (global 65))
-  (export "OpTest:_#36" (global 66))
-  (export "OpTest:_#37" (global 67))
-  (export "OpTest:_#38" (global 68))
-  (export "OpTest:_#39" (global 69))
-  (export "OpTest:_#40" (global 70))
-  (export "OpTest:_#41" (global 71))
-  (export "OpTest:_#42" (global 72))
+  (export "std:print_string" (global 27))
+  (export "string:length" (global 28))
+  (export "string:concatenate" (global 29))
+  (export "string:print" (global 30))
+  (export "opt:Some" (global 31))
+  (export "opt:None" (global 32))
+  (export "opt:map" (global 33))
+  (export "opt:iterate" (global 34))
+  (export "opt:unwrap" (global 35))
+  (export "opt:is_some" (global 36))
+  (export "opt:is_none" (global 37))
+  (export "list:Cons" (global 38))
+  (export "list:Nil" (global 39))
+  (export "list:map" (global 40))
+  (export "list:iterate" (global 41))
+  (export "list:push" (global 42))
+  (export "list:length" (global 43))
+  (export "list:fold" (global 44))
+  (export "list:concatenate" (global 45))
+  (export "list:nth" (global 46))
+  (export "List:o" (global 47))
+  (export "List:l1" (global 48))
+  (export "List:len" (global 49))
+  (export "List:l2" (global 50))
+  (export "List:l3" (global 51))
   (start 1)
-  (elem (;0;) (i32.const 0) func 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 0 44 45 46 47 48 49 50 51)
+  (elem (;0;) (i32.const 0) func 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 0 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79)
   (func (;1;) (type 0)
-    (local $0 (ref $"(unit -> '1)")) (local (ref $"(boolean -> unit)") (ref $"(string -> integer)") (ref $"(string -> unit)") (ref $"(string -> (string -> string))") (ref $unit) (ref $"(boolean -> unit)") (ref $"(boolean -> boolean)") (ref $unit) (ref $"(boolean -> unit)") (ref $"(boolean -> boolean)") (ref $"(boolean -> boolean)") (ref $"(boolean -> boolean)") (ref $unit) (ref $"(boolean -> unit)") (ref $"(integer -> integer)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(integer -> (integer -> integer))") (ref $"(integer -> integer)") (ref $unit) (ref $"(boolean -> unit)") (ref $"(real -> real)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(real -> (real -> real))") (ref $"(real -> real)") (ref $unit) (ref $"(boolean -> unit)") (ref $"(real -> real)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(real -> (real -> real))") (ref $"(real -> real)") (ref $unit) (ref $"(boolean -> unit)") (ref $"(integer -> (integer -> integer))") (ref $"(integer -> integer)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $unit) (ref $"(boolean -> unit)") (ref $"(integer -> (integer -> integer))") (ref $"(integer -> integer)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(integer -> integer)") (ref $unit) (ref $"(boolean -> unit)") (ref $"(integer -> (integer -> integer))") (ref $"(integer -> integer)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $unit) (ref $"(boolean -> unit)") (ref $"(integer -> (integer -> integer))") (ref $"(integer -> integer)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $unit) (ref $"(boolean -> unit)") (ref $"(integer -> (integer -> integer))") (ref $"(integer -> integer)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $unit) (ref $"(boolean -> unit)") (ref $"(real -> (real -> real))") (ref $"(real -> real)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $unit) (ref $"(boolean -> unit)") (ref $"(real -> (real -> real))") (ref $"(real -> real)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $unit) (ref $"(boolean -> unit)") (ref $"(real -> (real -> real))") (ref $"(real -> real)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $unit) (ref $"(boolean -> unit)") (ref $"(real -> (real -> real))") (ref $"(real -> real)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $unit) (ref $"(boolean -> unit)") (ref $"(boolean -> (boolean -> boolean))") (ref $"(boolean -> boolean)") (ref $unit) (ref $"(boolean -> unit)") (ref $"(boolean -> (boolean -> boolean))") (ref $"(boolean -> boolean)") (ref $unit) (ref $"(boolean -> unit)") (ref $"(boolean -> (boolean -> boolean))") (ref $"(boolean -> boolean)") (ref $unit) (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $unit) (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $unit) (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $unit) (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $unit) (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $unit) (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $unit) (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $unit) (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $unit) (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $unit) (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $unit) (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $unit) (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $unit) (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $unit) (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $unit) (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $unit) (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $unit) (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $unit) (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $unit) (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $unit) (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $unit) (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $unit) (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $unit) (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $unit) (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $unit) (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $unit) (ref $"(boolean -> unit)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)"))
+    (local (ref $"(unit -> '1)") (ref $"(boolean -> unit)")) (local $0 (ref $"(string -> unit)")) (local (ref $"(string -> integer)") (ref $"(string -> (string -> string))") (ref $"(string -> unit)") (ref $"(('3 -> '6) -> (Some of '3 | None of unit -> Some of '6 | None of unit))") (ref $"(('6 -> '7) -> (Some of '9 | None of unit -> unit))") (ref $"(Some of '5 | None of unit -> '5)") (ref $"(Some of '3 | None of unit -> boolean)") (ref $"(Some of '4 | None of unit -> boolean)") (ref $"(('3 -> '9) -> (list:t -> list:t))") (ref $"(('6 -> '7) -> (list:t -> unit))") (ref $"('3 -> (list:t -> list:t))") (ref $"(list:t -> integer)") (ref $"(('9 -> ('6 -> '9)) -> ('4 -> (list:t -> '6)))") (ref $"(list:t -> (Cons of ('11 * list:t) | Nil of unit -> list:t))") (ref $"(integer -> (list:t -> Some of '8 | None of unit))") (ref $"Some of '2 | None of unit") (ref $"(unit -> Some of '2 | None of unit)") (ref $unit) (ref $"(Some of '6 | None of unit -> unit)") (ref $"((string -> unit) -> (Some of '6 | None of unit -> unit))") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"Cons of ('0 * list:t) | Nil of unit") (ref $"(list:t -> list:t)") (ref $"(list:t -> list:t)") (ref $"(unit -> Cons of ('2 * list:t) | Nil of unit)") (ref $"(string -> (list:t -> list:t))") (ref $"(string -> (list:t -> list:t))") (ref $unit) (ref $"(boolean -> unit)") (ref $"(list:t -> integer)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"Cons of ('0 * list:t) | Nil of unit") (ref $"(list:t -> list:t)") (ref $"(list:t -> list:t)") (ref $"(unit -> Cons of ('2 * list:t) | Nil of unit)") (ref $"(string -> (list:t -> list:t))") (ref $"(string -> (list:t -> list:t))") (ref $"Cons of ('0 * list:t) | Nil of unit") (ref $"(Cons of ('3 * list:t) | Nil of unit -> list:t)") (ref $"(list:t -> (Cons of ('3 * list:t) | Nil of unit -> list:t))") (ref $unit) (ref $"(string -> unit)") (ref $"(list:t -> string)") (ref $"(string -> (list:t -> string))") (ref $"((string -> (string -> string)) -> (string -> (list:t -> string)))") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)"))
     i32.const 1
     array.new_fixed $capture 0
     struct.new $"(integer -> integer)"
@@ -296,8 +420,8 @@
     i32.const 46
     array.new_fixed $capture 0
     struct.new $"(unit -> '1)"
-    local.set $0
-    local.get $0
+    local.set 0
+    local.get 0
     global.set 25
     i32.const 47
     array.new_fixed $capture 0
@@ -307,13 +431,13 @@
     global.set 26
     i32.const 48
     array.new_fixed $capture 0
-    struct.new $"(string -> integer)"
-    local.set 2
-    local.get 2
+    struct.new $"(string -> unit)"
+    local.set $0
+    local.get $0
     global.set 27
     i32.const 49
     array.new_fixed $capture 0
-    struct.new $"(string -> unit)"
+    struct.new $"(string -> integer)"
     local.set 3
     local.get 3
     global.set 28
@@ -323,125 +447,134 @@
     local.set 4
     local.get 4
     global.set 29
-    global.get 26
-    ref.as_non_null
-    local.set 6
-    i32.const 0
-    struct.new $boolean
-    global.get 2
-    ref.as_non_null
-    local.tee 7
-    struct.get $"(boolean -> boolean)" 1
-    local.get 7
-    struct.get $"(boolean -> boolean)" 0
-    call_indirect (type $"(raw) (boolean -> boolean)")
-    local.get 6
-    struct.get $"(boolean -> unit)" 1
-    local.get 6
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
+    i32.const 52
+    array.new_fixed $capture 0
+    struct.new $"(string -> unit)"
     local.set 5
     local.get 5
     global.set 30
-    global.get 26
-    ref.as_non_null
-    local.set 9
-    i32.const 0
-    struct.new $boolean
-    global.get 2
-    ref.as_non_null
-    local.tee 10
-    struct.get $"(boolean -> boolean)" 1
-    local.get 10
-    struct.get $"(boolean -> boolean)" 0
-    call_indirect (type $"(raw) (boolean -> boolean)")
-    global.get 2
-    ref.as_non_null
-    local.tee 11
-    struct.get $"(boolean -> boolean)" 1
-    local.get 11
-    struct.get $"(boolean -> boolean)" 0
-    call_indirect (type $"(raw) (boolean -> boolean)")
-    global.get 2
-    ref.as_non_null
-    local.tee 12
-    struct.get $"(boolean -> boolean)" 1
-    local.get 12
-    struct.get $"(boolean -> boolean)" 0
-    call_indirect (type $"(raw) (boolean -> boolean)")
-    local.get 9
-    struct.get $"(boolean -> unit)" 1
-    local.get 9
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
+    i32.const 53
+    array.new_fixed $capture 0
+    struct.new $"('0 -> Some of '0 | None of unit)"
+    global.set 31
+    i32.const 54
+    array.new_fixed $capture 0
+    struct.new $"(unit -> Some of '0 | None of unit)"
+    global.set 32
+    i32.const 55
+    array.new_fixed $capture 0
+    struct.new $"(('3 -> '6) -> (Some of '3 | None of unit -> Some of '6 | None of unit))"
+    local.set 6
+    local.get 6
+    global.set 33
+    i32.const 57
+    array.new_fixed $capture 0
+    struct.new $"(('6 -> '7) -> (Some of '9 | None of unit -> unit))"
+    local.set 7
+    local.get 7
+    global.set 34
+    i32.const 60
+    array.new_fixed $capture 0
+    struct.new $"(Some of '5 | None of unit -> '5)"
     local.set 8
     local.get 8
-    global.set 31
-    global.get 26
-    ref.as_non_null
-    local.set 14
-    i64.const 1
-    struct.new $integer
-    global.get 0
-    ref.as_non_null
-    local.tee 15
-    struct.get $"(integer -> integer)" 1
-    local.get 15
-    struct.get $"(integer -> integer)" 0
-    call_indirect (type $"(raw) (integer -> integer)")
-    global.get 15
-    ref.as_non_null
-    local.tee 16
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 16
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 17
-    i64.const 0
-    struct.new $integer
-    global.get 4
-    ref.as_non_null
-    local.tee 18
-    struct.get $"(integer -> (integer -> integer))" 1
-    local.get 18
-    struct.get $"(integer -> (integer -> integer))" 0
-    call_indirect (type $"(raw) (integer -> (integer -> integer))")
-    local.set 19
-    i64.const 1
-    struct.new $integer
-    local.get 19
-    struct.get $"(integer -> integer)" 1
-    local.get 19
-    struct.get $"(integer -> integer)" 0
-    call_indirect (type $"(raw) (integer -> integer)")
-    local.get 17
-    struct.get $"('0 -> boolean)" 1
-    local.get 17
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 14
-    struct.get $"(boolean -> unit)" 1
-    local.get 14
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
+    global.set 35
+    i32.const 61
+    array.new_fixed $capture 0
+    struct.new $"(Some of '3 | None of unit -> boolean)"
+    local.set 9
+    local.get 9
+    global.set 36
+    i32.const 62
+    array.new_fixed $capture 0
+    struct.new $"(Some of '4 | None of unit -> boolean)"
+    local.set 10
+    local.get 10
+    global.set 37
+    i32.const 63
+    array.new_fixed $capture 0
+    struct.new $"(('0 * list:t) -> Cons of ('0 * list:t) | Nil of unit)"
+    global.set 38
+    i32.const 64
+    array.new_fixed $capture 0
+    struct.new $"(unit -> Cons of ('0 * list:t) | Nil of unit)"
+    global.set 39
+    i32.const 65
+    array.new_fixed $capture 0
+    struct.new $"(('3 -> '9) -> (Cons of ('3 * list:t) | Nil of unit -> Cons of ('9 * list:t) | Nil of unit))"
+    local.set 11
+    local.get 11
+    global.set 40
+    i32.const 67
+    array.new_fixed $capture 0
+    struct.new $"(('6 -> '7) -> (list:t -> unit))"
+    local.set 12
+    local.get 12
+    global.set 41
+    i32.const 70
+    array.new_fixed $capture 0
+    struct.new $"('3 -> (Cons of ('10 * list:t) | Nil of unit -> Cons of ('10 * list:t) | Nil of unit))"
     local.set 13
     local.get 13
-    global.set 32
-    global.get 26
+    global.set 42
+    i32.const 72
+    array.new_fixed $capture 0
+    struct.new $"(Cons of ('3 * list:t) | Nil of unit -> integer)"
+    local.set 14
+    local.get 14
+    global.set 43
+    i32.const 73
+    array.new_fixed $capture 0
+    struct.new $"(('9 -> ('6 -> '9)) -> ('9 -> (Cons of ('4 * list:t) | Nil of unit -> '9)))"
+    local.set 15
+    local.get 15
+    global.set 44
+    i32.const 76
+    array.new_fixed $capture 0
+    struct.new $"(Cons of ('11 * list:t) | Nil of unit -> (Cons of ('11 * list:t) | Nil of unit -> Cons of ('11 * list:t) | Nil of unit))"
+    local.set 16
+    local.get 16
+    global.set 45
+    i32.const 78
+    array.new_fixed $capture 0
+    struct.new $"(integer -> (Cons of ('8 * list:t) | Nil of unit -> Some of '8 | None of unit))"
+    local.set 17
+    local.get 17
+    global.set 46
+    global.get 32
     ref.as_non_null
-    local.set 21
-    f64.const 0x1p+0 (;=1;)
-    struct.new $real
-    global.get 1
+    local.set 19
+    struct.new $unit
+    local.get 19
+    struct.get $"(unit -> Some of '2 | None of unit)" 1
+    local.get 19
+    struct.get $"(unit -> Some of '2 | None of unit)" 0
+    call_indirect (type $"(raw) (unit -> Some of '2 | None of unit)")
+    ref.cast (ref $"Some of '2 | None of unit")
+    local.set 18
+    local.get 18
+    global.set 47
+    global.get 47
     ref.as_non_null
-    local.tee 22
-    struct.get $"(real -> real)" 1
+    global.get 34
+    ref.as_non_null
+    local.set 22
+    global.get 27
+    ref.as_non_null
     local.get 22
-    struct.get $"(real -> real)" 0
-    call_indirect (type $"(raw) (real -> real)")
+    struct.get $"((string -> unit) -> (Some of '6 | None of unit -> unit))" 1
+    local.get 22
+    struct.get $"((string -> unit) -> (Some of '6 | None of unit -> unit))" 0
+    call_indirect (type $"(raw) ((string -> unit) -> (Some of '6 | None of unit -> unit))")
+    ref.cast (ref $"(Some of '6 | None of unit -> unit)")
+    local.tee 21
+    struct.get $"(Some of '6 | None of unit -> unit)" 1
+    local.get 21
+    struct.get $"(Some of '6 | None of unit -> unit)" 0
+    call_indirect (type $"(raw) (Some of '6 | None of unit -> unit)")
+    ref.cast (ref $unit)
+    local.set 20
+    local.get 20
     global.get 15
     ref.as_non_null
     local.tee 23
@@ -449,1724 +582,633 @@
     local.get 23
     struct.get $"('0 -> ('0 -> boolean))" 0
     call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    ref.cast (ref $"('0 -> boolean)")
     local.set 24
-    f64.const 0x0p+0 (;=0;)
-    struct.new $real
-    global.get 9
-    ref.as_non_null
-    local.tee 25
-    struct.get $"(real -> (real -> real))" 1
-    local.get 25
-    struct.get $"(real -> (real -> real))" 0
-    call_indirect (type $"(raw) (real -> (real -> real))")
-    local.set 26
-    f64.const 0x1p+0 (;=1;)
-    struct.new $real
-    local.get 26
-    struct.get $"(real -> real)" 1
-    local.get 26
-    struct.get $"(real -> real)" 0
-    call_indirect (type $"(raw) (real -> real)")
+    struct.new $unit
     local.get 24
     struct.get $"('0 -> boolean)" 1
     local.get 24
     struct.get $"('0 -> boolean)" 0
     call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 21
-    struct.get $"(boolean -> unit)" 1
-    local.get 21
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 20
-    local.get 20
-    global.set 33
-    global.get 26
+    ref.cast (ref $boolean)
+    struct.get $boolean 0
+    i32.const 1
+    i32.xor
+    br_if 0
+    global.get 39
     ref.as_non_null
     local.set 28
-    f64.const 0x1p+0 (;=1;)
-    struct.new $real
-    global.get 1
+    struct.new $unit
+    local.get 28
+    struct.get $"(unit -> Cons of ('2 * list:t) | Nil of unit)" 1
+    local.get 28
+    struct.get $"(unit -> Cons of ('2 * list:t) | Nil of unit)" 0
+    call_indirect (type $"(raw) (unit -> Cons of ('2 * list:t) | Nil of unit)")
+    ref.cast (ref $"Cons of ('2 * list:t) | Nil of unit")
+    global.get 42
     ref.as_non_null
-    local.tee 29
-    struct.get $"(real -> real)" 1
+    local.set 29
+    i32.const 72
+    i32.const 101
+    i32.const 108
+    i32.const 108
+    i32.const 111
+    array.new_fixed $string 5
     local.get 29
-    struct.get $"(real -> real)" 0
-    call_indirect (type $"(raw) (real -> real)")
-    global.get 15
-    ref.as_non_null
-    local.tee 30
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 30
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 31
-    f64.const 0x0p+0 (;=0;)
-    struct.new $real
-    global.get 9
-    ref.as_non_null
-    local.tee 32
-    struct.get $"(real -> (real -> real))" 1
-    local.get 32
-    struct.get $"(real -> (real -> real))" 0
-    call_indirect (type $"(raw) (real -> (real -> real))")
-    local.set 33
-    f64.const 0x1p+0 (;=1;)
-    struct.new $real
-    local.get 33
-    struct.get $"(real -> real)" 1
-    local.get 33
-    struct.get $"(real -> real)" 0
-    call_indirect (type $"(raw) (real -> real)")
-    local.get 31
-    struct.get $"('0 -> boolean)" 1
-    local.get 31
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 28
-    struct.get $"(boolean -> unit)" 1
-    local.get 28
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 27
+    struct.get $"(string -> (list:t -> list:t))" 1
+    local.get 29
+    struct.get $"(string -> (list:t -> list:t))" 0
+    call_indirect (type $"(raw) (string -> (list:t -> list:t))")
+    ref.cast (ref $"(list:t -> list:t)")
+    local.tee 27
+    struct.get $"(list:t -> list:t)" 1
     local.get 27
-    global.set 34
-    global.get 26
+    struct.get $"(list:t -> list:t)" 0
+    call_indirect (type $"(raw) (list:t -> list:t)")
+    ref.cast (ref $"Cons of ('0 * list:t) | Nil of unit")
+    global.get 42
     ref.as_non_null
-    local.set 35
-    i64.const 1
-    struct.new $integer
-    global.get 3
-    ref.as_non_null
-    local.tee 36
-    struct.get $"(integer -> (integer -> integer))" 1
-    local.get 36
-    struct.get $"(integer -> (integer -> integer))" 0
-    call_indirect (type $"(raw) (integer -> (integer -> integer))")
-    local.set 37
-    i64.const 2
-    struct.new $integer
-    local.get 37
-    struct.get $"(integer -> integer)" 1
-    local.get 37
-    struct.get $"(integer -> integer)" 0
-    call_indirect (type $"(raw) (integer -> integer)")
-    global.get 15
-    ref.as_non_null
-    local.tee 38
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 38
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 39
-    i64.const 3
-    struct.new $integer
-    local.get 39
-    struct.get $"('0 -> boolean)" 1
-    local.get 39
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 35
-    struct.get $"(boolean -> unit)" 1
-    local.get 35
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 34
-    local.get 34
-    global.set 35
-    global.get 26
-    ref.as_non_null
-    local.set 41
-    i64.const 1
-    struct.new $integer
-    global.get 4
-    ref.as_non_null
-    local.tee 42
-    struct.get $"(integer -> (integer -> integer))" 1
-    local.get 42
-    struct.get $"(integer -> (integer -> integer))" 0
-    call_indirect (type $"(raw) (integer -> (integer -> integer))")
-    local.set 43
-    i64.const 2
-    struct.new $integer
-    local.get 43
-    struct.get $"(integer -> integer)" 1
-    local.get 43
-    struct.get $"(integer -> integer)" 0
-    call_indirect (type $"(raw) (integer -> integer)")
-    global.get 15
-    ref.as_non_null
-    local.tee 44
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 44
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 45
-    i64.const 1
-    struct.new $integer
-    global.get 0
-    ref.as_non_null
-    local.tee 46
-    struct.get $"(integer -> integer)" 1
-    local.get 46
-    struct.get $"(integer -> integer)" 0
-    call_indirect (type $"(raw) (integer -> integer)")
-    local.get 45
-    struct.get $"('0 -> boolean)" 1
-    local.get 45
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 41
-    struct.get $"(boolean -> unit)" 1
-    local.get 41
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 40
-    local.get 40
-    global.set 36
-    global.get 26
-    ref.as_non_null
-    local.set 48
-    i64.const 1
-    struct.new $integer
-    global.get 5
-    ref.as_non_null
-    local.tee 49
-    struct.get $"(integer -> (integer -> integer))" 1
-    local.get 49
-    struct.get $"(integer -> (integer -> integer))" 0
-    call_indirect (type $"(raw) (integer -> (integer -> integer))")
-    local.set 50
-    i64.const 2
-    struct.new $integer
-    local.get 50
-    struct.get $"(integer -> integer)" 1
-    local.get 50
-    struct.get $"(integer -> integer)" 0
-    call_indirect (type $"(raw) (integer -> integer)")
-    global.get 15
-    ref.as_non_null
-    local.tee 51
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 51
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 52
-    i64.const 2
-    struct.new $integer
-    local.get 52
-    struct.get $"('0 -> boolean)" 1
-    local.get 52
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 48
-    struct.get $"(boolean -> unit)" 1
-    local.get 48
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 47
-    local.get 47
-    global.set 37
-    global.get 26
-    ref.as_non_null
-    local.set 54
-    i64.const 1
-    struct.new $integer
-    global.get 6
-    ref.as_non_null
-    local.tee 55
-    struct.get $"(integer -> (integer -> integer))" 1
-    local.get 55
-    struct.get $"(integer -> (integer -> integer))" 0
-    call_indirect (type $"(raw) (integer -> (integer -> integer))")
-    local.set 56
-    i64.const 2
-    struct.new $integer
-    local.get 56
-    struct.get $"(integer -> integer)" 1
-    local.get 56
-    struct.get $"(integer -> integer)" 0
-    call_indirect (type $"(raw) (integer -> integer)")
-    global.get 15
-    ref.as_non_null
-    local.tee 57
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 57
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 58
-    i64.const 0
-    struct.new $integer
-    local.get 58
-    struct.get $"('0 -> boolean)" 1
-    local.get 58
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 54
-    struct.get $"(boolean -> unit)" 1
-    local.get 54
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 53
-    local.get 53
-    global.set 38
-    global.get 26
-    ref.as_non_null
-    local.set 60
-    i64.const 1
-    struct.new $integer
-    global.get 7
-    ref.as_non_null
-    local.tee 61
-    struct.get $"(integer -> (integer -> integer))" 1
-    local.get 61
-    struct.get $"(integer -> (integer -> integer))" 0
-    call_indirect (type $"(raw) (integer -> (integer -> integer))")
-    local.set 62
-    i64.const 2
-    struct.new $integer
-    local.get 62
-    struct.get $"(integer -> integer)" 1
-    local.get 62
-    struct.get $"(integer -> integer)" 0
-    call_indirect (type $"(raw) (integer -> integer)")
-    global.get 15
-    ref.as_non_null
-    local.tee 63
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 63
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 64
-    i64.const 1
-    struct.new $integer
-    local.get 64
-    struct.get $"('0 -> boolean)" 1
-    local.get 64
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 60
-    struct.get $"(boolean -> unit)" 1
-    local.get 60
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 59
-    local.get 59
-    global.set 39
-    global.get 26
-    ref.as_non_null
-    local.set 66
-    f64.const 0x1p+0 (;=1;)
-    struct.new $real
-    global.get 8
-    ref.as_non_null
-    local.tee 67
-    struct.get $"(real -> (real -> real))" 1
-    local.get 67
-    struct.get $"(real -> (real -> real))" 0
-    call_indirect (type $"(raw) (real -> (real -> real))")
-    local.set 68
-    f64.const 0x1p+1 (;=2;)
-    struct.new $real
-    local.get 68
-    struct.get $"(real -> real)" 1
-    local.get 68
-    struct.get $"(real -> real)" 0
-    call_indirect (type $"(raw) (real -> real)")
-    global.get 15
-    ref.as_non_null
-    local.tee 69
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 69
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 70
-    f64.const 0x1.8p+1 (;=3;)
-    struct.new $real
-    local.get 70
-    struct.get $"('0 -> boolean)" 1
-    local.get 70
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 66
-    struct.get $"(boolean -> unit)" 1
-    local.get 66
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 65
-    local.get 65
-    global.set 40
-    global.get 26
-    ref.as_non_null
-    local.set 72
-    f64.const 0x1p+1 (;=2;)
-    struct.new $real
-    global.get 9
-    ref.as_non_null
-    local.tee 73
-    struct.get $"(real -> (real -> real))" 1
-    local.get 73
-    struct.get $"(real -> (real -> real))" 0
-    call_indirect (type $"(raw) (real -> (real -> real))")
-    local.set 74
-    f64.const 0x1p+0 (;=1;)
-    struct.new $real
-    local.get 74
-    struct.get $"(real -> real)" 1
-    local.get 74
-    struct.get $"(real -> real)" 0
-    call_indirect (type $"(raw) (real -> real)")
-    global.get 15
-    ref.as_non_null
-    local.tee 75
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 75
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 76
-    f64.const 0x1p+0 (;=1;)
-    struct.new $real
-    local.get 76
-    struct.get $"('0 -> boolean)" 1
-    local.get 76
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 72
-    struct.get $"(boolean -> unit)" 1
-    local.get 72
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 71
-    local.get 71
-    global.set 41
-    global.get 26
-    ref.as_non_null
-    local.set 78
-    f64.const 0x1p+0 (;=1;)
-    struct.new $real
-    global.get 10
-    ref.as_non_null
-    local.tee 79
-    struct.get $"(real -> (real -> real))" 1
-    local.get 79
-    struct.get $"(real -> (real -> real))" 0
-    call_indirect (type $"(raw) (real -> (real -> real))")
-    local.set 80
-    f64.const 0x1p+1 (;=2;)
-    struct.new $real
-    local.get 80
-    struct.get $"(real -> real)" 1
-    local.get 80
-    struct.get $"(real -> real)" 0
-    call_indirect (type $"(raw) (real -> real)")
-    global.get 15
-    ref.as_non_null
-    local.tee 81
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 81
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 82
-    f64.const 0x1p+1 (;=2;)
-    struct.new $real
-    local.get 82
-    struct.get $"('0 -> boolean)" 1
-    local.get 82
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 78
-    struct.get $"(boolean -> unit)" 1
-    local.get 78
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 77
-    local.get 77
-    global.set 42
-    global.get 26
-    ref.as_non_null
-    local.set 84
-    f64.const 0x1p+0 (;=1;)
-    struct.new $real
-    global.get 11
-    ref.as_non_null
-    local.tee 85
-    struct.get $"(real -> (real -> real))" 1
-    local.get 85
-    struct.get $"(real -> (real -> real))" 0
-    call_indirect (type $"(raw) (real -> (real -> real))")
-    local.set 86
-    f64.const 0x1p+1 (;=2;)
-    struct.new $real
-    local.get 86
-    struct.get $"(real -> real)" 1
-    local.get 86
-    struct.get $"(real -> real)" 0
-    call_indirect (type $"(raw) (real -> real)")
-    global.get 15
-    ref.as_non_null
-    local.tee 87
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 87
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 88
-    f64.const 0x1p-1 (;=0.5;)
-    struct.new $real
-    local.get 88
-    struct.get $"('0 -> boolean)" 1
-    local.get 88
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 84
-    struct.get $"(boolean -> unit)" 1
-    local.get 84
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 83
-    local.get 83
-    global.set 43
-    global.get 26
-    ref.as_non_null
-    local.set 90
-    i32.const 1
-    struct.new $boolean
-    global.get 12
-    ref.as_non_null
-    local.tee 91
-    struct.get $"(boolean -> (boolean -> boolean))" 1
-    local.get 91
-    struct.get $"(boolean -> (boolean -> boolean))" 0
-    call_indirect (type $"(raw) (boolean -> (boolean -> boolean))")
-    local.set 92
-    i32.const 1
-    struct.new $boolean
-    local.get 92
-    struct.get $"(boolean -> boolean)" 1
-    local.get 92
-    struct.get $"(boolean -> boolean)" 0
-    call_indirect (type $"(raw) (boolean -> boolean)")
-    local.get 90
-    struct.get $"(boolean -> unit)" 1
-    local.get 90
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 89
-    local.get 89
-    global.set 44
-    global.get 26
-    ref.as_non_null
-    local.set 94
-    i32.const 1
-    struct.new $boolean
-    global.get 13
-    ref.as_non_null
-    local.tee 95
-    struct.get $"(boolean -> (boolean -> boolean))" 1
-    local.get 95
-    struct.get $"(boolean -> (boolean -> boolean))" 0
-    call_indirect (type $"(raw) (boolean -> (boolean -> boolean))")
-    local.set 96
-    i32.const 0
-    struct.new $boolean
-    local.get 96
-    struct.get $"(boolean -> boolean)" 1
-    local.get 96
-    struct.get $"(boolean -> boolean)" 0
-    call_indirect (type $"(raw) (boolean -> boolean)")
-    local.get 94
-    struct.get $"(boolean -> unit)" 1
-    local.get 94
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 93
-    local.get 93
-    global.set 45
-    global.get 26
-    ref.as_non_null
-    local.set 98
-    i32.const 1
-    struct.new $boolean
-    global.get 14
-    ref.as_non_null
-    local.tee 99
-    struct.get $"(boolean -> (boolean -> boolean))" 1
-    local.get 99
-    struct.get $"(boolean -> (boolean -> boolean))" 0
-    call_indirect (type $"(raw) (boolean -> (boolean -> boolean))")
-    local.set 100
-    i32.const 0
-    struct.new $boolean
-    local.get 100
-    struct.get $"(boolean -> boolean)" 1
-    local.get 100
-    struct.get $"(boolean -> boolean)" 0
-    call_indirect (type $"(raw) (boolean -> boolean)")
-    local.get 98
-    struct.get $"(boolean -> unit)" 1
-    local.get 98
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 97
-    local.get 97
-    global.set 46
-    global.get 26
-    ref.as_non_null
-    local.set 102
-    struct.new $unit
-    global.get 15
-    ref.as_non_null
-    local.tee 103
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 103
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 104
-    struct.new $unit
-    local.get 104
-    struct.get $"('0 -> boolean)" 1
-    local.get 104
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    global.get 15
-    ref.as_non_null
-    local.tee 105
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 105
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 106
-    i32.const 1
-    struct.new $boolean
-    local.get 106
-    struct.get $"('0 -> boolean)" 1
-    local.get 106
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 102
-    struct.get $"(boolean -> unit)" 1
-    local.get 102
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 101
-    local.get 101
-    global.set 47
-    global.get 26
-    ref.as_non_null
-    local.set 108
-    struct.new $unit
-    global.get 16
-    ref.as_non_null
-    local.tee 109
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 109
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 110
-    struct.new $unit
-    local.get 110
-    struct.get $"('0 -> boolean)" 1
-    local.get 110
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    global.get 15
-    ref.as_non_null
-    local.tee 111
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 111
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 112
-    i32.const 0
-    struct.new $boolean
-    local.get 112
-    struct.get $"('0 -> boolean)" 1
-    local.get 112
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 108
-    struct.get $"(boolean -> unit)" 1
-    local.get 108
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 107
-    local.get 107
+    local.set 30
+    i32.const 87
+    i32.const 111
+    i32.const 114
+    i32.const 108
+    i32.const 100
+    array.new_fixed $string 5
+    local.get 30
+    struct.get $"(string -> (list:t -> list:t))" 1
+    local.get 30
+    struct.get $"(string -> (list:t -> list:t))" 0
+    call_indirect (type $"(raw) (string -> (list:t -> list:t))")
+    ref.cast (ref $"(list:t -> list:t)")
+    local.tee 26
+    struct.get $"(list:t -> list:t)" 1
+    local.get 26
+    struct.get $"(list:t -> list:t)" 0
+    call_indirect (type $"(raw) (list:t -> list:t)")
+    ref.cast (ref $"Cons of ('0 * list:t) | Nil of unit")
+    local.set 25
+    local.get 25
     global.set 48
     global.get 26
     ref.as_non_null
-    local.set 114
-    struct.new $unit
-    global.get 17
+    local.set 32
+    global.get 43
     ref.as_non_null
-    local.tee 115
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 115
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 116
-    struct.new $unit
-    local.get 116
-    struct.get $"('0 -> boolean)" 1
-    local.get 116
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
+    local.set 33
+    global.get 48
+    ref.as_non_null
+    local.get 33
+    struct.get $"(list:t -> integer)" 1
+    local.get 33
+    struct.get $"(list:t -> integer)" 0
+    call_indirect (type $"(raw) (list:t -> integer)")
+    ref.cast (ref $integer)
     global.get 15
     ref.as_non_null
-    local.tee 117
+    local.tee 34
     struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 117
+    local.get 34
     struct.get $"('0 -> ('0 -> boolean))" 0
     call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 118
-    i32.const 1
-    struct.new $boolean
-    local.get 118
+    ref.cast (ref $"('0 -> boolean)")
+    local.set 35
+    i64.const 2
+    struct.new $integer
+    local.get 35
     struct.get $"('0 -> boolean)" 1
-    local.get 118
+    local.get 35
     struct.get $"('0 -> boolean)" 0
     call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 114
+    ref.cast (ref $boolean)
+    local.get 32
     struct.get $"(boolean -> unit)" 1
-    local.get 114
+    local.get 32
     struct.get $"(boolean -> unit)" 0
     call_indirect (type $"(raw) (boolean -> unit)")
     ref.cast (ref $unit)
-    local.set 113
-    local.get 113
+    local.set 31
+    local.get 31
     global.set 49
-    global.get 26
+    global.get 39
     ref.as_non_null
-    local.set 120
+    local.set 39
     struct.new $unit
-    global.get 18
+    local.get 39
+    struct.get $"(unit -> Cons of ('2 * list:t) | Nil of unit)" 1
+    local.get 39
+    struct.get $"(unit -> Cons of ('2 * list:t) | Nil of unit)" 0
+    call_indirect (type $"(raw) (unit -> Cons of ('2 * list:t) | Nil of unit)")
+    ref.cast (ref $"Cons of ('2 * list:t) | Nil of unit")
+    global.get 42
     ref.as_non_null
-    local.tee 121
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 121
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 122
-    struct.new $unit
-    local.get 122
-    struct.get $"('0 -> boolean)" 1
-    local.get 122
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    global.get 15
+    local.set 40
+    i32.const 72
+    i32.const 101
+    i32.const 108
+    i32.const 108
+    i32.const 111
+    array.new_fixed $string 5
+    local.get 40
+    struct.get $"(string -> (list:t -> list:t))" 1
+    local.get 40
+    struct.get $"(string -> (list:t -> list:t))" 0
+    call_indirect (type $"(raw) (string -> (list:t -> list:t))")
+    ref.cast (ref $"(list:t -> list:t)")
+    local.tee 38
+    struct.get $"(list:t -> list:t)" 1
+    local.get 38
+    struct.get $"(list:t -> list:t)" 0
+    call_indirect (type $"(raw) (list:t -> list:t)")
+    ref.cast (ref $"Cons of ('0 * list:t) | Nil of unit")
+    global.get 42
     ref.as_non_null
-    local.tee 123
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 123
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 124
-    i32.const 1
-    struct.new $boolean
-    local.get 124
-    struct.get $"('0 -> boolean)" 1
-    local.get 124
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 120
-    struct.get $"(boolean -> unit)" 1
-    local.get 120
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 119
-    local.get 119
+    local.set 41
+    i32.const 83
+    i32.const 97
+    i32.const 105
+    i32.const 108
+    i32.const 111
+    i32.const 114
+    array.new_fixed $string 6
+    local.get 41
+    struct.get $"(string -> (list:t -> list:t))" 1
+    local.get 41
+    struct.get $"(string -> (list:t -> list:t))" 0
+    call_indirect (type $"(raw) (string -> (list:t -> list:t))")
+    ref.cast (ref $"(list:t -> list:t)")
+    local.tee 37
+    struct.get $"(list:t -> list:t)" 1
+    local.get 37
+    struct.get $"(list:t -> list:t)" 0
+    call_indirect (type $"(raw) (list:t -> list:t)")
+    ref.cast (ref $"Cons of ('0 * list:t) | Nil of unit")
+    local.set 36
+    local.get 36
     global.set 50
-    global.get 26
+    global.get 45
     ref.as_non_null
-    local.set 126
-    struct.new $unit
-    global.get 19
+    local.set 44
+    global.get 48
     ref.as_non_null
-    local.tee 127
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 127
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 128
-    struct.new $unit
-    local.get 128
-    struct.get $"('0 -> boolean)" 1
-    local.get 128
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    global.get 15
+    local.get 44
+    struct.get $"(list:t -> (Cons of ('3 * list:t) | Nil of unit -> list:t))" 1
+    local.get 44
+    struct.get $"(list:t -> (Cons of ('3 * list:t) | Nil of unit -> list:t))" 0
+    call_indirect (type $"(raw) (list:t -> (Cons of ('3 * list:t) | Nil of unit -> list:t))")
+    ref.cast (ref $"(Cons of ('3 * list:t) | Nil of unit -> list:t)")
+    local.set 43
+    global.get 50
     ref.as_non_null
-    local.tee 129
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 129
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 130
-    i32.const 0
-    struct.new $boolean
-    local.get 130
-    struct.get $"('0 -> boolean)" 1
-    local.get 130
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 126
-    struct.get $"(boolean -> unit)" 1
-    local.get 126
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 125
-    local.get 125
+    local.get 43
+    struct.get $"(Cons of ('3 * list:t) | Nil of unit -> list:t)" 1
+    local.get 43
+    struct.get $"(Cons of ('3 * list:t) | Nil of unit -> list:t)" 0
+    call_indirect (type $"(raw) (Cons of ('3 * list:t) | Nil of unit -> list:t)")
+    ref.cast (ref $"Cons of ('0 * list:t) | Nil of unit")
+    local.set 42
+    local.get 42
     global.set 51
-    global.get 26
+    global.get 44
     ref.as_non_null
-    local.set 132
+    local.set 49
+    global.get 29
+    ref.as_non_null
+    local.get 49
+    struct.get $"((string -> (string -> string)) -> (string -> (list:t -> string)))" 1
+    local.get 49
+    struct.get $"((string -> (string -> string)) -> (string -> (list:t -> string)))" 0
+    call_indirect (type $"(raw) ((string -> (string -> string)) -> (string -> (list:t -> string)))")
+    ref.cast (ref $"(string -> (list:t -> string))")
+    local.set 48
+    array.new_fixed $string 0
+    local.get 48
+    struct.get $"(string -> (list:t -> string))" 1
+    local.get 48
+    struct.get $"(string -> (list:t -> string))" 0
+    call_indirect (type $"(raw) (string -> (list:t -> string))")
+    ref.cast (ref $"(list:t -> string)")
+    local.set 47
+    global.get 51
+    ref.as_non_null
+    local.get 47
+    struct.get $"(list:t -> string)" 1
+    local.get 47
+    struct.get $"(list:t -> string)" 0
+    call_indirect (type $"(raw) (list:t -> string)")
+    ref.cast (ref $string)
+    global.get 27
+    ref.as_non_null
+    local.tee 46
+    struct.get $"(string -> unit)" 1
+    local.get 46
+    struct.get $"(string -> unit)" 0
+    call_indirect (type $"(raw) (string -> unit)")
+    ref.cast (ref $unit)
+    local.set 45
+    local.get 45
+    global.get 15
+    ref.as_non_null
+    local.tee 50
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 50
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    ref.cast (ref $"('0 -> boolean)")
+    local.set 51
     struct.new $unit
-    global.get 20
-    ref.as_non_null
-    local.tee 133
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 133
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 134
-    struct.new $unit
-    local.get 134
+    local.get 51
     struct.get $"('0 -> boolean)" 1
-    local.get 134
+    local.get 51
     struct.get $"('0 -> boolean)" 0
     call_indirect (type $"(raw) ('0 -> boolean)")
-    global.get 15
-    ref.as_non_null
-    local.tee 135
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 135
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 136
-    i32.const 0
-    struct.new $boolean
-    local.get 136
-    struct.get $"('0 -> boolean)" 1
-    local.get 136
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 132
-    struct.get $"(boolean -> unit)" 1
-    local.get 132
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 131
-    local.get 131
-    global.set 52
-    global.get 26
-    ref.as_non_null
-    local.set 138
+    ref.cast (ref $boolean)
+    struct.get $boolean 0
     i32.const 1
-    struct.new $boolean
-    global.get 15
-    ref.as_non_null
-    local.tee 139
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 139
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 140
-    i32.const 1
-    struct.new $boolean
-    local.get 140
-    struct.get $"('0 -> boolean)" 1
-    local.get 140
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 138
-    struct.get $"(boolean -> unit)" 1
-    local.get 138
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 137
-    local.get 137
-    global.set 53
-    global.get 26
-    ref.as_non_null
-    local.set 142
-    i32.const 1
-    struct.new $boolean
-    global.get 16
-    ref.as_non_null
-    local.tee 143
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 143
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 144
-    i32.const 0
-    struct.new $boolean
-    local.get 144
-    struct.get $"('0 -> boolean)" 1
-    local.get 144
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 142
-    struct.get $"(boolean -> unit)" 1
-    local.get 142
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 141
-    local.get 141
-    global.set 54
-    global.get 26
-    ref.as_non_null
-    local.set 146
-    i32.const 0
-    struct.new $boolean
-    global.get 17
-    ref.as_non_null
-    local.tee 147
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 147
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 148
-    i32.const 1
-    struct.new $boolean
-    local.get 148
-    struct.get $"('0 -> boolean)" 1
-    local.get 148
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 146
-    struct.get $"(boolean -> unit)" 1
-    local.get 146
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 145
-    local.get 145
-    global.set 55
-    global.get 26
-    ref.as_non_null
-    local.set 150
-    i32.const 1
-    struct.new $boolean
-    global.get 18
-    ref.as_non_null
-    local.tee 151
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 151
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 152
-    i32.const 0
-    struct.new $boolean
-    local.get 152
-    struct.get $"('0 -> boolean)" 1
-    local.get 152
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 150
-    struct.get $"(boolean -> unit)" 1
-    local.get 150
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 149
-    local.get 149
-    global.set 56
-    global.get 26
-    ref.as_non_null
-    local.set 154
-    i32.const 0
-    struct.new $boolean
-    global.get 19
-    ref.as_non_null
-    local.tee 155
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 155
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 156
-    i32.const 1
-    struct.new $boolean
-    local.get 156
-    struct.get $"('0 -> boolean)" 1
-    local.get 156
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 154
-    struct.get $"(boolean -> unit)" 1
-    local.get 154
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 153
-    local.get 153
-    global.set 57
-    global.get 26
-    ref.as_non_null
-    local.set 158
-    i32.const 1
-    struct.new $boolean
-    global.get 20
-    ref.as_non_null
-    local.tee 159
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 159
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 160
-    i32.const 0
-    struct.new $boolean
-    local.get 160
-    struct.get $"('0 -> boolean)" 1
-    local.get 160
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 158
-    struct.get $"(boolean -> unit)" 1
-    local.get 158
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 157
-    local.get 157
-    global.set 58
-    global.get 26
-    ref.as_non_null
-    local.set 162
-    i32.const 97
-    struct.new $glyph
-    global.get 15
-    ref.as_non_null
-    local.tee 163
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 163
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 164
-    i32.const 97
-    struct.new $glyph
-    local.get 164
-    struct.get $"('0 -> boolean)" 1
-    local.get 164
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 162
-    struct.get $"(boolean -> unit)" 1
-    local.get 162
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 161
-    local.get 161
-    global.set 59
-    global.get 26
-    ref.as_non_null
-    local.set 166
-    i32.const 97
-    struct.new $glyph
-    global.get 16
-    ref.as_non_null
-    local.tee 167
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 167
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 168
-    i32.const 98
-    struct.new $glyph
-    local.get 168
-    struct.get $"('0 -> boolean)" 1
-    local.get 168
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 166
-    struct.get $"(boolean -> unit)" 1
-    local.get 166
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 165
-    local.get 165
-    global.set 60
-    global.get 26
-    ref.as_non_null
-    local.set 170
-    i32.const 97
-    struct.new $glyph
-    global.get 17
-    ref.as_non_null
-    local.tee 171
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 171
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 172
-    i32.const 98
-    struct.new $glyph
-    local.get 172
-    struct.get $"('0 -> boolean)" 1
-    local.get 172
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 170
-    struct.get $"(boolean -> unit)" 1
-    local.get 170
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 169
-    local.get 169
-    global.set 61
-    global.get 26
-    ref.as_non_null
-    local.set 174
-    i32.const 98
-    struct.new $glyph
-    global.get 18
-    ref.as_non_null
-    local.tee 175
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 175
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 176
-    i32.const 97
-    struct.new $glyph
-    local.get 176
-    struct.get $"('0 -> boolean)" 1
-    local.get 176
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 174
-    struct.get $"(boolean -> unit)" 1
-    local.get 174
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 173
-    local.get 173
-    global.set 62
-    global.get 26
-    ref.as_non_null
-    local.set 178
-    i32.const 97
-    struct.new $glyph
-    global.get 19
-    ref.as_non_null
-    local.tee 179
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 179
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 180
-    i32.const 98
-    struct.new $glyph
-    local.get 180
-    struct.get $"('0 -> boolean)" 1
-    local.get 180
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 178
-    struct.get $"(boolean -> unit)" 1
-    local.get 178
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 177
-    local.get 177
-    global.set 63
-    global.get 26
-    ref.as_non_null
-    local.set 182
-    i32.const 98
-    struct.new $glyph
-    global.get 20
-    ref.as_non_null
-    local.tee 183
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 183
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 184
-    i32.const 97
-    struct.new $glyph
-    local.get 184
-    struct.get $"('0 -> boolean)" 1
-    local.get 184
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 182
-    struct.get $"(boolean -> unit)" 1
-    local.get 182
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 181
-    local.get 181
-    global.set 64
-    global.get 26
-    ref.as_non_null
-    local.set 186
-    i32.const 97
-    i32.const 98
-    i32.const 99
-    array.new_fixed $string 3
-    global.get 15
-    ref.as_non_null
-    local.tee 187
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 187
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 188
-    i32.const 97
-    i32.const 98
-    i32.const 99
-    array.new_fixed $string 3
-    local.get 188
-    struct.get $"('0 -> boolean)" 1
-    local.get 188
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 186
-    struct.get $"(boolean -> unit)" 1
-    local.get 186
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 185
-    local.get 185
-    global.set 65
-    global.get 26
-    ref.as_non_null
-    local.set 190
-    i32.const 97
-    i32.const 98
-    i32.const 99
-    array.new_fixed $string 3
-    global.get 16
-    ref.as_non_null
-    local.tee 191
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 191
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 192
-    i32.const 100
-    i32.const 101
-    i32.const 102
-    array.new_fixed $string 3
-    local.get 192
-    struct.get $"('0 -> boolean)" 1
-    local.get 192
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 190
-    struct.get $"(boolean -> unit)" 1
-    local.get 190
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 189
-    local.get 189
-    global.set 66
-    global.get 26
-    ref.as_non_null
-    local.set 194
-    i32.const 97
-    i32.const 98
-    i32.const 99
-    array.new_fixed $string 3
-    global.get 17
-    ref.as_non_null
-    local.tee 195
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 195
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 196
-    i32.const 100
-    i32.const 101
-    i32.const 102
-    array.new_fixed $string 3
-    local.get 196
-    struct.get $"('0 -> boolean)" 1
-    local.get 196
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 194
-    struct.get $"(boolean -> unit)" 1
-    local.get 194
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 193
-    local.get 193
-    global.set 67
-    global.get 26
-    ref.as_non_null
-    local.set 198
-    i32.const 100
-    i32.const 101
-    i32.const 102
-    array.new_fixed $string 3
-    global.get 18
-    ref.as_non_null
-    local.tee 199
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 199
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 200
-    i32.const 97
-    i32.const 98
-    i32.const 99
-    array.new_fixed $string 3
-    local.get 200
-    struct.get $"('0 -> boolean)" 1
-    local.get 200
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 198
-    struct.get $"(boolean -> unit)" 1
-    local.get 198
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 197
-    local.get 197
-    global.set 68
-    global.get 26
-    ref.as_non_null
-    local.set 202
-    i32.const 97
-    i32.const 98
-    i32.const 99
-    array.new_fixed $string 3
-    global.get 17
-    ref.as_non_null
-    local.tee 203
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 203
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 204
-    i32.const 97
-    i32.const 98
-    i32.const 99
-    array.new_fixed $string 3
-    local.get 204
-    struct.get $"('0 -> boolean)" 1
-    local.get 204
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 202
-    struct.get $"(boolean -> unit)" 1
-    local.get 202
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 201
-    local.get 201
-    global.set 69
-    global.get 26
-    ref.as_non_null
-    local.set 206
-    i32.const 97
-    i32.const 98
-    i32.const 99
-    array.new_fixed $string 3
-    global.get 18
-    ref.as_non_null
-    local.tee 207
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 207
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 208
-    i32.const 97
-    i32.const 98
-    i32.const 99
-    array.new_fixed $string 3
-    local.get 208
-    struct.get $"('0 -> boolean)" 1
-    local.get 208
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 206
-    struct.get $"(boolean -> unit)" 1
-    local.get 206
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 205
-    local.get 205
-    global.set 70
-    global.get 26
-    ref.as_non_null
-    local.set 210
-    i32.const 97
-    i32.const 98
-    i32.const 99
-    array.new_fixed $string 3
-    global.get 19
-    ref.as_non_null
-    local.tee 211
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 211
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 212
-    i32.const 100
-    i32.const 101
-    i32.const 102
-    array.new_fixed $string 3
-    local.get 212
-    struct.get $"('0 -> boolean)" 1
-    local.get 212
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 210
-    struct.get $"(boolean -> unit)" 1
-    local.get 210
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 209
-    local.get 209
-    global.set 71
-    global.get 26
-    ref.as_non_null
-    local.set 214
-    i32.const 100
-    i32.const 101
-    i32.const 102
-    array.new_fixed $string 3
-    global.get 20
-    ref.as_non_null
-    local.tee 215
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 215
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    local.set 216
-    i32.const 97
-    i32.const 98
-    i32.const 99
-    array.new_fixed $string 3
-    local.get 216
-    struct.get $"('0 -> boolean)" 1
-    local.get 216
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    local.get 214
-    struct.get $"(boolean -> unit)" 1
-    local.get 214
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
-    ref.cast (ref $unit)
-    local.set 213
-    local.get 213
-    global.set 72
+    i32.xor
+    br_if 0
   )
-  (func (;2;) (type $"(raw) (integer -> integer)") (param $0 (ref $integer)) (param (ref $capture)) (result (ref $integer))
+  (func (;2;) (type $"(raw) (integer -> integer)") (param anyref (ref $capture)) (result anyref)
+    (local $0 (ref $integer))
+    local.get 0
+    ref.cast (ref $integer)
+    local.set $0
     i64.const 0
     local.get $0
     struct.get $integer 0
     i64.sub
     struct.new $integer
   )
-  (func (;3;) (type $"(raw) (real -> real)") (param $0 (ref $real)) (param (ref $capture)) (result (ref $real))
+  (func (;3;) (type $"(raw) (real -> real)") (param anyref (ref $capture)) (result anyref)
+    (local $0 (ref $real))
+    local.get 0
+    ref.cast (ref $real)
+    local.set $0
     f64.const 0x0p+0 (;=0;)
     local.get $0
     struct.get $real 0
     f64.sub
     struct.new $real
   )
-  (func (;4;) (type $"(raw) (boolean -> boolean)") (param $0 (ref $boolean)) (param (ref $capture)) (result (ref $boolean))
+  (func (;4;) (type $"(raw) (boolean -> boolean)") (param anyref (ref $capture)) (result anyref)
+    (local $0 (ref $boolean))
+    local.get 0
+    ref.cast (ref $boolean)
+    local.set $0
     local.get $0
     struct.get $boolean 0
     i32.eqz
     struct.new $boolean
   )
-  (func (;5;) (type $"(raw) (integer -> (integer -> integer))") (param $1 (ref $integer)) (param (ref $capture)) (result (ref $"(integer -> integer)"))
+  (func (;5;) (type $"(raw) (integer -> (integer -> integer))") (param anyref (ref $capture)) (result anyref)
+    (local $1 (ref $integer))
+    local.get 0
+    ref.cast (ref $integer)
+    local.set $1
     i32.const 5
     local.get $1
     array.new_fixed $capture 1
     struct.new $"(integer -> (integer -> integer))"
   )
-  (func (;6;) (type $"(raw) (integer -> integer)") (param $0 (ref $integer)) (param (ref $capture)) (result (ref $integer))
-    (local (ref $integer))
+  (func (;6;) (type $"(raw) (integer -> integer)") (param anyref (ref $capture)) (result anyref)
+    (local $0 (ref $integer)) (local (ref $integer))
+    local.get 0
+    ref.cast (ref $integer)
+    local.set $0
     local.get 1
     i32.const 0
     array.get $capture
     ref.cast (ref $integer)
-    local.set 2
-    local.get 2
+    local.set 3
+    local.get 3
     struct.get $integer 0
     local.get $0
     struct.get $integer 0
     i64.add
     struct.new $integer
   )
-  (func (;7;) (type $"(raw) (integer -> (integer -> integer))") (param $1 (ref $integer)) (param (ref $capture)) (result (ref $"(integer -> integer)"))
+  (func (;7;) (type $"(raw) (integer -> (integer -> integer))") (param anyref (ref $capture)) (result anyref)
+    (local $1 (ref $integer))
+    local.get 0
+    ref.cast (ref $integer)
+    local.set $1
     i32.const 7
     local.get $1
     array.new_fixed $capture 1
     struct.new $"(integer -> (integer -> integer))"
   )
-  (func (;8;) (type $"(raw) (integer -> integer)") (param $0 (ref $integer)) (param (ref $capture)) (result (ref $integer))
-    (local (ref $integer))
+  (func (;8;) (type $"(raw) (integer -> integer)") (param anyref (ref $capture)) (result anyref)
+    (local $0 (ref $integer)) (local (ref $integer))
+    local.get 0
+    ref.cast (ref $integer)
+    local.set $0
     local.get 1
     i32.const 0
     array.get $capture
     ref.cast (ref $integer)
-    local.set 2
-    local.get 2
+    local.set 3
+    local.get 3
     struct.get $integer 0
     local.get $0
     struct.get $integer 0
     i64.sub
     struct.new $integer
   )
-  (func (;9;) (type $"(raw) (integer -> (integer -> integer))") (param $1 (ref $integer)) (param (ref $capture)) (result (ref $"(integer -> integer)"))
+  (func (;9;) (type $"(raw) (integer -> (integer -> integer))") (param anyref (ref $capture)) (result anyref)
+    (local $1 (ref $integer))
+    local.get 0
+    ref.cast (ref $integer)
+    local.set $1
     i32.const 9
     local.get $1
     array.new_fixed $capture 1
     struct.new $"(integer -> (integer -> integer))"
   )
-  (func (;10;) (type $"(raw) (integer -> integer)") (param $0 (ref $integer)) (param (ref $capture)) (result (ref $integer))
-    (local (ref $integer))
+  (func (;10;) (type $"(raw) (integer -> integer)") (param anyref (ref $capture)) (result anyref)
+    (local $0 (ref $integer)) (local (ref $integer))
+    local.get 0
+    ref.cast (ref $integer)
+    local.set $0
     local.get 1
     i32.const 0
     array.get $capture
     ref.cast (ref $integer)
-    local.set 2
-    local.get 2
+    local.set 3
+    local.get 3
     struct.get $integer 0
     local.get $0
     struct.get $integer 0
     i64.mul
     struct.new $integer
   )
-  (func (;11;) (type $"(raw) (integer -> (integer -> integer))") (param $1 (ref $integer)) (param (ref $capture)) (result (ref $"(integer -> integer)"))
+  (func (;11;) (type $"(raw) (integer -> (integer -> integer))") (param anyref (ref $capture)) (result anyref)
+    (local $1 (ref $integer))
+    local.get 0
+    ref.cast (ref $integer)
+    local.set $1
     i32.const 11
     local.get $1
     array.new_fixed $capture 1
     struct.new $"(integer -> (integer -> integer))"
   )
-  (func (;12;) (type $"(raw) (integer -> integer)") (param $0 (ref $integer)) (param (ref $capture)) (result (ref $integer))
-    (local (ref $integer))
+  (func (;12;) (type $"(raw) (integer -> integer)") (param anyref (ref $capture)) (result anyref)
+    (local $0 (ref $integer)) (local (ref $integer))
+    local.get 0
+    ref.cast (ref $integer)
+    local.set $0
     local.get 1
     i32.const 0
     array.get $capture
     ref.cast (ref $integer)
-    local.set 2
-    local.get 2
+    local.set 3
+    local.get 3
     struct.get $integer 0
     local.get $0
     struct.get $integer 0
     i64.div_s
     struct.new $integer
   )
-  (func (;13;) (type $"(raw) (integer -> (integer -> integer))") (param $1 (ref $integer)) (param (ref $capture)) (result (ref $"(integer -> integer)"))
+  (func (;13;) (type $"(raw) (integer -> (integer -> integer))") (param anyref (ref $capture)) (result anyref)
+    (local $1 (ref $integer))
+    local.get 0
+    ref.cast (ref $integer)
+    local.set $1
     i32.const 13
     local.get $1
     array.new_fixed $capture 1
     struct.new $"(integer -> (integer -> integer))"
   )
-  (func (;14;) (type $"(raw) (integer -> integer)") (param $0 (ref $integer)) (param (ref $capture)) (result (ref $integer))
-    (local (ref $integer))
+  (func (;14;) (type $"(raw) (integer -> integer)") (param anyref (ref $capture)) (result anyref)
+    (local $0 (ref $integer)) (local (ref $integer))
+    local.get 0
+    ref.cast (ref $integer)
+    local.set $0
     local.get 1
     i32.const 0
     array.get $capture
     ref.cast (ref $integer)
-    local.set 2
-    local.get 2
+    local.set 3
+    local.get 3
     struct.get $integer 0
     local.get $0
     struct.get $integer 0
     i64.rem_s
     struct.new $integer
   )
-  (func (;15;) (type $"(raw) (real -> (real -> real))") (param $1 (ref $real)) (param (ref $capture)) (result (ref $"(real -> real)"))
+  (func (;15;) (type $"(raw) (real -> (real -> real))") (param anyref (ref $capture)) (result anyref)
+    (local $1 (ref $real))
+    local.get 0
+    ref.cast (ref $real)
+    local.set $1
     i32.const 15
     local.get $1
     array.new_fixed $capture 1
     struct.new $"(real -> (real -> real))"
   )
-  (func (;16;) (type $"(raw) (real -> real)") (param $0 (ref $real)) (param (ref $capture)) (result (ref $real))
-    (local (ref $real))
+  (func (;16;) (type $"(raw) (real -> real)") (param anyref (ref $capture)) (result anyref)
+    (local $0 (ref $real)) (local (ref $real))
+    local.get 0
+    ref.cast (ref $real)
+    local.set $0
     local.get 1
     i32.const 0
     array.get $capture
     ref.cast (ref $real)
-    local.set 2
-    local.get 2
+    local.set 3
+    local.get 3
     struct.get $real 0
     local.get $0
     struct.get $real 0
     f64.add
     struct.new $real
   )
-  (func (;17;) (type $"(raw) (real -> (real -> real))") (param $1 (ref $real)) (param (ref $capture)) (result (ref $"(real -> real)"))
+  (func (;17;) (type $"(raw) (real -> (real -> real))") (param anyref (ref $capture)) (result anyref)
+    (local $1 (ref $real))
+    local.get 0
+    ref.cast (ref $real)
+    local.set $1
     i32.const 17
     local.get $1
     array.new_fixed $capture 1
     struct.new $"(real -> (real -> real))"
   )
-  (func (;18;) (type $"(raw) (real -> real)") (param $0 (ref $real)) (param (ref $capture)) (result (ref $real))
-    (local (ref $real))
+  (func (;18;) (type $"(raw) (real -> real)") (param anyref (ref $capture)) (result anyref)
+    (local $0 (ref $real)) (local (ref $real))
+    local.get 0
+    ref.cast (ref $real)
+    local.set $0
     local.get 1
     i32.const 0
     array.get $capture
     ref.cast (ref $real)
-    local.set 2
-    local.get 2
+    local.set 3
+    local.get 3
     struct.get $real 0
     local.get $0
     struct.get $real 0
     f64.sub
     struct.new $real
   )
-  (func (;19;) (type $"(raw) (real -> (real -> real))") (param $1 (ref $real)) (param (ref $capture)) (result (ref $"(real -> real)"))
+  (func (;19;) (type $"(raw) (real -> (real -> real))") (param anyref (ref $capture)) (result anyref)
+    (local $1 (ref $real))
+    local.get 0
+    ref.cast (ref $real)
+    local.set $1
     i32.const 19
     local.get $1
     array.new_fixed $capture 1
     struct.new $"(real -> (real -> real))"
   )
-  (func (;20;) (type $"(raw) (real -> real)") (param $0 (ref $real)) (param (ref $capture)) (result (ref $real))
-    (local (ref $real))
+  (func (;20;) (type $"(raw) (real -> real)") (param anyref (ref $capture)) (result anyref)
+    (local $0 (ref $real)) (local (ref $real))
+    local.get 0
+    ref.cast (ref $real)
+    local.set $0
     local.get 1
     i32.const 0
     array.get $capture
     ref.cast (ref $real)
-    local.set 2
-    local.get 2
+    local.set 3
+    local.get 3
     struct.get $real 0
     local.get $0
     struct.get $real 0
     f64.mul
     struct.new $real
   )
-  (func (;21;) (type $"(raw) (real -> (real -> real))") (param $1 (ref $real)) (param (ref $capture)) (result (ref $"(real -> real)"))
+  (func (;21;) (type $"(raw) (real -> (real -> real))") (param anyref (ref $capture)) (result anyref)
+    (local $1 (ref $real))
+    local.get 0
+    ref.cast (ref $real)
+    local.set $1
     i32.const 21
     local.get $1
     array.new_fixed $capture 1
     struct.new $"(real -> (real -> real))"
   )
-  (func (;22;) (type $"(raw) (real -> real)") (param $0 (ref $real)) (param (ref $capture)) (result (ref $real))
-    (local (ref $real))
+  (func (;22;) (type $"(raw) (real -> real)") (param anyref (ref $capture)) (result anyref)
+    (local $0 (ref $real)) (local (ref $real))
+    local.get 0
+    ref.cast (ref $real)
+    local.set $0
     local.get 1
     i32.const 0
     array.get $capture
     ref.cast (ref $real)
-    local.set 2
-    local.get 2
+    local.set 3
+    local.get 3
     struct.get $real 0
     local.get $0
     struct.get $real 0
     f64.div
     struct.new $real
   )
-  (func (;23;) (type $"(raw) (boolean -> (boolean -> boolean))") (param $1 (ref $boolean)) (param (ref $capture)) (result (ref $"(boolean -> boolean)"))
+  (func (;23;) (type $"(raw) (boolean -> (boolean -> boolean))") (param anyref (ref $capture)) (result anyref)
+    (local $1 (ref $boolean))
+    local.get 0
+    ref.cast (ref $boolean)
+    local.set $1
     i32.const 23
     local.get $1
     array.new_fixed $capture 1
     struct.new $"(boolean -> (boolean -> boolean))"
   )
-  (func (;24;) (type $"(raw) (boolean -> boolean)") (param $0 (ref $boolean)) (param (ref $capture)) (result (ref $boolean))
-    (local (ref $boolean))
+  (func (;24;) (type $"(raw) (boolean -> boolean)") (param anyref (ref $capture)) (result anyref)
+    (local $0 (ref $boolean)) (local (ref $boolean))
+    local.get 0
+    ref.cast (ref $boolean)
+    local.set $0
     local.get 1
     i32.const 0
     array.get $capture
     ref.cast (ref $boolean)
-    local.set 2
-    local.get 2
+    local.set 3
+    local.get 3
     struct.get $boolean 0
     local.get $0
     struct.get $boolean 0
     i32.and
     struct.new $boolean
   )
-  (func (;25;) (type $"(raw) (boolean -> (boolean -> boolean))") (param $1 (ref $boolean)) (param (ref $capture)) (result (ref $"(boolean -> boolean)"))
+  (func (;25;) (type $"(raw) (boolean -> (boolean -> boolean))") (param anyref (ref $capture)) (result anyref)
+    (local $1 (ref $boolean))
+    local.get 0
+    ref.cast (ref $boolean)
+    local.set $1
     i32.const 25
     local.get $1
     array.new_fixed $capture 1
     struct.new $"(boolean -> (boolean -> boolean))"
   )
-  (func (;26;) (type $"(raw) (boolean -> boolean)") (param $0 (ref $boolean)) (param (ref $capture)) (result (ref $boolean))
-    (local (ref $boolean))
+  (func (;26;) (type $"(raw) (boolean -> boolean)") (param anyref (ref $capture)) (result anyref)
+    (local $0 (ref $boolean)) (local (ref $boolean))
+    local.get 0
+    ref.cast (ref $boolean)
+    local.set $0
     local.get 1
     i32.const 0
     array.get $capture
     ref.cast (ref $boolean)
-    local.set 2
-    local.get 2
+    local.set 3
+    local.get 3
     struct.get $boolean 0
     local.get $0
     struct.get $boolean 0
     i32.or
     struct.new $boolean
   )
-  (func (;27;) (type $"(raw) (boolean -> (boolean -> boolean))") (param $1 (ref $boolean)) (param (ref $capture)) (result (ref $"(boolean -> boolean)"))
+  (func (;27;) (type $"(raw) (boolean -> (boolean -> boolean))") (param anyref (ref $capture)) (result anyref)
+    (local $1 (ref $boolean))
+    local.get 0
+    ref.cast (ref $boolean)
+    local.set $1
     i32.const 27
     local.get $1
     array.new_fixed $capture 1
     struct.new $"(boolean -> (boolean -> boolean))"
   )
-  (func (;28;) (type $"(raw) (boolean -> boolean)") (param $0 (ref $boolean)) (param (ref $capture)) (result (ref $boolean))
-    (local (ref $boolean))
+  (func (;28;) (type $"(raw) (boolean -> boolean)") (param anyref (ref $capture)) (result anyref)
+    (local $0 (ref $boolean)) (local (ref $boolean))
+    local.get 0
+    ref.cast (ref $boolean)
+    local.set $0
     local.get 1
     i32.const 0
     array.get $capture
     ref.cast (ref $boolean)
-    local.set 2
-    local.get 2
+    local.set 3
+    local.get 3
     struct.get $boolean 0
     local.get $0
     struct.get $boolean 0
     i32.xor
     struct.new $boolean
   )
-  (func (;29;) (type $"(raw) ('0 -> ('0 -> boolean))") (param $1 anyref) (param (ref $capture)) (result (ref $"('0 -> boolean)"))
+  (func (;29;) (type $"(raw) ('0 -> ('0 -> boolean))") (param anyref (ref $capture)) (result anyref)
+    (local $1 anyref)
+    local.get 0
+    local.set $1
     i32.const 29
     local.get $1
     array.new_fixed $capture 1
     struct.new $"('0 -> ('0 -> boolean))"
   )
-  (func (;30;) (type $"(raw) ('0 -> boolean)") (param $0 anyref) (param (ref $capture)) (result (ref $boolean))
-    (local anyref i32 i32)
+  (func (;30;) (type $"(raw) ('0 -> boolean)") (param anyref (ref $capture)) (result anyref)
+    (local $0 anyref) (local anyref i32 i32)
+    local.get 0
+    local.set $0
     local.get 1
     i32.const 0
     array.get $capture
     ref.cast (ref any)
-    local.set 2
+    local.set 3
     block (result anyref) ;; label = @1
       block (result anyref) ;; label = @2
         block (result anyref) ;; label = @3
           block (result anyref) ;; label = @4
             block (result anyref) ;; label = @5
               block (result anyref) ;; label = @6
-                local.get 2
+                local.get 3
                 br_on_cast 0 (;@6;) anyref (ref $integer)
                 br_on_cast 1 (;@5;) anyref (ref $real)
                 br_on_cast 2 (;@4;) anyref (ref $boolean)
@@ -2226,7 +1268,7 @@
       struct.new $boolean
       return
     end
-    local.get 2
+    local.get 3
     ref.cast (ref $string)
     array.len
     local.get $0
@@ -2239,19 +1281,19 @@
       return
     end
     i32.const 0
-    local.set 3
-    local.get 2
+    local.set 4
+    local.get 3
     ref.cast (ref $string)
     array.len
-    local.set 4
+    local.set 5
     loop ;; label = @1
-      local.get 2
-      ref.cast (ref $string)
       local.get 3
+      ref.cast (ref $string)
+      local.get 4
       array.get_u $string
       local.get $0
       ref.cast (ref $string)
-      local.get 3
+      local.get 4
       array.get_u $string
       i32.ne
       if ;; label = @2
@@ -2259,11 +1301,11 @@
         struct.new $boolean
         return
       end
-      local.get 3
+      local.get 4
       i32.const 1
       i32.add
-      local.tee 3
-      local.get 4
+      local.tee 4
+      local.get 5
       i32.lt_u
       br_if 0 (;@1;)
     end
@@ -2271,26 +1313,31 @@
     struct.new $boolean
     return
   )
-  (func (;31;) (type $"(raw) ('0 -> ('0 -> boolean))") (param $1 anyref) (param (ref $capture)) (result (ref $"('0 -> boolean)"))
+  (func (;31;) (type $"(raw) ('0 -> ('0 -> boolean))") (param anyref (ref $capture)) (result anyref)
+    (local $1 anyref)
+    local.get 0
+    local.set $1
     i32.const 31
     local.get $1
     array.new_fixed $capture 1
     struct.new $"('0 -> ('0 -> boolean))"
   )
-  (func (;32;) (type $"(raw) ('0 -> boolean)") (param $0 anyref) (param (ref $capture)) (result (ref $boolean))
-    (local anyref i32 i32)
+  (func (;32;) (type $"(raw) ('0 -> boolean)") (param anyref (ref $capture)) (result anyref)
+    (local $0 anyref) (local anyref i32 i32)
+    local.get 0
+    local.set $0
     local.get 1
     i32.const 0
     array.get $capture
     ref.cast (ref any)
-    local.set 2
+    local.set 3
     block (result anyref) ;; label = @1
       block (result anyref) ;; label = @2
         block (result anyref) ;; label = @3
           block (result anyref) ;; label = @4
             block (result anyref) ;; label = @5
               block (result anyref) ;; label = @6
-                local.get 2
+                local.get 3
                 br_on_cast 0 (;@6;) anyref (ref $integer)
                 br_on_cast 1 (;@5;) anyref (ref $real)
                 br_on_cast 2 (;@4;) anyref (ref $boolean)
@@ -2350,7 +1397,7 @@
       struct.new $boolean
       return
     end
-    local.get 2
+    local.get 3
     ref.cast (ref $string)
     array.len
     local.get $0
@@ -2363,19 +1410,19 @@
       return
     end
     i32.const 0
-    local.set 3
-    local.get 2
+    local.set 4
+    local.get 3
     ref.cast (ref $string)
     array.len
-    local.set 4
+    local.set 5
     loop ;; label = @1
-      local.get 2
-      ref.cast (ref $string)
       local.get 3
+      ref.cast (ref $string)
+      local.get 4
       array.get_u $string
       local.get $0
       ref.cast (ref $string)
-      local.get 3
+      local.get 4
       array.get_u $string
       i32.eq
       if ;; label = @2
@@ -2383,11 +1430,11 @@
         struct.new $boolean
         return
       end
-      local.get 3
+      local.get 4
       i32.const 1
       i32.add
-      local.tee 3
-      local.get 4
+      local.tee 4
+      local.get 5
       i32.lt_u
       br_if 0 (;@1;)
     end
@@ -2395,26 +1442,31 @@
     struct.new $boolean
     return
   )
-  (func (;33;) (type $"(raw) ('0 -> ('0 -> boolean))") (param $1 anyref) (param (ref $capture)) (result (ref $"('0 -> boolean)"))
+  (func (;33;) (type $"(raw) ('0 -> ('0 -> boolean))") (param anyref (ref $capture)) (result anyref)
+    (local $1 anyref)
+    local.get 0
+    local.set $1
     i32.const 33
     local.get $1
     array.new_fixed $capture 1
     struct.new $"('0 -> ('0 -> boolean))"
   )
-  (func (;34;) (type $"(raw) ('0 -> boolean)") (param $0 anyref) (param (ref $capture)) (result (ref $boolean))
-    (local anyref i32 i32)
+  (func (;34;) (type $"(raw) ('0 -> boolean)") (param anyref (ref $capture)) (result anyref)
+    (local $0 anyref) (local anyref i32 i32)
+    local.get 0
+    local.set $0
     local.get 1
     i32.const 0
     array.get $capture
     ref.cast (ref any)
-    local.set 2
+    local.set 3
     block (result anyref) ;; label = @1
       block (result anyref) ;; label = @2
         block (result anyref) ;; label = @3
           block (result anyref) ;; label = @4
             block (result anyref) ;; label = @5
               block (result anyref) ;; label = @6
-                local.get 2
+                local.get 3
                 br_on_cast 0 (;@6;) anyref (ref $integer)
                 br_on_cast 1 (;@5;) anyref (ref $real)
                 br_on_cast 2 (;@4;) anyref (ref $boolean)
@@ -2474,7 +1526,7 @@
       struct.new $boolean
       return
     end
-    local.get 2
+    local.get 3
     ref.cast (ref $string)
     array.len
     local.get $0
@@ -2487,19 +1539,19 @@
       return
     end
     i32.const 0
-    local.set 3
-    local.get 2
+    local.set 4
+    local.get 3
     ref.cast (ref $string)
     array.len
-    local.set 4
+    local.set 5
     loop ;; label = @1
-      local.get 2
-      ref.cast (ref $string)
       local.get 3
+      ref.cast (ref $string)
+      local.get 4
       array.get_u $string
       local.get $0
       ref.cast (ref $string)
-      local.get 3
+      local.get 4
       array.get_u $string
       i32.gt_u
       if ;; label = @2
@@ -2507,11 +1559,11 @@
         struct.new $boolean
         return
       end
-      local.get 3
+      local.get 4
       i32.const 1
       i32.add
-      local.tee 3
-      local.get 4
+      local.tee 4
+      local.get 5
       i32.lt_u
       br_if 0 (;@1;)
     end
@@ -2519,26 +1571,31 @@
     struct.new $boolean
     return
   )
-  (func (;35;) (type $"(raw) ('0 -> ('0 -> boolean))") (param $1 anyref) (param (ref $capture)) (result (ref $"('0 -> boolean)"))
+  (func (;35;) (type $"(raw) ('0 -> ('0 -> boolean))") (param anyref (ref $capture)) (result anyref)
+    (local $1 anyref)
+    local.get 0
+    local.set $1
     i32.const 35
     local.get $1
     array.new_fixed $capture 1
     struct.new $"('0 -> ('0 -> boolean))"
   )
-  (func (;36;) (type $"(raw) ('0 -> boolean)") (param $0 anyref) (param (ref $capture)) (result (ref $boolean))
-    (local anyref i32 i32)
+  (func (;36;) (type $"(raw) ('0 -> boolean)") (param anyref (ref $capture)) (result anyref)
+    (local $0 anyref) (local anyref i32 i32)
+    local.get 0
+    local.set $0
     local.get 1
     i32.const 0
     array.get $capture
     ref.cast (ref any)
-    local.set 2
+    local.set 3
     block (result anyref) ;; label = @1
       block (result anyref) ;; label = @2
         block (result anyref) ;; label = @3
           block (result anyref) ;; label = @4
             block (result anyref) ;; label = @5
               block (result anyref) ;; label = @6
-                local.get 2
+                local.get 3
                 br_on_cast 0 (;@6;) anyref (ref $integer)
                 br_on_cast 1 (;@5;) anyref (ref $real)
                 br_on_cast 2 (;@4;) anyref (ref $boolean)
@@ -2598,7 +1655,7 @@
       struct.new $boolean
       return
     end
-    local.get 2
+    local.get 3
     ref.cast (ref $string)
     array.len
     local.get $0
@@ -2611,19 +1668,19 @@
       return
     end
     i32.const 0
-    local.set 3
-    local.get 2
+    local.set 4
+    local.get 3
     ref.cast (ref $string)
     array.len
-    local.set 4
+    local.set 5
     loop ;; label = @1
-      local.get 2
-      ref.cast (ref $string)
       local.get 3
+      ref.cast (ref $string)
+      local.get 4
       array.get_u $string
       local.get $0
       ref.cast (ref $string)
-      local.get 3
+      local.get 4
       array.get_u $string
       i32.lt_u
       if ;; label = @2
@@ -2631,11 +1688,11 @@
         struct.new $boolean
         return
       end
-      local.get 3
+      local.get 4
       i32.const 1
       i32.add
-      local.tee 3
-      local.get 4
+      local.tee 4
+      local.get 5
       i32.lt_u
       br_if 0 (;@1;)
     end
@@ -2643,26 +1700,31 @@
     struct.new $boolean
     return
   )
-  (func (;37;) (type $"(raw) ('0 -> ('0 -> boolean))") (param $1 anyref) (param (ref $capture)) (result (ref $"('0 -> boolean)"))
+  (func (;37;) (type $"(raw) ('0 -> ('0 -> boolean))") (param anyref (ref $capture)) (result anyref)
+    (local $1 anyref)
+    local.get 0
+    local.set $1
     i32.const 37
     local.get $1
     array.new_fixed $capture 1
     struct.new $"('0 -> ('0 -> boolean))"
   )
-  (func (;38;) (type $"(raw) ('0 -> boolean)") (param $0 anyref) (param (ref $capture)) (result (ref $boolean))
-    (local anyref i32 i32)
+  (func (;38;) (type $"(raw) ('0 -> boolean)") (param anyref (ref $capture)) (result anyref)
+    (local $0 anyref) (local anyref i32 i32)
+    local.get 0
+    local.set $0
     local.get 1
     i32.const 0
     array.get $capture
     ref.cast (ref any)
-    local.set 2
+    local.set 3
     block (result anyref) ;; label = @1
       block (result anyref) ;; label = @2
         block (result anyref) ;; label = @3
           block (result anyref) ;; label = @4
             block (result anyref) ;; label = @5
               block (result anyref) ;; label = @6
-                local.get 2
+                local.get 3
                 br_on_cast 0 (;@6;) anyref (ref $integer)
                 br_on_cast 1 (;@5;) anyref (ref $real)
                 br_on_cast 2 (;@4;) anyref (ref $boolean)
@@ -2722,7 +1784,7 @@
       struct.new $boolean
       return
     end
-    local.get 2
+    local.get 3
     ref.cast (ref $string)
     array.len
     local.get $0
@@ -2735,19 +1797,19 @@
       return
     end
     i32.const 0
-    local.set 3
-    local.get 2
+    local.set 4
+    local.get 3
     ref.cast (ref $string)
     array.len
-    local.set 4
+    local.set 5
     loop ;; label = @1
-      local.get 2
-      ref.cast (ref $string)
       local.get 3
+      ref.cast (ref $string)
+      local.get 4
       array.get_u $string
       local.get $0
       ref.cast (ref $string)
-      local.get 3
+      local.get 4
       array.get_u $string
       i32.ge_u
       if ;; label = @2
@@ -2755,11 +1817,11 @@
         struct.new $boolean
         return
       end
-      local.get 3
+      local.get 4
       i32.const 1
       i32.add
-      local.tee 3
-      local.get 4
+      local.tee 4
+      local.get 5
       i32.lt_u
       br_if 0 (;@1;)
     end
@@ -2767,26 +1829,31 @@
     struct.new $boolean
     return
   )
-  (func (;39;) (type $"(raw) ('0 -> ('0 -> boolean))") (param $1 anyref) (param (ref $capture)) (result (ref $"('0 -> boolean)"))
+  (func (;39;) (type $"(raw) ('0 -> ('0 -> boolean))") (param anyref (ref $capture)) (result anyref)
+    (local $1 anyref)
+    local.get 0
+    local.set $1
     i32.const 39
     local.get $1
     array.new_fixed $capture 1
     struct.new $"('0 -> ('0 -> boolean))"
   )
-  (func (;40;) (type $"(raw) ('0 -> boolean)") (param $0 anyref) (param (ref $capture)) (result (ref $boolean))
-    (local anyref i32 i32)
+  (func (;40;) (type $"(raw) ('0 -> boolean)") (param anyref (ref $capture)) (result anyref)
+    (local $0 anyref) (local anyref i32 i32)
+    local.get 0
+    local.set $0
     local.get 1
     i32.const 0
     array.get $capture
     ref.cast (ref any)
-    local.set 2
+    local.set 3
     block (result anyref) ;; label = @1
       block (result anyref) ;; label = @2
         block (result anyref) ;; label = @3
           block (result anyref) ;; label = @4
             block (result anyref) ;; label = @5
               block (result anyref) ;; label = @6
-                local.get 2
+                local.get 3
                 br_on_cast 0 (;@6;) anyref (ref $integer)
                 br_on_cast 1 (;@5;) anyref (ref $real)
                 br_on_cast 2 (;@4;) anyref (ref $boolean)
@@ -2846,7 +1913,7 @@
       struct.new $boolean
       return
     end
-    local.get 2
+    local.get 3
     ref.cast (ref $string)
     array.len
     local.get $0
@@ -2859,19 +1926,19 @@
       return
     end
     i32.const 0
-    local.set 3
-    local.get 2
+    local.set 4
+    local.get 3
     ref.cast (ref $string)
     array.len
-    local.set 4
+    local.set 5
     loop ;; label = @1
-      local.get 2
-      ref.cast (ref $string)
       local.get 3
+      ref.cast (ref $string)
+      local.get 4
       array.get_u $string
       local.get $0
       ref.cast (ref $string)
-      local.get 3
+      local.get 4
       array.get_u $string
       i32.le_u
       if ;; label = @2
@@ -2879,11 +1946,11 @@
         struct.new $boolean
         return
       end
-      local.get 3
+      local.get 4
       i32.const 1
       i32.add
-      local.tee 3
-      local.get 4
+      local.tee 4
+      local.get 5
       i32.lt_u
       br_if 0 (;@1;)
     end
@@ -2891,175 +1958,1448 @@
     struct.new $boolean
     return
   )
-  (func (;41;) (type $"(raw) (unit -> '0)") (param $0 (ref $unit)) (param (ref $capture)) (result anyref)
+  (func (;41;) (type $"(raw) (unit -> '0)") (param anyref (ref $capture)) (result anyref)
+    (local $0 (ref $unit))
+    local.get 0
+    ref.cast (ref $unit)
+    local.set $0
     unreachable
   )
-  (func (;42;) (type $"(raw) (string -> integer)") (param $0 (ref $string)) (param (ref $capture)) (result (ref $integer))
+  (func (;42;) (type $"(raw) (string -> integer)") (param anyref (ref $capture)) (result anyref)
+    (local $0 (ref $string))
+    local.get 0
+    ref.cast (ref $string)
+    local.set $0
     local.get $0
     array.len
     i64.extend_i32_u
     struct.new $integer
   )
-  (func (;43;) (type $"(raw) (string -> unit)") (param $0 (ref $string)) (param (ref $capture)) (result (ref $unit))
-    (local i32 i32)
+  (func (;43;) (type $"(raw) (string -> unit)") (param anyref (ref $capture)) (result anyref)
+    (local $0 (ref $string)) (local i32 i32)
+    local.get 0
+    ref.cast (ref $string)
+    local.set $0
     i32.const 0
-    local.set 2
+    local.set 3
     local.get $0
     array.len
-    local.set 3
+    local.set 4
     loop ;; label = @1
-      local.get 2
       local.get 3
+      local.get 4
       i32.lt_u
       if ;; label = @2
-        local.get 2
+        local.get 3
         local.get $0
-        local.get 2
+        local.get 3
         array.get_u $string
         i32.store8
-        local.get 2
+        local.get 3
         i32.const 1
         i32.add
-        local.set 2
+        local.set 3
         br 1 (;@1;)
       end
     end
     i32.const 0
-    local.get 3
+    local.get 4
     i32.const 43
     call_indirect (type 30)
     struct.new $unit
   )
-  (func (;44;) (type $"(raw) (string -> (string -> string))") (param $1 (ref $string)) (param (ref $capture)) (result (ref $"(string -> string)"))
+  (func (;44;) (type $"(raw) (string -> (string -> string))") (param anyref (ref $capture)) (result anyref)
+    (local $1 (ref $string))
+    local.get 0
+    ref.cast (ref $string)
+    local.set $1
     i32.const 45
     local.get $1
     array.new_fixed $capture 1
     struct.new $"(string -> (string -> string))"
   )
-  (func (;45;) (type $"(raw) (string -> string)") (param $unit (ref $string)) (param (ref $capture)) (result (ref $string))
-    (local (ref $string) i32 i32 (ref $string))
+  (func (;45;) (type $"(raw) (string -> string)") (param anyref (ref $capture)) (result anyref)
+    (local $unit (ref $string)) (local (ref $string) i32 i32 (ref $string))
+    local.get 0
+    ref.cast (ref $string)
+    local.set $unit
     local.get 1
     i32.const 0
     array.get $capture
     ref.cast (ref $string)
-    local.set 2
-    local.get 2
-    array.len
-    local.tee 3
-    local.get $unit
+    local.set 3
+    local.get 3
     array.len
     local.tee 4
+    local.get $unit
+    array.len
+    local.tee 5
     i32.add
     array.new_default $string
-    local.tee 5
-    i32.const 0
-    local.get 2
+    local.tee 6
     i32.const 0
     local.get 3
-    array.copy $string $string
-    local.get 5
-    local.get 3
-    local.get $unit
     i32.const 0
     local.get 4
     array.copy $string $string
+    local.get 6
+    local.get 4
+    local.get $unit
+    i32.const 0
     local.get 5
+    array.copy $string $string
+    local.get 6
   )
-  (func (;46;) (type $"(raw) (unit -> '1)") (param $condition#0 (ref $unit)) (param (ref $capture)) (result anyref)
-    (local (ref $"(unit -> '2)"))
+  (func (;46;) (type $"(raw) (unit -> '1)") (param anyref (ref $capture)) (result anyref)
+    (local $condition#0 (ref $unit)) (local (ref $"(unit -> '2)"))
+    local.get 0
+    ref.cast (ref $unit)
+    local.set $condition#0
     global.get 21
     ref.as_non_null
-    local.set 2
+    local.set 3
     struct.new $unit
-    local.get 2
+    local.get 3
     struct.get $"(unit -> '2)" 1
-    local.get 2
+    local.get 3
     struct.get $"(unit -> '2)" 0
     call_indirect (type $"(raw) (unit -> '2)")
     ref.cast (ref any)
   )
-  (func (;47;) (type $"(raw) (boolean -> unit)") (param $s#1 (ref $boolean)) (param (ref $capture)) (result (ref $unit))
-    (local (ref $"(unit -> '1)"))
-    local.get $s#1
+  (func (;47;) (type $"(raw) (boolean -> unit)") (param anyref (ref $capture)) (result anyref)
+    (local $s#1 (ref $boolean)) (local (ref $"(unit -> '4)"))
+    local.get 0
     ref.cast (ref $boolean)
+    local.set $s#1
+    local.get $s#1
     struct.get $boolean 0
     if (result (ref $unit)) ;; label = @1
       struct.new $unit
     else
       global.get 25
       ref.as_non_null
-      ref.cast (ref $"(unit -> '1)")
-      local.set 2
+      local.set 3
       struct.new $unit
-      local.get 2
-      struct.get $"(unit -> '1)" 1
-      local.get 2
-      struct.get $"(unit -> '1)" 0
-      call_indirect (type $"(raw) (unit -> '1)")
+      local.get 3
+      struct.get $"(unit -> '4)" 1
+      local.get 3
+      struct.get $"(unit -> '4)" 0
+      call_indirect (type $"(raw) (unit -> '4)")
       ref.cast (ref $unit)
     end
   )
-  (func (;48;) (type $"(raw) (string -> integer)") (param $s#2 (ref $string)) (param (ref $capture)) (result (ref $integer))
-    (local (ref $"(string -> integer)"))
-    global.get 22
-    ref.as_non_null
-    local.set 2
-    local.get $s#2
+  (func (;48;) (type $"(raw) (string -> unit)") (param anyref (ref $capture)) (result anyref)
+    (local $s#0 (ref $string)) (local (ref $"(string -> unit)"))
+    local.get 0
     ref.cast (ref $string)
-    local.get 2
-    struct.get $"(string -> integer)" 1
-    local.get 2
-    struct.get $"(string -> integer)" 0
-    call_indirect (type $"(raw) (string -> integer)")
-    ref.cast (ref $integer)
-  )
-  (func (;49;) (type $"(raw) (string -> unit)") (param $s1#3 (ref $string)) (param (ref $capture)) (result (ref $unit))
-    (local (ref $"(string -> unit)"))
+    local.set $s#0
     global.get 23
     ref.as_non_null
-    local.set 2
-    local.get $s1#3
-    ref.cast (ref $string)
-    local.get 2
+    local.set 3
+    local.get $s#0
+    local.get 3
     struct.get $"(string -> unit)" 1
-    local.get 2
+    local.get 3
     struct.get $"(string -> unit)" 0
     call_indirect (type $"(raw) (string -> unit)")
     ref.cast (ref $unit)
   )
-  (func (;50;) (type $"(raw) (string -> (string -> string))") (param $s2#4 (ref $string)) (param (ref $capture)) (result (ref $"(string -> string)"))
+  (func (;49;) (type $"(raw) (string -> integer)") (param anyref (ref $capture)) (result anyref)
+    (local $s1#1 (ref $string)) (local (ref $"(string -> integer)"))
+    local.get 0
+    ref.cast (ref $string)
+    local.set $s1#1
+    global.get 22
+    ref.as_non_null
+    local.set 3
+    local.get $s1#1
+    local.get 3
+    struct.get $"(string -> integer)" 1
+    local.get 3
+    struct.get $"(string -> integer)" 0
+    call_indirect (type $"(raw) (string -> integer)")
+    ref.cast (ref $integer)
+  )
+  (func (;50;) (type $"(raw) (string -> (string -> string))") (param anyref (ref $capture)) (result anyref)
+    (local $s2#2 (ref $string))
+    local.get 0
+    ref.cast (ref $string)
+    local.set $s2#2
     i32.const 51
-    local.get $s2#4
+    local.get $s2#2
     ref.cast (ref any)
     array.new_fixed $capture 1
     struct.new $"(string -> string)"
   )
-  (func (;51;) (type $"(raw) (string -> string)") (param (ref $string) (ref $capture)) (result (ref $string))
-    (local (ref $string) (ref $"(string -> string)") (ref $"(string -> (string -> string))"))
+  (func (;51;) (type $"(raw) (string -> string)") (param anyref (ref $capture)) (result anyref)
+    (local $s#3 (ref $string)) (local (ref $string) (ref $"(string -> string)") (ref $"(string -> (string -> string))"))
+    local.get 0
+    ref.cast (ref $string)
+    local.set $s#3
     local.get 1
     i32.const 0
     array.get $capture
     ref.cast (ref $string)
-    local.set 2
+    local.set 3
     global.get 24
     ref.as_non_null
-    local.set 4
-    local.get 2
-    ref.cast (ref $string)
-    local.get 4
+    local.set 5
+    local.get 3
+    local.get 5
     struct.get $"(string -> (string -> string))" 1
-    local.get 4
+    local.get 5
     struct.get $"(string -> (string -> string))" 0
     call_indirect (type $"(raw) (string -> (string -> string))")
     ref.cast (ref $"(string -> string)")
-    local.set 3
-    local.get 0
-    ref.cast (ref $string)
-    local.get 3
+    local.set 4
+    local.get $s#3
+    local.get 4
     struct.get $"(string -> string)" 1
-    local.get 3
+    local.get 4
     struct.get $"(string -> string)" 0
     call_indirect (type $"(raw) (string -> string)")
     ref.cast (ref $string)
+  )
+  (func (;52;) (type $"(raw) (string -> unit)") (param anyref (ref $capture)) (result anyref)
+    (local $a (ref $string)) (local (ref $"(string -> unit)"))
+    local.get 0
+    ref.cast (ref $string)
+    local.set $a
+    global.get 23
+    ref.as_non_null
+    local.set 3
+    local.get $a
+    local.get 3
+    struct.get $"(string -> unit)" 1
+    local.get 3
+    struct.get $"(string -> unit)" 0
+    call_indirect (type $"(raw) (string -> unit)")
+    ref.cast (ref $unit)
+  )
+  (func (;53;) (type $"(raw) ('0 -> Some of '0 | None of unit)") (param anyref (ref $capture)) (result anyref)
+    (local $a anyref)
+    local.get 0
+    local.set $a
+    i32.const 0
+    local.get $a
+    struct.new $"Some of '0 | None of unit"
+  )
+  (func (;54;) (type $"(raw) (unit -> Some of '0 | None of unit)") (param anyref (ref $capture)) (result anyref)
+    (local $operation#0 (ref $unit))
+    local.get 0
+    ref.cast (ref $unit)
+    local.set $operation#0
+    i32.const 1
+    local.get $operation#0
+    struct.new $"Some of '0 | None of unit"
+  )
+  (func (;55;) (type $"(raw) (('3 -> '6) -> (Some of '3 | None of unit -> Some of '6 | None of unit))") (param anyref (ref $capture)) (result anyref)
+    (local $maybe#1 (ref $"('3 -> '6)"))
+    local.get 0
+    ref.cast (ref $"('3 -> '6)")
+    local.set $maybe#1
+    i32.const 56
+    local.get $maybe#1
+    ref.cast (ref any)
+    array.new_fixed $capture 1
+    struct.new $"(Some of '3 | None of unit -> Some of '6 | None of unit)"
+  )
+  (func (;56;) (type $"(raw) (Some of '3 | None of unit -> Some of '6 | None of unit)") (param anyref (ref $capture)) (result anyref)
+    (local $operation#4 (ref $"Some of '3 | None of unit")) (local (ref $"('3 -> '6)") (ref $"Some of '3 | None of unit") anyref anyref (ref $"('6 -> Some of '6 | None of unit)") (ref $"('3 -> '6)") (ref $"Some of '3 | None of unit") (ref $"(unit -> Some of '8 | None of unit)"))
+    local.get 0
+    ref.cast (ref $"Some of '3 | None of unit")
+    local.set $operation#4
+    local.get 1
+    i32.const 0
+    array.get $capture
+    ref.cast (ref $"('3 -> '6)")
+    local.set 3
+    local.get $operation#4
+    local.set 4
+    block (result (ref $"Some of '6 | None of unit")) ;; label = @1
+      block ;; label = @2
+        i32.const 0
+        local.get 4
+        struct.get $"Some of '0 | None of unit" 0
+        i32.eq
+        i32.const 1
+        i32.xor
+        br_if 0 (;@2;)
+        local.get 4
+        struct.get $"Some of '0 | None of unit" 1
+        ref.cast (ref any)
+        local.set 5
+        local.get 5
+        local.set 6
+        global.get 31
+        ref.as_non_null
+        local.set 7
+        local.get 3
+        local.set 8
+        local.get 6
+        local.get 8
+        struct.get $"('3 -> '6)" 1
+        local.get 8
+        struct.get $"('3 -> '6)" 0
+        call_indirect (type $"(raw) ('3 -> '6)")
+        ref.cast (ref any)
+        local.get 7
+        struct.get $"('6 -> Some of '6 | None of unit)" 1
+        local.get 7
+        struct.get $"('6 -> Some of '6 | None of unit)" 0
+        call_indirect (type $"(raw) ('6 -> Some of '6 | None of unit)")
+        ref.cast (ref $"Some of '6 | None of unit")
+        br 1 (;@1;)
+      end
+      block ;; label = @2
+        local.get 4
+        local.set 9
+        global.get 32
+        ref.as_non_null
+        local.set 10
+        struct.new $unit
+        local.get 10
+        struct.get $"(unit -> Some of '8 | None of unit)" 1
+        local.get 10
+        struct.get $"(unit -> Some of '8 | None of unit)" 0
+        call_indirect (type $"(raw) (unit -> Some of '8 | None of unit)")
+        ref.cast (ref $"Some of '8 | None of unit")
+        br 1 (;@1;)
+      end
+      unreachable
+    end
+  )
+  (func (;57;) (type $"(raw) (('6 -> '7) -> (Some of '9 | None of unit -> unit))") (param anyref (ref $capture)) (result anyref)
+    (local $maybe#5 (ref $"('6 -> '7)"))
+    local.get 0
+    ref.cast (ref $"('6 -> '7)")
+    local.set $maybe#5
+    i32.const 58
+    local.get $maybe#5
+    ref.cast (ref any)
+    array.new_fixed $capture 1
+    struct.new $"(Some of '9 | None of unit -> unit)"
+  )
+  (func (;58;) (type $"(raw) (Some of '9 | None of unit -> unit)") (param anyref (ref $capture)) (result anyref)
+    (local $a#6 (ref $"Some of '9 | None of unit")) (local $operation#4 (ref $"('6 -> '7)")) (local (ref $"(Some of '9 | None of unit -> Some of '10 | None of unit)") (ref $"(('9 -> '10) -> (Some of '9 | None of unit -> Some of '10 | None of unit))"))
+    local.get 0
+    ref.cast (ref $"Some of '9 | None of unit")
+    local.set $a#6
+    local.get 1
+    i32.const 0
+    array.get $capture
+    ref.cast (ref $"('6 -> '7)")
+    local.set $operation#4
+    global.get 33
+    ref.as_non_null
+    local.set 5
+    i32.const 59
+    local.get $operation#4
+    ref.cast (ref any)
+    array.new_fixed $capture 1
+    struct.new $"('6 -> '6)"
+    local.get 5
+    struct.get $"(('9 -> '10) -> (Some of '9 | None of unit -> Some of '10 | None of unit))" 1
+    local.get 5
+    struct.get $"(('9 -> '10) -> (Some of '9 | None of unit -> Some of '10 | None of unit))" 0
+    call_indirect (type $"(raw) (('9 -> '10) -> (Some of '9 | None of unit -> Some of '10 | None of unit))")
+    ref.cast (ref $"(Some of '9 | None of unit -> Some of '10 | None of unit)")
+    local.set 4
+    local.get $a#6
+    local.get 4
+    struct.get $"(Some of '9 | None of unit -> Some of '10 | None of unit)" 1
+    local.get 4
+    struct.get $"(Some of '9 | None of unit -> Some of '10 | None of unit)" 0
+    call_indirect (type $"(raw) (Some of '9 | None of unit -> Some of '10 | None of unit)")
+    ref.cast (ref $"Some of '10 | None of unit")
+    drop
+    struct.new $unit
+  )
+  (func (;59;) (type $"(raw) ('6 -> '6)") (param anyref (ref $capture)) (result anyref)
+    (local $maybe#7 anyref) (local (ref $"('6 -> '7)") (ref $"('6 -> '7)"))
+    local.get 0
+    local.set $maybe#7
+    local.get 1
+    i32.const 0
+    array.get $capture
+    ref.cast (ref $"('6 -> '7)")
+    local.set 3
+    local.get 3
+    local.set 4
+    local.get $maybe#7
+    local.get 4
+    struct.get $"('6 -> '7)" 1
+    local.get 4
+    struct.get $"('6 -> '7)" 0
+    call_indirect (type $"(raw) ('6 -> '7)")
+    ref.cast (ref any)
+    drop
+    local.get $maybe#7
+  )
+  (func (;60;) (type $"(raw) (Some of '5 | None of unit -> '5)") (param anyref (ref $capture)) (result anyref)
+    (local $maybe#10 (ref $"Some of '5 | None of unit")) (local (ref $"Some of '5 | None of unit") anyref) (local $_#11 anyref) (local $_#12 (ref $"Some of '5 | None of unit")) (local (ref $"(unit -> '7)"))
+    local.get 0
+    ref.cast (ref $"Some of '5 | None of unit")
+    local.set $maybe#10
+    local.get $maybe#10
+    local.set 3
+    block (result anyref) ;; label = @1
+      block ;; label = @2
+        i32.const 0
+        local.get 3
+        struct.get $"Some of '0 | None of unit" 0
+        i32.eq
+        i32.const 1
+        i32.xor
+        br_if 0 (;@2;)
+        local.get 3
+        struct.get $"Some of '0 | None of unit" 1
+        ref.cast (ref any)
+        local.set 4
+        local.get 4
+        local.set $_#11
+        local.get $_#11
+        br 1 (;@1;)
+      end
+      block ;; label = @2
+        local.get 3
+        local.set $_#12
+        global.get 25
+        ref.as_non_null
+        local.set 7
+        struct.new $unit
+        local.get 7
+        struct.get $"(unit -> '7)" 1
+        local.get 7
+        struct.get $"(unit -> '7)" 0
+        call_indirect (type $"(raw) (unit -> '7)")
+        ref.cast (ref any)
+        br 1 (;@1;)
+      end
+      unreachable
+    end
+  )
+  (func (;61;) (type $"(raw) (Some of '3 | None of unit -> boolean)") (param anyref (ref $capture)) (result anyref)
+    (local $maybe#13 (ref $"Some of '3 | None of unit")) (local (ref $"Some of '3 | None of unit") anyref anyref (ref $"Some of '3 | None of unit"))
+    local.get 0
+    ref.cast (ref $"Some of '3 | None of unit")
+    local.set $maybe#13
+    local.get $maybe#13
+    local.set 3
+    block (result (ref $boolean)) ;; label = @1
+      block ;; label = @2
+        i32.const 0
+        local.get 3
+        struct.get $"Some of '0 | None of unit" 0
+        i32.eq
+        i32.const 1
+        i32.xor
+        br_if 0 (;@2;)
+        local.get 3
+        struct.get $"Some of '0 | None of unit" 1
+        ref.cast (ref any)
+        local.set 4
+        local.get 4
+        local.set 5
+        i32.const 1
+        struct.new $boolean
+        br 1 (;@1;)
+      end
+      block ;; label = @2
+        local.get 3
+        local.set 6
+        i32.const 0
+        struct.new $boolean
+        br 1 (;@1;)
+      end
+      unreachable
+    end
+  )
+  (func (;62;) (type $"(raw) (Some of '4 | None of unit -> boolean)") (param anyref (ref $capture)) (result anyref)
+    (local $a (ref $"Some of '4 | None of unit")) (local (ref $"(Some of '4 | None of unit -> boolean)") (ref $"(boolean -> boolean)"))
+    local.get 0
+    ref.cast (ref $"Some of '4 | None of unit")
+    local.set $a
+    global.get 36
+    ref.as_non_null
+    local.set 3
+    local.get $a
+    local.get 3
+    struct.get $"(Some of '4 | None of unit -> boolean)" 1
+    local.get 3
+    struct.get $"(Some of '4 | None of unit -> boolean)" 0
+    call_indirect (type $"(raw) (Some of '4 | None of unit -> boolean)")
+    ref.cast (ref $boolean)
+    global.get 2
+    ref.as_non_null
+    local.tee 4
+    struct.get $"(boolean -> boolean)" 1
+    local.get 4
+    struct.get $"(boolean -> boolean)" 0
+    call_indirect (type $"(raw) (boolean -> boolean)")
+  )
+  (func (;63;) (type $"(raw) (('0 * list:t) -> Cons of ('0 * list:t) | Nil of unit)") (param anyref (ref $capture)) (result anyref)
+    (local $a (ref $"('0 * list:t)"))
+    local.get 0
+    ref.cast (ref $"('0 * list:t)")
+    local.set $a
+    i32.const 0
+    local.get $a
+    struct.new $"Cons of ('0 * list:t) | Nil of unit"
+  )
+  (func (;64;) (type $"(raw) (unit -> Cons of ('0 * list:t) | Nil of unit)") (param anyref (ref $capture)) (result anyref)
+    (local $operation#0 (ref $unit))
+    local.get 0
+    ref.cast (ref $unit)
+    local.set $operation#0
+    i32.const 1
+    local.get $operation#0
+    struct.new $"Cons of ('0 * list:t) | Nil of unit"
+  )
+  (func (;65;) (type $"(raw) (('3 -> '9) -> (Cons of ('3 * list:t) | Nil of unit -> Cons of ('9 * list:t) | Nil of unit))") (param anyref (ref $capture)) (result anyref)
+    (local $list#1 (ref $"('3 -> '9)"))
+    local.get 0
+    ref.cast (ref $"('3 -> '9)")
+    local.set $list#1
+    i32.const 66
+    local.get $list#1
+    ref.cast (ref any)
+    local.get $list#1
+    ref.cast (ref any)
+    array.new_fixed $capture 2
+    struct.new $"(Cons of ('3 * list:t) | Nil of unit -> Cons of ('9 * list:t) | Nil of unit)"
+  )
+  (func (;66;) (type $"(raw) (Cons of ('3 * list:t) | Nil of unit -> Cons of ('9 * list:t) | Nil of unit)") (param anyref (ref $capture)) (result anyref)
+    (local $operation#4 (ref $"Cons of ('3 * list:t) | Nil of unit")) (local (ref $"('3 -> '9)") (ref $"('3 -> '9)") (ref $"Cons of ('3 * list:t) | Nil of unit") (ref $"('3 * list:t)") anyref anyref (ref $"Cons of ('0 * list:t) | Nil of unit") (ref $"Cons of ('0 * list:t) | Nil of unit") (ref $"(('9 * list:t) -> Cons of ('9 * list:t) | Nil of unit)") (ref $"('3 -> '9)") (ref $"(list:t -> list:t)") (ref $"(('3 -> '9) -> (list:t -> list:t))") (ref $unit) (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(unit -> Cons of ('11 * list:t) | Nil of unit)"))
+    local.get 0
+    ref.cast (ref $"Cons of ('3 * list:t) | Nil of unit")
+    local.set $operation#4
+    local.get 1
+    i32.const 0
+    array.get $capture
+    ref.cast (ref $"('3 -> '9)")
+    local.set 3
+    local.get 1
+    i32.const 1
+    array.get $capture
+    ref.cast (ref $"('3 -> '9)")
+    local.set 4
+    local.get $operation#4
+    local.set 5
+    block (result (ref $"Cons of ('9 * list:t) | Nil of unit")) ;; label = @1
+      block ;; label = @2
+        i32.const 0
+        local.get 5
+        struct.get $"Cons of ('0 * list:t) | Nil of unit" 0
+        i32.eq
+        i32.const 1
+        i32.xor
+        br_if 0 (;@2;)
+        local.get 5
+        struct.get $"Cons of ('0 * list:t) | Nil of unit" 1
+        ref.cast (ref $"('3 * list:t)")
+        local.set 6
+        local.get 6
+        struct.get $"('3 * list:t)" 0
+        local.set 7
+        local.get 7
+        local.set 8
+        local.get 6
+        struct.get $"('3 * list:t)" 1
+        local.set 9
+        local.get 9
+        local.set 10
+        global.get 38
+        ref.as_non_null
+        local.set 11
+        local.get 4
+        local.set 12
+        local.get 8
+        local.get 12
+        struct.get $"('3 -> '9)" 1
+        local.get 12
+        struct.get $"('3 -> '9)" 0
+        call_indirect (type $"(raw) ('3 -> '9)")
+        ref.cast (ref any)
+        local.get 10
+        global.get 40
+        ref.as_non_null
+        local.set 14
+        local.get 4
+        local.get 14
+        struct.get $"(('3 -> '9) -> (list:t -> list:t))" 1
+        local.get 14
+        struct.get $"(('3 -> '9) -> (list:t -> list:t))" 0
+        call_indirect (type $"(raw) (('3 -> '9) -> (list:t -> list:t))")
+        ref.cast (ref $"(list:t -> list:t)")
+        local.tee 13
+        struct.get $"(list:t -> list:t)" 1
+        local.get 13
+        struct.get $"(list:t -> list:t)" 0
+        call_indirect (type $"(raw) (list:t -> list:t)")
+        ref.cast (ref $"Cons of ('0 * list:t) | Nil of unit")
+        struct.new $"('9 * list:t)"
+        local.get 11
+        struct.get $"(('9 * list:t) -> Cons of ('9 * list:t) | Nil of unit)" 1
+        local.get 11
+        struct.get $"(('9 * list:t) -> Cons of ('9 * list:t) | Nil of unit)" 0
+        call_indirect (type $"(raw) (('9 * list:t) -> Cons of ('9 * list:t) | Nil of unit)")
+        ref.cast (ref $"Cons of ('9 * list:t) | Nil of unit")
+        br 1 (;@1;)
+      end
+      block ;; label = @2
+        i32.const 1
+        local.get 5
+        struct.get $"Cons of ('0 * list:t) | Nil of unit" 0
+        i32.eq
+        i32.const 1
+        i32.xor
+        br_if 0 (;@2;)
+        local.get 5
+        struct.get $"Cons of ('0 * list:t) | Nil of unit" 1
+        ref.cast (ref $unit)
+        local.set 15
+        local.get 15
+        global.get 15
+        ref.as_non_null
+        local.tee 16
+        struct.get $"('0 -> ('0 -> boolean))" 1
+        local.get 16
+        struct.get $"('0 -> ('0 -> boolean))" 0
+        call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+        ref.cast (ref $"('0 -> boolean)")
+        local.set 17
+        struct.new $unit
+        local.get 17
+        struct.get $"('0 -> boolean)" 1
+        local.get 17
+        struct.get $"('0 -> boolean)" 0
+        call_indirect (type $"(raw) ('0 -> boolean)")
+        ref.cast (ref $boolean)
+        struct.get $boolean 0
+        i32.const 1
+        i32.xor
+        br_if 0 (;@2;)
+        global.get 39
+        ref.as_non_null
+        local.set 18
+        struct.new $unit
+        local.get 18
+        struct.get $"(unit -> Cons of ('11 * list:t) | Nil of unit)" 1
+        local.get 18
+        struct.get $"(unit -> Cons of ('11 * list:t) | Nil of unit)" 0
+        call_indirect (type $"(raw) (unit -> Cons of ('11 * list:t) | Nil of unit)")
+        ref.cast (ref $"Cons of ('11 * list:t) | Nil of unit")
+        br 1 (;@1;)
+      end
+      unreachable
+    end
+  )
+  (func (;67;) (type $"(raw) (('6 -> '7) -> (list:t -> unit))") (param anyref (ref $capture)) (result anyref)
+    (local $list#5 (ref $"('6 -> '7)"))
+    local.get 0
+    ref.cast (ref $"('6 -> '7)")
+    local.set $list#5
+    i32.const 68
+    local.get $list#5
+    ref.cast (ref any)
+    array.new_fixed $capture 1
+    struct.new $"(list:t -> unit)"
+  )
+  (func (;68;) (type $"(raw) (list:t -> unit)") (param anyref (ref $capture)) (result anyref)
+    (local $a#6 (ref $"Cons of ('0 * list:t) | Nil of unit")) (local $operation#4 (ref $"('6 -> '7)")) (local (ref $"(list:t -> list:t)") (ref $"(('9 -> '10) -> (list:t -> list:t))"))
+    local.get 0
+    ref.cast (ref $"Cons of ('0 * list:t) | Nil of unit")
+    local.set $a#6
+    local.get 1
+    i32.const 0
+    array.get $capture
+    ref.cast (ref $"('6 -> '7)")
+    local.set $operation#4
+    global.get 40
+    ref.as_non_null
+    local.set 5
+    i32.const 69
+    local.get $operation#4
+    ref.cast (ref any)
+    array.new_fixed $capture 1
+    struct.new $"('6 -> '6)"
+    local.get 5
+    struct.get $"(('9 -> '10) -> (list:t -> list:t))" 1
+    local.get 5
+    struct.get $"(('9 -> '10) -> (list:t -> list:t))" 0
+    call_indirect (type $"(raw) (('9 -> '10) -> (list:t -> list:t))")
+    ref.cast (ref $"(list:t -> list:t)")
+    local.set 4
+    local.get $a#6
+    local.get 4
+    struct.get $"(list:t -> list:t)" 1
+    local.get 4
+    struct.get $"(list:t -> list:t)" 0
+    call_indirect (type $"(raw) (list:t -> list:t)")
+    ref.cast (ref $"Cons of ('0 * list:t) | Nil of unit")
+    drop
+    struct.new $unit
+  )
+  (func (;69;) (type $"(raw) ('6 -> '6)") (param anyref (ref $capture)) (result anyref)
+    (local $item#7 anyref) (local (ref $"('6 -> '7)") (ref $"('6 -> '7)"))
+    local.get 0
+    local.set $item#7
+    local.get 1
+    i32.const 0
+    array.get $capture
+    ref.cast (ref $"('6 -> '7)")
+    local.set 3
+    local.get 3
+    local.set 4
+    local.get $item#7
+    local.get 4
+    struct.get $"('6 -> '7)" 1
+    local.get 4
+    struct.get $"('6 -> '7)" 0
+    call_indirect (type $"(raw) ('6 -> '7)")
+    ref.cast (ref any)
+    drop
+    local.get $item#7
+  )
+  (func (;70;) (type $"(raw) ('3 -> (Cons of ('10 * list:t) | Nil of unit -> Cons of ('10 * list:t) | Nil of unit))") (param anyref (ref $capture)) (result anyref)
+    (local $list#8 anyref)
+    local.get 0
+    local.set $list#8
+    i32.const 71
+    local.get $list#8
+    ref.cast (ref any)
+    local.get $list#8
+    ref.cast (ref any)
+    array.new_fixed $capture 2
+    struct.new $"(Cons of ('10 * list:t) | Nil of unit -> Cons of ('10 * list:t) | Nil of unit)"
+  )
+  (func (;71;) (type $"(raw) (Cons of ('10 * list:t) | Nil of unit -> Cons of ('10 * list:t) | Nil of unit)") (param anyref (ref $capture)) (result anyref)
+    (local $list#11 (ref $"Cons of ('10 * list:t) | Nil of unit")) (local anyref anyref (ref $"Cons of ('10 * list:t) | Nil of unit")) (local $head#12 (ref $"('10 * list:t)")) (local anyref) (local $tail#13 anyref) (local (ref $"Cons of ('0 * list:t) | Nil of unit") (ref $"Cons of ('0 * list:t) | Nil of unit") (ref $"(('10 * list:t) -> Cons of ('10 * list:t) | Nil of unit)") (ref $"(list:t -> list:t)") (ref $"('3 -> (list:t -> list:t))") (ref $unit) (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(('14 * list:t) -> Cons of ('14 * list:t) | Nil of unit)") (ref $"(unit -> Cons of ('12 * list:t) | Nil of unit)"))
+    local.get 0
+    ref.cast (ref $"Cons of ('10 * list:t) | Nil of unit")
+    local.set $list#11
+    local.get 1
+    i32.const 0
+    array.get $capture
+    ref.cast (ref any)
+    local.set 3
+    local.get 1
+    i32.const 1
+    array.get $capture
+    ref.cast (ref any)
+    local.set 4
+    local.get $list#11
+    local.set 5
+    block (result (ref $"Cons of ('10 * list:t) | Nil of unit")) ;; label = @1
+      block ;; label = @2
+        i32.const 0
+        local.get 5
+        struct.get $"Cons of ('0 * list:t) | Nil of unit" 0
+        i32.eq
+        i32.const 1
+        i32.xor
+        br_if 0 (;@2;)
+        local.get 5
+        struct.get $"Cons of ('0 * list:t) | Nil of unit" 1
+        ref.cast (ref $"('10 * list:t)")
+        local.set $head#12
+        local.get $head#12
+        struct.get $"('10 * list:t)" 0
+        local.set 7
+        local.get 7
+        local.set $tail#13
+        local.get $head#12
+        struct.get $"('10 * list:t)" 1
+        local.set 9
+        local.get 9
+        local.set 10
+        global.get 38
+        ref.as_non_null
+        local.set 11
+        local.get $tail#13
+        global.get 42
+        ref.as_non_null
+        local.set 13
+        local.get 4
+        local.get 13
+        struct.get $"('3 -> (list:t -> list:t))" 1
+        local.get 13
+        struct.get $"('3 -> (list:t -> list:t))" 0
+        call_indirect (type $"(raw) ('3 -> (list:t -> list:t))")
+        ref.cast (ref $"(list:t -> list:t)")
+        local.set 12
+        local.get 10
+        local.get 12
+        struct.get $"(list:t -> list:t)" 1
+        local.get 12
+        struct.get $"(list:t -> list:t)" 0
+        call_indirect (type $"(raw) (list:t -> list:t)")
+        ref.cast (ref $"Cons of ('0 * list:t) | Nil of unit")
+        struct.new $"('10 * list:t)"
+        local.get 11
+        struct.get $"(('10 * list:t) -> Cons of ('10 * list:t) | Nil of unit)" 1
+        local.get 11
+        struct.get $"(('10 * list:t) -> Cons of ('10 * list:t) | Nil of unit)" 0
+        call_indirect (type $"(raw) (('10 * list:t) -> Cons of ('10 * list:t) | Nil of unit)")
+        ref.cast (ref $"Cons of ('10 * list:t) | Nil of unit")
+        br 1 (;@1;)
+      end
+      block ;; label = @2
+        i32.const 1
+        local.get 5
+        struct.get $"Cons of ('0 * list:t) | Nil of unit" 0
+        i32.eq
+        i32.const 1
+        i32.xor
+        br_if 0 (;@2;)
+        local.get 5
+        struct.get $"Cons of ('0 * list:t) | Nil of unit" 1
+        ref.cast (ref $unit)
+        local.set 14
+        local.get 14
+        global.get 15
+        ref.as_non_null
+        local.tee 15
+        struct.get $"('0 -> ('0 -> boolean))" 1
+        local.get 15
+        struct.get $"('0 -> ('0 -> boolean))" 0
+        call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+        ref.cast (ref $"('0 -> boolean)")
+        local.set 16
+        struct.new $unit
+        local.get 16
+        struct.get $"('0 -> boolean)" 1
+        local.get 16
+        struct.get $"('0 -> boolean)" 0
+        call_indirect (type $"(raw) ('0 -> boolean)")
+        ref.cast (ref $boolean)
+        struct.get $boolean 0
+        i32.const 1
+        i32.xor
+        br_if 0 (;@2;)
+        global.get 38
+        ref.as_non_null
+        local.set 17
+        local.get 4
+        global.get 39
+        ref.as_non_null
+        local.set 18
+        struct.new $unit
+        local.get 18
+        struct.get $"(unit -> Cons of ('12 * list:t) | Nil of unit)" 1
+        local.get 18
+        struct.get $"(unit -> Cons of ('12 * list:t) | Nil of unit)" 0
+        call_indirect (type $"(raw) (unit -> Cons of ('12 * list:t) | Nil of unit)")
+        ref.cast (ref $"Cons of ('12 * list:t) | Nil of unit")
+        struct.new $"('3 * Cons of ('12 * list:t) | Nil of unit)"
+        local.get 17
+        struct.get $"(('14 * list:t) -> Cons of ('14 * list:t) | Nil of unit)" 1
+        local.get 17
+        struct.get $"(('14 * list:t) -> Cons of ('14 * list:t) | Nil of unit)" 0
+        call_indirect (type $"(raw) (('14 * list:t) -> Cons of ('14 * list:t) | Nil of unit)")
+        ref.cast (ref $"Cons of ('14 * list:t) | Nil of unit")
+        br 1 (;@1;)
+      end
+      unreachable
+    end
+  )
+  (func (;72;) (type $"(raw) (Cons of ('3 * list:t) | Nil of unit -> integer)") (param anyref (ref $capture)) (result anyref)
+    (local $op#14 (ref $"Cons of ('3 * list:t) | Nil of unit")) (local (ref $"Cons of ('3 * list:t) | Nil of unit") (ref $"('3 * list:t)") anyref anyref (ref $"Cons of ('0 * list:t) | Nil of unit") (ref $"Cons of ('0 * list:t) | Nil of unit") (ref $"(integer -> (integer -> integer))") (ref $"(integer -> integer)") (ref $"(list:t -> integer)") (ref $unit) (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)"))
+    local.get 0
+    ref.cast (ref $"Cons of ('3 * list:t) | Nil of unit")
+    local.set $op#14
+    local.get $op#14
+    local.set 3
+    block (result (ref $integer)) ;; label = @1
+      block ;; label = @2
+        i32.const 0
+        local.get 3
+        struct.get $"Cons of ('0 * list:t) | Nil of unit" 0
+        i32.eq
+        i32.const 1
+        i32.xor
+        br_if 0 (;@2;)
+        local.get 3
+        struct.get $"Cons of ('0 * list:t) | Nil of unit" 1
+        ref.cast (ref $"('3 * list:t)")
+        local.set 4
+        local.get 4
+        struct.get $"('3 * list:t)" 0
+        local.set 5
+        local.get 5
+        local.set 6
+        local.get 4
+        struct.get $"('3 * list:t)" 1
+        local.set 7
+        local.get 7
+        local.set 8
+        i64.const 1
+        struct.new $integer
+        global.get 3
+        ref.as_non_null
+        local.tee 9
+        struct.get $"(integer -> (integer -> integer))" 1
+        local.get 9
+        struct.get $"(integer -> (integer -> integer))" 0
+        call_indirect (type $"(raw) (integer -> (integer -> integer))")
+        ref.cast (ref $"(integer -> integer)")
+        local.set 10
+        global.get 43
+        ref.as_non_null
+        local.set 11
+        local.get 8
+        local.get 11
+        struct.get $"(list:t -> integer)" 1
+        local.get 11
+        struct.get $"(list:t -> integer)" 0
+        call_indirect (type $"(raw) (list:t -> integer)")
+        ref.cast (ref $integer)
+        local.get 10
+        struct.get $"(integer -> integer)" 1
+        local.get 10
+        struct.get $"(integer -> integer)" 0
+        call_indirect (type $"(raw) (integer -> integer)")
+        ref.cast (ref $integer)
+        br 1 (;@1;)
+      end
+      block ;; label = @2
+        i32.const 1
+        local.get 3
+        struct.get $"Cons of ('0 * list:t) | Nil of unit" 0
+        i32.eq
+        i32.const 1
+        i32.xor
+        br_if 0 (;@2;)
+        local.get 3
+        struct.get $"Cons of ('0 * list:t) | Nil of unit" 1
+        ref.cast (ref $unit)
+        local.set 12
+        local.get 12
+        global.get 15
+        ref.as_non_null
+        local.tee 13
+        struct.get $"('0 -> ('0 -> boolean))" 1
+        local.get 13
+        struct.get $"('0 -> ('0 -> boolean))" 0
+        call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+        ref.cast (ref $"('0 -> boolean)")
+        local.set 14
+        struct.new $unit
+        local.get 14
+        struct.get $"('0 -> boolean)" 1
+        local.get 14
+        struct.get $"('0 -> boolean)" 0
+        call_indirect (type $"(raw) ('0 -> boolean)")
+        ref.cast (ref $boolean)
+        struct.get $boolean 0
+        i32.const 1
+        i32.xor
+        br_if 0 (;@2;)
+        i64.const 0
+        struct.new $integer
+        br 1 (;@1;)
+      end
+      unreachable
+    end
+  )
+  (func (;73;) (type $"(raw) (('9 -> ('6 -> '9)) -> ('9 -> (Cons of ('4 * list:t) | Nil of unit -> '9)))") (param anyref (ref $capture)) (result anyref)
+    (local $acc#15 (ref $"('9 -> ('6 -> '9))"))
+    local.get 0
+    ref.cast (ref $"('9 -> ('6 -> '9))")
+    local.set $acc#15
+    i32.const 74
+    local.get $acc#15
+    ref.cast (ref any)
+    local.get $acc#15
+    ref.cast (ref any)
+    array.new_fixed $capture 2
+    struct.new $"('9 -> (Cons of ('4 * list:t) | Nil of unit -> '9))"
+  )
+  (func (;74;) (type $"(raw) ('9 -> (Cons of ('4 * list:t) | Nil of unit -> '9))") (param anyref (ref $capture)) (result anyref)
+    (local $list#16 anyref) (local (ref $"('9 -> ('6 -> '9))") (ref $"('9 -> ('6 -> '9))"))
+    local.get 0
+    local.set $list#16
+    local.get 1
+    i32.const 0
+    array.get $capture
+    ref.cast (ref $"('9 -> ('6 -> '9))")
+    local.set 3
+    local.get 1
+    i32.const 1
+    array.get $capture
+    ref.cast (ref $"('9 -> ('6 -> '9))")
+    local.set 4
+    i32.const 75
+    local.get 4
+    ref.cast (ref any)
+    local.get $list#16
+    ref.cast (ref any)
+    local.get 4
+    ref.cast (ref any)
+    local.get $list#16
+    ref.cast (ref any)
+    array.new_fixed $capture 4
+    struct.new $"(Cons of ('4 * list:t) | Nil of unit -> '9)"
+  )
+  (func (;75;) (type $"(raw) (Cons of ('4 * list:t) | Nil of unit -> '9)") (param anyref (ref $capture)) (result anyref)
+    (local $list1#19 (ref $"Cons of ('4 * list:t) | Nil of unit")) (local (ref $"('9 -> ('6 -> '9))") anyref (ref $"('9 -> ('6 -> '9))") anyref (ref $"Cons of ('4 * list:t) | Nil of unit") (ref $"('4 * list:t)") anyref anyref (ref $"Cons of ('0 * list:t) | Nil of unit") (ref $"Cons of ('0 * list:t) | Nil of unit") (ref $"('6 -> '9)") (ref $"('9 -> ('6 -> '9))") (ref $"(list:t -> '6)") (ref $"('4 -> (list:t -> '6))") (ref $"(('9 -> ('6 -> '9)) -> ('4 -> (list:t -> '6)))") (ref $unit) (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)"))
+    local.get 0
+    ref.cast (ref $"Cons of ('4 * list:t) | Nil of unit")
+    local.set $list1#19
+    local.get 1
+    i32.const 0
+    array.get $capture
+    ref.cast (ref $"('9 -> ('6 -> '9))")
+    local.set 3
+    local.get 1
+    i32.const 1
+    array.get $capture
+    ref.cast (ref any)
+    local.set 4
+    local.get 1
+    i32.const 2
+    array.get $capture
+    ref.cast (ref $"('9 -> ('6 -> '9))")
+    local.set 5
+    local.get 1
+    i32.const 3
+    array.get $capture
+    ref.cast (ref any)
+    local.set 6
+    local.get $list1#19
+    local.set 7
+    block (result anyref) ;; label = @1
+      block ;; label = @2
+        i32.const 0
+        local.get 7
+        struct.get $"Cons of ('0 * list:t) | Nil of unit" 0
+        i32.eq
+        i32.const 1
+        i32.xor
+        br_if 0 (;@2;)
+        local.get 7
+        struct.get $"Cons of ('0 * list:t) | Nil of unit" 1
+        ref.cast (ref $"('4 * list:t)")
+        local.set 8
+        local.get 8
+        struct.get $"('4 * list:t)" 0
+        local.set 9
+        local.get 9
+        local.set 10
+        local.get 8
+        struct.get $"('4 * list:t)" 1
+        local.set 11
+        local.get 11
+        local.set 12
+        local.get 5
+        local.set 14
+        local.get 6
+        local.get 14
+        struct.get $"('9 -> ('6 -> '9))" 1
+        local.get 14
+        struct.get $"('9 -> ('6 -> '9))" 0
+        call_indirect (type $"(raw) ('9 -> ('6 -> '9))")
+        ref.cast (ref $"('6 -> '9)")
+        local.set 13
+        global.get 44
+        ref.as_non_null
+        local.set 17
+        local.get 5
+        local.get 17
+        struct.get $"(('9 -> ('6 -> '9)) -> ('4 -> (list:t -> '6)))" 1
+        local.get 17
+        struct.get $"(('9 -> ('6 -> '9)) -> ('4 -> (list:t -> '6)))" 0
+        call_indirect (type $"(raw) (('9 -> ('6 -> '9)) -> ('4 -> (list:t -> '6)))")
+        ref.cast (ref $"('4 -> (list:t -> '6))")
+        local.set 16
+        local.get 10
+        local.get 16
+        struct.get $"('4 -> (list:t -> '6))" 1
+        local.get 16
+        struct.get $"('4 -> (list:t -> '6))" 0
+        call_indirect (type $"(raw) ('4 -> (list:t -> '6))")
+        ref.cast (ref $"(list:t -> '6)")
+        local.set 15
+        local.get 12
+        local.get 15
+        struct.get $"(list:t -> '6)" 1
+        local.get 15
+        struct.get $"(list:t -> '6)" 0
+        call_indirect (type $"(raw) (list:t -> '6)")
+        ref.cast (ref any)
+        local.get 13
+        struct.get $"('6 -> '9)" 1
+        local.get 13
+        struct.get $"('6 -> '9)" 0
+        call_indirect (type $"(raw) ('6 -> '9)")
+        ref.cast (ref any)
+        br 1 (;@1;)
+      end
+      block ;; label = @2
+        i32.const 1
+        local.get 7
+        struct.get $"Cons of ('0 * list:t) | Nil of unit" 0
+        i32.eq
+        i32.const 1
+        i32.xor
+        br_if 0 (;@2;)
+        local.get 7
+        struct.get $"Cons of ('0 * list:t) | Nil of unit" 1
+        ref.cast (ref $unit)
+        local.set 18
+        local.get 18
+        global.get 15
+        ref.as_non_null
+        local.tee 19
+        struct.get $"('0 -> ('0 -> boolean))" 1
+        local.get 19
+        struct.get $"('0 -> ('0 -> boolean))" 0
+        call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+        ref.cast (ref $"('0 -> boolean)")
+        local.set 20
+        struct.new $unit
+        local.get 20
+        struct.get $"('0 -> boolean)" 1
+        local.get 20
+        struct.get $"('0 -> boolean)" 0
+        call_indirect (type $"(raw) ('0 -> boolean)")
+        ref.cast (ref $boolean)
+        struct.get $boolean 0
+        i32.const 1
+        i32.xor
+        br_if 0 (;@2;)
+        local.get 6
+        br 1 (;@1;)
+      end
+      unreachable
+    end
+  )
+  (func (;76;) (type $"(raw) (Cons of ('11 * list:t) | Nil of unit -> (Cons of ('11 * list:t) | Nil of unit -> Cons of ('11 * list:t) | Nil of unit))") (param anyref (ref $capture)) (result anyref)
+    (local $list2#20 (ref $"Cons of ('11 * list:t) | Nil of unit"))
+    local.get 0
+    ref.cast (ref $"Cons of ('11 * list:t) | Nil of unit")
+    local.set $list2#20
+    i32.const 77
+    local.get $list2#20
+    ref.cast (ref any)
+    array.new_fixed $capture 1
+    struct.new $"(Cons of ('11 * list:t) | Nil of unit -> Cons of ('11 * list:t) | Nil of unit)"
+  )
+  (func (;77;) (type $"(raw) (Cons of ('11 * list:t) | Nil of unit -> Cons of ('11 * list:t) | Nil of unit)") (param anyref (ref $capture)) (result anyref)
+    (local $n#23 (ref $"Cons of ('11 * list:t) | Nil of unit")) (local (ref $"Cons of ('11 * list:t) | Nil of unit") (ref $"Cons of ('11 * list:t) | Nil of unit") (ref $"('11 * list:t)") anyref anyref (ref $"Cons of ('0 * list:t) | Nil of unit") (ref $"Cons of ('0 * list:t) | Nil of unit") (ref $"(('11 * list:t) -> Cons of ('11 * list:t) | Nil of unit)") (ref $"(Cons of ('11 * list:t) | Nil of unit -> list:t)") (ref $"(list:t -> (Cons of ('11 * list:t) | Nil of unit -> list:t))") (ref $unit) (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)"))
+    local.get 0
+    ref.cast (ref $"Cons of ('11 * list:t) | Nil of unit")
+    local.set $n#23
+    local.get 1
+    i32.const 0
+    array.get $capture
+    ref.cast (ref $"Cons of ('11 * list:t) | Nil of unit")
+    local.set 3
+    local.get 3
+    local.set 4
+    block (result (ref $"Cons of ('11 * list:t) | Nil of unit")) ;; label = @1
+      block ;; label = @2
+        i32.const 0
+        local.get 4
+        struct.get $"Cons of ('0 * list:t) | Nil of unit" 0
+        i32.eq
+        i32.const 1
+        i32.xor
+        br_if 0 (;@2;)
+        local.get 4
+        struct.get $"Cons of ('0 * list:t) | Nil of unit" 1
+        ref.cast (ref $"('11 * list:t)")
+        local.set 5
+        local.get 5
+        struct.get $"('11 * list:t)" 0
+        local.set 6
+        local.get 6
+        local.set 7
+        local.get 5
+        struct.get $"('11 * list:t)" 1
+        local.set 8
+        local.get 8
+        local.set 9
+        global.get 38
+        ref.as_non_null
+        local.set 10
+        local.get 7
+        global.get 45
+        ref.as_non_null
+        local.set 12
+        local.get 9
+        local.get 12
+        struct.get $"(list:t -> (Cons of ('11 * list:t) | Nil of unit -> list:t))" 1
+        local.get 12
+        struct.get $"(list:t -> (Cons of ('11 * list:t) | Nil of unit -> list:t))" 0
+        call_indirect (type $"(raw) (list:t -> (Cons of ('11 * list:t) | Nil of unit -> list:t))")
+        ref.cast (ref $"(Cons of ('11 * list:t) | Nil of unit -> list:t)")
+        local.set 11
+        local.get $n#23
+        local.get 11
+        struct.get $"(Cons of ('11 * list:t) | Nil of unit -> list:t)" 1
+        local.get 11
+        struct.get $"(Cons of ('11 * list:t) | Nil of unit -> list:t)" 0
+        call_indirect (type $"(raw) (Cons of ('11 * list:t) | Nil of unit -> list:t)")
+        ref.cast (ref $"Cons of ('0 * list:t) | Nil of unit")
+        struct.new $"('11 * list:t)"
+        local.get 10
+        struct.get $"(('11 * list:t) -> Cons of ('11 * list:t) | Nil of unit)" 1
+        local.get 10
+        struct.get $"(('11 * list:t) -> Cons of ('11 * list:t) | Nil of unit)" 0
+        call_indirect (type $"(raw) (('11 * list:t) -> Cons of ('11 * list:t) | Nil of unit)")
+        ref.cast (ref $"Cons of ('11 * list:t) | Nil of unit")
+        br 1 (;@1;)
+      end
+      block ;; label = @2
+        i32.const 1
+        local.get 4
+        struct.get $"Cons of ('0 * list:t) | Nil of unit" 0
+        i32.eq
+        i32.const 1
+        i32.xor
+        br_if 0 (;@2;)
+        local.get 4
+        struct.get $"Cons of ('0 * list:t) | Nil of unit" 1
+        ref.cast (ref $unit)
+        local.set 13
+        local.get 13
+        global.get 15
+        ref.as_non_null
+        local.tee 14
+        struct.get $"('0 -> ('0 -> boolean))" 1
+        local.get 14
+        struct.get $"('0 -> ('0 -> boolean))" 0
+        call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+        ref.cast (ref $"('0 -> boolean)")
+        local.set 15
+        struct.new $unit
+        local.get 15
+        struct.get $"('0 -> boolean)" 1
+        local.get 15
+        struct.get $"('0 -> boolean)" 0
+        call_indirect (type $"(raw) ('0 -> boolean)")
+        ref.cast (ref $boolean)
+        struct.get $boolean 0
+        i32.const 1
+        i32.xor
+        br_if 0 (;@2;)
+        local.get $n#23
+        br 1 (;@1;)
+      end
+      unreachable
+    end
+  )
+  (func (;78;) (type $"(raw) (integer -> (Cons of ('8 * list:t) | Nil of unit -> Some of '8 | None of unit))") (param anyref (ref $capture)) (result anyref)
+    (local $list#24 (ref $integer))
+    local.get 0
+    ref.cast (ref $integer)
+    local.set $list#24
+    i32.const 79
+    local.get $list#24
+    ref.cast (ref any)
+    array.new_fixed $capture 1
+    struct.new $"(Cons of ('8 * list:t) | Nil of unit -> Some of '8 | None of unit)"
+  )
+  (func (;79;) (type $"(raw) (Cons of ('8 * list:t) | Nil of unit -> Some of '8 | None of unit)") (param anyref (ref $capture)) (result anyref)
+    (local (ref $"Cons of ('8 * list:t) | Nil of unit") (ref $integer) (ref $"(integer * Cons of ('8 * list:t) | Nil of unit)") (ref $integer) (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"Cons of ('8 * list:t) | Nil of unit") (ref $"('8 * list:t)") anyref anyref (ref $"Cons of ('0 * list:t) | Nil of unit") (ref $"Cons of ('0 * list:t) | Nil of unit") (ref $"('8 -> Some of '8 | None of unit)") (ref $integer) (ref $integer) (ref $"Cons of ('5 * list:t) | Nil of unit") (ref $"('5 * list:t)") anyref anyref (ref $"Cons of ('0 * list:t) | Nil of unit") (ref $"Cons of ('0 * list:t) | Nil of unit") (ref $"(list:t -> Some of '8 | None of unit)") (ref $"(integer -> (list:t -> Some of '8 | None of unit))") (ref $"(integer -> (integer -> integer))") (ref $"(integer -> integer)") (ref $integer) (ref $integer) (ref $"Cons of ('6 * list:t) | Nil of unit") (ref $unit) (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(unit -> Some of '12 | None of unit)"))
+    local.get 0
+    ref.cast (ref $"Cons of ('8 * list:t) | Nil of unit")
+    local.set 2
+    local.get 1
+    i32.const 0
+    array.get $capture
+    ref.cast (ref $integer)
+    local.set 3
+    local.get 3
+    local.get 2
+    struct.new $"(integer * Cons of ('8 * list:t) | Nil of unit)"
+    local.set 4
+    block (result (ref $"Some of '8 | None of unit")) ;; label = @1
+      block ;; label = @2
+        local.get 4
+        struct.get $"(integer * Cons of ('8 * list:t) | Nil of unit)" 0
+        local.set 5
+        local.get 5
+        global.get 15
+        ref.as_non_null
+        local.tee 6
+        struct.get $"('0 -> ('0 -> boolean))" 1
+        local.get 6
+        struct.get $"('0 -> ('0 -> boolean))" 0
+        call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+        ref.cast (ref $"('0 -> boolean)")
+        local.set 7
+        i64.const 0
+        struct.new $integer
+        local.get 7
+        struct.get $"('0 -> boolean)" 1
+        local.get 7
+        struct.get $"('0 -> boolean)" 0
+        call_indirect (type $"(raw) ('0 -> boolean)")
+        ref.cast (ref $boolean)
+        struct.get $boolean 0
+        i32.const 1
+        i32.xor
+        br_if 0 (;@2;)
+        local.get 4
+        struct.get $"(integer * Cons of ('8 * list:t) | Nil of unit)" 1
+        local.set 8
+        i32.const 0
+        local.get 8
+        struct.get $"Cons of ('0 * list:t) | Nil of unit" 0
+        i32.eq
+        i32.const 1
+        i32.xor
+        br_if 0 (;@2;)
+        local.get 8
+        struct.get $"Cons of ('0 * list:t) | Nil of unit" 1
+        ref.cast (ref $"('8 * list:t)")
+        local.set 9
+        local.get 9
+        struct.get $"('8 * list:t)" 0
+        local.set 10
+        local.get 10
+        local.set 11
+        local.get 9
+        struct.get $"('8 * list:t)" 1
+        local.set 12
+        local.get 12
+        local.set 13
+        global.get 31
+        ref.as_non_null
+        local.set 14
+        local.get 11
+        local.get 14
+        struct.get $"('8 -> Some of '8 | None of unit)" 1
+        local.get 14
+        struct.get $"('8 -> Some of '8 | None of unit)" 0
+        call_indirect (type $"(raw) ('8 -> Some of '8 | None of unit)")
+        ref.cast (ref $"Some of '8 | None of unit")
+        br 1 (;@1;)
+      end
+      block ;; label = @2
+        local.get 4
+        struct.get $"(integer * Cons of ('8 * list:t) | Nil of unit)" 0
+        local.set 15
+        local.get 15
+        local.set 16
+        local.get 4
+        struct.get $"(integer * Cons of ('8 * list:t) | Nil of unit)" 1
+        local.set 17
+        i32.const 0
+        local.get 17
+        struct.get $"Cons of ('0 * list:t) | Nil of unit" 0
+        i32.eq
+        i32.const 1
+        i32.xor
+        br_if 0 (;@2;)
+        local.get 17
+        struct.get $"Cons of ('0 * list:t) | Nil of unit" 1
+        ref.cast (ref $"('5 * list:t)")
+        local.set 18
+        local.get 18
+        struct.get $"('5 * list:t)" 0
+        local.set 19
+        local.get 19
+        local.set 20
+        local.get 18
+        struct.get $"('5 * list:t)" 1
+        local.set 21
+        local.get 21
+        local.set 22
+        global.get 46
+        ref.as_non_null
+        local.set 24
+        local.get 16
+        global.get 4
+        ref.as_non_null
+        local.tee 25
+        struct.get $"(integer -> (integer -> integer))" 1
+        local.get 25
+        struct.get $"(integer -> (integer -> integer))" 0
+        call_indirect (type $"(raw) (integer -> (integer -> integer))")
+        ref.cast (ref $"(integer -> integer)")
+        local.set 26
+        i64.const 1
+        struct.new $integer
+        local.get 26
+        struct.get $"(integer -> integer)" 1
+        local.get 26
+        struct.get $"(integer -> integer)" 0
+        call_indirect (type $"(raw) (integer -> integer)")
+        ref.cast (ref $integer)
+        local.get 24
+        struct.get $"(integer -> (list:t -> Some of '8 | None of unit))" 1
+        local.get 24
+        struct.get $"(integer -> (list:t -> Some of '8 | None of unit))" 0
+        call_indirect (type $"(raw) (integer -> (list:t -> Some of '8 | None of unit))")
+        ref.cast (ref $"(list:t -> Some of '8 | None of unit)")
+        local.set 23
+        local.get 22
+        local.get 23
+        struct.get $"(list:t -> Some of '8 | None of unit)" 1
+        local.get 23
+        struct.get $"(list:t -> Some of '8 | None of unit)" 0
+        call_indirect (type $"(raw) (list:t -> Some of '8 | None of unit)")
+        ref.cast (ref $"Some of '8 | None of unit")
+        br 1 (;@1;)
+      end
+      block ;; label = @2
+        local.get 4
+        struct.get $"(integer * Cons of ('8 * list:t) | Nil of unit)" 0
+        local.set 27
+        local.get 27
+        local.set 28
+        local.get 4
+        struct.get $"(integer * Cons of ('8 * list:t) | Nil of unit)" 1
+        local.set 29
+        i32.const 1
+        local.get 29
+        struct.get $"Cons of ('0 * list:t) | Nil of unit" 0
+        i32.eq
+        i32.const 1
+        i32.xor
+        br_if 0 (;@2;)
+        local.get 29
+        struct.get $"Cons of ('0 * list:t) | Nil of unit" 1
+        ref.cast (ref $unit)
+        local.set 30
+        local.get 30
+        global.get 15
+        ref.as_non_null
+        local.tee 31
+        struct.get $"('0 -> ('0 -> boolean))" 1
+        local.get 31
+        struct.get $"('0 -> ('0 -> boolean))" 0
+        call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+        ref.cast (ref $"('0 -> boolean)")
+        local.set 32
+        struct.new $unit
+        local.get 32
+        struct.get $"('0 -> boolean)" 1
+        local.get 32
+        struct.get $"('0 -> boolean)" 0
+        call_indirect (type $"(raw) ('0 -> boolean)")
+        ref.cast (ref $boolean)
+        struct.get $boolean 0
+        i32.const 1
+        i32.xor
+        br_if 0 (;@2;)
+        global.get 32
+        ref.as_non_null
+        local.set 33
+        struct.new $unit
+        local.get 33
+        struct.get $"(unit -> Some of '12 | None of unit)" 1
+        local.get 33
+        struct.get $"(unit -> Some of '12 | None of unit)" 0
+        call_indirect (type $"(raw) (unit -> Some of '12 | None of unit)")
+        ref.cast (ref $"Some of '12 | None of unit")
+        br 1 (;@1;)
+      end
+      unreachable
+    end
   )
 )

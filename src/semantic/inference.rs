@@ -13,7 +13,9 @@ pub fn infer_types(module: &mut IrModule) -> Result<ModuleInterface> {
                 let body_t = infer_ir(&mut env, module, ptr)?;
                 env.constraint(pattern_t, body_t, module.nodes[ptr].span);
                 let solution = env.end_let()?;
-                module.unify_all(&solution);
+                module
+                    .ir_range(ptr)
+                    .for_each(|ptr| module.nodes[ptr].unify_all(&solution));
                 pattern.iter_names(&mut |n, _| {
                     env.make_let_bound(n);
                     interface.values.insert(n.clone(), env.get_symbol(n));
@@ -31,12 +33,13 @@ pub fn infer_types(module: &mut IrModule) -> Result<ModuleInterface> {
                     Type::func(constructor.in_type.clone(), constructor.out_type.clone()),
                 );
                 env.make_let_bound(&path);
+                interface
+                    .values
+                    .insert(path.clone(), constructor.function_type());
                 interface.constructors.insert(path, constructor);
             }
         }
     }
-    let solution = env.into_solution()?;
-    module.unify_all(&solution);
     Ok(interface)
 }
 
@@ -47,15 +50,18 @@ pub fn infer_pattern(env: &mut Environment, pat: &mut Pattern) -> TypeRef {
             env.define(path.clone(), t.clone());
             t
         }
-        PatternKind::Tuple(patterns) => Type::Product(
-            patterns
-                .into_iter()
-                .map(|p| infer_pattern(env, p))
-                .collect(),
-        ),
+        PatternKind::Tuple(patterns) => {
+            Type::Product(patterns.iter_mut().map(|p| infer_pattern(env, p)).collect())
+        }
         PatternKind::Constructor(constructor, pattern) => {
-            check_pattern(env, pattern, constructor.in_type.clone());
-            constructor.out_type.clone()
+            let out_type = TypeScheme::new(constructor.out_type.clone())
+                .instantiate(|| env.fresh_type_variable());
+            let Type::Sum { variant_types, .. } = &out_type else {
+                unreachable!();
+            };
+            let in_type = variant_types[constructor.variant].clone();
+            check_pattern(env, pattern, in_type);
+            out_type
         }
         PatternKind::Literal(const_value) => const_value.type_of(),
     };
@@ -88,11 +94,13 @@ pub fn infer_ir(env: &mut Environment, module: &mut IrModule, ptr: IrPtr) -> Res
             in_,
         } => {
             env.begin_let();
-            let t = infer_pattern(env, &mut assignee);
+            let pattern_t = infer_pattern(env, &mut assignee);
             let value_t = rec!(value)?;
-            env.constraint(t, value_t, span);
+            env.constraint(pattern_t, value_t, span);
             let solution = env.end_let()?;
-            module.unify_all(&solution);
+            module
+                .ir_range(ptr)
+                .for_each(|ptr| module.nodes[ptr].unify_all(&solution));
             assignee.iter_names(&mut |name, _| {
                 env.make_let_bound(name);
             });

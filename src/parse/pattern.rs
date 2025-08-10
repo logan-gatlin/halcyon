@@ -29,7 +29,7 @@ pub fn parse_pattern(iter: it!()) -> Result<PatternExpression> {
                 }
             }
             iter.eat_or_error(RightParen)?;
-            if patterns.len() == 0 {
+            if patterns.is_empty() {
                 e::Literal(super::Literal::Unit)
             } else {
                 e::Tuple(patterns)

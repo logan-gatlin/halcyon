@@ -1,5 +1,12 @@
 use super::*;
 
+#[derive(Debug, Clone)]
+pub struct AsmType {
+    pub id: Option<u32>,
+    pub raw_id: Option<u32>,
+    pub val: ValType,
+}
+
 impl ModuleEncoder {
     pub fn get_asm_type(&mut self, t: Type) -> AsmType {
         AsmType {
@@ -9,16 +16,16 @@ impl ModuleEncoder {
         }
     }
 
-    fn get_type_id(&mut self, t: &TypeRef, raw: bool) -> u32 {
+    fn get_type_id(&mut self, t: &TypeRef, raw: bool) -> Option<u32> {
         match self.get_storage_type(t, raw) {
             StorageType::Val(ValType::Ref(RefType {
                 heap_type: HeapType::Concrete(id),
                 ..
-            })) => id,
+            })) => Some(id),
             // Anyref does not appear in the type-id list,
             // and the type ID of anyref should never be accessed.
             // Possibly find a cleaner way to do this?
-            _ => u32::MAX,
+            _ => None,
         }
     }
 
@@ -82,12 +89,12 @@ impl ModuleEncoder {
                 let capture_type = self.get_storage_type(&Type::_ClosureCapture, false);
                 RegisteredType::Struct(vec![raw_func_type, capture_type])
             }
-            Type::Function(a, b) => RegisteredType::Function(FuncType::new(
+            Type::Function(..) => RegisteredType::Function(FuncType::new(
                 [
-                    self.get_valtype(&a, false),
+                    ValType::Ref(RefType::ANYREF),
                     self.get_valtype(&Type::_ClosureCapture, false),
                 ],
-                [self.get_valtype(&b, false)],
+                [ValType::Ref(RefType::ANYREF)],
             )),
             Type::Product(items) => RegisteredType::Struct(
                 items

@@ -127,14 +127,14 @@ impl<I: Iterator<Item = Token>> StatefulIter<I> {
             return Err(lint(
                 ExpectedOneOf,
                 self.last_span,
-                [format!("{kinds_str}",)],
+                [kinds_str.to_string()],
             ));
         };
         if let Some(pos) = kinds.iter().position(|k| k == &next.0) {
             self.skip(1);
             Ok(pos)
         } else {
-            Err(lint(ExpectedOneOf, next.1, [format!("{kinds_str}")]))
+            Err(lint(ExpectedOneOf, next.1, [kinds_str.to_string()]))
         }
     }
 

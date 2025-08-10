@@ -27,15 +27,15 @@ impl From<Vec<String>> for Path {
     }
 }
 
-impl Into<String> for Path {
-    fn into(self) -> String {
-        self.0
+impl From<Path> for String {
+    fn from(val: Path) -> Self {
+        val.0
     }
 }
 
-impl Into<String> for &Path {
-    fn into(self) -> String {
-        self.0.clone()
+impl From<&Path> for String {
+    fn from(val: &Path) -> Self {
+        val.0.clone()
     }
 }
 
@@ -45,15 +45,15 @@ impl AsRef<str> for Path {
     }
 }
 
-impl Into<SExpression> for Path {
-    fn into(self) -> SExpression {
-        sexpr(&self.0, [])
+impl From<Path> for SExpression {
+    fn from(val: Path) -> Self {
+        sexpr(&val.0, [])
     }
 }
 
-impl Into<SExpression> for &Path {
-    fn into(self) -> SExpression {
-        sexpr(&self.0, [])
+impl From<&Path> for SExpression {
+    fn from(val: &Path) -> Self {
+        sexpr(&val.0, [])
     }
 }
 

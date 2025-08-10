@@ -1,8 +1,8 @@
 macro_rules! convert {
   ($($lint:ident),*) => {
-    $(impl Into<usize> for $lint {
-      fn into(self) -> usize {
-        self as usize
+    $(impl From<$lint> for usize {
+      fn from(lint: $lint) -> usize {
+        lint as usize
       }
     })*
   };

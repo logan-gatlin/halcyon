@@ -1,8 +1,8 @@
 use super::*;
 
-impl Into<SExpression> for &Pattern {
-    fn into(self) -> SExpression {
-        let mut se = match &self.kind {
+impl From<&Pattern> for SExpression {
+    fn from(val: &Pattern) -> Self {
+        let mut se = match &val.kind {
             PatternKind::Name(path) => sexpr(path, []),
             PatternKind::Tuple(patterns) => sexpr("tuple", patterns.iter().map(|p| p.into())),
             PatternKind::Literal(const_value) => sexpr(format!("{const_value}"), []),
@@ -10,7 +10,7 @@ impl Into<SExpression> for &Pattern {
                 sexpr("constructor", [Into::<SExpression>::into(&**pattern)])
             }
         };
-        se.push_front(format!("(type {})", self.type_).as_str().into());
+        se.push_front(format!("(type {})", val.type_).as_str().into());
         se
     }
 }
@@ -46,8 +46,8 @@ impl IrModule {
             } => sexpr(
                 "struct-literal",
                 field_names
-                    .into_iter()
-                    .zip(field_values.into_iter())
+                    .iter()
+                    .zip(field_values)
                     .map(|(name, value)| {
                         sexpr(
                             "field",
@@ -82,14 +82,14 @@ impl IrModule {
                         "argument",
                         [parameter_name.clone().unwrap_or("()".into()).into()],
                     )),
-                    if captures.len() == 0 {
+                    if captures.is_empty() {
                         None
                     } else {
                         Some(sexpr(
                             "captures",
                             captures
-                                .into_iter()
-                                .zip(capture_types.into_iter())
+                                .iter()
+                                .zip(capture_types)
                                 .map(|(cap, ty)| sexpr(cap, [format!("{}", ty).as_str().into()])),
                         ))
                     },
@@ -137,7 +137,7 @@ impl IrModule {
                     sexpr("scrutinee", [self.sexpr(*scrutinee)]),
                     sexpr(
                         "branches",
-                        predicates.into_iter().zip(branches).map(|(p, b)| {
+                        predicates.iter().zip(branches).map(|(p, b)| {
                             sexpr(
                                 "",
                                 [
@@ -152,7 +152,7 @@ impl IrModule {
             h::Tuple(items) => sexpr(
                 "tuple",
                 items
-                    .into_iter()
+                    .iter()
                     .map(|n| self.sexpr(*n))
                     .collect::<Vec<_>>(),
             ),
@@ -201,8 +201,8 @@ impl std::fmt::Display for IrModule {
     }
 }
 
-impl Into<SExpression> for &IrModule {
-    fn into(self) -> SExpression {
-        self.sexpr(0)
+impl From<&IrModule> for SExpression {
+    fn from(val: &IrModule) -> Self {
+        val.sexpr(0)
     }
 }

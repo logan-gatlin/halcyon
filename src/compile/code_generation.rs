@@ -46,27 +46,27 @@ impl ModuleEncoder {
 
     pub fn make_new_array(&mut self, type_: Type, size: u32) -> Instruction<'static> {
         Instruction::ArrayNewFixed {
-            array_type_index: self.get_asm_type(type_).id,
+            array_type_index: self.get_asm_type(type_).id.unwrap(),
             array_size: size,
         }
     }
 
     pub fn make_capture(&mut self, size: u32) -> Instruction<'static> {
         Instruction::ArrayNewFixed {
-            array_type_index: self.get_asm_type(Type::_ClosureCapture).id,
+            array_type_index: self.get_asm_type(Type::_ClosureCapture).id.unwrap(),
             array_size: size,
         }
     }
 
     pub fn make_struct(&mut self, type_: Type) -> Instruction<'static> {
-        Instruction::StructNew(self.get_asm_type(type_).id)
+        Instruction::StructNew(self.get_asm_type(type_).id.unwrap())
     }
 
     pub fn make_unwrap_primitive(&mut self, type_: Type) -> Instruction<'static> {
         let type_id = self.get_asm_type(type_.clone()).id;
         match type_ {
             Type::Integer | Type::Real | Type::Boolean | Type::String | Type::Glyph => StructGet {
-                struct_type_index: type_id,
+                struct_type_index: type_id.unwrap(),
                 field_index: 0,
             },
             _ => todo!(),
@@ -78,7 +78,7 @@ impl ModuleEncoder {
         self.push(
             function,
             Instruction::ArrayNewFixed {
-                array_type_index: array_t,
+                array_type_index: array_t.unwrap(),
                 array_size: size,
             },
         );
@@ -89,7 +89,7 @@ impl ModuleEncoder {
     }
 
     pub fn new_struct(&mut self, function: u32, type_: Type) {
-        let type_id = self.get_asm_type(type_).id;
+        let type_id = self.get_asm_type(type_).id.unwrap();
         self.push(function, Instruction::StructNew(type_id));
     }
 
@@ -109,7 +109,7 @@ impl ModuleEncoder {
 
     pub fn call_raw_function(&mut self, function: u32, callee_id: u32, callee_type: Type) {
         self.push(function, I32Const(callee_id as i32));
-        let callee_type = self.get_asm_type(callee_type).raw_id;
+        let callee_type = self.get_asm_type(callee_type).raw_id.unwrap();
         self.push(
             function,
             CallIndirect {
@@ -122,29 +122,29 @@ impl ModuleEncoder {
     pub fn push_constant(&mut self, function: u32, c: ConstValue) {
         match c {
             ConstValue::Unit => {
-                let tid = self.get_asm_type(Type::Unit).id;
+                let tid = self.get_asm_type(Type::Unit).id.unwrap();
                 self.push(function, StructNew(tid));
             }
             ConstValue::Integer(i) => {
                 self.push(function, I64Const(i));
-                let tid = self.get_asm_type(Type::Integer).id;
+                let tid = self.get_asm_type(Type::Integer).id.unwrap();
                 self.push(function, StructNew(tid));
             }
             ConstValue::Real(r) => {
                 self.push(function, F64Const((r).into()));
-                let tid = self.get_asm_type(Type::Real).id;
+                let tid = self.get_asm_type(Type::Real).id.unwrap();
                 self.push(function, StructNew(tid));
             }
             ConstValue::Boolean(b) => {
                 self.push(function, I32Const(if b { 1 } else { 0 }));
-                let tid = self.get_asm_type(Type::Boolean).id;
+                let tid = self.get_asm_type(Type::Boolean).id.unwrap();
                 self.push(function, StructNew(tid));
             }
             ConstValue::String(s) => {
                 for b in s.bytes() {
                     self.push(function, I32Const(b as i32));
                 }
-                let array_type_index = self.get_asm_type(Type::String).id;
+                let array_type_index = self.get_asm_type(Type::String).id.unwrap();
                 self.push(
                     function,
                     ArrayNewFixed {
@@ -155,7 +155,7 @@ impl ModuleEncoder {
             }
             ConstValue::Glyph(g) => {
                 self.push(function, I32Const(g as i32));
-                let tid = self.get_asm_type(Type::Glyph).id;
+                let tid = self.get_asm_type(Type::Glyph).id.unwrap();
                 self.push(function, StructNew(tid));
             }
         }
@@ -163,7 +163,7 @@ impl ModuleEncoder {
 
     pub fn unwrap_primitive(&mut self, function: u32, type_: impl Into<TypeRef>) {
         let type_ = type_.into();
-        let type_id = self.get_asm_type(type_.clone()).id;
+        let type_id = self.get_asm_type(type_.clone()).id.unwrap();
         match type_ {
             Type::Integer | Type::Real | Type::Boolean | Type::String | Type::Glyph => {
                 self.push(
