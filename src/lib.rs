@@ -13,7 +13,10 @@ mod test;
 */
 mod token;
 
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    sync::{Mutex, OnceLock},
+};
 
 use compile::*;
 use ir::*;
@@ -27,11 +30,10 @@ pub use lint::*;
 
 use wasm_bindgen::prelude::*;
 
-#[wasm_bindgen(module = "/src/abi/element.js")]
-extern "C" {
-    pub fn compiler_print(s: String);
-    pub fn compiler_cls();
-    pub fn execute(wasm: Vec<u8>);
+pub fn compiler_print(s: String) {
+    let m = OUTPUT.get_or_init(|| Mutex::new("".into()));
+    m.lock().unwrap().push_str(&s);
+    m.lock().unwrap().push('\n');
 }
 
 /*
@@ -63,9 +65,9 @@ pub fn execute(wasm: Vec<u8>) {
 }
 */
 
-#[wasm_bindgen]
-pub fn compile(input: &str) -> Option<i32> {
-    compiler_cls();
+static OUTPUT: OnceLock<Mutex<String>> = OnceLock::new();
+
+pub fn _compile(input: &str) -> Option<Vec<u8>> {
     let linter = Linter::new(input.to_string());
     let tokens = tokenize(input.chars()).handle(&linter)?;
     let parsed_modules = parse(tokens).handle(&linter)?;
@@ -87,7 +89,19 @@ pub fn compile(input: &str) -> Option<i32> {
             span: None,
         })
         .handle(&linter);
-    compiler_print("Compiled Successfully".to_string());
-    execute(wasm);
-    Some(0)
+    //execute(wasm);
+    Some(wasm)
+}
+
+#[wasm_bindgen]
+pub fn compile(input: &str) -> std::result::Result<Vec<u8>, String> {
+    if let Some(b) = _compile(input) {
+        Ok(b)
+    } else {
+        Err(OUTPUT
+            .get_or_init(|| Mutex::new("Failed with no reason (BUG)\n".into()))
+            .lock()
+            .unwrap()
+            .clone())
+    }
 }
