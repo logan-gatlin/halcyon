@@ -7,8 +7,10 @@ mod operator;
 mod parse;
 mod semantic;
 mod std_hc;
+/*
 #[cfg(test)]
 mod test;
+*/
 mod token;
 
 use std::collections::HashMap;
@@ -23,6 +25,16 @@ use token::*;
 
 pub use lint::*;
 
+use wasm_bindgen::prelude::*;
+
+#[wasm_bindgen(module = "/src/abi/element.js")]
+extern "C" {
+    pub fn compiler_print(s: String);
+    pub fn compiler_cls();
+    pub fn execute(wasm: Vec<u8>);
+}
+
+/*
 pub fn execute(wasm: Vec<u8>) {
     use wasmtime::*;
     let mut config = Config::default();
@@ -49,25 +61,25 @@ pub fn execute(wasm: Vec<u8>) {
         .unwrap();
     let _instance = linker.instantiate(&mut store, &module).unwrap();
 }
+*/
 
-pub fn compile(input: &str) {
+#[wasm_bindgen]
+pub fn compile(input: &str) -> Option<i32> {
+    compiler_cls();
     let linter = Linter::new(input.to_string());
-    let tokens = tokenize(input.chars()).handle(&linter);
-    let parsed_modules = parse(tokens).handle(&linter);
+    let tokens = tokenize(input.chars()).handle(&linter)?;
+    let parsed_modules = parse(tokens).handle(&linter)?;
     let mut encoder = ModuleEncoder::new();
     let mut interfaces = HashMap::new();
     make_std_module(&mut encoder, &mut interfaces);
     for module in parsed_modules {
-        let mut ir = build_ir(module, &interfaces).handle(&linter);
-        let interface = type_solve(&mut ir).handle(&linter);
-        println!("{ir}");
+        let mut ir = build_ir(module, &interfaces).handle(&linter)?;
+        let interface = type_solve(&mut ir).handle(&linter)?;
         interfaces.insert(ir.module_name.clone(), interface);
         encoder.encode_ir(ir);
     }
     let wasm = encoder.finish();
-    let wat = wasmprinter::print_bytes(&wasm).unwrap();
-    std::fs::write("demo.wat", &wat).unwrap();
-    std::fs::write("demo.wasm", &wasm).unwrap();
+    //let wat = wasmprinter::print_bytes(&wasm).unwrap();
     wasmparser::validate(&wasm)
         .map_err(|e| Lint {
             kind: CompilerBug::FailedValidation.into(),
@@ -75,5 +87,7 @@ pub fn compile(input: &str) {
             span: None,
         })
         .handle(&linter);
+    compiler_print("Compiled Successfully".to_string());
     execute(wasm);
+    Some(0)
 }

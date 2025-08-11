@@ -70,145 +70,129 @@
   (type $"(Some of '9 | None of unit -> Some of '10 | None of unit)" (;68;) (struct (field i32) (field (ref $capture))))
   (type $"(raw) (Some of '9 | None of unit -> Some of '10 | None of unit)" (;69;) (func (param anyref (ref $capture)) (result anyref)))
   (type $"(('9 -> '10) -> (Some of '9 | None of unit -> Some of '10 | None of unit))" (;70;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (('9 -> '10) -> (Some of '9 | None of unit -> Some of '10 | None of unit))" (;71;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"('6 -> '6)" (;72;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) ('6 -> '6)" (;73;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"Some of '10 | None of unit" (;74;) (struct (field i32) (field anyref)))
-  (type $"(Some of '5 | None of unit -> '5)" (;75;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (Some of '5 | None of unit -> '5)" (;76;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"Some of '5 | None of unit" (;77;) (struct (field i32) (field anyref)))
-  (type $"(unit -> '7)" (;78;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (unit -> '7)" (;79;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"(Some of '3 | None of unit -> boolean)" (;80;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (Some of '3 | None of unit -> boolean)" (;81;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"(Some of '4 | None of unit -> boolean)" (;82;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (Some of '4 | None of unit -> boolean)" (;83;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"Some of '4 | None of unit" (;84;) (struct (field i32) (field anyref)))
-  (type $"(('0 * list:t) -> Cons of ('0 * list:t) | Nil of unit)" (;85;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (('0 * list:t) -> Cons of ('0 * list:t) | Nil of unit)" (;86;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"Cons of ('0 * list:t) | Nil of unit" (;87;) (struct (field i32) (field anyref)))
-  (type $"('0 * list:t)" (;88;) (struct (field anyref) (field (ref $"Cons of ('0 * list:t) | Nil of unit"))))
-  (type $"(unit -> Cons of ('0 * list:t) | Nil of unit)" (;89;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (unit -> Cons of ('0 * list:t) | Nil of unit)" (;90;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"(('3 -> '9) -> (list:t -> list:t))" (;91;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (('3 -> '9) -> (list:t -> list:t))" (;92;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"('3 -> '9)" (;93;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) ('3 -> '9)" (;94;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"(('3 -> '9) -> (Cons of ('3 * list:t) | Nil of unit -> Cons of ('9 * list:t) | Nil of unit))" (;95;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (('3 -> '9) -> (Cons of ('3 * list:t) | Nil of unit -> Cons of ('9 * list:t) | Nil of unit))" (;96;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"Cons of ('3 * list:t) | Nil of unit" (;97;) (struct (field i32) (field anyref)))
-  (type $"(Cons of ('3 * list:t) | Nil of unit -> Cons of ('9 * list:t) | Nil of unit)" (;98;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (Cons of ('3 * list:t) | Nil of unit -> Cons of ('9 * list:t) | Nil of unit)" (;99;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"Cons of ('9 * list:t) | Nil of unit" (;100;) (struct (field i32) (field anyref)))
-  (type $"('3 * list:t)" (;101;) (struct (field anyref) (field (ref $"Cons of ('0 * list:t) | Nil of unit"))))
-  (type $"(('9 * list:t) -> Cons of ('9 * list:t) | Nil of unit)" (;102;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (('9 * list:t) -> Cons of ('9 * list:t) | Nil of unit)" (;103;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"(list:t -> list:t)" (;104;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (list:t -> list:t)" (;105;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"('9 * list:t)" (;106;) (struct (field anyref) (field (ref $"Cons of ('0 * list:t) | Nil of unit"))))
-  (type $"(unit -> Cons of ('11 * list:t) | Nil of unit)" (;107;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (unit -> Cons of ('11 * list:t) | Nil of unit)" (;108;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"Cons of ('11 * list:t) | Nil of unit" (;109;) (struct (field i32) (field anyref)))
-  (type $"(('6 -> '7) -> (list:t -> unit))" (;110;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (('6 -> '7) -> (list:t -> unit))" (;111;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"(list:t -> unit)" (;112;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (list:t -> unit)" (;113;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"(('9 -> '10) -> (list:t -> list:t))" (;114;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (('9 -> '10) -> (list:t -> list:t))" (;115;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"('3 -> (list:t -> list:t))" (;116;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) ('3 -> (list:t -> list:t))" (;117;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"('3 -> (Cons of ('10 * list:t) | Nil of unit -> Cons of ('10 * list:t) | Nil of unit))" (;118;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) ('3 -> (Cons of ('10 * list:t) | Nil of unit -> Cons of ('10 * list:t) | Nil of unit))" (;119;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"Cons of ('10 * list:t) | Nil of unit" (;120;) (struct (field i32) (field anyref)))
-  (type $"(Cons of ('10 * list:t) | Nil of unit -> Cons of ('10 * list:t) | Nil of unit)" (;121;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (Cons of ('10 * list:t) | Nil of unit -> Cons of ('10 * list:t) | Nil of unit)" (;122;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"('10 * list:t)" (;123;) (struct (field anyref) (field (ref $"Cons of ('0 * list:t) | Nil of unit"))))
-  (type $"(('10 * list:t) -> Cons of ('10 * list:t) | Nil of unit)" (;124;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (('10 * list:t) -> Cons of ('10 * list:t) | Nil of unit)" (;125;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"(('14 * list:t) -> Cons of ('14 * list:t) | Nil of unit)" (;126;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (('14 * list:t) -> Cons of ('14 * list:t) | Nil of unit)" (;127;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"(unit -> Cons of ('12 * list:t) | Nil of unit)" (;128;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (unit -> Cons of ('12 * list:t) | Nil of unit)" (;129;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"Cons of ('12 * list:t) | Nil of unit" (;130;) (struct (field i32) (field anyref)))
-  (type $"('3 * Cons of ('12 * list:t) | Nil of unit)" (;131;) (struct (field anyref) (field (ref $"Cons of ('12 * list:t) | Nil of unit"))))
-  (type $"Cons of ('14 * list:t) | Nil of unit" (;132;) (struct (field i32) (field anyref)))
-  (type $"(list:t -> integer)" (;133;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (list:t -> integer)" (;134;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"(Cons of ('3 * list:t) | Nil of unit -> integer)" (;135;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (Cons of ('3 * list:t) | Nil of unit -> integer)" (;136;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"(('9 -> ('6 -> '9)) -> ('4 -> (list:t -> '6)))" (;137;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (('9 -> ('6 -> '9)) -> ('4 -> (list:t -> '6)))" (;138;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"('9 -> ('6 -> '9))" (;139;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) ('9 -> ('6 -> '9))" (;140;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"(('9 -> ('6 -> '9)) -> ('9 -> (Cons of ('4 * list:t) | Nil of unit -> '9)))" (;141;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (('9 -> ('6 -> '9)) -> ('9 -> (Cons of ('4 * list:t) | Nil of unit -> '9)))" (;142;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"('9 -> (Cons of ('4 * list:t) | Nil of unit -> '9))" (;143;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) ('9 -> (Cons of ('4 * list:t) | Nil of unit -> '9))" (;144;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"Cons of ('4 * list:t) | Nil of unit" (;145;) (struct (field i32) (field anyref)))
-  (type $"(Cons of ('4 * list:t) | Nil of unit -> '9)" (;146;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (Cons of ('4 * list:t) | Nil of unit -> '9)" (;147;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"('4 * list:t)" (;148;) (struct (field anyref) (field (ref $"Cons of ('0 * list:t) | Nil of unit"))))
-  (type $"('6 -> '9)" (;149;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) ('6 -> '9)" (;150;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"(list:t -> '6)" (;151;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (list:t -> '6)" (;152;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"('4 -> (list:t -> '6))" (;153;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) ('4 -> (list:t -> '6))" (;154;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"(list:t -> (Cons of ('11 * list:t) | Nil of unit -> list:t))" (;155;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (list:t -> (Cons of ('11 * list:t) | Nil of unit -> list:t))" (;156;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"(Cons of ('11 * list:t) | Nil of unit -> (Cons of ('11 * list:t) | Nil of unit -> Cons of ('11 * list:t) | Nil of unit))" (;157;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (Cons of ('11 * list:t) | Nil of unit -> (Cons of ('11 * list:t) | Nil of unit -> Cons of ('11 * list:t) | Nil of unit))" (;158;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"(Cons of ('11 * list:t) | Nil of unit -> Cons of ('11 * list:t) | Nil of unit)" (;159;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (Cons of ('11 * list:t) | Nil of unit -> Cons of ('11 * list:t) | Nil of unit)" (;160;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"('11 * list:t)" (;161;) (struct (field anyref) (field (ref $"Cons of ('0 * list:t) | Nil of unit"))))
-  (type $"(('11 * list:t) -> Cons of ('11 * list:t) | Nil of unit)" (;162;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (('11 * list:t) -> Cons of ('11 * list:t) | Nil of unit)" (;163;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"(Cons of ('11 * list:t) | Nil of unit -> list:t)" (;164;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (Cons of ('11 * list:t) | Nil of unit -> list:t)" (;165;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"(integer -> (list:t -> Some of '8 | None of unit))" (;166;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (integer -> (list:t -> Some of '8 | None of unit))" (;167;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"(integer -> (Cons of ('8 * list:t) | Nil of unit -> Some of '8 | None of unit))" (;168;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (integer -> (Cons of ('8 * list:t) | Nil of unit -> Some of '8 | None of unit))" (;169;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"Cons of ('8 * list:t) | Nil of unit" (;170;) (struct (field i32) (field anyref)))
-  (type $"(Cons of ('8 * list:t) | Nil of unit -> Some of '8 | None of unit)" (;171;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (Cons of ('8 * list:t) | Nil of unit -> Some of '8 | None of unit)" (;172;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"(integer * Cons of ('8 * list:t) | Nil of unit)" (;173;) (struct (field (ref $integer)) (field (ref $"Cons of ('8 * list:t) | Nil of unit"))))
-  (type $"('8 * list:t)" (;174;) (struct (field anyref) (field (ref $"Cons of ('0 * list:t) | Nil of unit"))))
-  (type $"('8 -> Some of '8 | None of unit)" (;175;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) ('8 -> Some of '8 | None of unit)" (;176;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"Cons of ('5 * list:t) | Nil of unit" (;177;) (struct (field i32) (field anyref)))
-  (type $"('5 * list:t)" (;178;) (struct (field anyref) (field (ref $"Cons of ('0 * list:t) | Nil of unit"))))
-  (type $"(list:t -> Some of '8 | None of unit)" (;179;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (list:t -> Some of '8 | None of unit)" (;180;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"Cons of ('6 * list:t) | Nil of unit" (;181;) (struct (field i32) (field anyref)))
-  (type $"(unit -> Some of '12 | None of unit)" (;182;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (unit -> Some of '12 | None of unit)" (;183;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"Some of '12 | None of unit" (;184;) (struct (field i32) (field anyref)))
-  (type $"Some of '2 | None of unit" (;185;) (struct (field i32) (field anyref)))
-  (type $"(unit -> Some of '2 | None of unit)" (;186;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (unit -> Some of '2 | None of unit)" (;187;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"(Some of '6 | None of unit -> unit)" (;188;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (Some of '6 | None of unit -> unit)" (;189;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"((string -> unit) -> (Some of '6 | None of unit -> unit))" (;190;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) ((string -> unit) -> (Some of '6 | None of unit -> unit))" (;191;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"(unit -> Cons of ('2 * list:t) | Nil of unit)" (;192;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (unit -> Cons of ('2 * list:t) | Nil of unit)" (;193;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"Cons of ('2 * list:t) | Nil of unit" (;194;) (struct (field i32) (field anyref)))
-  (type $"(string -> (list:t -> list:t))" (;195;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (string -> (list:t -> list:t))" (;196;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"(Cons of ('3 * list:t) | Nil of unit -> list:t)" (;197;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (Cons of ('3 * list:t) | Nil of unit -> list:t)" (;198;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"(list:t -> (Cons of ('3 * list:t) | Nil of unit -> list:t))" (;199;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (list:t -> (Cons of ('3 * list:t) | Nil of unit -> list:t))" (;200;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"(list:t -> string)" (;201;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (list:t -> string)" (;202;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"(string -> (list:t -> string))" (;203;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) (string -> (list:t -> string))" (;204;) (func (param anyref (ref $capture)) (result anyref)))
-  (type $"((string -> (string -> string)) -> (string -> (list:t -> string)))" (;205;) (struct (field i32) (field (ref $capture))))
-  (type $"(raw) ((string -> (string -> string)) -> (string -> (list:t -> string)))" (;206;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"('6 -> '6)" (;71;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) ('6 -> '6)" (;72;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"Some of '10 | None of unit" (;73;) (struct (field i32) (field anyref)))
+  (type $"(Some of '5 | None of unit -> '5)" (;74;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (Some of '5 | None of unit -> '5)" (;75;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"Some of '5 | None of unit" (;76;) (struct (field i32) (field anyref)))
+  (type $"(unit -> '7)" (;77;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (unit -> '7)" (;78;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(Some of '3 | None of unit -> boolean)" (;79;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (Some of '3 | None of unit -> boolean)" (;80;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(Some of '4 | None of unit -> boolean)" (;81;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (Some of '4 | None of unit -> boolean)" (;82;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"Some of '4 | None of unit" (;83;) (struct (field i32) (field anyref)))
+  (type $"(('0 * list:t) -> Pair of ('0 * list:t) | Nil of unit)" (;84;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (('0 * list:t) -> Pair of ('0 * list:t) | Nil of unit)" (;85;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"Pair of ('0 * list:t) | Nil of unit" (;86;) (struct (field i32) (field anyref)))
+  (type $"('0 * list:t)" (;87;) (struct (field anyref) (field (ref $"Pair of ('0 * list:t) | Nil of unit"))))
+  (type $"(unit -> Pair of ('0 * list:t) | Nil of unit)" (;88;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (unit -> Pair of ('0 * list:t) | Nil of unit)" (;89;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(('3 -> '9) -> (list:t -> list:t))" (;90;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (('3 -> '9) -> (list:t -> list:t))" (;91;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"('3 -> '9)" (;92;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) ('3 -> '9)" (;93;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(('3 -> '9) -> (Pair of ('3 * list:t) | Nil of unit -> Pair of ('9 * list:t) | Nil of unit))" (;94;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (('3 -> '9) -> (Pair of ('3 * list:t) | Nil of unit -> Pair of ('9 * list:t) | Nil of unit))" (;95;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"Pair of ('3 * list:t) | Nil of unit" (;96;) (struct (field i32) (field anyref)))
+  (type $"(Pair of ('3 * list:t) | Nil of unit -> Pair of ('9 * list:t) | Nil of unit)" (;97;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (Pair of ('3 * list:t) | Nil of unit -> Pair of ('9 * list:t) | Nil of unit)" (;98;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"Pair of ('9 * list:t) | Nil of unit" (;99;) (struct (field i32) (field anyref)))
+  (type $"('3 * list:t)" (;100;) (struct (field anyref) (field (ref $"Pair of ('0 * list:t) | Nil of unit"))))
+  (type $"(('9 * list:t) -> Pair of ('9 * list:t) | Nil of unit)" (;101;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (('9 * list:t) -> Pair of ('9 * list:t) | Nil of unit)" (;102;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(list:t -> list:t)" (;103;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (list:t -> list:t)" (;104;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"('9 * list:t)" (;105;) (struct (field anyref) (field (ref $"Pair of ('0 * list:t) | Nil of unit"))))
+  (type $"(unit -> Pair of ('11 * list:t) | Nil of unit)" (;106;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (unit -> Pair of ('11 * list:t) | Nil of unit)" (;107;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"Pair of ('11 * list:t) | Nil of unit" (;108;) (struct (field i32) (field anyref)))
+  (type $"(('6 -> '7) -> (list:t -> unit))" (;109;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (('6 -> '7) -> (list:t -> unit))" (;110;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(list:t -> unit)" (;111;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (list:t -> unit)" (;112;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(('9 -> '10) -> (list:t -> list:t))" (;113;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (('9 -> '10) -> (list:t -> list:t))" (;114;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"('3 -> (list:t -> list:t))" (;115;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) ('3 -> (list:t -> list:t))" (;116;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"('3 -> (Pair of ('10 * list:t) | Nil of unit -> Pair of ('10 * list:t) | Nil of unit))" (;117;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) ('3 -> (Pair of ('10 * list:t) | Nil of unit -> Pair of ('10 * list:t) | Nil of unit))" (;118;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"Pair of ('10 * list:t) | Nil of unit" (;119;) (struct (field i32) (field anyref)))
+  (type $"(Pair of ('10 * list:t) | Nil of unit -> Pair of ('10 * list:t) | Nil of unit)" (;120;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (Pair of ('10 * list:t) | Nil of unit -> Pair of ('10 * list:t) | Nil of unit)" (;121;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"('10 * list:t)" (;122;) (struct (field anyref) (field (ref $"Pair of ('0 * list:t) | Nil of unit"))))
+  (type $"(('10 * list:t) -> Pair of ('10 * list:t) | Nil of unit)" (;123;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (('10 * list:t) -> Pair of ('10 * list:t) | Nil of unit)" (;124;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(('14 * list:t) -> Pair of ('14 * list:t) | Nil of unit)" (;125;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (('14 * list:t) -> Pair of ('14 * list:t) | Nil of unit)" (;126;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(unit -> Pair of ('12 * list:t) | Nil of unit)" (;127;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (unit -> Pair of ('12 * list:t) | Nil of unit)" (;128;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"Pair of ('12 * list:t) | Nil of unit" (;129;) (struct (field i32) (field anyref)))
+  (type $"('3 * Pair of ('12 * list:t) | Nil of unit)" (;130;) (struct (field anyref) (field (ref $"Pair of ('12 * list:t) | Nil of unit"))))
+  (type $"Pair of ('14 * list:t) | Nil of unit" (;131;) (struct (field i32) (field anyref)))
+  (type $"(list:t -> integer)" (;132;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (list:t -> integer)" (;133;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(Pair of ('3 * list:t) | Nil of unit -> integer)" (;134;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (Pair of ('3 * list:t) | Nil of unit -> integer)" (;135;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(('9 -> ('6 -> '9)) -> ('4 -> (list:t -> '6)))" (;136;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (('9 -> ('6 -> '9)) -> ('4 -> (list:t -> '6)))" (;137;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"('9 -> ('6 -> '9))" (;138;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) ('9 -> ('6 -> '9))" (;139;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(('9 -> ('6 -> '9)) -> ('9 -> (Pair of ('4 * list:t) | Nil of unit -> '9)))" (;140;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (('9 -> ('6 -> '9)) -> ('9 -> (Pair of ('4 * list:t) | Nil of unit -> '9)))" (;141;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"('9 -> (Pair of ('4 * list:t) | Nil of unit -> '9))" (;142;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) ('9 -> (Pair of ('4 * list:t) | Nil of unit -> '9))" (;143;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"Pair of ('4 * list:t) | Nil of unit" (;144;) (struct (field i32) (field anyref)))
+  (type $"(Pair of ('4 * list:t) | Nil of unit -> '9)" (;145;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (Pair of ('4 * list:t) | Nil of unit -> '9)" (;146;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"('4 * list:t)" (;147;) (struct (field anyref) (field (ref $"Pair of ('0 * list:t) | Nil of unit"))))
+  (type $"('6 -> '9)" (;148;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) ('6 -> '9)" (;149;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(list:t -> '6)" (;150;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (list:t -> '6)" (;151;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"('4 -> (list:t -> '6))" (;152;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) ('4 -> (list:t -> '6))" (;153;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(list:t -> (Pair of ('11 * list:t) | Nil of unit -> list:t))" (;154;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (list:t -> (Pair of ('11 * list:t) | Nil of unit -> list:t))" (;155;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(Pair of ('11 * list:t) | Nil of unit -> (Pair of ('11 * list:t) | Nil of unit -> Pair of ('11 * list:t) | Nil of unit))" (;156;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (Pair of ('11 * list:t) | Nil of unit -> (Pair of ('11 * list:t) | Nil of unit -> Pair of ('11 * list:t) | Nil of unit))" (;157;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(Pair of ('11 * list:t) | Nil of unit -> Pair of ('11 * list:t) | Nil of unit)" (;158;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (Pair of ('11 * list:t) | Nil of unit -> Pair of ('11 * list:t) | Nil of unit)" (;159;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"('11 * list:t)" (;160;) (struct (field anyref) (field (ref $"Pair of ('0 * list:t) | Nil of unit"))))
+  (type $"(('11 * list:t) -> Pair of ('11 * list:t) | Nil of unit)" (;161;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (('11 * list:t) -> Pair of ('11 * list:t) | Nil of unit)" (;162;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(Pair of ('11 * list:t) | Nil of unit -> list:t)" (;163;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (Pair of ('11 * list:t) | Nil of unit -> list:t)" (;164;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(integer -> (list:t -> Some of '8 | None of unit))" (;165;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (integer -> (list:t -> Some of '8 | None of unit))" (;166;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(integer -> (Pair of ('8 * list:t) | Nil of unit -> Some of '8 | None of unit))" (;167;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (integer -> (Pair of ('8 * list:t) | Nil of unit -> Some of '8 | None of unit))" (;168;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"Pair of ('8 * list:t) | Nil of unit" (;169;) (struct (field i32) (field anyref)))
+  (type $"(Pair of ('8 * list:t) | Nil of unit -> Some of '8 | None of unit)" (;170;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (Pair of ('8 * list:t) | Nil of unit -> Some of '8 | None of unit)" (;171;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(integer * Pair of ('8 * list:t) | Nil of unit)" (;172;) (struct (field (ref $integer)) (field (ref $"Pair of ('8 * list:t) | Nil of unit"))))
+  (type $"('8 * list:t)" (;173;) (struct (field anyref) (field (ref $"Pair of ('0 * list:t) | Nil of unit"))))
+  (type $"('8 -> Some of '8 | None of unit)" (;174;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) ('8 -> Some of '8 | None of unit)" (;175;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"Pair of ('5 * list:t) | Nil of unit" (;176;) (struct (field i32) (field anyref)))
+  (type $"('5 * list:t)" (;177;) (struct (field anyref) (field (ref $"Pair of ('0 * list:t) | Nil of unit"))))
+  (type $"(list:t -> Some of '8 | None of unit)" (;178;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (list:t -> Some of '8 | None of unit)" (;179;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"Pair of ('6 * list:t) | Nil of unit" (;180;) (struct (field i32) (field anyref)))
+  (type $"(unit -> Some of '12 | None of unit)" (;181;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (unit -> Some of '12 | None of unit)" (;182;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"Some of '12 | None of unit" (;183;) (struct (field i32) (field anyref)))
+  (type $"(integer -> (integer -> unit))" (;184;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (integer -> (integer -> unit))" (;185;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(integer -> unit)" (;186;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (integer -> unit)" (;187;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(integer -> string)" (;188;) (struct (field i32) (field (ref $capture))))
+  (type $"(raw) (integer -> string)" (;189;) (func (param anyref (ref $capture)) (result anyref)))
+  (type $"(integer * integer)" (;190;) (struct (field (ref $integer)) (field (ref $integer))))
   (import "sys" "print_string" (func (;0;) (type 30)))
   (import "sys" "memory" (memory (;0;) 1))
-  (table (;0;) 80 80 funcref)
+  (table (;0;) 83 83 funcref)
   (global (;0;) (mut (ref null $"(integer -> integer)")) ref.null $"(integer -> integer)")
   (global (;1;) (mut (ref null $"(real -> real)")) ref.null $"(real -> real)")
   (global (;2;) (mut (ref null $"(boolean -> boolean)")) ref.null $"(boolean -> boolean)")
@@ -247,20 +231,16 @@
   (global (;35;) (mut (ref null $"(Some of '5 | None of unit -> '5)")) ref.null $"(Some of '5 | None of unit -> '5)")
   (global (;36;) (mut (ref null $"(Some of '3 | None of unit -> boolean)")) ref.null $"(Some of '3 | None of unit -> boolean)")
   (global (;37;) (mut (ref null $"(Some of '4 | None of unit -> boolean)")) ref.null $"(Some of '4 | None of unit -> boolean)")
-  (global (;38;) (mut (ref null $"(('0 * list:t) -> Cons of ('0 * list:t) | Nil of unit)")) ref.null $"(('0 * list:t) -> Cons of ('0 * list:t) | Nil of unit)")
-  (global (;39;) (mut (ref null $"(unit -> Cons of ('0 * list:t) | Nil of unit)")) ref.null $"(unit -> Cons of ('0 * list:t) | Nil of unit)")
+  (global (;38;) (mut (ref null $"(('0 * list:t) -> Pair of ('0 * list:t) | Nil of unit)")) ref.null $"(('0 * list:t) -> Pair of ('0 * list:t) | Nil of unit)")
+  (global (;39;) (mut (ref null $"(unit -> Pair of ('0 * list:t) | Nil of unit)")) ref.null $"(unit -> Pair of ('0 * list:t) | Nil of unit)")
   (global (;40;) (mut (ref null $"(('3 -> '9) -> (list:t -> list:t))")) ref.null $"(('3 -> '9) -> (list:t -> list:t))")
   (global (;41;) (mut (ref null $"(('6 -> '7) -> (list:t -> unit))")) ref.null $"(('6 -> '7) -> (list:t -> unit))")
   (global (;42;) (mut (ref null $"('3 -> (list:t -> list:t))")) ref.null $"('3 -> (list:t -> list:t))")
   (global (;43;) (mut (ref null $"(list:t -> integer)")) ref.null $"(list:t -> integer)")
   (global (;44;) (mut (ref null $"(('9 -> ('6 -> '9)) -> ('4 -> (list:t -> '6)))")) ref.null $"(('9 -> ('6 -> '9)) -> ('4 -> (list:t -> '6)))")
-  (global (;45;) (mut (ref null $"(list:t -> (Cons of ('11 * list:t) | Nil of unit -> list:t))")) ref.null $"(list:t -> (Cons of ('11 * list:t) | Nil of unit -> list:t))")
+  (global (;45;) (mut (ref null $"(list:t -> (Pair of ('11 * list:t) | Nil of unit -> list:t))")) ref.null $"(list:t -> (Pair of ('11 * list:t) | Nil of unit -> list:t))")
   (global (;46;) (mut (ref null $"(integer -> (list:t -> Some of '8 | None of unit))")) ref.null $"(integer -> (list:t -> Some of '8 | None of unit))")
-  (global (;47;) (mut (ref null $"Some of '2 | None of unit")) ref.null $"Some of '2 | None of unit")
-  (global (;48;) (mut (ref null $"Cons of ('0 * list:t) | Nil of unit")) ref.null $"Cons of ('0 * list:t) | Nil of unit")
-  (global (;49;) (mut (ref null $unit)) ref.null $unit)
-  (global (;50;) (mut (ref null $"Cons of ('0 * list:t) | Nil of unit")) ref.null $"Cons of ('0 * list:t) | Nil of unit")
-  (global (;51;) (mut (ref null $"Cons of ('0 * list:t) | Nil of unit")) ref.null $"Cons of ('0 * list:t) | Nil of unit")
+  (global (;47;) (mut (ref null $"(integer -> (integer -> unit))")) ref.null $"(integer -> (integer -> unit))")
   (export "builtin:UnaryOp-" (global 0))
   (export "builtin:UnaryOp-." (global 1))
   (export "builtin:UnaryOpnot" (global 2))
@@ -299,7 +279,7 @@
   (export "opt:unwrap" (global 35))
   (export "opt:is_some" (global 36))
   (export "opt:is_none" (global 37))
-  (export "list:Cons" (global 38))
+  (export "list:Pair" (global 38))
   (export "list:Nil" (global 39))
   (export "list:map" (global 40))
   (export "list:iterate" (global 41))
@@ -308,15 +288,11 @@
   (export "list:fold" (global 44))
   (export "list:concatenate" (global 45))
   (export "list:nth" (global 46))
-  (export "List:o" (global 47))
-  (export "List:l1" (global 48))
-  (export "List:len" (global 49))
-  (export "List:l2" (global 50))
-  (export "List:l3" (global 51))
+  (export "FizzBuzz:fizzbuzz" (global 47))
   (start 1)
-  (elem (;0;) (i32.const 0) func 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 0 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79)
+  (elem (;0;) (i32.const 0) func 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 0 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81 82)
   (func (;1;) (type 0)
-    (local (ref $"(unit -> '1)") (ref $"(boolean -> unit)")) (local $0 (ref $"(string -> unit)")) (local (ref $"(string -> integer)") (ref $"(string -> (string -> string))") (ref $"(string -> unit)") (ref $"(('3 -> '6) -> (Some of '3 | None of unit -> Some of '6 | None of unit))") (ref $"(('6 -> '7) -> (Some of '9 | None of unit -> unit))") (ref $"(Some of '5 | None of unit -> '5)") (ref $"(Some of '3 | None of unit -> boolean)") (ref $"(Some of '4 | None of unit -> boolean)") (ref $"(('3 -> '9) -> (list:t -> list:t))") (ref $"(('6 -> '7) -> (list:t -> unit))") (ref $"('3 -> (list:t -> list:t))") (ref $"(list:t -> integer)") (ref $"(('9 -> ('6 -> '9)) -> ('4 -> (list:t -> '6)))") (ref $"(list:t -> (Cons of ('11 * list:t) | Nil of unit -> list:t))") (ref $"(integer -> (list:t -> Some of '8 | None of unit))") (ref $"Some of '2 | None of unit") (ref $"(unit -> Some of '2 | None of unit)") (ref $unit) (ref $"(Some of '6 | None of unit -> unit)") (ref $"((string -> unit) -> (Some of '6 | None of unit -> unit))") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"Cons of ('0 * list:t) | Nil of unit") (ref $"(list:t -> list:t)") (ref $"(list:t -> list:t)") (ref $"(unit -> Cons of ('2 * list:t) | Nil of unit)") (ref $"(string -> (list:t -> list:t))") (ref $"(string -> (list:t -> list:t))") (ref $unit) (ref $"(boolean -> unit)") (ref $"(list:t -> integer)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"Cons of ('0 * list:t) | Nil of unit") (ref $"(list:t -> list:t)") (ref $"(list:t -> list:t)") (ref $"(unit -> Cons of ('2 * list:t) | Nil of unit)") (ref $"(string -> (list:t -> list:t))") (ref $"(string -> (list:t -> list:t))") (ref $"Cons of ('0 * list:t) | Nil of unit") (ref $"(Cons of ('3 * list:t) | Nil of unit -> list:t)") (ref $"(list:t -> (Cons of ('3 * list:t) | Nil of unit -> list:t))") (ref $unit) (ref $"(string -> unit)") (ref $"(list:t -> string)") (ref $"(string -> (list:t -> string))") (ref $"((string -> (string -> string)) -> (string -> (list:t -> string)))") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)"))
+    (local (ref $"(unit -> '1)") (ref $"(boolean -> unit)")) (local $0 (ref $"(string -> unit)")) (local (ref $"(string -> integer)") (ref $"(string -> (string -> string))") (ref $"(string -> unit)") (ref $"(('3 -> '6) -> (Some of '3 | None of unit -> Some of '6 | None of unit))") (ref $"(('6 -> '7) -> (Some of '9 | None of unit -> unit))") (ref $"(Some of '5 | None of unit -> '5)") (ref $"(Some of '3 | None of unit -> boolean)") (ref $"(Some of '4 | None of unit -> boolean)") (ref $"(('3 -> '9) -> (list:t -> list:t))") (ref $"(('6 -> '7) -> (list:t -> unit))") (ref $"('3 -> (list:t -> list:t))") (ref $"(list:t -> integer)") (ref $"(('9 -> ('6 -> '9)) -> ('4 -> (list:t -> '6)))") (ref $"(list:t -> (Pair of ('11 * list:t) | Nil of unit -> list:t))") (ref $"(integer -> (list:t -> Some of '8 | None of unit))") (ref $"(integer -> (integer -> unit))") (ref $unit) (ref $"(integer -> unit)") (ref $"(integer -> (integer -> unit))") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)"))
     i32.const 1
     array.new_fixed $capture 0
     struct.new $"(integer -> integer)"
@@ -493,15 +469,15 @@
     global.set 37
     i32.const 63
     array.new_fixed $capture 0
-    struct.new $"(('0 * list:t) -> Cons of ('0 * list:t) | Nil of unit)"
+    struct.new $"(('0 * list:t) -> Pair of ('0 * list:t) | Nil of unit)"
     global.set 38
     i32.const 64
     array.new_fixed $capture 0
-    struct.new $"(unit -> Cons of ('0 * list:t) | Nil of unit)"
+    struct.new $"(unit -> Pair of ('0 * list:t) | Nil of unit)"
     global.set 39
     i32.const 65
     array.new_fixed $capture 0
-    struct.new $"(('3 -> '9) -> (Cons of ('3 * list:t) | Nil of unit -> Cons of ('9 * list:t) | Nil of unit))"
+    struct.new $"(('3 -> '9) -> (Pair of ('3 * list:t) | Nil of unit -> Pair of ('9 * list:t) | Nil of unit))"
     local.set 11
     local.get 11
     global.set 40
@@ -513,313 +489,75 @@
     global.set 41
     i32.const 70
     array.new_fixed $capture 0
-    struct.new $"('3 -> (Cons of ('10 * list:t) | Nil of unit -> Cons of ('10 * list:t) | Nil of unit))"
+    struct.new $"('3 -> (Pair of ('10 * list:t) | Nil of unit -> Pair of ('10 * list:t) | Nil of unit))"
     local.set 13
     local.get 13
     global.set 42
     i32.const 72
     array.new_fixed $capture 0
-    struct.new $"(Cons of ('3 * list:t) | Nil of unit -> integer)"
+    struct.new $"(Pair of ('3 * list:t) | Nil of unit -> integer)"
     local.set 14
     local.get 14
     global.set 43
     i32.const 73
     array.new_fixed $capture 0
-    struct.new $"(('9 -> ('6 -> '9)) -> ('9 -> (Cons of ('4 * list:t) | Nil of unit -> '9)))"
+    struct.new $"(('9 -> ('6 -> '9)) -> ('9 -> (Pair of ('4 * list:t) | Nil of unit -> '9)))"
     local.set 15
     local.get 15
     global.set 44
     i32.const 76
     array.new_fixed $capture 0
-    struct.new $"(Cons of ('11 * list:t) | Nil of unit -> (Cons of ('11 * list:t) | Nil of unit -> Cons of ('11 * list:t) | Nil of unit))"
+    struct.new $"(Pair of ('11 * list:t) | Nil of unit -> (Pair of ('11 * list:t) | Nil of unit -> Pair of ('11 * list:t) | Nil of unit))"
     local.set 16
     local.get 16
     global.set 45
     i32.const 78
     array.new_fixed $capture 0
-    struct.new $"(integer -> (Cons of ('8 * list:t) | Nil of unit -> Some of '8 | None of unit))"
+    struct.new $"(integer -> (Pair of ('8 * list:t) | Nil of unit -> Some of '8 | None of unit))"
     local.set 17
     local.get 17
     global.set 46
-    global.get 32
-    ref.as_non_null
-    local.set 19
-    struct.new $unit
-    local.get 19
-    struct.get $"(unit -> Some of '2 | None of unit)" 1
-    local.get 19
-    struct.get $"(unit -> Some of '2 | None of unit)" 0
-    call_indirect (type $"(raw) (unit -> Some of '2 | None of unit)")
-    ref.cast (ref $"Some of '2 | None of unit")
+    i32.const 80
+    array.new_fixed $capture 0
+    struct.new $"(integer -> (integer -> unit))"
     local.set 18
     local.get 18
     global.set 47
     global.get 47
     ref.as_non_null
-    global.get 34
-    ref.as_non_null
-    local.set 22
-    global.get 27
-    ref.as_non_null
-    local.get 22
-    struct.get $"((string -> unit) -> (Some of '6 | None of unit -> unit))" 1
-    local.get 22
-    struct.get $"((string -> unit) -> (Some of '6 | None of unit -> unit))" 0
-    call_indirect (type $"(raw) ((string -> unit) -> (Some of '6 | None of unit -> unit))")
-    ref.cast (ref $"(Some of '6 | None of unit -> unit)")
-    local.tee 21
-    struct.get $"(Some of '6 | None of unit -> unit)" 1
-    local.get 21
-    struct.get $"(Some of '6 | None of unit -> unit)" 0
-    call_indirect (type $"(raw) (Some of '6 | None of unit -> unit)")
-    ref.cast (ref $unit)
-    local.set 20
-    local.get 20
-    global.get 15
-    ref.as_non_null
-    local.tee 23
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 23
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    ref.cast (ref $"('0 -> boolean)")
-    local.set 24
-    struct.new $unit
-    local.get 24
-    struct.get $"('0 -> boolean)" 1
-    local.get 24
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    ref.cast (ref $boolean)
-    struct.get $boolean 0
-    i32.const 1
-    i32.xor
-    br_if 0
-    global.get 39
-    ref.as_non_null
-    local.set 28
-    struct.new $unit
-    local.get 28
-    struct.get $"(unit -> Cons of ('2 * list:t) | Nil of unit)" 1
-    local.get 28
-    struct.get $"(unit -> Cons of ('2 * list:t) | Nil of unit)" 0
-    call_indirect (type $"(raw) (unit -> Cons of ('2 * list:t) | Nil of unit)")
-    ref.cast (ref $"Cons of ('2 * list:t) | Nil of unit")
-    global.get 42
-    ref.as_non_null
-    local.set 29
-    i32.const 72
-    i32.const 101
-    i32.const 108
-    i32.const 108
-    i32.const 111
-    array.new_fixed $string 5
-    local.get 29
-    struct.get $"(string -> (list:t -> list:t))" 1
-    local.get 29
-    struct.get $"(string -> (list:t -> list:t))" 0
-    call_indirect (type $"(raw) (string -> (list:t -> list:t))")
-    ref.cast (ref $"(list:t -> list:t)")
-    local.tee 27
-    struct.get $"(list:t -> list:t)" 1
-    local.get 27
-    struct.get $"(list:t -> list:t)" 0
-    call_indirect (type $"(raw) (list:t -> list:t)")
-    ref.cast (ref $"Cons of ('0 * list:t) | Nil of unit")
-    global.get 42
-    ref.as_non_null
-    local.set 30
-    i32.const 87
-    i32.const 111
-    i32.const 114
-    i32.const 108
-    i32.const 100
-    array.new_fixed $string 5
-    local.get 30
-    struct.get $"(string -> (list:t -> list:t))" 1
-    local.get 30
-    struct.get $"(string -> (list:t -> list:t))" 0
-    call_indirect (type $"(raw) (string -> (list:t -> list:t))")
-    ref.cast (ref $"(list:t -> list:t)")
-    local.tee 26
-    struct.get $"(list:t -> list:t)" 1
-    local.get 26
-    struct.get $"(list:t -> list:t)" 0
-    call_indirect (type $"(raw) (list:t -> list:t)")
-    ref.cast (ref $"Cons of ('0 * list:t) | Nil of unit")
-    local.set 25
-    local.get 25
-    global.set 48
-    global.get 26
-    ref.as_non_null
-    local.set 32
-    global.get 43
-    ref.as_non_null
-    local.set 33
-    global.get 48
-    ref.as_non_null
-    local.get 33
-    struct.get $"(list:t -> integer)" 1
-    local.get 33
-    struct.get $"(list:t -> integer)" 0
-    call_indirect (type $"(raw) (list:t -> integer)")
-    ref.cast (ref $integer)
-    global.get 15
-    ref.as_non_null
-    local.tee 34
-    struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 34
-    struct.get $"('0 -> ('0 -> boolean))" 0
-    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
-    ref.cast (ref $"('0 -> boolean)")
-    local.set 35
-    i64.const 2
+    local.set 21
+    i64.const 1
     struct.new $integer
-    local.get 35
-    struct.get $"('0 -> boolean)" 1
-    local.get 35
-    struct.get $"('0 -> boolean)" 0
-    call_indirect (type $"(raw) ('0 -> boolean)")
-    ref.cast (ref $boolean)
-    local.get 32
-    struct.get $"(boolean -> unit)" 1
-    local.get 32
-    struct.get $"(boolean -> unit)" 0
-    call_indirect (type $"(raw) (boolean -> unit)")
+    local.get 21
+    struct.get $"(integer -> (integer -> unit))" 1
+    local.get 21
+    struct.get $"(integer -> (integer -> unit))" 0
+    call_indirect (type $"(raw) (integer -> (integer -> unit))")
+    ref.cast (ref $"(integer -> unit)")
+    local.set 20
+    i64.const 30
+    struct.new $integer
+    local.get 20
+    struct.get $"(integer -> unit)" 1
+    local.get 20
+    struct.get $"(integer -> unit)" 0
+    call_indirect (type $"(raw) (integer -> unit)")
     ref.cast (ref $unit)
-    local.set 31
-    local.get 31
-    global.set 49
-    global.get 39
-    ref.as_non_null
-    local.set 39
-    struct.new $unit
-    local.get 39
-    struct.get $"(unit -> Cons of ('2 * list:t) | Nil of unit)" 1
-    local.get 39
-    struct.get $"(unit -> Cons of ('2 * list:t) | Nil of unit)" 0
-    call_indirect (type $"(raw) (unit -> Cons of ('2 * list:t) | Nil of unit)")
-    ref.cast (ref $"Cons of ('2 * list:t) | Nil of unit")
-    global.get 42
-    ref.as_non_null
-    local.set 40
-    i32.const 72
-    i32.const 101
-    i32.const 108
-    i32.const 108
-    i32.const 111
-    array.new_fixed $string 5
-    local.get 40
-    struct.get $"(string -> (list:t -> list:t))" 1
-    local.get 40
-    struct.get $"(string -> (list:t -> list:t))" 0
-    call_indirect (type $"(raw) (string -> (list:t -> list:t))")
-    ref.cast (ref $"(list:t -> list:t)")
-    local.tee 38
-    struct.get $"(list:t -> list:t)" 1
-    local.get 38
-    struct.get $"(list:t -> list:t)" 0
-    call_indirect (type $"(raw) (list:t -> list:t)")
-    ref.cast (ref $"Cons of ('0 * list:t) | Nil of unit")
-    global.get 42
-    ref.as_non_null
-    local.set 41
-    i32.const 83
-    i32.const 97
-    i32.const 105
-    i32.const 108
-    i32.const 111
-    i32.const 114
-    array.new_fixed $string 6
-    local.get 41
-    struct.get $"(string -> (list:t -> list:t))" 1
-    local.get 41
-    struct.get $"(string -> (list:t -> list:t))" 0
-    call_indirect (type $"(raw) (string -> (list:t -> list:t))")
-    ref.cast (ref $"(list:t -> list:t)")
-    local.tee 37
-    struct.get $"(list:t -> list:t)" 1
-    local.get 37
-    struct.get $"(list:t -> list:t)" 0
-    call_indirect (type $"(raw) (list:t -> list:t)")
-    ref.cast (ref $"Cons of ('0 * list:t) | Nil of unit")
-    local.set 36
-    local.get 36
-    global.set 50
-    global.get 45
-    ref.as_non_null
-    local.set 44
-    global.get 48
-    ref.as_non_null
-    local.get 44
-    struct.get $"(list:t -> (Cons of ('3 * list:t) | Nil of unit -> list:t))" 1
-    local.get 44
-    struct.get $"(list:t -> (Cons of ('3 * list:t) | Nil of unit -> list:t))" 0
-    call_indirect (type $"(raw) (list:t -> (Cons of ('3 * list:t) | Nil of unit -> list:t))")
-    ref.cast (ref $"(Cons of ('3 * list:t) | Nil of unit -> list:t)")
-    local.set 43
-    global.get 50
-    ref.as_non_null
-    local.get 43
-    struct.get $"(Cons of ('3 * list:t) | Nil of unit -> list:t)" 1
-    local.get 43
-    struct.get $"(Cons of ('3 * list:t) | Nil of unit -> list:t)" 0
-    call_indirect (type $"(raw) (Cons of ('3 * list:t) | Nil of unit -> list:t)")
-    ref.cast (ref $"Cons of ('0 * list:t) | Nil of unit")
-    local.set 42
-    local.get 42
-    global.set 51
-    global.get 44
-    ref.as_non_null
-    local.set 49
-    global.get 29
-    ref.as_non_null
-    local.get 49
-    struct.get $"((string -> (string -> string)) -> (string -> (list:t -> string)))" 1
-    local.get 49
-    struct.get $"((string -> (string -> string)) -> (string -> (list:t -> string)))" 0
-    call_indirect (type $"(raw) ((string -> (string -> string)) -> (string -> (list:t -> string)))")
-    ref.cast (ref $"(string -> (list:t -> string))")
-    local.set 48
-    array.new_fixed $string 0
-    local.get 48
-    struct.get $"(string -> (list:t -> string))" 1
-    local.get 48
-    struct.get $"(string -> (list:t -> string))" 0
-    call_indirect (type $"(raw) (string -> (list:t -> string))")
-    ref.cast (ref $"(list:t -> string)")
-    local.set 47
-    global.get 51
-    ref.as_non_null
-    local.get 47
-    struct.get $"(list:t -> string)" 1
-    local.get 47
-    struct.get $"(list:t -> string)" 0
-    call_indirect (type $"(raw) (list:t -> string)")
-    ref.cast (ref $string)
-    global.get 27
-    ref.as_non_null
-    local.tee 46
-    struct.get $"(string -> unit)" 1
-    local.get 46
-    struct.get $"(string -> unit)" 0
-    call_indirect (type $"(raw) (string -> unit)")
-    ref.cast (ref $unit)
-    local.set 45
-    local.get 45
+    local.set 19
+    local.get 19
     global.get 15
     ref.as_non_null
-    local.tee 50
+    local.tee 22
     struct.get $"('0 -> ('0 -> boolean))" 1
-    local.get 50
+    local.get 22
     struct.get $"('0 -> ('0 -> boolean))" 0
     call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
     ref.cast (ref $"('0 -> boolean)")
-    local.set 51
+    local.set 23
     struct.new $unit
-    local.get 51
+    local.get 23
     struct.get $"('0 -> boolean)" 1
-    local.get 51
+    local.get 23
     struct.get $"('0 -> boolean)" 0
     call_indirect (type $"(raw) ('0 -> boolean)")
     ref.cast (ref $boolean)
@@ -2302,7 +2040,7 @@
     struct.get $"(('9 -> '10) -> (Some of '9 | None of unit -> Some of '10 | None of unit))" 1
     local.get 5
     struct.get $"(('9 -> '10) -> (Some of '9 | None of unit -> Some of '10 | None of unit))" 0
-    call_indirect (type $"(raw) (('9 -> '10) -> (Some of '9 | None of unit -> Some of '10 | None of unit))")
+    call_indirect (type $"(raw) (('3 -> '6) -> (Some of '3 | None of unit -> Some of '6 | None of unit))")
     ref.cast (ref $"(Some of '9 | None of unit -> Some of '10 | None of unit)")
     local.set 4
     local.get $a#6
@@ -2438,25 +2176,25 @@
     struct.get $"(boolean -> boolean)" 0
     call_indirect (type $"(raw) (boolean -> boolean)")
   )
-  (func (;63;) (type $"(raw) (('0 * list:t) -> Cons of ('0 * list:t) | Nil of unit)") (param anyref (ref $capture)) (result anyref)
+  (func (;63;) (type $"(raw) (('0 * list:t) -> Pair of ('0 * list:t) | Nil of unit)") (param anyref (ref $capture)) (result anyref)
     (local $a (ref $"('0 * list:t)"))
     local.get 0
     ref.cast (ref $"('0 * list:t)")
     local.set $a
     i32.const 0
     local.get $a
-    struct.new $"Cons of ('0 * list:t) | Nil of unit"
+    struct.new $"Pair of ('0 * list:t) | Nil of unit"
   )
-  (func (;64;) (type $"(raw) (unit -> Cons of ('0 * list:t) | Nil of unit)") (param anyref (ref $capture)) (result anyref)
+  (func (;64;) (type $"(raw) (unit -> Pair of ('0 * list:t) | Nil of unit)") (param anyref (ref $capture)) (result anyref)
     (local $operation#0 (ref $unit))
     local.get 0
     ref.cast (ref $unit)
     local.set $operation#0
     i32.const 1
     local.get $operation#0
-    struct.new $"Cons of ('0 * list:t) | Nil of unit"
+    struct.new $"Pair of ('0 * list:t) | Nil of unit"
   )
-  (func (;65;) (type $"(raw) (('3 -> '9) -> (Cons of ('3 * list:t) | Nil of unit -> Cons of ('9 * list:t) | Nil of unit))") (param anyref (ref $capture)) (result anyref)
+  (func (;65;) (type $"(raw) (('3 -> '9) -> (Pair of ('3 * list:t) | Nil of unit -> Pair of ('9 * list:t) | Nil of unit))") (param anyref (ref $capture)) (result anyref)
     (local $list#1 (ref $"('3 -> '9)"))
     local.get 0
     ref.cast (ref $"('3 -> '9)")
@@ -2467,12 +2205,12 @@
     local.get $list#1
     ref.cast (ref any)
     array.new_fixed $capture 2
-    struct.new $"(Cons of ('3 * list:t) | Nil of unit -> Cons of ('9 * list:t) | Nil of unit)"
+    struct.new $"(Pair of ('3 * list:t) | Nil of unit -> Pair of ('9 * list:t) | Nil of unit)"
   )
-  (func (;66;) (type $"(raw) (Cons of ('3 * list:t) | Nil of unit -> Cons of ('9 * list:t) | Nil of unit)") (param anyref (ref $capture)) (result anyref)
-    (local $operation#4 (ref $"Cons of ('3 * list:t) | Nil of unit")) (local (ref $"('3 -> '9)") (ref $"('3 -> '9)") (ref $"Cons of ('3 * list:t) | Nil of unit") (ref $"('3 * list:t)") anyref anyref (ref $"Cons of ('0 * list:t) | Nil of unit") (ref $"Cons of ('0 * list:t) | Nil of unit") (ref $"(('9 * list:t) -> Cons of ('9 * list:t) | Nil of unit)") (ref $"('3 -> '9)") (ref $"(list:t -> list:t)") (ref $"(('3 -> '9) -> (list:t -> list:t))") (ref $unit) (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(unit -> Cons of ('11 * list:t) | Nil of unit)"))
+  (func (;66;) (type $"(raw) (Pair of ('3 * list:t) | Nil of unit -> Pair of ('9 * list:t) | Nil of unit)") (param anyref (ref $capture)) (result anyref)
+    (local $operation#4 (ref $"Pair of ('3 * list:t) | Nil of unit")) (local (ref $"('3 -> '9)") (ref $"('3 -> '9)") (ref $"Pair of ('3 * list:t) | Nil of unit") (ref $"('3 * list:t)") anyref anyref (ref $"Pair of ('0 * list:t) | Nil of unit") (ref $"Pair of ('0 * list:t) | Nil of unit") (ref $"(('9 * list:t) -> Pair of ('9 * list:t) | Nil of unit)") (ref $"('3 -> '9)") (ref $"(list:t -> list:t)") (ref $"(('3 -> '9) -> (list:t -> list:t))") (ref $unit) (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(unit -> Pair of ('11 * list:t) | Nil of unit)"))
     local.get 0
-    ref.cast (ref $"Cons of ('3 * list:t) | Nil of unit")
+    ref.cast (ref $"Pair of ('3 * list:t) | Nil of unit")
     local.set $operation#4
     local.get 1
     i32.const 0
@@ -2486,17 +2224,17 @@
     local.set 4
     local.get $operation#4
     local.set 5
-    block (result (ref $"Cons of ('9 * list:t) | Nil of unit")) ;; label = @1
+    block (result (ref $"Pair of ('9 * list:t) | Nil of unit")) ;; label = @1
       block ;; label = @2
         i32.const 0
         local.get 5
-        struct.get $"Cons of ('0 * list:t) | Nil of unit" 0
+        struct.get $"Pair of ('0 * list:t) | Nil of unit" 0
         i32.eq
         i32.const 1
         i32.xor
         br_if 0 (;@2;)
         local.get 5
-        struct.get $"Cons of ('0 * list:t) | Nil of unit" 1
+        struct.get $"Pair of ('0 * list:t) | Nil of unit" 1
         ref.cast (ref $"('3 * list:t)")
         local.set 6
         local.get 6
@@ -2537,26 +2275,26 @@
         local.get 13
         struct.get $"(list:t -> list:t)" 0
         call_indirect (type $"(raw) (list:t -> list:t)")
-        ref.cast (ref $"Cons of ('0 * list:t) | Nil of unit")
+        ref.cast (ref $"Pair of ('0 * list:t) | Nil of unit")
         struct.new $"('9 * list:t)"
         local.get 11
-        struct.get $"(('9 * list:t) -> Cons of ('9 * list:t) | Nil of unit)" 1
+        struct.get $"(('9 * list:t) -> Pair of ('9 * list:t) | Nil of unit)" 1
         local.get 11
-        struct.get $"(('9 * list:t) -> Cons of ('9 * list:t) | Nil of unit)" 0
-        call_indirect (type $"(raw) (('9 * list:t) -> Cons of ('9 * list:t) | Nil of unit)")
-        ref.cast (ref $"Cons of ('9 * list:t) | Nil of unit")
+        struct.get $"(('9 * list:t) -> Pair of ('9 * list:t) | Nil of unit)" 0
+        call_indirect (type $"(raw) (('9 * list:t) -> Pair of ('9 * list:t) | Nil of unit)")
+        ref.cast (ref $"Pair of ('9 * list:t) | Nil of unit")
         br 1 (;@1;)
       end
       block ;; label = @2
         i32.const 1
         local.get 5
-        struct.get $"Cons of ('0 * list:t) | Nil of unit" 0
+        struct.get $"Pair of ('0 * list:t) | Nil of unit" 0
         i32.eq
         i32.const 1
         i32.xor
         br_if 0 (;@2;)
         local.get 5
-        struct.get $"Cons of ('0 * list:t) | Nil of unit" 1
+        struct.get $"Pair of ('0 * list:t) | Nil of unit" 1
         ref.cast (ref $unit)
         local.set 15
         local.get 15
@@ -2585,11 +2323,11 @@
         local.set 18
         struct.new $unit
         local.get 18
-        struct.get $"(unit -> Cons of ('11 * list:t) | Nil of unit)" 1
+        struct.get $"(unit -> Pair of ('11 * list:t) | Nil of unit)" 1
         local.get 18
-        struct.get $"(unit -> Cons of ('11 * list:t) | Nil of unit)" 0
-        call_indirect (type $"(raw) (unit -> Cons of ('11 * list:t) | Nil of unit)")
-        ref.cast (ref $"Cons of ('11 * list:t) | Nil of unit")
+        struct.get $"(unit -> Pair of ('11 * list:t) | Nil of unit)" 0
+        call_indirect (type $"(raw) (unit -> Pair of ('11 * list:t) | Nil of unit)")
+        ref.cast (ref $"Pair of ('11 * list:t) | Nil of unit")
         br 1 (;@1;)
       end
       unreachable
@@ -2607,9 +2345,9 @@
     struct.new $"(list:t -> unit)"
   )
   (func (;68;) (type $"(raw) (list:t -> unit)") (param anyref (ref $capture)) (result anyref)
-    (local $a#6 (ref $"Cons of ('0 * list:t) | Nil of unit")) (local $operation#4 (ref $"('6 -> '7)")) (local (ref $"(list:t -> list:t)") (ref $"(('9 -> '10) -> (list:t -> list:t))"))
+    (local $a#6 (ref $"Pair of ('0 * list:t) | Nil of unit")) (local $operation#4 (ref $"('6 -> '7)")) (local (ref $"(list:t -> list:t)") (ref $"(('9 -> '10) -> (list:t -> list:t))"))
     local.get 0
-    ref.cast (ref $"Cons of ('0 * list:t) | Nil of unit")
+    ref.cast (ref $"Pair of ('0 * list:t) | Nil of unit")
     local.set $a#6
     local.get 1
     i32.const 0
@@ -2637,7 +2375,7 @@
     local.get 4
     struct.get $"(list:t -> list:t)" 0
     call_indirect (type $"(raw) (list:t -> list:t)")
-    ref.cast (ref $"Cons of ('0 * list:t) | Nil of unit")
+    ref.cast (ref $"Pair of ('0 * list:t) | Nil of unit")
     drop
     struct.new $unit
   )
@@ -2662,7 +2400,7 @@
     drop
     local.get $item#7
   )
-  (func (;70;) (type $"(raw) ('3 -> (Cons of ('10 * list:t) | Nil of unit -> Cons of ('10 * list:t) | Nil of unit))") (param anyref (ref $capture)) (result anyref)
+  (func (;70;) (type $"(raw) ('3 -> (Pair of ('10 * list:t) | Nil of unit -> Pair of ('10 * list:t) | Nil of unit))") (param anyref (ref $capture)) (result anyref)
     (local $list#8 anyref)
     local.get 0
     local.set $list#8
@@ -2672,12 +2410,12 @@
     local.get $list#8
     ref.cast (ref any)
     array.new_fixed $capture 2
-    struct.new $"(Cons of ('10 * list:t) | Nil of unit -> Cons of ('10 * list:t) | Nil of unit)"
+    struct.new $"(Pair of ('10 * list:t) | Nil of unit -> Pair of ('10 * list:t) | Nil of unit)"
   )
-  (func (;71;) (type $"(raw) (Cons of ('10 * list:t) | Nil of unit -> Cons of ('10 * list:t) | Nil of unit)") (param anyref (ref $capture)) (result anyref)
-    (local $list#11 (ref $"Cons of ('10 * list:t) | Nil of unit")) (local anyref anyref (ref $"Cons of ('10 * list:t) | Nil of unit")) (local $head#12 (ref $"('10 * list:t)")) (local anyref) (local $tail#13 anyref) (local (ref $"Cons of ('0 * list:t) | Nil of unit") (ref $"Cons of ('0 * list:t) | Nil of unit") (ref $"(('10 * list:t) -> Cons of ('10 * list:t) | Nil of unit)") (ref $"(list:t -> list:t)") (ref $"('3 -> (list:t -> list:t))") (ref $unit) (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(('14 * list:t) -> Cons of ('14 * list:t) | Nil of unit)") (ref $"(unit -> Cons of ('12 * list:t) | Nil of unit)"))
+  (func (;71;) (type $"(raw) (Pair of ('10 * list:t) | Nil of unit -> Pair of ('10 * list:t) | Nil of unit)") (param anyref (ref $capture)) (result anyref)
+    (local $list#11 (ref $"Pair of ('10 * list:t) | Nil of unit")) (local anyref anyref (ref $"Pair of ('10 * list:t) | Nil of unit")) (local $head#12 (ref $"('10 * list:t)")) (local anyref) (local $tail#13 anyref) (local (ref $"Pair of ('0 * list:t) | Nil of unit") (ref $"Pair of ('0 * list:t) | Nil of unit") (ref $"(('10 * list:t) -> Pair of ('10 * list:t) | Nil of unit)") (ref $"(list:t -> list:t)") (ref $"('3 -> (list:t -> list:t))") (ref $unit) (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(('14 * list:t) -> Pair of ('14 * list:t) | Nil of unit)") (ref $"(unit -> Pair of ('12 * list:t) | Nil of unit)"))
     local.get 0
-    ref.cast (ref $"Cons of ('10 * list:t) | Nil of unit")
+    ref.cast (ref $"Pair of ('10 * list:t) | Nil of unit")
     local.set $list#11
     local.get 1
     i32.const 0
@@ -2691,17 +2429,17 @@
     local.set 4
     local.get $list#11
     local.set 5
-    block (result (ref $"Cons of ('10 * list:t) | Nil of unit")) ;; label = @1
+    block (result (ref $"Pair of ('10 * list:t) | Nil of unit")) ;; label = @1
       block ;; label = @2
         i32.const 0
         local.get 5
-        struct.get $"Cons of ('0 * list:t) | Nil of unit" 0
+        struct.get $"Pair of ('0 * list:t) | Nil of unit" 0
         i32.eq
         i32.const 1
         i32.xor
         br_if 0 (;@2;)
         local.get 5
-        struct.get $"Cons of ('0 * list:t) | Nil of unit" 1
+        struct.get $"Pair of ('0 * list:t) | Nil of unit" 1
         ref.cast (ref $"('10 * list:t)")
         local.set $head#12
         local.get $head#12
@@ -2735,26 +2473,26 @@
         local.get 12
         struct.get $"(list:t -> list:t)" 0
         call_indirect (type $"(raw) (list:t -> list:t)")
-        ref.cast (ref $"Cons of ('0 * list:t) | Nil of unit")
+        ref.cast (ref $"Pair of ('0 * list:t) | Nil of unit")
         struct.new $"('10 * list:t)"
         local.get 11
-        struct.get $"(('10 * list:t) -> Cons of ('10 * list:t) | Nil of unit)" 1
+        struct.get $"(('10 * list:t) -> Pair of ('10 * list:t) | Nil of unit)" 1
         local.get 11
-        struct.get $"(('10 * list:t) -> Cons of ('10 * list:t) | Nil of unit)" 0
-        call_indirect (type $"(raw) (('10 * list:t) -> Cons of ('10 * list:t) | Nil of unit)")
-        ref.cast (ref $"Cons of ('10 * list:t) | Nil of unit")
+        struct.get $"(('10 * list:t) -> Pair of ('10 * list:t) | Nil of unit)" 0
+        call_indirect (type $"(raw) (('10 * list:t) -> Pair of ('10 * list:t) | Nil of unit)")
+        ref.cast (ref $"Pair of ('10 * list:t) | Nil of unit")
         br 1 (;@1;)
       end
       block ;; label = @2
         i32.const 1
         local.get 5
-        struct.get $"Cons of ('0 * list:t) | Nil of unit" 0
+        struct.get $"Pair of ('0 * list:t) | Nil of unit" 0
         i32.eq
         i32.const 1
         i32.xor
         br_if 0 (;@2;)
         local.get 5
-        struct.get $"Cons of ('0 * list:t) | Nil of unit" 1
+        struct.get $"Pair of ('0 * list:t) | Nil of unit" 1
         ref.cast (ref $unit)
         local.set 14
         local.get 14
@@ -2787,27 +2525,27 @@
         local.set 18
         struct.new $unit
         local.get 18
-        struct.get $"(unit -> Cons of ('12 * list:t) | Nil of unit)" 1
+        struct.get $"(unit -> Pair of ('12 * list:t) | Nil of unit)" 1
         local.get 18
-        struct.get $"(unit -> Cons of ('12 * list:t) | Nil of unit)" 0
-        call_indirect (type $"(raw) (unit -> Cons of ('12 * list:t) | Nil of unit)")
-        ref.cast (ref $"Cons of ('12 * list:t) | Nil of unit")
-        struct.new $"('3 * Cons of ('12 * list:t) | Nil of unit)"
+        struct.get $"(unit -> Pair of ('12 * list:t) | Nil of unit)" 0
+        call_indirect (type $"(raw) (unit -> Pair of ('12 * list:t) | Nil of unit)")
+        ref.cast (ref $"Pair of ('12 * list:t) | Nil of unit")
+        struct.new $"('3 * Pair of ('12 * list:t) | Nil of unit)"
         local.get 17
-        struct.get $"(('14 * list:t) -> Cons of ('14 * list:t) | Nil of unit)" 1
+        struct.get $"(('14 * list:t) -> Pair of ('14 * list:t) | Nil of unit)" 1
         local.get 17
-        struct.get $"(('14 * list:t) -> Cons of ('14 * list:t) | Nil of unit)" 0
-        call_indirect (type $"(raw) (('14 * list:t) -> Cons of ('14 * list:t) | Nil of unit)")
-        ref.cast (ref $"Cons of ('14 * list:t) | Nil of unit")
+        struct.get $"(('14 * list:t) -> Pair of ('14 * list:t) | Nil of unit)" 0
+        call_indirect (type $"(raw) (('14 * list:t) -> Pair of ('14 * list:t) | Nil of unit)")
+        ref.cast (ref $"Pair of ('14 * list:t) | Nil of unit")
         br 1 (;@1;)
       end
       unreachable
     end
   )
-  (func (;72;) (type $"(raw) (Cons of ('3 * list:t) | Nil of unit -> integer)") (param anyref (ref $capture)) (result anyref)
-    (local $op#14 (ref $"Cons of ('3 * list:t) | Nil of unit")) (local (ref $"Cons of ('3 * list:t) | Nil of unit") (ref $"('3 * list:t)") anyref anyref (ref $"Cons of ('0 * list:t) | Nil of unit") (ref $"Cons of ('0 * list:t) | Nil of unit") (ref $"(integer -> (integer -> integer))") (ref $"(integer -> integer)") (ref $"(list:t -> integer)") (ref $unit) (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)"))
+  (func (;72;) (type $"(raw) (Pair of ('3 * list:t) | Nil of unit -> integer)") (param anyref (ref $capture)) (result anyref)
+    (local $op#14 (ref $"Pair of ('3 * list:t) | Nil of unit")) (local (ref $"Pair of ('3 * list:t) | Nil of unit") (ref $"('3 * list:t)") anyref anyref (ref $"Pair of ('0 * list:t) | Nil of unit") (ref $"Pair of ('0 * list:t) | Nil of unit") (ref $"(integer -> (integer -> integer))") (ref $"(integer -> integer)") (ref $"(list:t -> integer)") (ref $unit) (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)"))
     local.get 0
-    ref.cast (ref $"Cons of ('3 * list:t) | Nil of unit")
+    ref.cast (ref $"Pair of ('3 * list:t) | Nil of unit")
     local.set $op#14
     local.get $op#14
     local.set 3
@@ -2815,13 +2553,13 @@
       block ;; label = @2
         i32.const 0
         local.get 3
-        struct.get $"Cons of ('0 * list:t) | Nil of unit" 0
+        struct.get $"Pair of ('0 * list:t) | Nil of unit" 0
         i32.eq
         i32.const 1
         i32.xor
         br_if 0 (;@2;)
         local.get 3
-        struct.get $"Cons of ('0 * list:t) | Nil of unit" 1
+        struct.get $"Pair of ('0 * list:t) | Nil of unit" 1
         ref.cast (ref $"('3 * list:t)")
         local.set 4
         local.get 4
@@ -2866,13 +2604,13 @@
       block ;; label = @2
         i32.const 1
         local.get 3
-        struct.get $"Cons of ('0 * list:t) | Nil of unit" 0
+        struct.get $"Pair of ('0 * list:t) | Nil of unit" 0
         i32.eq
         i32.const 1
         i32.xor
         br_if 0 (;@2;)
         local.get 3
-        struct.get $"Cons of ('0 * list:t) | Nil of unit" 1
+        struct.get $"Pair of ('0 * list:t) | Nil of unit" 1
         ref.cast (ref $unit)
         local.set 12
         local.get 12
@@ -2903,7 +2641,7 @@
       unreachable
     end
   )
-  (func (;73;) (type $"(raw) (('9 -> ('6 -> '9)) -> ('9 -> (Cons of ('4 * list:t) | Nil of unit -> '9)))") (param anyref (ref $capture)) (result anyref)
+  (func (;73;) (type $"(raw) (('9 -> ('6 -> '9)) -> ('9 -> (Pair of ('4 * list:t) | Nil of unit -> '9)))") (param anyref (ref $capture)) (result anyref)
     (local $acc#15 (ref $"('9 -> ('6 -> '9))"))
     local.get 0
     ref.cast (ref $"('9 -> ('6 -> '9))")
@@ -2914,9 +2652,9 @@
     local.get $acc#15
     ref.cast (ref any)
     array.new_fixed $capture 2
-    struct.new $"('9 -> (Cons of ('4 * list:t) | Nil of unit -> '9))"
+    struct.new $"('9 -> (Pair of ('4 * list:t) | Nil of unit -> '9))"
   )
-  (func (;74;) (type $"(raw) ('9 -> (Cons of ('4 * list:t) | Nil of unit -> '9))") (param anyref (ref $capture)) (result anyref)
+  (func (;74;) (type $"(raw) ('9 -> (Pair of ('4 * list:t) | Nil of unit -> '9))") (param anyref (ref $capture)) (result anyref)
     (local $list#16 anyref) (local (ref $"('9 -> ('6 -> '9))") (ref $"('9 -> ('6 -> '9))"))
     local.get 0
     local.set $list#16
@@ -2940,12 +2678,12 @@
     local.get $list#16
     ref.cast (ref any)
     array.new_fixed $capture 4
-    struct.new $"(Cons of ('4 * list:t) | Nil of unit -> '9)"
+    struct.new $"(Pair of ('4 * list:t) | Nil of unit -> '9)"
   )
-  (func (;75;) (type $"(raw) (Cons of ('4 * list:t) | Nil of unit -> '9)") (param anyref (ref $capture)) (result anyref)
-    (local $list1#19 (ref $"Cons of ('4 * list:t) | Nil of unit")) (local (ref $"('9 -> ('6 -> '9))") anyref (ref $"('9 -> ('6 -> '9))") anyref (ref $"Cons of ('4 * list:t) | Nil of unit") (ref $"('4 * list:t)") anyref anyref (ref $"Cons of ('0 * list:t) | Nil of unit") (ref $"Cons of ('0 * list:t) | Nil of unit") (ref $"('6 -> '9)") (ref $"('9 -> ('6 -> '9))") (ref $"(list:t -> '6)") (ref $"('4 -> (list:t -> '6))") (ref $"(('9 -> ('6 -> '9)) -> ('4 -> (list:t -> '6)))") (ref $unit) (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)"))
+  (func (;75;) (type $"(raw) (Pair of ('4 * list:t) | Nil of unit -> '9)") (param anyref (ref $capture)) (result anyref)
+    (local $list1#19 (ref $"Pair of ('4 * list:t) | Nil of unit")) (local (ref $"('9 -> ('6 -> '9))") anyref (ref $"('9 -> ('6 -> '9))") anyref (ref $"Pair of ('4 * list:t) | Nil of unit") (ref $"('4 * list:t)") anyref anyref (ref $"Pair of ('0 * list:t) | Nil of unit") (ref $"Pair of ('0 * list:t) | Nil of unit") (ref $"('6 -> '9)") (ref $"('9 -> ('6 -> '9))") (ref $"(list:t -> '6)") (ref $"('4 -> (list:t -> '6))") (ref $"(('9 -> ('6 -> '9)) -> ('4 -> (list:t -> '6)))") (ref $unit) (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)"))
     local.get 0
-    ref.cast (ref $"Cons of ('4 * list:t) | Nil of unit")
+    ref.cast (ref $"Pair of ('4 * list:t) | Nil of unit")
     local.set $list1#19
     local.get 1
     i32.const 0
@@ -2973,13 +2711,13 @@
       block ;; label = @2
         i32.const 0
         local.get 7
-        struct.get $"Cons of ('0 * list:t) | Nil of unit" 0
+        struct.get $"Pair of ('0 * list:t) | Nil of unit" 0
         i32.eq
         i32.const 1
         i32.xor
         br_if 0 (;@2;)
         local.get 7
-        struct.get $"Cons of ('0 * list:t) | Nil of unit" 1
+        struct.get $"Pair of ('0 * list:t) | Nil of unit" 1
         ref.cast (ref $"('4 * list:t)")
         local.set 8
         local.get 8
@@ -3039,13 +2777,13 @@
       block ;; label = @2
         i32.const 1
         local.get 7
-        struct.get $"Cons of ('0 * list:t) | Nil of unit" 0
+        struct.get $"Pair of ('0 * list:t) | Nil of unit" 0
         i32.eq
         i32.const 1
         i32.xor
         br_if 0 (;@2;)
         local.get 7
-        struct.get $"Cons of ('0 * list:t) | Nil of unit" 1
+        struct.get $"Pair of ('0 * list:t) | Nil of unit" 1
         ref.cast (ref $unit)
         local.set 18
         local.get 18
@@ -3075,40 +2813,40 @@
       unreachable
     end
   )
-  (func (;76;) (type $"(raw) (Cons of ('11 * list:t) | Nil of unit -> (Cons of ('11 * list:t) | Nil of unit -> Cons of ('11 * list:t) | Nil of unit))") (param anyref (ref $capture)) (result anyref)
-    (local $list2#20 (ref $"Cons of ('11 * list:t) | Nil of unit"))
+  (func (;76;) (type $"(raw) (Pair of ('11 * list:t) | Nil of unit -> (Pair of ('11 * list:t) | Nil of unit -> Pair of ('11 * list:t) | Nil of unit))") (param anyref (ref $capture)) (result anyref)
+    (local $list2#20 (ref $"Pair of ('11 * list:t) | Nil of unit"))
     local.get 0
-    ref.cast (ref $"Cons of ('11 * list:t) | Nil of unit")
+    ref.cast (ref $"Pair of ('11 * list:t) | Nil of unit")
     local.set $list2#20
     i32.const 77
     local.get $list2#20
     ref.cast (ref any)
     array.new_fixed $capture 1
-    struct.new $"(Cons of ('11 * list:t) | Nil of unit -> Cons of ('11 * list:t) | Nil of unit)"
+    struct.new $"(Pair of ('11 * list:t) | Nil of unit -> Pair of ('11 * list:t) | Nil of unit)"
   )
-  (func (;77;) (type $"(raw) (Cons of ('11 * list:t) | Nil of unit -> Cons of ('11 * list:t) | Nil of unit)") (param anyref (ref $capture)) (result anyref)
-    (local $n#23 (ref $"Cons of ('11 * list:t) | Nil of unit")) (local (ref $"Cons of ('11 * list:t) | Nil of unit") (ref $"Cons of ('11 * list:t) | Nil of unit") (ref $"('11 * list:t)") anyref anyref (ref $"Cons of ('0 * list:t) | Nil of unit") (ref $"Cons of ('0 * list:t) | Nil of unit") (ref $"(('11 * list:t) -> Cons of ('11 * list:t) | Nil of unit)") (ref $"(Cons of ('11 * list:t) | Nil of unit -> list:t)") (ref $"(list:t -> (Cons of ('11 * list:t) | Nil of unit -> list:t))") (ref $unit) (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)"))
+  (func (;77;) (type $"(raw) (Pair of ('11 * list:t) | Nil of unit -> Pair of ('11 * list:t) | Nil of unit)") (param anyref (ref $capture)) (result anyref)
+    (local $n#23 (ref $"Pair of ('11 * list:t) | Nil of unit")) (local (ref $"Pair of ('11 * list:t) | Nil of unit") (ref $"Pair of ('11 * list:t) | Nil of unit") (ref $"('11 * list:t)") anyref anyref (ref $"Pair of ('0 * list:t) | Nil of unit") (ref $"Pair of ('0 * list:t) | Nil of unit") (ref $"(('11 * list:t) -> Pair of ('11 * list:t) | Nil of unit)") (ref $"(Pair of ('11 * list:t) | Nil of unit -> list:t)") (ref $"(list:t -> (Pair of ('11 * list:t) | Nil of unit -> list:t))") (ref $unit) (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)"))
     local.get 0
-    ref.cast (ref $"Cons of ('11 * list:t) | Nil of unit")
+    ref.cast (ref $"Pair of ('11 * list:t) | Nil of unit")
     local.set $n#23
     local.get 1
     i32.const 0
     array.get $capture
-    ref.cast (ref $"Cons of ('11 * list:t) | Nil of unit")
+    ref.cast (ref $"Pair of ('11 * list:t) | Nil of unit")
     local.set 3
     local.get 3
     local.set 4
-    block (result (ref $"Cons of ('11 * list:t) | Nil of unit")) ;; label = @1
+    block (result (ref $"Pair of ('11 * list:t) | Nil of unit")) ;; label = @1
       block ;; label = @2
         i32.const 0
         local.get 4
-        struct.get $"Cons of ('0 * list:t) | Nil of unit" 0
+        struct.get $"Pair of ('0 * list:t) | Nil of unit" 0
         i32.eq
         i32.const 1
         i32.xor
         br_if 0 (;@2;)
         local.get 4
-        struct.get $"Cons of ('0 * list:t) | Nil of unit" 1
+        struct.get $"Pair of ('0 * list:t) | Nil of unit" 1
         ref.cast (ref $"('11 * list:t)")
         local.set 5
         local.get 5
@@ -3130,38 +2868,38 @@
         local.set 12
         local.get 9
         local.get 12
-        struct.get $"(list:t -> (Cons of ('11 * list:t) | Nil of unit -> list:t))" 1
+        struct.get $"(list:t -> (Pair of ('11 * list:t) | Nil of unit -> list:t))" 1
         local.get 12
-        struct.get $"(list:t -> (Cons of ('11 * list:t) | Nil of unit -> list:t))" 0
-        call_indirect (type $"(raw) (list:t -> (Cons of ('11 * list:t) | Nil of unit -> list:t))")
-        ref.cast (ref $"(Cons of ('11 * list:t) | Nil of unit -> list:t)")
+        struct.get $"(list:t -> (Pair of ('11 * list:t) | Nil of unit -> list:t))" 0
+        call_indirect (type $"(raw) (list:t -> (Pair of ('11 * list:t) | Nil of unit -> list:t))")
+        ref.cast (ref $"(Pair of ('11 * list:t) | Nil of unit -> list:t)")
         local.set 11
         local.get $n#23
         local.get 11
-        struct.get $"(Cons of ('11 * list:t) | Nil of unit -> list:t)" 1
+        struct.get $"(Pair of ('11 * list:t) | Nil of unit -> list:t)" 1
         local.get 11
-        struct.get $"(Cons of ('11 * list:t) | Nil of unit -> list:t)" 0
-        call_indirect (type $"(raw) (Cons of ('11 * list:t) | Nil of unit -> list:t)")
-        ref.cast (ref $"Cons of ('0 * list:t) | Nil of unit")
+        struct.get $"(Pair of ('11 * list:t) | Nil of unit -> list:t)" 0
+        call_indirect (type $"(raw) (Pair of ('11 * list:t) | Nil of unit -> list:t)")
+        ref.cast (ref $"Pair of ('0 * list:t) | Nil of unit")
         struct.new $"('11 * list:t)"
         local.get 10
-        struct.get $"(('11 * list:t) -> Cons of ('11 * list:t) | Nil of unit)" 1
+        struct.get $"(('11 * list:t) -> Pair of ('11 * list:t) | Nil of unit)" 1
         local.get 10
-        struct.get $"(('11 * list:t) -> Cons of ('11 * list:t) | Nil of unit)" 0
-        call_indirect (type $"(raw) (('11 * list:t) -> Cons of ('11 * list:t) | Nil of unit)")
-        ref.cast (ref $"Cons of ('11 * list:t) | Nil of unit")
+        struct.get $"(('11 * list:t) -> Pair of ('11 * list:t) | Nil of unit)" 0
+        call_indirect (type $"(raw) (('11 * list:t) -> Pair of ('11 * list:t) | Nil of unit)")
+        ref.cast (ref $"Pair of ('11 * list:t) | Nil of unit")
         br 1 (;@1;)
       end
       block ;; label = @2
         i32.const 1
         local.get 4
-        struct.get $"Cons of ('0 * list:t) | Nil of unit" 0
+        struct.get $"Pair of ('0 * list:t) | Nil of unit" 0
         i32.eq
         i32.const 1
         i32.xor
         br_if 0 (;@2;)
         local.get 4
-        struct.get $"Cons of ('0 * list:t) | Nil of unit" 1
+        struct.get $"Pair of ('0 * list:t) | Nil of unit" 1
         ref.cast (ref $unit)
         local.set 13
         local.get 13
@@ -3191,7 +2929,7 @@
       unreachable
     end
   )
-  (func (;78;) (type $"(raw) (integer -> (Cons of ('8 * list:t) | Nil of unit -> Some of '8 | None of unit))") (param anyref (ref $capture)) (result anyref)
+  (func (;78;) (type $"(raw) (integer -> (Pair of ('8 * list:t) | Nil of unit -> Some of '8 | None of unit))") (param anyref (ref $capture)) (result anyref)
     (local $list#24 (ref $integer))
     local.get 0
     ref.cast (ref $integer)
@@ -3200,26 +2938,26 @@
     local.get $list#24
     ref.cast (ref any)
     array.new_fixed $capture 1
-    struct.new $"(Cons of ('8 * list:t) | Nil of unit -> Some of '8 | None of unit)"
+    struct.new $"(Pair of ('8 * list:t) | Nil of unit -> Some of '8 | None of unit)"
   )
-  (func (;79;) (type $"(raw) (Cons of ('8 * list:t) | Nil of unit -> Some of '8 | None of unit)") (param anyref (ref $capture)) (result anyref)
-    (local (ref $"Cons of ('8 * list:t) | Nil of unit") (ref $integer) (ref $"(integer * Cons of ('8 * list:t) | Nil of unit)") (ref $integer) (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"Cons of ('8 * list:t) | Nil of unit") (ref $"('8 * list:t)") anyref anyref (ref $"Cons of ('0 * list:t) | Nil of unit") (ref $"Cons of ('0 * list:t) | Nil of unit") (ref $"('8 -> Some of '8 | None of unit)") (ref $integer) (ref $integer) (ref $"Cons of ('5 * list:t) | Nil of unit") (ref $"('5 * list:t)") anyref anyref (ref $"Cons of ('0 * list:t) | Nil of unit") (ref $"Cons of ('0 * list:t) | Nil of unit") (ref $"(list:t -> Some of '8 | None of unit)") (ref $"(integer -> (list:t -> Some of '8 | None of unit))") (ref $"(integer -> (integer -> integer))") (ref $"(integer -> integer)") (ref $integer) (ref $integer) (ref $"Cons of ('6 * list:t) | Nil of unit") (ref $unit) (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(unit -> Some of '12 | None of unit)"))
+  (func (;79;) (type $"(raw) (Pair of ('8 * list:t) | Nil of unit -> Some of '8 | None of unit)") (param anyref (ref $capture)) (result anyref)
+    (local $from#0 (ref $"Pair of ('8 * list:t) | Nil of unit")) (local (ref $integer) (ref $"(integer * Pair of ('8 * list:t) | Nil of unit)") (ref $integer) (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"Pair of ('8 * list:t) | Nil of unit") (ref $"('8 * list:t)") anyref anyref (ref $"Pair of ('0 * list:t) | Nil of unit") (ref $"Pair of ('0 * list:t) | Nil of unit") (ref $"('8 -> Some of '8 | None of unit)") (ref $integer) (ref $integer) (ref $"Pair of ('5 * list:t) | Nil of unit") (ref $"('5 * list:t)") anyref anyref (ref $"Pair of ('0 * list:t) | Nil of unit") (ref $"Pair of ('0 * list:t) | Nil of unit") (ref $"(list:t -> Some of '8 | None of unit)") (ref $"(integer -> (list:t -> Some of '8 | None of unit))") (ref $"(integer -> (integer -> integer))") (ref $"(integer -> integer)") (ref $integer) (ref $integer) (ref $"Pair of ('6 * list:t) | Nil of unit") (ref $unit) (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(unit -> Some of '12 | None of unit)"))
     local.get 0
-    ref.cast (ref $"Cons of ('8 * list:t) | Nil of unit")
-    local.set 2
+    ref.cast (ref $"Pair of ('8 * list:t) | Nil of unit")
+    local.set $from#0
     local.get 1
     i32.const 0
     array.get $capture
     ref.cast (ref $integer)
     local.set 3
     local.get 3
-    local.get 2
-    struct.new $"(integer * Cons of ('8 * list:t) | Nil of unit)"
+    local.get $from#0
+    struct.new $"(integer * Pair of ('8 * list:t) | Nil of unit)"
     local.set 4
     block (result (ref $"Some of '8 | None of unit")) ;; label = @1
       block ;; label = @2
         local.get 4
-        struct.get $"(integer * Cons of ('8 * list:t) | Nil of unit)" 0
+        struct.get $"(integer * Pair of ('8 * list:t) | Nil of unit)" 0
         local.set 5
         local.get 5
         global.get 15
@@ -3244,17 +2982,17 @@
         i32.xor
         br_if 0 (;@2;)
         local.get 4
-        struct.get $"(integer * Cons of ('8 * list:t) | Nil of unit)" 1
+        struct.get $"(integer * Pair of ('8 * list:t) | Nil of unit)" 1
         local.set 8
         i32.const 0
         local.get 8
-        struct.get $"Cons of ('0 * list:t) | Nil of unit" 0
+        struct.get $"Pair of ('0 * list:t) | Nil of unit" 0
         i32.eq
         i32.const 1
         i32.xor
         br_if 0 (;@2;)
         local.get 8
-        struct.get $"Cons of ('0 * list:t) | Nil of unit" 1
+        struct.get $"Pair of ('0 * list:t) | Nil of unit" 1
         ref.cast (ref $"('8 * list:t)")
         local.set 9
         local.get 9
@@ -3281,22 +3019,22 @@
       end
       block ;; label = @2
         local.get 4
-        struct.get $"(integer * Cons of ('8 * list:t) | Nil of unit)" 0
+        struct.get $"(integer * Pair of ('8 * list:t) | Nil of unit)" 0
         local.set 15
         local.get 15
         local.set 16
         local.get 4
-        struct.get $"(integer * Cons of ('8 * list:t) | Nil of unit)" 1
+        struct.get $"(integer * Pair of ('8 * list:t) | Nil of unit)" 1
         local.set 17
         i32.const 0
         local.get 17
-        struct.get $"Cons of ('0 * list:t) | Nil of unit" 0
+        struct.get $"Pair of ('0 * list:t) | Nil of unit" 0
         i32.eq
         i32.const 1
         i32.xor
         br_if 0 (;@2;)
         local.get 17
-        struct.get $"Cons of ('0 * list:t) | Nil of unit" 1
+        struct.get $"Pair of ('0 * list:t) | Nil of unit" 1
         ref.cast (ref $"('5 * list:t)")
         local.set 18
         local.get 18
@@ -3348,22 +3086,22 @@
       end
       block ;; label = @2
         local.get 4
-        struct.get $"(integer * Cons of ('8 * list:t) | Nil of unit)" 0
+        struct.get $"(integer * Pair of ('8 * list:t) | Nil of unit)" 0
         local.set 27
         local.get 27
         local.set 28
         local.get 4
-        struct.get $"(integer * Cons of ('8 * list:t) | Nil of unit)" 1
+        struct.get $"(integer * Pair of ('8 * list:t) | Nil of unit)" 1
         local.set 29
         i32.const 1
         local.get 29
-        struct.get $"Cons of ('0 * list:t) | Nil of unit" 0
+        struct.get $"Pair of ('0 * list:t) | Nil of unit" 0
         i32.eq
         i32.const 1
         i32.xor
         br_if 0 (;@2;)
         local.get 29
-        struct.get $"Cons of ('0 * list:t) | Nil of unit" 1
+        struct.get $"Pair of ('0 * list:t) | Nil of unit" 1
         ref.cast (ref $unit)
         local.set 30
         local.get 30
@@ -3397,6 +3135,326 @@
         struct.get $"(unit -> Some of '12 | None of unit)" 0
         call_indirect (type $"(raw) (unit -> Some of '12 | None of unit)")
         ref.cast (ref $"Some of '12 | None of unit")
+        br 1 (;@1;)
+      end
+      unreachable
+    end
+  )
+  (func (;80;) (type $"(raw) (integer -> (integer -> unit))") (param anyref (ref $capture)) (result anyref)
+    (local $to#1 (ref $integer))
+    local.get 0
+    ref.cast (ref $integer)
+    local.set $to#1
+    i32.const 81
+    local.get $to#1
+    ref.cast (ref any)
+    local.get $to#1
+    ref.cast (ref any)
+    local.get $to#1
+    ref.cast (ref any)
+    array.new_fixed $capture 3
+    struct.new $"(integer -> unit)"
+  )
+  (func (;81;) (type $"(raw) (integer -> unit)") (param anyref (ref $capture)) (result anyref)
+    (local $num#3 (ref $integer)) (local (ref $integer) (ref $integer) (ref $integer) (ref $"(integer -> string)") (ref $"(integer -> string)") (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $"(string -> unit)") (ref $"(integer -> string)") (ref $"(integer -> unit)") (ref $"(integer -> (integer -> unit))") (ref $"(integer -> (integer -> integer))") (ref $"(integer -> integer)"))
+    local.get 0
+    ref.cast (ref $integer)
+    local.set $num#3
+    local.get 1
+    i32.const 0
+    array.get $capture
+    ref.cast (ref $integer)
+    local.set 3
+    local.get 1
+    i32.const 1
+    array.get $capture
+    ref.cast (ref $integer)
+    local.set 4
+    local.get 1
+    i32.const 2
+    array.get $capture
+    ref.cast (ref $integer)
+    local.set 5
+    i32.const 82
+    array.new_fixed $capture 0
+    struct.new $"(integer -> string)"
+    local.set 6
+    local.get 6
+    local.set 7
+    local.get 5
+    global.get 17
+    ref.as_non_null
+    local.tee 8
+    struct.get $"('0 -> ('0 -> boolean))" 1
+    local.get 8
+    struct.get $"('0 -> ('0 -> boolean))" 0
+    call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+    ref.cast (ref $"('0 -> boolean)")
+    local.set 9
+    local.get $num#3
+    local.get 9
+    struct.get $"('0 -> boolean)" 1
+    local.get 9
+    struct.get $"('0 -> boolean)" 0
+    call_indirect (type $"(raw) ('0 -> boolean)")
+    ref.cast (ref $boolean)
+    struct.get $boolean 0
+    if (result (ref $unit)) ;; label = @1
+      global.get 27
+      ref.as_non_null
+      local.set 10
+      local.get 7
+      local.set 11
+      local.get 5
+      local.get 11
+      struct.get $"(integer -> string)" 1
+      local.get 11
+      struct.get $"(integer -> string)" 0
+      call_indirect (type $"(raw) (integer -> string)")
+      ref.cast (ref $string)
+      local.get 10
+      struct.get $"(string -> unit)" 1
+      local.get 10
+      struct.get $"(string -> unit)" 0
+      call_indirect (type $"(raw) (string -> unit)")
+      ref.cast (ref $unit)
+      drop
+      global.get 47
+      ref.as_non_null
+      local.set 13
+      local.get 5
+      global.get 3
+      ref.as_non_null
+      local.tee 14
+      struct.get $"(integer -> (integer -> integer))" 1
+      local.get 14
+      struct.get $"(integer -> (integer -> integer))" 0
+      call_indirect (type $"(raw) (integer -> (integer -> integer))")
+      ref.cast (ref $"(integer -> integer)")
+      local.set 15
+      i64.const 1
+      struct.new $integer
+      local.get 15
+      struct.get $"(integer -> integer)" 1
+      local.get 15
+      struct.get $"(integer -> integer)" 0
+      call_indirect (type $"(raw) (integer -> integer)")
+      ref.cast (ref $integer)
+      local.get 13
+      struct.get $"(integer -> (integer -> unit))" 1
+      local.get 13
+      struct.get $"(integer -> (integer -> unit))" 0
+      call_indirect (type $"(raw) (integer -> (integer -> unit))")
+      ref.cast (ref $"(integer -> unit)")
+      local.set 12
+      local.get $num#3
+      local.get 12
+      struct.get $"(integer -> unit)" 1
+      local.get 12
+      struct.get $"(integer -> unit)" 0
+      call_indirect (type $"(raw) (integer -> unit)")
+      ref.cast (ref $unit)
+    else
+      struct.new $unit
+    end
+  )
+  (func (;82;) (type $"(raw) (integer -> string)") (param anyref (ref $capture)) (result anyref)
+    (local (ref $integer) (ref $"(integer -> (integer -> integer))") (ref $"(integer -> integer)") (ref $"(integer -> (integer -> integer))") (ref $"(integer -> integer)") (ref $"(integer * integer)") (ref $integer) (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $integer) (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $integer) (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $integer) (ref $integer) (ref $integer) (ref $integer) (ref $integer) (ref $"('0 -> ('0 -> boolean))") (ref $"('0 -> boolean)") (ref $integer) (ref $integer) (ref $integer) (ref $integer))
+    local.get 0
+    ref.cast (ref $integer)
+    local.set 2
+    local.get 2
+    global.get 7
+    ref.as_non_null
+    local.tee 3
+    struct.get $"(integer -> (integer -> integer))" 1
+    local.get 3
+    struct.get $"(integer -> (integer -> integer))" 0
+    call_indirect (type $"(raw) (integer -> (integer -> integer))")
+    ref.cast (ref $"(integer -> integer)")
+    local.set 4
+    i64.const 3
+    struct.new $integer
+    local.get 4
+    struct.get $"(integer -> integer)" 1
+    local.get 4
+    struct.get $"(integer -> integer)" 0
+    call_indirect (type $"(raw) (integer -> integer)")
+    ref.cast (ref $integer)
+    local.get 2
+    global.get 7
+    ref.as_non_null
+    local.tee 5
+    struct.get $"(integer -> (integer -> integer))" 1
+    local.get 5
+    struct.get $"(integer -> (integer -> integer))" 0
+    call_indirect (type $"(raw) (integer -> (integer -> integer))")
+    ref.cast (ref $"(integer -> integer)")
+    local.set 6
+    i64.const 5
+    struct.new $integer
+    local.get 6
+    struct.get $"(integer -> integer)" 1
+    local.get 6
+    struct.get $"(integer -> integer)" 0
+    call_indirect (type $"(raw) (integer -> integer)")
+    ref.cast (ref $integer)
+    struct.new $"(integer * integer)"
+    local.set 7
+    block (result (ref $string)) ;; label = @1
+      block ;; label = @2
+        local.get 7
+        struct.get $"(integer * integer)" 0
+        local.set 8
+        local.get 8
+        global.get 15
+        ref.as_non_null
+        local.tee 9
+        struct.get $"('0 -> ('0 -> boolean))" 1
+        local.get 9
+        struct.get $"('0 -> ('0 -> boolean))" 0
+        call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+        ref.cast (ref $"('0 -> boolean)")
+        local.set 10
+        i64.const 0
+        struct.new $integer
+        local.get 10
+        struct.get $"('0 -> boolean)" 1
+        local.get 10
+        struct.get $"('0 -> boolean)" 0
+        call_indirect (type $"(raw) ('0 -> boolean)")
+        ref.cast (ref $boolean)
+        struct.get $boolean 0
+        i32.const 1
+        i32.xor
+        br_if 0 (;@2;)
+        local.get 7
+        struct.get $"(integer * integer)" 1
+        local.set 11
+        local.get 11
+        global.get 15
+        ref.as_non_null
+        local.tee 12
+        struct.get $"('0 -> ('0 -> boolean))" 1
+        local.get 12
+        struct.get $"('0 -> ('0 -> boolean))" 0
+        call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+        ref.cast (ref $"('0 -> boolean)")
+        local.set 13
+        i64.const 0
+        struct.new $integer
+        local.get 13
+        struct.get $"('0 -> boolean)" 1
+        local.get 13
+        struct.get $"('0 -> boolean)" 0
+        call_indirect (type $"(raw) ('0 -> boolean)")
+        ref.cast (ref $boolean)
+        struct.get $boolean 0
+        i32.const 1
+        i32.xor
+        br_if 0 (;@2;)
+        i32.const 70
+        i32.const 105
+        i32.const 122
+        i32.const 122
+        i32.const 66
+        i32.const 117
+        i32.const 122
+        i32.const 122
+        array.new_fixed $string 8
+        br 1 (;@1;)
+      end
+      block ;; label = @2
+        local.get 7
+        struct.get $"(integer * integer)" 0
+        local.set 14
+        local.get 14
+        global.get 15
+        ref.as_non_null
+        local.tee 15
+        struct.get $"('0 -> ('0 -> boolean))" 1
+        local.get 15
+        struct.get $"('0 -> ('0 -> boolean))" 0
+        call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+        ref.cast (ref $"('0 -> boolean)")
+        local.set 16
+        i64.const 0
+        struct.new $integer
+        local.get 16
+        struct.get $"('0 -> boolean)" 1
+        local.get 16
+        struct.get $"('0 -> boolean)" 0
+        call_indirect (type $"(raw) ('0 -> boolean)")
+        ref.cast (ref $boolean)
+        struct.get $boolean 0
+        i32.const 1
+        i32.xor
+        br_if 0 (;@2;)
+        local.get 7
+        struct.get $"(integer * integer)" 1
+        local.set 17
+        local.get 17
+        local.set 18
+        i32.const 70
+        i32.const 105
+        i32.const 122
+        i32.const 122
+        array.new_fixed $string 4
+        br 1 (;@1;)
+      end
+      block ;; label = @2
+        local.get 7
+        struct.get $"(integer * integer)" 0
+        local.set 19
+        local.get 19
+        local.set 20
+        local.get 7
+        struct.get $"(integer * integer)" 1
+        local.set 21
+        local.get 21
+        global.get 15
+        ref.as_non_null
+        local.tee 22
+        struct.get $"('0 -> ('0 -> boolean))" 1
+        local.get 22
+        struct.get $"('0 -> ('0 -> boolean))" 0
+        call_indirect (type $"(raw) ('0 -> ('0 -> boolean))")
+        ref.cast (ref $"('0 -> boolean)")
+        local.set 23
+        i64.const 0
+        struct.new $integer
+        local.get 23
+        struct.get $"('0 -> boolean)" 1
+        local.get 23
+        struct.get $"('0 -> boolean)" 0
+        call_indirect (type $"(raw) ('0 -> boolean)")
+        ref.cast (ref $boolean)
+        struct.get $boolean 0
+        i32.const 1
+        i32.xor
+        br_if 0 (;@2;)
+        i32.const 66
+        i32.const 117
+        i32.const 122
+        i32.const 122
+        array.new_fixed $string 4
+        br 1 (;@1;)
+      end
+      block ;; label = @2
+        local.get 7
+        struct.get $"(integer * integer)" 0
+        local.set 24
+        local.get 24
+        local.set 25
+        local.get 7
+        struct.get $"(integer * integer)" 1
+        local.set 26
+        local.get 26
+        local.set 27
+        i32.const 45
+        i32.const 45
+        i32.const 45
+        array.new_fixed $string 3
         br 1 (;@1;)
       end
       unreachable

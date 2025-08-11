@@ -1,18 +1,20 @@
 <!DOCTYPE html>
 <html>
-<head>
-</head>
-
-<script>
-  WebAssembly.instantiateStreaming(fetch("/test.wasm"), {
-    "sys": {
-      "print": (a) => {
-        console.log(a);
-      }
-    } 
-  })
-</script>
-
-<body>
-</body>
+  <head>
+    <script type="module">
+      import init, {compile} from "/pkg/lang.js";
+      init().then(() => {
+        compile(`
+          module Demo =
+            import std
+            let () = std:print_string 1
+          end
+        `);
+      });
+    </script>
+  </head>
+  <body>
+    <textarea id="print-out">
+    </textarea>
+  </body>
 </html>

@@ -47,34 +47,34 @@ module list =
   import std
   import opt
 
-  type t = fn I => Cons of I * t | Nil of std:unit
+  type t = fn I => Pair of I * t | Nil of std:unit
 
   let map = fn operation list => match list with
-    | Cons of (head, tail) => Cons (operation head, tail |> map operation)
+    | Pair of (head, tail) => Pair (operation head, tail |> map operation)
     | Nil of () => Nil ()
 
   let iterate =
     fn operation list => (map (fn a => operation a; a) list); ()
 
   let push = fn item list => match list with
-    | Cons of (head, tail) => Cons (head, push item tail)
-    | Nil of () => Cons (item, Nil ())
+    | Pair of (head, tail) => Pair (head, push item tail)
+    | Nil of () => Pair (item, Nil ())
 
   let length = fn list => match list with
-    | Cons of (head, tail) => 1 + (length tail)
+    | Pair of (head, tail) => 1 + (length tail)
     | Nil of () => 0
 
   let fold = fn op acc list => match list with
-    | Cons of (head, tail) => op acc (fold op head tail)
+    | Pair of (head, tail) => op acc (fold op head tail)
     | Nil of () => acc
 
   let concatenate = fn list1 list2 => match list1 with
-    | Cons of (head, tail) => Cons (head, concatenate tail list2)
+    | Pair of (head, tail) => Pair (head, concatenate tail list2)
     | Nil of () => list2
 
   let nth = fn n list => match (n, list) with
-    | (0, Cons of (head, _)) => opt:Some head
-    | (n, Cons of (head, tail)) => nth (n - 1) tail
+    | (0, Pair of (head, _)) => opt:Some head
+    | (n, Pair of (head, tail)) => nth (n - 1) tail
     | (_, Nil of ()) => opt:None ()
 end
 

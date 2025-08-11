@@ -1,13 +1,12 @@
 let print_output = document.getElementById("print-out");
-let wat_output = document.getElementById("wat-out");
 
-export const _compiler_exec = (b) => {
-  const memory = new WebAssembly.Memory({initial: 10, maximum: 100});
+export const execute = (b) => {
+  const memory = new WebAssembly.Memory({initial: 1});
   
   function print_string(offset, length) {
     const bytes = new Uint8Array(memory.buffer, offset, length);
     const string = new TextDecoder("utf8").decode(bytes);
-    print_output.value = print_output.value.concat(string);
+    print_output.value = print_output.value.concat(string + "\n");
   }
   function print_integer(num) {
     print_output.value = print_output.value.concat(`${num}`);
@@ -26,7 +25,7 @@ export const _compiler_exec = (b) => {
     }
   }
   const imports = {
-    js: {
+    sys: {
       memory: memory,
       print_string: print_string,
       print_integer: print_integer,
@@ -37,12 +36,9 @@ export const _compiler_exec = (b) => {
   };
   WebAssembly.instantiate(b, imports);
 }
-export const _compiler_cls = () => {
+export const compiler_cls = () => {
   print_output.value = "";
 }
-export const _compiler_wat = (s) => {
-  console.log(s);
-}
-export const _compiler_print = (s) => {
-  print_output.value = print_output.value.concat(s);
+export const compiler_print = (s) => {
+  print_output.value = print_output.value.concat(s + "\n");
 }

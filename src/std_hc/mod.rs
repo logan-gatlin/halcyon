@@ -15,7 +15,7 @@ const FALSE: wasm_encoder::Instruction<'static> = wasm_encoder::Instruction::I32
 pub fn make_std_module(
     encoder: &mut ModuleEncoder,
     interfaces: &mut HashMap<Path, ModuleInterface>,
-) {
+) -> Option<()> {
     let e = encoder;
     let builtin_interface = builtins::make_builtin_module(e);
     interfaces.insert(Path::from(BUILTIN_MODULE_NAME), builtin_interface);
@@ -23,14 +23,15 @@ pub fn make_std_module(
     // Create standard library
     let input = include_str!("stdlib.hc");
     let linter = crate::Linter::new(input.to_string());
-    let tokens = crate::tokenize(input.chars()).handle(&linter);
-    for parsed_module in crate::parse(tokens).handle(&linter) {
-        let mut ir_module = crate::build_ir(parsed_module.clone(), interfaces).handle(&linter);
-        let interface = crate::type_solve(&mut ir_module).handle(&linter);
+    let tokens = crate::tokenize(input.chars()).handle(&linter)?;
+    for parsed_module in crate::parse(tokens).handle(&linter)? {
+        let mut ir_module = crate::build_ir(parsed_module.clone(), interfaces).handle(&linter)?;
+        let interface = crate::type_solve(&mut ir_module).handle(&linter)?;
         println!("{ir_module}");
         interfaces.insert(Path::from(parsed_module.name), interface);
         e.encode_ir(ir_module);
     }
+    Some(())
 }
 
 fn make_function(
