@@ -40,7 +40,7 @@ module string =
       | 0 => ""
       | x => (x % 10)
         |> digit_to_string
-        |> let a = from_string (x / 10) in
+        |> let a = from_integer (x / 10) in
           concatenate a
 end
 
