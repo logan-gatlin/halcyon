@@ -27,7 +27,6 @@ pub fn make_std_module(
     for parsed_module in crate::parse(tokens).handle(&linter)? {
         let mut ir_module = crate::build_ir(parsed_module.clone(), interfaces).handle(&linter)?;
         let interface = crate::type_solve(&mut ir_module).handle(&linter)?;
-        println!("{ir_module}");
         interfaces.insert(Path::from(parsed_module.name), interface);
         e.encode_ir(ir_module);
     }

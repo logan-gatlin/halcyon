@@ -17,8 +17,31 @@ end
 module string =
   import builtin
   let length = fn s => builtin:string_length s
+
   let concatenate = fn s1 s2 => builtin:string_concatenate s1 s2
-  let print = fn s => builtin:print_string s
+
+  // Author: Logan Williams
+  let from_integer = 
+    fn x => 
+      let digit_to_string = fn x => match x with
+        | 0 => "0"
+        | 1 => "1"
+        | 2 => "2"
+        | 3 => "3"
+        | 4 => "4"
+        | 5 => "5"
+        | 6 => "6"
+        | 7 => "7"
+        | 8 => "8"
+        | 9 => "9"
+        | _ => "?"
+      in
+    match x with
+      | 0 => ""
+      | x => (x % 10)
+        |> digit_to_string
+        |> let a = from_string (x / 10) in
+          concatenate a
 end
 
 module opt =

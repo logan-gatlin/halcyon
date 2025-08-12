@@ -220,7 +220,6 @@ impl ConstructorNameSpace {
     }
 
     pub fn get_import(&self, path: &Path) -> Result<Constructor> {
-        println!("{:#?}", self.constructor_map);
         self.constructor_map
             .get(path)
             .ok_or(lint_nospan(NameLint::UndefinedName))

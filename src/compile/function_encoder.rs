@@ -129,7 +129,6 @@ impl ModuleEncoder {
             locals: vec![],
             instrs: vec![],
         };
-        println!("{parameter_name} {parameter_valtype:?}");
         let parameter_local = code.new_local(parameter_name, parameter_valtype);
         code.push(LocalGet(0));
         if let Some(id) = self.get_asm_type(*parameter_type).id {
