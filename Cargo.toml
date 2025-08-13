@@ -11,7 +11,10 @@ multipeek = "0.1"
 toml = {version = "0.9", default-features = false, features = ["parse", "serde"]}
 wasmparser = {version = "0.235"}
 wasmprinter = "0.235"
-# wasmtime = {version = "34.0", default-features = false, features = ["runtime", "cranelift", "gc", "gc-drc"]}
+wasmtime = {version = "34.0", default-features = false, features = ["runtime", "cranelift", "gc", "gc-drc"], optional = true}
+
+[features]
+build-binary = ["wasmtime"]
 
 [profile.release]
 strip = true
@@ -24,3 +27,8 @@ crate-type = ["cdylib", "lib"]
 
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = ["--enable-bulk-memory", "-O2"]
+
+[[bin]]
+name = "hcc"
+required-features = ["build-binary"]
+
