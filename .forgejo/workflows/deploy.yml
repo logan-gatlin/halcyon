@@ -3,14 +3,15 @@ jobs:
   build:
     runs-on: docker
     steps:
-      - uses: actions/checkout@v4
-      - run: cd hc-lib
       - uses: actions/rust-toolchain@stable
+        with:
+          toolchain: nightly
       - uses: actions/wasm-pack-action@v0.4.0
-      - run: wasm-pack build --target web --release
+      - uses: actions/checkout@v4
+      - run: wasm-pack build --target web --release ./hc-lib
       - uses: actions/upload-artifact@v3
         with:
-          path: pkg/*
+          path: hc-lib/pkg/*
   deploy:
     runs-on: self-hosted
     steps:
