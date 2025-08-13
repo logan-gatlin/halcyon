@@ -3,10 +3,10 @@ jobs:
   build:
     runs-on: docker
     steps:
+      - uses: actions/checkout@v4
       - run: cd hc-lib
       - uses: actions/rust-toolchain@stable
       - uses: actions/wasm-pack-action@v0.4.0
-      - uses: actions/checkout@v4
       - run: wasm-pack build --target web --release
       - uses: actions/upload-artifact@v3
         with:
