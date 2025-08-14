@@ -1,1 +1,4 @@
 /target
+/lib/target
+/lib/pkg
+/hcc/target
