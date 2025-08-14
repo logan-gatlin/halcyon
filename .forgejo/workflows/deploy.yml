@@ -8,10 +8,10 @@ jobs:
           toolchain: nightly
       - uses: actions/wasm-pack-action@v0.4.0
       - uses: actions/checkout@v4
-      - run: wasm-pack build --target web --release ./hc-lib
+      - run: wasm-pack build --target web --release ./lib
       - uses: actions/upload-artifact@v3
         with:
-          path: hc-lib/pkg/*
+          path: lib/pkg/*
   deploy:
     runs-on: self-hosted
     steps:
