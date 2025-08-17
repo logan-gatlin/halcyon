@@ -91,9 +91,13 @@ help = "The type of this expression is ambiguous. Try adding type hints to the f
 
 [4002]
 reason = "Non-existant field"
-help = "No type exists with a field named `%` and the type `%`"
+help = "The type `%` does not contain the field `%`"
 
 [4003]
+reason = "No structure with fields"
+help = "Cannot find a structure with at least the fields: `%``"
+
+[4004]
 reason = "Pattern is not exhaustive"
 help = "Patterns in let expressions must cover every possible case. Make this pattern more broad so that it covers all elements of the type `%`."
 

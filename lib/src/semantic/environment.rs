@@ -66,11 +66,18 @@ impl Environment {
         Ok(solution)
     }
 
-    pub fn constraint(&mut self, a: TypeRef, b: TypeRef, span: Span) {
-        self.constraints
-            .last_mut()
-            .unwrap()
-            .push(Constraint(a, b, span));
+    pub fn type_constraint(&mut self, a: TypeRef, b: TypeRef, span: Span) {
+        self.constraints.last_mut().unwrap().push(Constraint {
+            kind: ConstraintKind::Type(a, b),
+            span,
+        });
+    }
+
+    pub fn struct_constraint(&mut self, of: Type, name: String, span: Span) {
+        self.constraints.last_mut().unwrap().push(Constraint {
+            kind: ConstraintKind::StructField { of, name },
+            span,
+        })
     }
 
     pub fn print_constraints(&self) {

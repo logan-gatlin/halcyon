@@ -69,7 +69,7 @@ pub fn check_ir(
         }
         _ => {
             let t = infer!(ptr)?;
-            env.constraint(t, expect, span);
+            env.type_constraint(t, expect, span);
             return Ok(());
         }
     };
@@ -89,7 +89,7 @@ pub fn check_pattern(env: &mut Environment, pat: &mut Pattern, expect: Type) {
             .for_each(|(pat, t)| check_pattern(env, pat, t.clone())),
         _ => {
             let actual = infer_pattern(env, pat);
-            env.constraint(actual, expect.clone(), pat.span);
+            env.type_constraint(actual, expect.clone(), pat.span);
             return;
         }
     }

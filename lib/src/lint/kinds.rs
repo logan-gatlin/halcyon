@@ -42,7 +42,8 @@ pub enum TypeLint {
     TypeMismatch = 4000,
     AmbiguousExpression = 4001,
     NonExistantField = 4002,
-    NonExhaustive = 4003,
+    NoStructWithFields = 4003,
+    NonExhaustive = 4004,
 }
 
 #[repr(usize)]

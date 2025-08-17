@@ -2,7 +2,7 @@ use crate::{ir::Path, semantic::Unify};
 
 use super::TypeVariable;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{Mutex, OnceLock},
 };
 
@@ -82,20 +82,44 @@ pub enum Type {
 
 static UNIVERSE: OnceLock<Mutex<HashMap<Path, Type>>> = OnceLock::new();
 
+fn get_universe() -> std::sync::MutexGuard<'static, HashMap<Path, Type>> {
+    UNIVERSE
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap()
+}
+
 impl Type {
     pub fn new_named_type(path: Path, t: Type) {
-        let map = UNIVERSE.get_or_init(|| Mutex::new(HashMap::new()));
-        let mut guard = map.lock().unwrap();
+        let mut guard = get_universe();
         guard.insert(path.clone(), t);
     }
 
     pub fn get_named_type(path: &Path) -> Type {
-        let map = UNIVERSE.get_or_init(|| Mutex::new(HashMap::new()));
-        let guard = map.lock().unwrap();
+        let guard = get_universe();
         guard
             .get(path)
             .unwrap_or_else(|| panic!("No named type: {path}"))
             .clone()
+    }
+
+    pub fn find_structs_with_fields(fieldset: &HashSet<String>) -> Vec<Type> {
+        let u = get_universe();
+        u.iter()
+            .flat_map(|(path, t)| match t {
+                Type::Struct { member_names, .. } => {
+                    if fieldset
+                        .iter()
+                        .fold(true, |b, name| b && member_names.contains(name))
+                    {
+                        Some(Type::Named(path.clone()))
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>()
     }
 
     pub fn map_new_type_variables(

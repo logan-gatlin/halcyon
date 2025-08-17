@@ -1,4 +1,4 @@
 module Main =
 	import std
-	let () = std:panic ()
+	let a = std:print_string "Hello"; std:panic ()
 end

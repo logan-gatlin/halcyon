@@ -65,14 +65,21 @@ impl ModuleEncoder {
         for item in ir.items.clone() {
             match item {
                 ModuleItem::Let(mangle, ptr) => {
-                    mangle.iter_names(&mut |n, t| {
-                        self.new_global(n.clone(), t.clone());
-                    });
-                    let value_t = self.get_asm_type(mangle.type_.clone());
-                    let temporary = self.func_mut(self.main_fn).new_temporary(value_t.val);
-                    lower::lower(&mut ir, ptr, self, self.main_fn);
-                    self.push(self.main_fn, LocalSet(temporary));
-                    lower::lower_pattern(mangle, self, temporary, self.main_fn, true);
+                    // Global variables with an unknown type are impossible
+                    // in a sound type system
+                    if matches!(mangle.type_, Type::TypeVariable(_)) {
+                        lower::lower(&mut ir, ptr, self, self.main_fn);
+                        self.push(self.main_fn, Unreachable);
+                    } else {
+                        mangle.iter_names(&mut |n, t| {
+                            self.new_global(n.clone(), t.clone());
+                        });
+                        let value_t = self.get_asm_type(mangle.type_.clone());
+                        let temporary = self.func_mut(self.main_fn).new_temporary(value_t.val);
+                        lower::lower(&mut ir, ptr, self, self.main_fn);
+                        self.push(self.main_fn, LocalSet(temporary));
+                        lower::lower_pattern(mangle, self, temporary, self.main_fn, true);
+                    }
                 }
                 ModuleItem::Constructor(
                     name,

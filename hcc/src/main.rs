@@ -1,4 +1,4 @@
-use clap::{Args, Parser, Subcommand};
+use clap::{Parser, Subcommand};
 use halcyon_lib::*;
 
 #[derive(Debug, Subcommand)]

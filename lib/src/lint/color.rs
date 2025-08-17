@@ -51,6 +51,7 @@ where
             Attribute::Italic => "3",
             Attribute::Underline => "4",
         };
-        format!("\x1b[{attribute_str};{color_str}m{self}\x1b[0m")
+        //format!("\x1b[{attribute_str};{color_str}m{self}\x1b[0m")
+        format!("{self}")
     }
 }
