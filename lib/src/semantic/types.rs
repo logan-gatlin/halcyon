@@ -103,15 +103,12 @@ impl Type {
             .clone()
     }
 
-    pub fn find_structs_with_fields(fieldset: &HashSet<String>) -> Vec<Type> {
+    pub fn find_structs_with_fields(fieldset: &HashSet<(String, Type)>) -> Vec<Type> {
         let u = get_universe();
         u.iter()
             .flat_map(|(path, t)| match t {
                 Type::Struct { member_names, .. } => {
-                    if fieldset
-                        .iter()
-                        .fold(true, |b, name| b && member_names.contains(name))
-                    {
+                    if fieldset.iter().all(|name| member_names.contains(&name.0)) {
                         Some(Type::Named(path.clone()))
                     } else {
                         None
@@ -189,7 +186,12 @@ impl Type {
     }
 
     pub fn field_index(&self, name: &str) -> Option<u32> {
-        if let Type::Struct { member_names, .. } = self {
+        let t = if let Type::Named(name) = self {
+            &Self::get_named_type(name)
+        } else {
+            self
+        };
+        if let Type::Struct { member_names, .. } = t {
             let mut index = 0;
             let mut found = false;
             for n in member_names.iter() {
@@ -200,6 +202,24 @@ impl Type {
                 index += 1;
             }
             if found { Some(index) } else { None }
+        } else {
+            None
+        }
+    }
+
+    pub fn field_type(&self, name: &str) -> Option<Type> {
+        let t = if let Type::Named(name) = self {
+            &Self::get_named_type(name)
+        } else {
+            self
+        };
+        if let Type::Struct {
+            member_names,
+            member_types,
+        } = t
+        {
+            let pos = member_names.iter().position(|n| n == name)?;
+            Some(member_types[pos].clone())
         } else {
             None
         }

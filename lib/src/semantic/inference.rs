@@ -161,8 +161,9 @@ pub fn infer_ir(env: &mut Environment, module: &mut IrModule, ptr: IrPtr) -> Res
             {
                 member_types[index].clone()
             } else {
-                env.struct_constraint(of_t, index.clone(), span);
-                Type::TypeVariable(env.fresh_type_variable())
+                let tv = Type::TypeVariable(env.fresh_type_variable());
+                env.struct_constraint(of_t, tv.clone(), index.clone(), span);
+                tv
             };
             mk(I::Field { of, index }, t)
         }

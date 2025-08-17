@@ -7,7 +7,11 @@ pub type TypeVariable = usize;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConstraintKind {
     Type(Type, Type),
-    StructField { of: Type, name: String },
+    StructField {
+        of: Type,
+        field_t: Type,
+        name: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -26,59 +30,87 @@ pub struct Substitution(pub TypeVariable, pub TypeRef);
 
 pub fn solve_constraints(constraints: &[Constraint]) -> Result<Vec<Substitution>> {
     let (type_constraints, struct_constraints): (Vec<_>, Vec<_>) = constraints
-        .into_iter()
+        .iter()
         .map(|c| match c.kind.clone() {
             ConstraintKind::Type(t1, t2) => (Some((t1, t2, c.span)), None),
-            ConstraintKind::StructField { of, name } => (None, Some((of, name, c.span))),
+            ConstraintKind::StructField { of, field_t, name } => {
+                (None, Some((of, field_t, name, c.span)))
+            }
         })
         .unzip();
     let type_constraints = type_constraints.into_iter().flatten().collect::<Vec<_>>();
     let mut struct_constraints = struct_constraints.into_iter().flatten().collect::<Vec<_>>();
     let mut type_solution = solve_type_constraints(&type_constraints)?;
-    struct_constraints.iter_mut().for_each(|(of, _, _)| {
-        of.unify_all(&type_solution);
-    });
-    type_solution.extend_from_slice(&solve_struct_constraints(&struct_constraints)?);
+    struct_constraints
+        .iter_mut()
+        .for_each(|(of, field_t, _, _)| {
+            of.unify_all(&type_solution);
+            field_t.unify_all(&type_solution);
+        });
+    let struct_solution = solve_struct_constraints(&struct_constraints)?;
+    println!("SOLUTION: {struct_solution:#?}");
+    type_solution.extend_from_slice(&struct_solution);
     Ok(type_solution)
 }
 
-fn solve_struct_constraints(constraints: &[(Type, String, Span)]) -> Result<Vec<Substitution>> {
+fn solve_struct_constraints(
+    constraints: &[(Type, Type, String, Span)],
+) -> Result<Vec<Substitution>> {
     let mut solution = vec![];
     let constraints = constraints.to_vec();
-    let mut map: HashMap<Type, (HashSet<String>, Span)> = HashMap::new();
-    for (of, name, span) in constraints {
+    let mut map: HashMap<Type, (HashSet<(String, Type)>, Span)> = HashMap::new();
+    for (of, field_t, name, span) in constraints {
         if let Some((set, _)) = map.get_mut(&of) {
-            set.insert(name);
+            set.insert((name, field_t));
         } else {
             let mut set = HashSet::new();
-            set.insert(name);
+            set.insert((name, field_t));
             map.insert(of, (set, span));
         }
     }
     for (type_, (fieldset, span)) in map {
+        println!("FIELDS: {type_} . {fieldset:#?}");
         let not_exist = lint(TypeLint::NonExistantField, span, [format!("{type_}")]);
         match &type_ {
             Type::TypeVariable(tv) => {
                 let e = lint(
                     TypeLint::NoStructWithFields,
                     span,
-                    [fieldset.clone().into_iter().collect::<Vec<_>>().join(", ")],
+                    [fieldset
+                        .clone()
+                        .into_iter()
+                        .map(|(field, _)| field)
+                        .collect::<Vec<_>>()
+                        .join(", ")],
                 );
                 let possibilities = Type::find_structs_with_fields(&fieldset);
                 if possibilities.len() != 1 {
                     return Err(e);
                 }
-                solution.push(Substitution(*tv, possibilities.get(0).unwrap().clone()));
+                let struct_t = possibilities.first().unwrap().clone();
+                solution.push(Substitution(*tv, struct_t.clone()));
+                for (name, type_) in fieldset {
+                    let field_t = struct_t.field_type(&name).unwrap();
+                    if let Type::TypeVariable(tv) = type_ {
+                        solution.push(Substitution(tv, field_t))
+                    } else if type_ != field_t {
+                        return Err(lint(
+                            TypeLint::TypeMismatch,
+                            span,
+                            [format!("{type_}"), format!("{field_t}")],
+                        ));
+                    }
+                }
             }
             Type::Struct { member_names, .. } => {
-                for name in fieldset {
+                for (name, _type_) in fieldset {
                     if !member_names.contains(&name) {
                         return Err(not_exist).context(name.clone());
                     }
                 }
             }
-            _ if let Some(field) = fieldset.iter().next() => {
-                return Err(not_exist).context(field.clone());
+            _ if let Some((name, _type_)) = fieldset.iter().next() => {
+                return Err(not_exist).context(name.clone());
             }
             _ => unreachable!("Struct constraint with no fields"),
         }
@@ -239,7 +271,7 @@ impl std::fmt::Display for Constraint {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.kind {
             ConstraintKind::Type(t1, t2) => write!(f, "{t1} == {t2}"),
-            ConstraintKind::StructField { of, name } => write!(f, "({of}.{name})"),
+            ConstraintKind::StructField { of, field_t, name } => write!(f, "({of}.{name})"),
         }
     }
 }

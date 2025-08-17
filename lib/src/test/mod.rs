@@ -27,7 +27,8 @@ test!(
     control_flow,
     types,
     fizzbuzz,
-    list
+    list,
+    demo
 );
 
 fn execute(wasm: Vec<u8>) {

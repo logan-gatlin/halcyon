@@ -171,7 +171,7 @@ impl IrModule {
                 ImportedSymbol(..) | Immediate(..) | Identifier(..) => break,
             }
         }
-        start..current
+        start..(current + 1)
     }
 }
 

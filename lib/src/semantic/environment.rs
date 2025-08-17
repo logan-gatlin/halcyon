@@ -73,9 +73,9 @@ impl Environment {
         });
     }
 
-    pub fn struct_constraint(&mut self, of: Type, name: String, span: Span) {
+    pub fn struct_constraint(&mut self, of: Type, field_t: Type, name: String, span: Span) {
         self.constraints.last_mut().unwrap().push(Constraint {
-            kind: ConstraintKind::StructField { of, name },
+            kind: ConstraintKind::StructField { of, field_t, name },
             span,
         })
     }

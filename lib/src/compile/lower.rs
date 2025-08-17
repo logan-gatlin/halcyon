@@ -127,9 +127,7 @@ pub fn lower_pattern(
         }
         PatternKind::Constructor(
             Constructor {
-                variant,
-                in_type,
-                out_type,
+                variant, out_type, ..
             },
             pat,
         ) => {

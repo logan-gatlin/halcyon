@@ -60,20 +60,22 @@ pub fn build_ir(
                 if let Type::Sum {
                     variant_names,
                     variant_types,
-                } = type_.clone()
+                } = &type_
                 {
                     for (index, (name, parameter_type)) in
-                        variant_names.into_iter().zip(variant_types).enumerate()
+                        variant_names.iter().zip(variant_types).enumerate()
                     {
                         let cons = Constructor {
                             variant: index,
-                            in_type: parameter_type,
+                            in_type: parameter_type.clone(),
                             out_type: type_.clone(),
                         };
-                        cons_ns.define(&name, cons.clone()).span(expr.span)?;
-                        let name = value_ns.define_global(&name).span(assignee_span)?;
+                        cons_ns.define(name, cons.clone()).span(expr.span)?;
+                        let name = value_ns.define_global(name).span(assignee_span)?;
                         items.push(ModuleItem::Constructor(name, cons))
                     }
+                } else if let Type::Struct { .. } = &type_ {
+                    Type::new_named_type(mangle.clone(), type_.clone());
                 }
                 items.push(ModuleItem::Type(mangle, type_));
             }
