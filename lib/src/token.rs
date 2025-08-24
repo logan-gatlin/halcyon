@@ -2,7 +2,7 @@ use crate::Span;
 use crate::lint::*;
 use multipeek::{MultiPeek, multipeek};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, sx::SXRepr)]
 pub enum Base {
     Binary = 2,
     Octal = 8,
@@ -92,7 +92,7 @@ pub enum TokenKind {
     BigComment(String),
 
     Idk,
-    EOF,
+    Eof,
 }
 
 impl PartialEq for TokenKind {
@@ -179,17 +179,16 @@ impl std::fmt::Display for TokenKind {
                 Whitespace(_) => "whitespace",
                 BigComment(_) | SmallComment(_) => "comment",
                 Idk => "unknown symbol",
-                EOF => "EOF",
+                Eof => "EOF",
             }
         )
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct Token(pub TokenKind, pub Span);
+pub type Token = Spanned<TokenKind>;
 
 fn t(tk: TokenKind, sp: Span) -> Result<Token> {
-    Ok(Token(tk, sp))
+    Ok(tk.with_span(sp))
 }
 
 pub fn tokenize(chars: impl IntoIterator<Item = char>) -> Result<Vec<Token>> {
@@ -256,7 +255,7 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
             width: 0,
         };
         if self.ended {
-            return t(EOF, position);
+            return t(Eof, position);
         }
         let current = match self.next_char() {
             Some(std::char::REPLACEMENT_CHARACTER) => {
@@ -265,7 +264,7 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
             Some(c) => c,
             None => {
                 self.ended = true;
-                return t(EOF, position);
+                return t(Eof, position);
             }
         };
         // Parse whitespace
@@ -282,22 +281,23 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
             return t(Whitespace(buffer), position);
         }
         // Parse multiline comments
-        if let ('/', Some('*')) = (current, self.peek(0)) {
+        if let ('(', Some('*')) = (current, self.peek(0)) {
             let _ = self.next_char();
             let mut comment_level = 1;
             let mut buffer = String::new();
             while let Some(current) = self.next_char() {
                 // Ignore /* */ inside strings
                 if '\"' == current
-                    && let Some(inner_string) = self.delimited('\"') {
-                        buffer.push('\"');
-                        buffer.push_str(&inner_string);
-                        buffer.push('\"');
-                        continue;
-                    }
-                if let ('/', Some('*')) = (current, self.peek(0)) {
+                    && let Some(inner_string) = self.delimited('\"')
+                {
+                    buffer.push('\"');
+                    buffer.push_str(&inner_string);
+                    buffer.push('\"');
+                    continue;
+                }
+                if let ('(', Some('*')) = (current, self.peek(0)) {
                     comment_level += 1;
-                } else if let ('*', Some('/')) = (current, self.peek(0)) {
+                } else if let ('*', Some(')')) = (current, self.peek(0)) {
                     comment_level -= 1;
                 }
                 if comment_level == 0 {
@@ -310,7 +310,7 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
             return t(BigComment(buffer), position);
         }
         // Parse single line comments
-        if let ('/', Some('/')) = (current, self.peek(0)) {
+        if let ('-', Some('-')) = (current, self.peek(0)) {
             let _ = self.next_char();
             let mut buffer = String::new();
             while let Some(c) = self.next_char() {
@@ -344,7 +344,7 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
                 '~' => Tilda,
                 '.' if not_next('.') => Dot,
                 '+' if not_next('.') => Plus,
-                '-' if not_next('.') && not_next('>') => Minus,
+                '-' if not_next('.') && not_next('>') && not_next('-') => Minus,
                 '*' if not_next('.') => Star,
                 '/' if not_next('.') => Slash,
                 '%' => Percent,
@@ -519,7 +519,7 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
     }
 }
 
-impl<'a, I: Iterator<Item = char>> Iterator for Tokenizer<I> {
+impl<I: Iterator<Item = char>> Iterator for Tokenizer<I> {
     type Item = Result<Token>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -529,9 +529,10 @@ impl<'a, I: Iterator<Item = char>> Iterator for Tokenizer<I> {
                 return None;
             }
             match self._next() {
-                Ok(Token(SmallComment(_) | BigComment(_) | Whitespace(_), _)) => {
-                    continue;
-                }
+                Ok(Spanned {
+                    inner: SmallComment(_) | BigComment(_) | Whitespace(_),
+                    ..
+                }) => continue,
                 Ok(s) => return Some(Ok(s)),
                 Err(e) => return Some(Err(e)),
             }
@@ -542,11 +543,7 @@ impl<'a, I: Iterator<Item = char>> Iterator for Tokenizer<I> {
 fn bake_string(s: &str, mut span: Span) -> Result<String> {
     let mut baked = String::with_capacity(s.len());
     let mut iter = s.chars();
-    loop {
-        let c = match iter.next() {
-            Some(c) => c,
-            None => break,
-        };
+    while let Some(c) = iter.next() {
         if c == '\\' {
             let (escape, length) = parse_single_escape(&mut iter, span)?;
             span.start += length + 1;

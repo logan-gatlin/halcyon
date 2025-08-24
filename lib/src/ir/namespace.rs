@@ -7,25 +7,34 @@ struct NameEvent {
 }
 
 #[derive(Debug, Clone, Default)]
-struct NameSpace {
+pub struct NameSpace<T: Clone> {
     module_name: Path,
     salt: usize,
     lookup_table: HashMap<String, Path>,
+    value_table: HashMap<Path, T>,
     state: Vec<NameEvent>,
 }
 
-impl NameSpace {
+impl<T: Clone> NameSpace<T> {
     pub fn new(module_name: Path) -> Self {
         Self {
             module_name,
-            ..Default::default()
+            salt: 0,
+            lookup_table: HashMap::new(),
+            value_table: HashMap::new(),
+            state: vec![],
         }
     }
-}
 
-impl NameSpace {
-    fn define_global(&mut self, name: &str) -> Result<Path> {
-        assert!(self.state.is_empty());
+    fn define_import(&mut self, name: Path, value: T) -> Result<()> {
+        if self.value_table.insert(name.clone(), value).is_some() {
+            Err(lint_nospan(NameLint::NameRedefinition)).context(name)
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn define_global(&mut self, name: &str, value: T) -> Result<Path> {
         let name = if name == "_" {
             let salt = self.salt;
             self.salt += 1;
@@ -41,10 +50,20 @@ impl NameSpace {
         {
             return Err(lint_nospan(NameLint::NameRedefinition)).context(name);
         }
+        self.value_table.insert(path.clone(), value);
         Ok(path)
     }
 
-    fn get(&self, name: &str) -> Result<Path> {
+    pub fn get(&self, name: &str) -> Result<T> {
+        let path = self
+            .lookup_table
+            .get(name)
+            .ok_or(lint_nospan(NameLint::UndefinedName))
+            .context(name)?;
+        Ok(self.value_table.get(path).unwrap().clone())
+    }
+
+    pub fn get_path(&self, name: &str) -> Result<Path> {
         self.lookup_table
             .get(name)
             .ok_or(lint_nospan(NameLint::UndefinedName))
@@ -52,10 +71,23 @@ impl NameSpace {
             .cloned()
     }
 
-    fn define_local(&mut self, name: &str) -> Path {
+    pub fn get_exact(&self, path: &Path) -> Result<T> {
+        self.value_table
+            .get(path)
+            .ok_or(lint_nospan(NameLint::UndefinedName))
+            .context(path)
+            .cloned()
+    }
+
+    pub fn update(&mut self, path: &Path, new_value: T) {
+        *self.value_table.get_mut(path).unwrap() = new_value;
+    }
+
+    pub fn define_local(&mut self, name: &str, value: T) -> Path {
         let salt = self.salt;
         self.salt += 1;
         let path = Path::from(format!("{name}#{salt}"));
+        self.value_table.insert(path.clone(), value);
         let ev = NameEvent {
             name: name.to_string(),
             previous_value: self.lookup_table.insert(name.to_string(), path.clone()),
@@ -64,223 +96,128 @@ impl NameSpace {
         path
     }
 
-    fn end_local_scope(&mut self) {
-        let NameEvent {
-            name,
-            previous_value,
-        } = self.state.pop().unwrap();
-        if let Some(p) = previous_value {
-            self.lookup_table.insert(name, p);
-        } else {
-            self.lookup_table.remove(&name);
+    pub fn end_local_scopes(&mut self, num: usize) {
+        for _ in 0..num {
+            let NameEvent {
+                name,
+                previous_value,
+            } = self.state.pop().unwrap();
+            if let Some(p) = previous_value {
+                self.lookup_table.insert(name, p);
+            } else {
+                self.lookup_table.remove(&name);
+            }
         }
     }
-}
-
-macro_rules! inherit {
-  ($fname:ident (&self, $($param:ident : $type:ty),*) -> $returns:ty) => {
-    pub fn $fname(&self, $($param : $type,)*) -> $returns {
-      self.ns.$fname($($param,)*)
-    }
-  };
-
-  ($fname:ident (&mut self, $($param:ident : $type:ty),*) -> $returns:ty) => {
-    pub fn $fname(&mut self, $($param : $type,)*) -> $returns {
-      self.ns.$fname($($param,)*)
-    }
-  };
-
-  ($first:ident $($i:ident)+) => {
-    inherit!($first);
-    $(inherit!($i);)*
-  };
-
-  (get) => {
-    inherit!(get(&self, name: &str) -> Result<Path>);
-  };
-
-  (define_global) => {
-    inherit!(define_global (&mut self, name: &str) -> Result<Path>);
-  };
-
-  (define_local) => {
-    inherit!(define_local (&mut self, name: &str) -> Path);
-  };
-
-  (end_local_scope) => {
-    inherit!(end_local_scope (&mut self,) -> ());
-  };
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct ValueNameSpace {
-    ns: NameSpace,
-    capture_list: Vec<Vec<Path>>,
-    depth_table: HashMap<Path, usize>,
-    import_types: HashMap<Path, TypeRef>,
+pub struct NameInfo {
+    /// How many `fn`s deep
+    depth: usize,
+    is_parameter: bool,
 }
 
-impl ValueNameSpace {
-    inherit!(define_global);
+#[derive(Debug, Clone)]
+pub struct ModuleNameSpace {
+    // Type ns
+    pub types: NameSpace<Type>,
+    // Value ns
+    pub values: NameSpace<NameInfo>,
+    value_capture_list: Vec<Vec<Path>>,
+    value_import_types: HashMap<Path, Type>,
+    // Constructor ns
+    pub constructors: NameSpace<Constructor>,
+}
 
+impl ModuleNameSpace {
     pub fn new(module_name: Path) -> Self {
         Self {
-            ns: NameSpace::new(module_name),
-            ..Default::default()
+            types: NameSpace::new(module_name.clone()),
+            values: NameSpace::new(module_name.clone()),
+            value_capture_list: Default::default(),
+            value_import_types: Default::default(),
+            constructors: NameSpace::new(module_name),
         }
     }
 
-    pub fn begin_capture(&mut self) {
-        self.capture_list.push(vec![]);
+    pub fn define_local_value(&mut self, name: &str, is_parameter: bool) -> Path {
+        self.values.define_local(
+            name,
+            NameInfo {
+                depth: self.value_capture_list.len(),
+                is_parameter,
+            },
+        )
     }
 
-    pub fn define_local(&mut self, name: &str) -> Path {
-        let mangle = self.ns.define_local(name);
-        self.depth_table
-            .insert(mangle.clone(), self.capture_list.len());
-        mangle
+    pub fn define_global_value(&mut self, name: &str) -> Result<Path> {
+        self.values.define_global(name, NameInfo::default())
     }
 
-    pub fn end_local_scope(&mut self) {
-        self.ns.end_local_scope();
-    }
-
-    pub fn end_capture(&mut self) -> Vec<Path> {
-        self.capture_list.pop().unwrap()
-    }
-
-    pub fn get(&mut self, name: &str) -> Result<Path> {
-        let mangle = self.ns.get(name)?;
-        if let Some(depth) = self.depth_table.get(&mangle) {
-            for capture in (*depth)..(self.capture_list.len()) {
-                self.capture_list[capture].push(mangle.clone());
-            }
+    pub fn get_value(&mut self, name: &str) -> Result<Path> {
+        let mangle = self.values.get_path(name)?;
+        let name_info = self.values.get(name)?;
+        let current_depth = self.value_capture_list.len();
+        for capture in name_info.depth..current_depth {
+            self.value_capture_list[capture].push(mangle.clone());
         }
+        /*
+        if !name_info.is_parameter && current_depth <= name_info.depth {
+            return Err(lint_nospan(NameLint::CyclicalDefinition)).context(name);
+        }
+        */
         Ok(mangle)
     }
 
-    pub fn import_module(&mut self, items: impl IntoIterator<Item = (Path, TypeRef)>) {
-        for (name, type_) in items {
-            self.import_types.insert(name, type_);
-        }
+    pub fn define_named_type(&mut self, name: &str) -> Result<Path> {
+        let path = self.types.define_global(name, Type::Any)?;
+        let named_type = Type::Named(path.clone(), vec![]);
+        self.types.update(&path, named_type.clone());
+        Ok(path)
     }
 
-    pub fn get_import_type(&self, path: &Path) -> Result<TypeRef> {
-        self.import_types
+    pub fn begin_capture(&mut self) {
+        self.value_capture_list.push(vec![]);
+    }
+
+    pub fn end_capture(&mut self) -> Vec<Path> {
+        self.value_capture_list.pop().unwrap()
+    }
+
+    pub fn get_import_type(&self, path: &Path) -> Result<Type> {
+        self.value_import_types
             .get(path)
             .ok_or(lint_nospan(NameLint::UndefinedName))
             .context(path)
             .cloned()
     }
+
+    pub fn import_module(&mut self, interface: &ModuleInterface) -> Result<()> {
+        for (name, type_) in interface.values.clone() {
+            self.values
+                .define_import(name.clone(), NameInfo::default())?;
+            self.value_import_types.insert(name, type_);
+        }
+        for (name, cons) in interface.constructors.clone() {
+            self.constructors.define_import(name, cons)?;
+        }
+        for (name, type_) in interface.types.clone() {
+            self.types.define_import(name, type_)?;
+        }
+        Ok(())
+    }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, sx::SXRepr)]
 pub struct Constructor {
     pub variant: usize,
-    pub in_type: TypeRef,
-    pub out_type: TypeRef,
+    pub in_type: Type,
+    pub out_type: Type,
 }
 
 impl Constructor {
     pub fn function_type(&self) -> Type {
         Type::func(self.in_type.clone(), self.out_type.clone())
-    }
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct ConstructorNameSpace {
-    ns: NameSpace,
-    constructor_map: HashMap<Path, Constructor>,
-}
-
-impl ConstructorNameSpace {
-    pub fn new(module_name: Path) -> Self {
-        Self {
-            ns: NameSpace::new(module_name),
-            ..Default::default()
-        }
-    }
-
-    pub fn get(&self, name: &str) -> Result<Constructor> {
-        let path = self.ns.get(name)?;
-        let cons = self.constructor_map.get(&path).unwrap();
-        Ok(cons.clone())
-    }
-
-    pub fn define(&mut self, path: &str, cons: Constructor) -> Result<()> {
-        let path = self.ns.define_global(path)?;
-        self.constructor_map.insert(path, cons);
-        Ok(())
-    }
-
-    pub fn import_module(&mut self, items: impl IntoIterator<Item = (Path, Constructor)>) {
-        for (name, cons) in items {
-            self.constructor_map.insert(name, cons);
-        }
-    }
-
-    pub fn get_import(&self, path: &Path) -> Result<Constructor> {
-        self.constructor_map
-            .get(path)
-            .ok_or(lint_nospan(NameLint::UndefinedName))
-            .context(path)
-            .cloned()
-    }
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct TypeNameSpace {
-    ns: NameSpace,
-    type_map: HashMap<Path, TypeRef>,
-}
-
-#[allow(dead_code)]
-impl TypeNameSpace {
-    inherit!(get end_local_scope);
-
-    pub fn new(module_name: Path) -> Self {
-        Self {
-            ns: NameSpace::new(module_name),
-            ..Default::default()
-        }
-    }
-
-    pub fn get_type(&self, name: &str) -> Result<TypeRef> {
-        let mangle = self.get(name)?;
-        Ok(self.type_map.get(&mangle).unwrap().clone())
-    }
-
-    pub fn update_type(&mut self, mangle: &Path, new_t: TypeRef) {
-        *self.type_map.get_mut(mangle).unwrap() = new_t;
-    }
-
-    pub fn define_local(&mut self, name: &str, type_: TypeRef) -> Path {
-        let mangle = self.ns.define_local(name);
-        self.type_map.insert(mangle.clone(), type_);
-        mangle
-    }
-
-    pub fn define_global(&mut self, name: &str, type_: TypeRef) -> Result<Path> {
-        let mangle = self.ns.define_global(name)?;
-        self.type_map.insert(mangle.clone(), type_);
-        Ok(mangle)
-    }
-
-    pub fn import_module(&mut self, items: impl IntoIterator<Item = (Path, TypeRef)>) {
-        for (name, type_) in items {
-            self.type_map.insert(name, type_);
-        }
-    }
-
-    pub fn get_import_type(&self, path: &Path) -> Result<TypeRef> {
-        self.type_map
-            .get(path)
-            .ok_or(lint_nospan(NameLint::UndefinedName))
-            .context(path)
-            .cloned()
-    }
-
-    pub fn to_universe(&self) -> HashMap<Path, TypeRef> {
-        self.type_map.clone()
     }
 }

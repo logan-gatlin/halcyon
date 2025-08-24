@@ -103,10 +103,10 @@ impl ModuleEncoder {
 
     pub fn new_function(
         &mut self,
-        type_: impl Into<TypeRef>,
+        type_: impl Into<Type>,
         parameter_name: Path,
         capture_names: Vec<Path>,
-        capture_types: Vec<TypeRef>,
+        capture_types: Vec<Type>,
     ) -> u32 {
         let type_ = type_.into();
         let Type::Function(parameter_type, _) = type_.clone() else {
@@ -167,8 +167,8 @@ impl ModuleEncoder {
     pub fn new_curried_function(
         &mut self,
         mut parameter_names: Vec<Path>,
-        mut parameter_types: Vec<TypeRef>,
-        return_type: TypeRef,
+        mut parameter_types: Vec<Type>,
+        return_type: Type,
     ) -> (u32, u32) {
         let ftype = Type::curry(&parameter_types, return_type.clone());
         parameter_names.reverse();
@@ -188,10 +188,10 @@ impl ModuleEncoder {
     fn curry(
         &mut self,
         mut parameter_names: Vec<Path>,
-        mut parameter_types: Vec<TypeRef>,
+        mut parameter_types: Vec<Type>,
         mut capture_names: Vec<Path>,
-        mut capture_types: Vec<TypeRef>,
-        ftype: TypeRef,
+        mut capture_types: Vec<Type>,
+        ftype: Type,
         tail: &mut u32,
     ) -> u32 {
         let name = parameter_names.pop().unwrap();

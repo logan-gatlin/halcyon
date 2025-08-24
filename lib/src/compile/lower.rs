@@ -172,7 +172,7 @@ pub fn lower_pattern(
     }
 }
 
-pub fn lower(nodes: &mut IrModule, ptr: IrPtr, state: &mut ModuleEncoder, f: u32) {
+pub fn lower(nodes: &mut IrModule, ptr: IrNode, state: &mut ModuleEncoder, f: u32) {
     macro_rules! asm {
         ($($e:expr);*;) => {
             let __temp = [$($e,)*];
@@ -216,7 +216,6 @@ pub fn lower(nodes: &mut IrModule, ptr: IrPtr, state: &mut ModuleEncoder, f: u32
         }
         h::Field { of, index } => {
             lower(nodes, of, state, f);
-            println!("FIELD OF: {}", nodes[of].type_);
             asm! {
               StructGet {
                 struct_type_index: state

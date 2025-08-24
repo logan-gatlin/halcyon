@@ -1,6 +1,6 @@
 use super::*;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, sx::SXRepr)]
 pub enum ModuleExpressionKind {
     Let {
         assignee: PatternExpression,
@@ -19,12 +19,13 @@ pub enum ModuleExpressionKind {
 pub type ModuleExpression = Expression<ModuleExpressionKind>;
 
 #[allow(dead_code)]
-#[derive(Debug, Clone)]
-pub struct ParsedModule {
+#[derive(Debug, Clone, sx::SXRepr)]
+pub struct _ParsedModule {
     pub name: String,
     pub contents: Vec<ModuleExpression>,
-    pub span: Span,
 }
+
+pub type ParsedModule = Spanned<_ParsedModule>;
 
 pub fn parse_module(iter: it!()) -> Result<ParsedModule> {
     iter.start_span();
@@ -37,57 +38,48 @@ pub fn parse_module(iter: it!()) -> Result<ParsedModule> {
     // top-level expressions
     loop {
         match iter.peek(0) {
-            None | Some(Token(End, _)) | Some(Token(EOF, _)) => break,
+            None
+            | Some(Token {
+                inner: End | Eof, ..
+            }) => break,
             Some(_) => contents.push(parse_module_expression(iter)?),
         };
     }
     // end keyword
     iter.eat_or_error(End)?;
     let module_span = iter.end_span();
-    Ok(ParsedModule {
-        name,
-        contents,
-        span: module_span,
-    })
+    Ok(_ParsedModule { name, contents }.with_span(module_span))
 }
 
 pub fn parse_module_expression(iter: it!()) -> Result<ModuleExpression> {
     iter.start_span();
     let variant = iter.eat_one_of([Let, Type, Import])?;
-    match variant {
+    Ok(match variant {
         // Let
         0 => {
             let assignee = parse_pattern(iter)?;
             iter.eat_or_error(Equal)?;
-            Ok(ModuleExpression {
-                kind: ModuleExpressionKind::Let {
-                    assignee,
-                    value: Box::new(parse_value_expression(iter, 0)?),
-                },
-                span: iter.end_span(),
-            })
+            ModuleExpressionKind::Let {
+                assignee,
+                value: Box::new(parse_value_expression(iter, 0)?),
+            }
         }
         // Type
         1 => {
             let assignee = iter.eat_ident()?;
             let assignee_span = iter.last_span;
             iter.eat_or_error(Equal)?;
-            Ok(ModuleExpression {
-                kind: ModuleExpressionKind::Type {
-                    assignee,
-                    assignee_span,
-                    value: Box::new(parse_type_definition(iter)?),
-                },
-                span: iter.end_span(),
-            })
+            ModuleExpressionKind::Type {
+                assignee,
+                assignee_span,
+                value: Box::new(parse_type_definition(iter)?),
+            }
         }
         // Import
-        2 => Ok(ModuleExpression {
-            kind: ModuleExpressionKind::Import {
-                name: iter.eat_ident()?,
-            },
-            span: iter.end_span(),
-        }),
+        2 => ModuleExpressionKind::Import {
+            name: iter.eat_ident()?,
+        },
         _ => unreachable!(),
     }
+    .with_span(iter.end_span()))
 }

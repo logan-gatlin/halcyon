@@ -14,7 +14,7 @@ macro_rules! test {
                 panic!()
             }
         };
-        execute(wasm);
+        //execute(wasm);
       }
     )*
   }

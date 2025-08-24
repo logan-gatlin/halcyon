@@ -22,6 +22,7 @@ pub fn make_std_module(
 
     // Create standard library
     let input = include_str!("stdlib.hc");
+    let input = "";
     let linter = crate::Linter::new(input.to_string());
     let tokens = crate::tokenize(input.chars()).handle(&linter)?;
     for parsed_module in crate::parse(tokens).handle(&linter)? {
@@ -36,8 +37,8 @@ pub fn make_std_module(
 fn make_function(
     encoder: &mut ModuleEncoder,
     name: &str,
-    parameter_types: Vec<TypeRef>,
-    return_type: TypeRef,
+    parameter_types: Vec<Type>,
+    return_type: Type,
 ) -> u32 {
     let this_type = Type::curry(&parameter_types, return_type.clone());
     let (head, tail) = encoder.new_curried_function(

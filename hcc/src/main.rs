@@ -54,7 +54,7 @@ pub fn execute(wasm: Vec<u8>) {
 fn hcc_main() -> std::result::Result<(), String> {
     let args = CmdArgs::parse();
     match args.command {
-        Commands::Check { input_path } => todo!(),
+        Commands::Check { .. } => todo!(),
         Commands::Build { input_path, output } => {
             let file = std::fs::read(input_path).map_err(|e| e.to_string())?;
             let binary = compile(&String::from_utf8_lossy(&file))?;

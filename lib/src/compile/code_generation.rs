@@ -161,7 +161,7 @@ impl ModuleEncoder {
         }
     }
 
-    pub fn unwrap_primitive(&mut self, function: u32, type_: impl Into<TypeRef>) {
+    pub fn unwrap_primitive(&mut self, function: u32, type_: impl Into<Type>) {
         let type_ = type_.into();
         let type_id = self.get_asm_type(type_.clone()).id.unwrap();
         match type_ {

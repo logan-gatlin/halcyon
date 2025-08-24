@@ -1,44 +1,51 @@
-use crate::{ir::Path, semantic::Unify};
+use crate::{Visit, ir::Path};
 
-use super::TypeVariable;
+pub type TypeVariable = usize;
+
 use std::{
     collections::{HashMap, HashSet},
     sync::{Mutex, OnceLock},
 };
 
-pub type TypeRef = Type;
-
-#[derive(Debug, Clone)]
-pub struct TypeScheme {
-    variables: usize,
-    inner: Type,
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
+pub struct Typed<T> {
+    pub inner: T,
+    pub type_: Type,
 }
 
-impl TypeScheme {
-    pub fn new(mut t: Type) -> Self {
-        let mut map = HashMap::new();
-        let mut variables = 0;
-        t.map_new_type_variables(&mut map, &mut variables);
-        Self {
-            variables,
-            inner: t,
-        }
+impl<T> sx::SXRepr for Typed<T>
+where
+    T: sx::SXRepr,
+{
+    fn sx(self) -> sx::SX {
+        sx::SX::Field("type".into(), self.type_.sx().into()).push(self.inner.sx())
     }
+}
 
-    pub fn instantiate(mut self, mut fresh_type_var: impl FnMut() -> TypeVariable) -> Type {
-        for i in 0..self.variables {
-            self.inner.unify(i, &Type::TypeVariable(fresh_type_var()))
-        }
-        self.inner
+impl<T> std::ops::Deref for Typed<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
     }
+}
 
-    pub fn instantiate_default(self) -> Type {
-        let mut count = 0;
-        self.instantiate(|| {
-            let c = count;
-            count += 1;
-            c
-        })
+impl<T> std::ops::DerefMut for Typed<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
+
+pub trait WithType: Sized {
+    fn with_type(self, t: Type) -> Typed<Self>;
+}
+
+impl<T> WithType for T {
+    fn with_type(self, t: Type) -> Typed<T> {
+        Typed {
+            inner: self,
+            type_: t,
+        }
     }
 }
 
@@ -59,109 +66,57 @@ pub enum Type {
     /// UTF-8 codepoint 32 bit
     Glyph,
     // Type variable
-    TypeVariable(TypeVariable),
+    Variable(TypeVariable),
     /// Record type
     Struct {
         member_names: Vec<String>,
-        member_types: Vec<TypeRef>,
+        member_types: Vec<Type>,
     },
     /// Tuple
-    Product(Vec<TypeRef>),
+    Product(Vec<Type>),
     /// Variant
     Sum {
         variant_names: Vec<String>,
-        variant_types: Vec<TypeRef>,
+        variant_types: Vec<Type>,
     },
     /// Function type
-    Function(Box<TypeRef>, Box<TypeRef>),
+    Function(Box<Type>, Box<Type>),
+    TypeFunction(TypeVariable, Box<Type>),
     /// Placeholder until arrays are implemented, so I can
     /// generate `anyref` array in type section
     _ClosureCapture,
     Named(Path),
 }
 
-static UNIVERSE: OnceLock<Mutex<HashMap<Path, Type>>> = OnceLock::new();
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Kindness(usize);
 
-fn get_universe() -> std::sync::MutexGuard<'static, HashMap<Path, Type>> {
-    UNIVERSE
-        .get_or_init(|| Mutex::new(HashMap::new()))
-        .lock()
-        .unwrap()
+static UNIVERSE: OnceLock<Mutex<Universe>> = OnceLock::new();
+
+#[derive(Debug, Clone, Default)]
+pub struct Universe {
+    name_map: HashMap<Path, Type>,
+    kind_map: HashMap<Path, Kindness>,
+}
+impl Universe {
+    pub fn get() -> std::sync::MutexGuard<'static, Self> {
+        UNIVERSE
+            .get_or_init(|| Mutex::new(Universe::default()))
+            .lock()
+            .unwrap()
+    }
+
+    pub fn new_named_type(&mut self, path: Path, mut t: Type) {
+        let mut type_variables = HashSet::new();
+        t.visit(|tv: &mut TypeVariable| {
+            type_variables.insert(*tv);
+        });
+        self.name_map.insert(path.clone(), t);
+        self.kind_map.insert(path, Kindness(type_variables.len()));
+    }
 }
 
 impl Type {
-    pub fn new_named_type(path: Path, t: Type) {
-        let mut guard = get_universe();
-        guard.insert(path.clone(), t);
-    }
-
-    pub fn get_named_type(path: &Path) -> Type {
-        let guard = get_universe();
-        guard
-            .get(path)
-            .unwrap_or_else(|| panic!("No named type: {path}"))
-            .clone()
-    }
-
-    pub fn find_structs_with_fields(fieldset: &HashSet<(String, Type)>) -> Vec<Type> {
-        let u = get_universe();
-        u.iter()
-            .flat_map(|(path, t)| match t {
-                Type::Struct { member_names, .. } => {
-                    if fieldset.iter().all(|name| member_names.contains(&name.0)) {
-                        Some(Type::Named(path.clone()))
-                    } else {
-                        None
-                    }
-                }
-                _ => None,
-            })
-            .collect::<Vec<_>>()
-    }
-
-    pub fn map_new_type_variables(
-        &mut self,
-        map: &mut HashMap<TypeVariable, TypeVariable>,
-        current: &mut TypeVariable,
-    ) {
-        match self {
-            Type::Named(_)
-            | Type::Any
-            | Type::_ClosureCapture
-            | Type::Unit
-            | Type::Integer
-            | Type::Real
-            | Type::Boolean
-            | Type::String
-            | Type::Glyph => {}
-            Type::TypeVariable(tv) => {
-                if let Some(key) = map.get(tv) {
-                    *tv = *key;
-                } else {
-                    let new_tv = *current;
-                    *current += 1;
-                    map.insert(*tv, new_tv);
-                    *tv = new_tv;
-                }
-            }
-            Type::Sum {
-                variant_types: items,
-                ..
-            }
-            | Type::Product(items)
-            | Type::Struct {
-                member_types: items,
-                ..
-            } => items
-                .iter_mut()
-                .for_each(|t| t.map_new_type_variables(map, current)),
-            Type::Function(param_type, return_type) => {
-                param_type.map_new_type_variables(map, current);
-                return_type.map_new_type_variables(map, current);
-            }
-        }
-    }
-
     pub fn curry(params: &[Type], returns: Type) -> Type {
         match params {
             [] => returns,
@@ -170,148 +125,63 @@ impl Type {
         }
     }
 
-    pub fn primitives() -> Vec<(TypeRef, &'static str)> {
-        vec![
-            (Self::Unit, "unit"),
-            (Self::Integer, "integer"),
-            (Self::Real, "real"),
-            (Self::Boolean, "boolean"),
-            (Self::String, "string"),
-            (Self::Glyph, "glyph"),
-        ]
-    }
-
-    pub fn func(parameter: Type, returns: Type) -> TypeRef {
+    pub fn func(parameter: Type, returns: Type) -> Type {
         Type::Function(parameter.into(), returns.into())
     }
 
-    pub fn field_index(&self, name: &str) -> Option<u32> {
-        let t = if let Type::Named(name) = self {
-            &Self::get_named_type(name)
-        } else {
-            self
-        };
-        if let Type::Struct { member_names, .. } = t {
-            let mut index = 0;
-            let mut found = false;
-            for n in member_names.iter() {
-                if n == name {
-                    found = true;
-                    break;
-                }
-                index += 1;
+    pub fn contains_type_variable(&self, tv: TypeVariable) -> bool {
+        let mut ret = false;
+        self.clone().visit(|t: &mut TypeVariable| {
+            if *t == tv {
+                ret = true;
             }
-            if found { Some(index) } else { None }
-        } else {
-            None
-        }
+        });
+        ret
     }
+}
 
-    pub fn field_type(&self, name: &str) -> Option<Type> {
-        let t = if let Type::Named(name) = self {
-            &Self::get_named_type(name)
-        } else {
-            self
-        };
-        if let Type::Struct {
-            member_names,
-            member_types,
-        } = t
-        {
-            let pos = member_names.iter().position(|n| n == name)?;
-            Some(member_types[pos].clone())
-        } else {
-            None
-        }
-    }
-
-    pub fn ambiguous(&self) -> bool {
-        matches!(self, Self::Any)
-    }
-
-    pub fn strict_eq(&self, other: &Type) -> bool {
-        use Type as t;
-        match (self, other) {
-            (t::Any, t::Any) => {
-                panic!("Tried to compare ambiguous types")
-            }
-            (t::_ClosureCapture, t::_ClosureCapture)
-            | (t::Unit, t::Unit)
-            | (t::Integer, t::Integer)
-            | (t::Real, t::Real)
-            | (t::Boolean, t::Boolean)
-            | (t::Glyph, t::Glyph)
-            | (t::String, t::String) => true,
-            (
-                t::Struct {
-                    member_names: names1,
-                    member_types: types1,
-                },
-                t::Struct {
-                    member_names: names2,
-                    member_types: types2,
-                },
-            ) => names1 == names2 && types1 == types2,
-            (t::Function(p1, r1), t::Function(p2, r2)) => p1 == p2 && r1 == r2,
-            (t::Product(t1), t::Product(t2)) => t1 == t2,
-            (
-                t::Sum {
-                    variant_names: n1,
-                    variant_types: t1,
-                },
-                t::Sum {
-                    variant_names: n2,
-                    variant_types: t2,
-                },
-            ) => t1 == t2 && n1 == n2,
-            (t::TypeVariable(t1), t::TypeVariable(t2)) => t1 == t2,
-            (t::Named(a), t::Named(b)) => a == b,
-            (t::Named(n), a) | (a, t::Named(n)) => {
-                let b = Self::get_named_type(n);
-
-                a == &b
-            }
-            _ => false,
-        }
-    }
-
-    pub fn contains_type_var(&self, tv: TypeVariable) -> bool {
+impl Visit<Type> for Type {
+    fn _visit(&mut self, f: &mut impl FnMut(&mut Type)) {
         match self {
-            Type::TypeVariable(t) => tv == *t,
-            Type::Struct { member_types, .. } => {
-                member_types.iter().any(|x| x.contains_type_var(tv))
+            Type::_ClosureCapture
+            | Type::Named(_)
+            | Type::Any
+            | Type::Unit
+            | Type::Integer
+            | Type::Real
+            | Type::Boolean
+            | Type::String
+            | Type::Glyph
+            | Type::Variable(_) => f(self),
+            Type::Sum {
+                variant_types: items,
+                ..
             }
-            Type::Product(items) => items.iter().any(|x| x.contains_type_var(tv)),
-            Type::Sum { variant_types, .. } => {
-                variant_types.iter().any(|x| x.contains_type_var(tv))
+            | Type::Product(items)
+            | Type::Struct {
+                member_types: items,
+                ..
+            } => items._visit(f),
+            Type::TypeFunction(_, t) => {
+                t._visit(f);
             }
-            Type::Function(a, b) => a.contains_type_var(tv) || b.contains_type_var(tv),
-            _ => false,
+            Type::Function(a, b) => {
+                a._visit(f);
+                b._visit(f);
+            }
         }
     }
+}
 
-    pub fn product(a: Type, b: Type) -> TypeRef {
-        if let Type::Product(v) = a {
-            let mut new = v.clone();
-            if let Type::Product(v2) = b {
-                new.append(&mut v2.clone());
-                Type::Product(new)
-            } else {
-                new.push(b.clone());
-                Type::Product(new)
+impl Visit<TypeVariable> for Type {
+    fn _visit(&mut self, f: &mut impl FnMut(&mut TypeVariable)) {
+        self._visit(&mut |t: &mut Type| {
+            if let Type::Variable(tv) = t {
+                f(tv);
+            } else if let Type::TypeFunction(tv, _) = t {
+                f(tv)
             }
-        } else if let Type::Product(v) = b {
-            let mut new = v.clone();
-            if let Type::Product(v2) = a {
-                new.append(&mut v2.clone());
-                Type::Product(new)
-            } else {
-                new.push(a.clone());
-                Type::Product(new)
-            }
-        } else {
-            Type::Product(vec![a.clone(), b.clone()])
-        }
+        })
     }
 }
 
@@ -327,9 +197,9 @@ impl PartialOrd for Type {
         use std::cmp::Ordering::*;
         Some(match (self, other) {
             (Any, _) | (_, Any) => return None,
-            (TypeVariable(_), TypeVariable(_)) => Equal,
-            (TypeVariable(_), _) => Greater,
-            (_, TypeVariable(_)) => Less,
+            (Variable(_), Variable(_)) => Equal,
+            (Variable(_), _) => Greater,
+            (_, Variable(_)) => Less,
             (t1, t2) if t1 == t2 => Equal,
             _ => return None,
         })
@@ -372,13 +242,8 @@ impl PartialEq for Type {
                     variant_types: t2,
                 },
             ) => t1 == t2 && n1 == n2,
-            (t::TypeVariable(_), t::TypeVariable(_)) => true,
-            (t::Named(a), t::Named(b)) => a == b,
-            (t::Named(n), a) | (a, t::Named(n)) => {
-                let b = Self::get_named_type(n);
-
-                a == &b
-            }
+            (t::Variable(t1), t::Variable(t2)) => t1 == t2,
+            (t::Named(a, a_types), t::Named(b, b_types)) => a == b && a_types == b_types,
             _ => false,
         }
     }
@@ -409,7 +274,7 @@ impl std::hash::Hash for Type {
             Type::Any => {
                 "any".hash(state);
             }
-            Type::TypeVariable(id) => {
+            Type::Variable(id) => {
                 "poly".hash(state);
                 id.hash(state);
             }
@@ -419,7 +284,7 @@ impl std::hash::Hash for Type {
                     item.hash(state);
                 }
             }
-            Type::Named(_)
+            Type::Named(_, _)
             | Type::Unit
             | Type::_ClosureCapture
             | Type::Integer
@@ -457,7 +322,7 @@ impl std::fmt::Display for Type {
                 write!(f, "{{ {fields} }}")
             }
             Type::Function(a, b) => write!(f, "({a} -> {b})"),
-            Type::TypeVariable(id) => write!(f, "'{id}"),
+            Type::Variable(id) => write!(f, "'{id}"),
             Type::Product(items) => write!(
                 f,
                 "({})",
@@ -480,9 +345,23 @@ impl std::fmt::Display for Type {
                     .collect::<Vec<_>>()
                     .join(" | ")
             ),
-            Type::Named(name) => {
-                write!(f, "{name}")
+            Type::Named(name, types) => {
+                write!(
+                    f,
+                    "{name} {}",
+                    types
+                        .iter()
+                        .map(|t| format!("{t}"))
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                )
             }
         }
+    }
+}
+
+impl sx::SXRepr for Type {
+    fn sx(self) -> sx::SX {
+        sx::SX::Atom(format!("{self}"))
     }
 }

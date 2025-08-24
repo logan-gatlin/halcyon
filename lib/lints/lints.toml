@@ -80,6 +80,10 @@ help = "Modules must be imported before they are referenced. Try adding `import 
 reason = "No such module"
 help = "Cannot find a module called `%`"
 
+[3005]
+reason = "Cyclical definition"
+help = "The definition of `%` contains itself. This is only allowed when the self-reference happens inside of a function body (i.e. recursive functions)."
+
 # Type errors
 [4000]
 reason = "Type mismatch"

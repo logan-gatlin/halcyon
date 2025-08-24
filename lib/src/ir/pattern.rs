@@ -1,13 +1,8 @@
 use super::*;
 
-#[derive(Debug, Clone)]
-pub struct Pattern {
-    pub kind: PatternKind,
-    pub type_: TypeRef,
-    pub span: Span,
-}
+pub type Pattern = Typed<Spanned<PatternKind>>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, sx::SXRepr)]
 pub enum PatternKind {
     Name(Path),
     Tuple(Vec<Pattern>),
@@ -17,36 +12,48 @@ pub enum PatternKind {
 
 impl Pattern {
     pub fn introduced_names(&self) -> usize {
-        match &self.kind {
-            PatternKind::Name(_) => 1,
-            PatternKind::Tuple(patterns) => patterns
-                .iter()
-                .fold(0, |v, p| v + p.introduced_names()),
-            PatternKind::Literal(_) => 0,
-            PatternKind::Constructor(_, pattern) => pattern.introduced_names(),
-        }
-    }
-
-    pub fn iter_names(&self, f: &mut impl FnMut(&Path, &TypeRef)) {
-        match &self.kind {
-            PatternKind::Name(path) => f(path, &self.type_),
-            PatternKind::Tuple(patterns) => patterns.iter().for_each(|p| p.iter_names(f)),
-            PatternKind::Literal(_) => {}
-            PatternKind::Constructor(_, pattern) => pattern.iter_names(f),
-        }
+        let mut count = 0;
+        self.clone().visit(|p: &mut Pattern| {
+            if let PatternKind::Name(_) = *p.inner {
+                count += 1
+            }
+        });
+        count
     }
 }
 
-impl Unify for Pattern {
-    fn unify(&mut self, tv: TypeVariable, type_: &Type) {
-        self.type_.unify(tv, type_);
-        match &mut self.kind {
-            PatternKind::Name(_) => {}
-            PatternKind::Tuple(patterns) => patterns.iter_mut().for_each(|p| p.unify(tv, type_)),
-            PatternKind::Constructor(_, pattern) => {
-                pattern.unify(tv, type_);
-            }
-            PatternKind::Literal(_) => {}
+impl Visit<Pattern> for Pattern {
+    fn _visit(&mut self, f: &mut impl FnMut(&mut Pattern)) {
+        match &mut *self.inner {
+            PatternKind::Name(_) | PatternKind::Literal(_) => {}
+            PatternKind::Tuple(items) => items._visit(f),
+            PatternKind::Constructor(_, items) => items._visit(f),
         }
+        f(self);
+    }
+}
+
+impl Visit<Type> for Pattern {
+    fn _visit(&mut self, f: &mut impl FnMut(&mut Type)) {
+        self.visit(|p: &mut Pattern| {
+            if let PatternKind::Constructor(c, _) = &mut ***p {
+                c.in_type._visit(f);
+                c.out_type._visit(f);
+            }
+            p.type_._visit(f);
+        })
+    }
+}
+
+impl Visit<(Path, Type)> for Pattern {
+    fn _visit(&mut self, f: &mut impl FnMut(&mut (Path, Type))) {
+        self.visit(|p: &mut Pattern| {
+            if let PatternKind::Name(path) = &mut *p.inner {
+                let mut tup = (path.clone(), p.type_.clone());
+                f(&mut tup);
+                *path = tup.0;
+                p.type_ = tup.1;
+            }
+        })
     }
 }

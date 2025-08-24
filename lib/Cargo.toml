@@ -11,6 +11,8 @@ multipeek = "0.1"
 toml = {version = "0.9", default-features = false, features = ["parse", "serde"]}
 wasmparser = {version = "0.235"}
 wasmprinter = "0.235"
+#sx = {git = "https://git.lgatlin.dev/logan/sx.git"}
+sx = {path = "../../sx/sx/"}
 
 [dev-dependencies]
 wasmtime = {version = "34.0", default-features = false, features = ["runtime", "cranelift", "gc", "gc-drc"]}

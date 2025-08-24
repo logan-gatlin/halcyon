@@ -1,7 +1,8 @@
 module TypeTest = 
   import std
 
-  // Primitive aliases
+  -- Primitive aliases
+
   type integer = std:integer
   type real = std:real
   type unit = std:unit
@@ -9,7 +10,7 @@ module TypeTest =
   type string = std:string
   type glyph = std:glyph
 
-  // ADT's
+  -- ADT's
   type struct = {
     a : integer,
     b : real,
@@ -21,7 +22,7 @@ module TypeTest =
   type tuple = integer * boolean * real * unit * string * glyph * struct
   type variant = V_int of integer | V_real of real | V_both of integer * real
 
-  // Struct field inference
+  -- Struct field inference
   type specific_struct1 = {
     specific_name1: std:integer
   }

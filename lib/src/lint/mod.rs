@@ -1,12 +1,10 @@
 mod color;
 pub mod kinds;
 pub mod render;
-pub mod sexpr;
 pub mod span;
 
 pub(super) use color::*;
 pub use kinds::*;
-pub use sexpr::*;
 pub use span::*;
 
 use crate::{compiler_print, render::Linter};
@@ -36,11 +34,11 @@ pub fn lint_nospan(kind: impl Into<usize>) -> Lint {
     }
 }
 
-pub trait OrLint<T> {
+pub trait ResidualLint<T> {
     fn lint(self, lint: impl Into<usize>) -> Result<T>;
 }
 
-impl<T, E> OrLint<T> for std::result::Result<T, E> {
+impl<T, E> ResidualLint<T> for std::result::Result<T, E> {
     fn lint(self, lint: impl Into<usize>) -> Result<T> {
         match self {
             Ok(v) => Ok(v),
@@ -53,7 +51,7 @@ impl<T, E> OrLint<T> for std::result::Result<T, E> {
     }
 }
 
-impl<T> OrLint<T> for std::option::Option<T> {
+impl<T> ResidualLint<T> for std::option::Option<T> {
     fn lint(self, lint: impl Into<usize>) -> Result<T> {
         match self {
             Some(v) => Ok(v),
@@ -66,10 +64,10 @@ impl<T> OrLint<T> for std::option::Option<T> {
     }
 }
 
-pub trait WithSpan {
+pub trait ResidualSpan {
     fn span(self, span: Span) -> Self;
 }
-impl<T> WithSpan for std::result::Result<T, Lint> {
+impl<T> ResidualSpan for std::result::Result<T, Lint> {
     fn span(self, span: Span) -> Self {
         match self {
             Ok(v) => Ok(v),
@@ -81,11 +79,11 @@ impl<T> WithSpan for std::result::Result<T, Lint> {
     }
 }
 
-pub trait WithContext {
+pub trait ResidualContext {
     fn context(self, ctx: impl Into<String>) -> Self;
 }
 
-impl<T> WithContext for std::result::Result<T, Lint> {
+impl<T> ResidualContext for std::result::Result<T, Lint> {
     fn context(self, parameter: impl Into<String>) -> Self {
         match self {
             Ok(v) => Ok(v),
@@ -106,11 +104,12 @@ impl<T> Handle<T> for Result<T> {
         match self {
             Ok(v) => Some(v),
             Err(e) => {
-                compiler_print(format!(
-                    "{}",
-                    "Failed to Compile".apply_style(Color::Red, Attribute::Underline),
-                ));
-                compiler_print(format!("{}", linter.render(e)));
+                compiler_print(
+                    "Failed to Compile"
+                        .apply_style(Color::Red, Attribute::Underline)
+                        .to_string(),
+                );
+                compiler_print(linter.render(e).to_string());
                 None
             }
         }

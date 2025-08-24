@@ -1,7 +1,11 @@
-use crate::{SExpression, sexpr};
-
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct Path(String);
+
+impl sx::SXRepr for Path {
+    fn sx(self) -> sx::SX {
+        sx::SX::Atom(self.0)
+    }
+}
 
 impl std::fmt::Display for Path {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -42,18 +46,6 @@ impl From<&Path> for String {
 impl AsRef<str> for Path {
     fn as_ref(&self) -> &str {
         &self.0
-    }
-}
-
-impl From<Path> for SExpression {
-    fn from(val: Path) -> Self {
-        sexpr(&val.0, [])
-    }
-}
-
-impl From<&Path> for SExpression {
-    fn from(val: &Path) -> Self {
-        sexpr(&val.0, [])
     }
 }
 

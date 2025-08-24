@@ -1,7 +1,4 @@
-use crate::{
-    semantic::{Type, TypeRef},
-    token::*,
-};
+use crate::{BUILTIN_MODULE, ir::Path, semantic::Type, token::*};
 
 pub type Precedence = usize;
 
@@ -25,6 +22,10 @@ macro_rules! op {
           $(Self::$op => $assoc),*
         }
       }
+
+      pub fn path(&self) -> Path {
+          Path::from(format!("{BUILTIN_MODULE}:{self}"))
+      }
     }
 
     impl std::fmt::Display for $name {
@@ -43,6 +44,12 @@ macro_rules! op {
           _ => Err(()),
         }
       }
+    }
+
+    impl sx::SXRepr for $name {
+        fn sx(self) -> sx::SX {
+            sx::SX::Atom(format!("{self}"))
+        }
     }
   }
 }
@@ -84,9 +91,10 @@ op! {
   Not, 15, LEFT_ASSOC;
 }
 
+pub const TYPE_STAR_PREC: Precedence = 15;
+
 op! {
   BinaryTypeOp;
-  Star, 15, LEFT_ASSOC;
   Arrow, 5, RIGHT_ASSOC;
 }
 
@@ -100,15 +108,7 @@ impl BinaryOp {
         Self::Greater,
     ];
 
-    pub fn get_curry_type(&self) -> TypeRef {
-        let Type::Function(_, a) = self.get_type().clone() else {
-            panic!()
-        };
-        let Type::Function(a, b) = *a else { panic!() };
-        Type::Function(a, b)
-    }
-
-    pub fn parameter_type(&self) -> TypeRef {
+    pub fn parameter_type(&self) -> Type {
         match self {
             BinaryOp::Minus
             | BinaryOp::Star
@@ -124,12 +124,12 @@ impl BinaryOp {
             | BinaryOp::Less
             | BinaryOp::LessEqual
             | BinaryOp::Greater
-            | BinaryOp::GreaterEqual => Type::TypeVariable(0),
+            | BinaryOp::GreaterEqual => Type::Variable(0),
             BinaryOp::Apply | BinaryOp::Semicolon => panic!(),
         }
     }
 
-    pub fn return_type(&self) -> TypeRef {
+    pub fn return_type(&self) -> Type {
         match self {
             BinaryOp::Minus
             | BinaryOp::Star
@@ -152,15 +152,21 @@ impl BinaryOp {
         }
     }
 
-    pub fn get_type(&self) -> TypeRef {
+    pub fn get_type(&self) -> Type {
         use BinaryOp::*;
         use Type as t;
         match self {
             Semicolon => t::func(
-                Type::TypeVariable(0),
-                Type::func(Type::TypeVariable(1), Type::TypeVariable(1)),
+                Type::Variable(0),
+                Type::func(Type::Variable(1), Type::Variable(1)),
             ),
-            Apply => todo!(),
+            Apply => t::func(
+                Type::Variable(0),
+                Type::func(
+                    Type::func(Type::Variable(0), Type::Variable(1)),
+                    Type::Variable(1),
+                ),
+            ),
             op => Type::curry(
                 &[op.parameter_type(), op.parameter_type()],
                 op.return_type(),
@@ -170,7 +176,7 @@ impl BinaryOp {
 }
 
 impl UnaryOp {
-    pub fn get_type(&self) -> TypeRef {
+    pub fn get_type(&self) -> Type {
         use UnaryOp::*;
         match self {
             Minus => Type::func(Type::Integer, Type::Integer),

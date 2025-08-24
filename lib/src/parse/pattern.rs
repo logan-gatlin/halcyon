@@ -1,5 +1,5 @@
 use super::*;
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, sx::SXRepr)]
 pub enum PatternExpressionKind {
     Literal(super::Literal),
     Identifier(String),
@@ -12,10 +12,10 @@ use PatternExpressionKind as e;
 
 pub fn parse_pattern(iter: it!()) -> Result<PatternExpression> {
     iter.start_span();
-    let Some(Token(next, _)) = iter.next() else {
+    let Some(next) = iter.next().map(without_span) else {
         return Err(iter.report_error(ExpectedExpression, []));
     };
-    let kind = match next {
+    Ok(match next {
         // Tuple or unit
         LeftParen => {
             let mut patterns = vec![];
@@ -55,9 +55,6 @@ pub fn parse_pattern(iter: it!()) -> Result<PatternExpression> {
         StringLiteral(s) => e::Literal(Literal::String(s)),
         GlyphLiteral(g) => e::Literal(Literal::Glyph(g)),
         _ => return Err(iter.report_error(ParseLint::ExpectedExpression, [])),
-    };
-    Ok(PatternExpression {
-        kind,
-        span: iter.end_span(),
-    })
+    }
+    .with_span(iter.end_span()))
 }

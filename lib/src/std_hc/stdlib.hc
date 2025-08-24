@@ -1,7 +1,7 @@
 module std =
   import builtin
 
-  // Primitives
+  -- Primitives
   type integer = builtin:integer
   type real = builtin:real
   type string = builtin:string
@@ -20,7 +20,7 @@ module string =
 
   let concatenate = fn s1 s2 => builtin:string_concatenate s1 s2
 
-  // Author: Logan Williams
+  -- Author: Logan Williams
   let from_integer = 
     fn x => 
       let digit_to_string = fn x => match x with
@@ -70,7 +70,7 @@ module list =
   import std
   import opt
 
-  type t = fn I => Pair of I * t | Nil of std:unit
+  type t = fn I => Pair of I * (t I) | Nil of std:unit
 
   let map = fn operation list => match list with
     | Pair of (head, tail) => Pair (operation head, tail |> map operation)

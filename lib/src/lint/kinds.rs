@@ -35,6 +35,7 @@ pub enum NameLint {
     ParamRedefinition = 3002,
     NotImported = 3003,
     NoSuchModule = 3004,
+    CyclicalDefinition = 3005,
 }
 
 #[repr(usize)]

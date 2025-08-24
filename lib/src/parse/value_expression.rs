@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use super::*;
 use ValueExpressionKind as e;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, sx::SXRepr)]
 pub enum Literal {
     Unit,
     Integer(String, Base),
@@ -13,7 +13,7 @@ pub enum Literal {
     Boolean(bool),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, sx::SXRepr)]
 pub enum ValueExpressionKind {
     Let {
         assignee: PatternExpression,
@@ -27,6 +27,7 @@ pub enum ValueExpressionKind {
         left: Box<ValueExpression>,
         right: Box<ValueExpression>,
     },
+    BinaryOp(BinaryOp),
     Unary {
         op: UnaryOp,
         child: Box<ValueExpression>,
@@ -51,6 +52,11 @@ pub enum ValueExpressionKind {
         predicates: Vec<PatternExpression>,
         branches: Vec<ValueExpression>,
     },
+    /// fn with ...
+    FunctionShorthand {
+        predicates: Vec<PatternExpression>,
+        branches: Vec<ValueExpression>,
+    },
     Tuple(Vec<ValueExpression>),
     StructureLiteral {
         lhs: Vec<String>,
@@ -67,10 +73,10 @@ pub type ValueExpression = Expression<ValueExpressionKind>;
 
 fn parse_primary(iter: it!()) -> Result<ValueExpression> {
     iter.start_span();
-    let Some(Token(next, _)) = iter.next() else {
+    let Some(next) = iter.next().map(without_span) else {
         return Err(iter.report_error(ExpectedExpression, []));
     };
-    let kind = match next {
+    Ok(match next {
         LeftParen if iter.eat(RightParen).is_some() => e::Literal(Literal::Unit),
         IntegerLiteral(value, base) => e::Literal(Literal::Integer(value, base)),
         RealLiteral(value) => e::Literal(Literal::Real(value)),
@@ -78,7 +84,7 @@ fn parse_primary(iter: it!()) -> Result<ValueExpression> {
         GlyphLiteral(value) => e::Literal(Literal::Glyph(value)),
         True => e::Literal(Literal::Boolean(true)),
         False => e::Literal(Literal::Boolean(false)),
-        Identifier(ident) if iter.peek(0).is_none_or(|t| t.0 != Colon) => e::Identifier(ident),
+        Identifier(ident) if iter.peek(0).is_none_or(|t| *t != Colon) => e::Identifier(ident),
         // Module field
         Identifier(ident) => {
             let mut path = vec![ident];
@@ -86,6 +92,25 @@ fn parse_primary(iter: it!()) -> Result<ValueExpression> {
                 path.push(iter.eat_ident()?);
             }
             e::ModuleField(path)
+        }
+        // Function shorthand
+        Fn if iter.eat(With).is_some() => {
+            let mut predicates = vec![];
+            let mut branches = vec![];
+            // Optional first pipe
+            iter.eat(Pipe);
+            loop {
+                predicates.push(parse_pattern(iter)?);
+                iter.eat_or_error(FatArrow)?;
+                branches.push(parse_value_expression(iter, 0)?);
+                if iter.eat(Pipe).is_none() {
+                    break;
+                }
+            }
+            e::FunctionShorthand {
+                predicates,
+                branches,
+            }
         }
         // Function definition
         Fn => {
@@ -101,7 +126,7 @@ fn parse_primary(iter: it!()) -> Result<ValueExpression> {
                     arguments.push(iter.eat_ident()?);
                     spans.push(iter.last_span);
                     iter.eat_or_error(Colon)?;
-                    types.push(Some(parse_type_expression(iter)?));
+                    types.push(Some(parse_type_expression(iter, 0)?));
                     iter.eat_or_error(RightParen)?;
                 }
                 // Untyped parameter
@@ -196,6 +221,14 @@ fn parse_primary(iter: it!()) -> Result<ValueExpression> {
                 branches,
             }
         }
+        // Binary op literal
+        LeftParen
+            if let Some(Ok(op)) = iter.peek(0).map(|o| BinaryOp::try_from(&*o))
+                && iter.peek(1).is_some_and(|t| *t == RightParen) =>
+        {
+            iter.skip(2);
+            e::BinaryOp(op)
+        }
         // Tuple or parenthesis
         LeftParen => {
             let mut inner = vec![];
@@ -221,11 +254,8 @@ fn parse_primary(iter: it!()) -> Result<ValueExpression> {
             }
         }
         _ => return Err(iter.report_error(ExpectedExpression, [])),
-    };
-    Ok(ValueExpression {
-        kind,
-        span: iter.end_span(),
-    })
+    }
+    .with_span(iter.end_span()))
 }
 
 pub fn parse_value_expression(iter: it!(), precedence: Precedence) -> Result<ValueExpression> {
@@ -237,14 +267,14 @@ pub fn parse_value_expression(iter: it!(), precedence: Precedence) -> Result<Val
             return Err(iter.report_error(ExpectedExpression, []));
         }
         let operand = parse_value_expression(iter, op.precedence())?;
-        let op = if let (UnaryOp::Minus, e::Literal(Literal::Real(_))) = (op, &operand.kind) {
+        let op = if let (UnaryOp::Minus, e::Literal(Literal::Real(_))) = (op, &*operand) {
             UnaryOp::MinusDot
         } else {
             op
         };
         let span = iter.end_span();
         Expression {
-            kind: e::Unary {
+            inner: e::Unary {
                 op,
                 child: operand.into(),
             },
@@ -259,12 +289,12 @@ pub fn parse_value_expression(iter: it!(), precedence: Precedence) -> Result<Val
     ];
     // Precedence climbing loop
     while let Some(next) = iter.peek(0) {
-        if TERMINAL_TOKENS.contains(&next.0) {
+        if TERMINAL_TOKENS.contains(&*next) {
             break;
         }
         iter.start_span();
         // Binary operator
-        if let Ok(op) = BinaryOp::try_from(&next.0) {
+        if let Ok(op) = BinaryOp::try_from(&*next) {
             let new_precedence = op.precedence();
             // End precedence climb
             if ((op.assoc() == LEFT_ASSOC) && new_precedence <= precedence)
@@ -275,7 +305,7 @@ pub fn parse_value_expression(iter: it!(), precedence: Precedence) -> Result<Val
             }
             iter.skip(1);
             current = ValueExpression {
-                kind: e::Binary {
+                inner: e::Binary {
                     op,
                     left: current.into(),
                     right: Box::new(parse_value_expression(iter, new_precedence)?),
@@ -287,7 +317,7 @@ pub fn parse_value_expression(iter: it!(), precedence: Precedence) -> Result<Val
         else if precedence < FIELD_PREC && iter.eat(Dot).is_some() {
             let rhs = iter.eat_ident()?;
             current = ValueExpression {
-                kind: e::Field {
+                inner: e::Field {
                     lhs: current.into(),
                     rhs,
                 },
@@ -297,7 +327,7 @@ pub fn parse_value_expression(iter: it!(), precedence: Precedence) -> Result<Val
         // Function call
         else if precedence < CALL_PREC {
             current = ValueExpression {
-                kind: e::FunctionCall {
+                inner: e::FunctionCall {
                     callee: current.into(),
                     argument: Box::new(parse_value_expression(iter, CALL_PREC)?),
                 },

@@ -6,7 +6,6 @@ macro_rules! it {
 
 mod module;
 mod pattern;
-mod printing;
 mod type_expression;
 mod value_expression;
 
@@ -21,11 +20,7 @@ use crate::{lint::*, operator::*, token::*};
 use ParseLint::*;
 use TokenKind::*;
 
-#[derive(Debug, Clone)]
-pub struct Expression<K> {
-    pub kind: K,
-    pub span: Span,
-}
+pub type Expression<K> = Spanned<K>;
 
 pub struct StatefulIter<I: Iterator<Item = Token>> {
     iter: MultiPeek<I>,
@@ -35,7 +30,7 @@ pub struct StatefulIter<I: Iterator<Item = Token>> {
 
 impl<I: Iterator<Item = Token>> StatefulIter<I> {
     pub fn start_span(&mut self) {
-        let span = match self.peek(0).map(|t| t.1) {
+        let span = match self.peek(0).map(|t| t.span) {
             Some(span) => span,
             None => Span {
                 start: self.last_span.start + self.last_span.width,
@@ -59,9 +54,9 @@ impl<I: Iterator<Item = Token>> StatefulIter<I> {
     pub fn next(&mut self) -> Option<Token> {
         match self.iter.next() {
             Some(tok) => {
-                self.last_span = tok.1;
+                self.last_span = tok.span;
                 self.span_stack.iter_mut().for_each(|s| {
-                    *s += tok.1;
+                    *s += tok.span;
                 });
                 Some(tok)
             }
@@ -74,7 +69,7 @@ impl<I: Iterator<Item = Token>> StatefulIter<I> {
     }
 
     pub fn eat(&mut self, expect: TokenKind) -> Option<Token> {
-        if self.peek(0).map(|t| t.0 == expect) == Some(true) {
+        if self.peek(0).map(|t| *t == expect) == Some(true) {
             self.next()
         } else {
             None
@@ -89,7 +84,7 @@ impl<I: Iterator<Item = Token>> StatefulIter<I> {
 
     pub fn peek_or_error(&mut self, n: usize, expect: TokenKind) -> Result<Token> {
         if let Some(next) = self.peek(n)
-            && next.0 == expect
+            && *next == expect
         {
             Ok(next)
         } else {
@@ -110,7 +105,11 @@ impl<I: Iterator<Item = Token>> StatefulIter<I> {
     }
 
     pub fn eat_ident(&mut self) -> Result<String> {
-        let Token(Identifier(assignee), _) = self.eat_or_error(Identifier("".into()))? else {
+        let Token {
+            inner: Identifier(assignee),
+            ..
+        } = self.eat_or_error(Identifier("".into()))?
+        else {
             unreachable!();
         };
         Ok(assignee)
@@ -124,17 +123,13 @@ impl<I: Iterator<Item = Token>> StatefulIter<I> {
             .collect::<Vec<_>>()
             .join(", ");
         let Some(next) = self.peek(0) else {
-            return Err(lint(
-                ExpectedOneOf,
-                self.last_span,
-                [kinds_str.to_string()],
-            ));
+            return Err(lint(ExpectedOneOf, self.last_span, [kinds_str.to_string()]));
         };
-        if let Some(pos) = kinds.iter().position(|k| k == &next.0) {
+        if let Some(pos) = kinds.iter().position(|k| k == &*next) {
             self.skip(1);
             Ok(pos)
         } else {
-            Err(lint(ExpectedOneOf, next.1, [kinds_str.to_string()]))
+            Err(lint(ExpectedOneOf, next.span, [kinds_str.to_string()]))
         }
     }
 
@@ -156,7 +151,7 @@ pub fn parse(iter: impl IntoIterator<Item = Token>) -> Result<Vec<ParsedModule>>
     };
     let mut modules = vec![];
     while let Some(tok) = iter.peek(0)
-        && tok.0 != EOF
+        && *tok != Eof
     {
         modules.push(parse_module(&mut iter)?);
     }

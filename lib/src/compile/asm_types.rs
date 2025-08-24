@@ -16,7 +16,7 @@ impl ModuleEncoder {
         }
     }
 
-    fn get_type_id(&mut self, t: &TypeRef, raw: bool) -> Option<u32> {
+    fn get_type_id(&mut self, t: &Type, raw: bool) -> Option<u32> {
         match self.get_storage_type(t, raw) {
             StorageType::Val(ValType::Ref(RefType {
                 heap_type: HeapType::Concrete(id),
@@ -29,7 +29,7 @@ impl ModuleEncoder {
         }
     }
 
-    pub fn get_valtype(&mut self, t: &TypeRef, raw: bool) -> ValType {
+    pub fn get_valtype(&mut self, t: &Type, raw: bool) -> ValType {
         match self.get_storage_type(t, raw) {
             StorageType::I8 | StorageType::I16 => ValType::I32,
             StorageType::Val(val_type) => val_type,
@@ -106,7 +106,12 @@ impl ModuleEncoder {
                 StorageType::Val(ValType::I32),
                 StorageType::Val(ValType::Ref(RefType::ANYREF)),
             ]),
-            Type::Named(name) => return self.get_storage_type(&Type::get_named_type(&name), raw),
+            Type::Named(name, types) => {
+                return self.get_storage_type(
+                    &Type::get_named_type(&name).instantiate_with_substitutions(&types),
+                    raw,
+                );
+            }
         };
         register(self, t.clone(), rt)
     }

@@ -5,9 +5,9 @@ use super::*;
 pub type TypeDefinition = Expression<TypeDefinitionKind>;
 pub type TypeExpression = Expression<TypeExpressionKind>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, sx::SXRepr)]
 pub enum TypeDefinitionKind {
-    Function {
+    TypeFunction {
         arguments: Vec<String>,
         body: Box<TypeDefinition>,
     },
@@ -22,11 +22,14 @@ pub enum TypeDefinitionKind {
     Expression(TypeExpression),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, sx::SXRepr)]
 pub enum TypeExpressionKind {
+    Function(Box<TypeExpression>, Box<TypeExpression>),
+    Call(Box<TypeExpression>, Box<TypeExpression>),
     Identifier(String),
     Product(Vec<TypeExpression>),
     ModulePath(Vec<String>),
+    Unit,
 }
 
 pub fn parse_type_definition(iter: it!()) -> Result<TypeDefinition> {
@@ -36,7 +39,7 @@ pub fn parse_type_definition(iter: it!()) -> Result<TypeDefinition> {
         iter.span_after_this(),
         [],
     ))?;
-    let kind = match &next.0 {
+    Ok(match &*next {
         // Function
         Fn => {
             iter.skip(1);
@@ -60,7 +63,7 @@ pub fn parse_type_definition(iter: it!()) -> Result<TypeDefinition> {
                 }
             }
             let body = Box::new(parse_type_definition(iter)?);
-            TypeDefinitionKind::Function { arguments, body }
+            TypeDefinitionKind::TypeFunction { arguments, body }
         }
         // Structure
         LeftBrace => {
@@ -74,9 +77,9 @@ pub fn parse_type_definition(iter: it!()) -> Result<TypeDefinition> {
                 let name = iter.eat_ident()?;
                 lhs.push(name);
                 iter.eat_or_error(Colon)?;
-                let expr = parse_type_expression(iter)?;
+                let expr = parse_type_expression(iter, 0)?;
                 rhs.push(expr);
-                if iter.eat(Comma).is_none() && iter.peek(0).is_none_or(|t| t.0 != RightBrace) {
+                if iter.eat(Comma).is_none() && iter.peek(0).is_none_or(|t| *t != RightBrace) {
                     iter.start_span();
                     return Err(if iter.peek_or_error(0, Identifier("".into())).is_ok() {
                         iter.report_error(ExpectedToken, [format!("{Comma}")])
@@ -91,14 +94,14 @@ pub fn parse_type_definition(iter: it!()) -> Result<TypeDefinition> {
         Identifier(name) if iter.peek_or_error(1, Of).is_ok() => {
             let mut variant_names = vec![name.clone()];
             iter.skip(2);
-            let mut variant_types = vec![parse_type_expression(iter)?];
+            let mut variant_types = vec![parse_type_expression(iter, 0)?];
             loop {
                 if iter.eat(Pipe).is_none() {
                     break;
                 }
                 variant_names.push(iter.eat_ident()?);
                 iter.eat_or_error(Of)?;
-                variant_types.push(parse_type_expression(iter)?);
+                variant_types.push(parse_type_expression(iter, 0)?);
             }
             TypeDefinitionKind::Sum {
                 variant_names,
@@ -106,48 +109,85 @@ pub fn parse_type_definition(iter: it!()) -> Result<TypeDefinition> {
             }
         }
         // Other expression
-        _ => TypeDefinitionKind::Expression(parse_type_expression(iter)?),
-    };
-    Ok(TypeDefinition {
-        kind,
-        span: iter.end_span(),
-    })
+        _ => TypeDefinitionKind::Expression(parse_type_expression(iter, 0)?),
+    }
+    .with_span(iter.end_span()))
 }
 
-pub fn parse_type_expression(iter: it!()) -> Result<TypeExpression> {
-    fn primary(iter: it!()) -> Result<TypeExpression> {
-        iter.start_span();
-        let kind = match iter.eat_ident()? {
-            // Module field
-            name if iter.peek_or_error(0, Colon).is_ok() => {
-                let mut path = vec![name];
-                while iter.eat(Colon).is_some() {
-                    path.push(iter.eat_ident()?);
-                }
-                TypeExpressionKind::ModulePath(path)
-            }
-            // Basic ident
-            name => TypeExpressionKind::Identifier(name),
-        };
-        Ok(TypeExpression {
-            kind,
-            span: iter.end_span(),
-        })
-    }
+fn parse_primary(iter: it!()) -> Result<TypeExpression> {
     iter.start_span();
-    let mut product = vec![primary(iter)?];
-    while iter.eat(Star).is_some() {
-        product.push(primary(iter)?);
-    }
-    match &product[..] {
-        [] => unreachable!(),
-        [primary] => {
-            iter.end_span();
-            Ok(primary.clone())
+    let Some(next) = iter.next().map(without_span) else {
+        return Err(iter.report_error(ExpectedExpression, []));
+    };
+    Ok(match next {
+        LeftParen if iter.eat(RightParen).is_some() => TypeExpressionKind::Unit,
+        // Parenthesis
+        LeftParen => {
+            let mut inner = parse_type_expression(iter, 0)?;
+            inner.span = iter.end_span();
+            iter.eat_or_error(RightParen)?;
+            return Ok(inner);
         }
-        [..] => Ok(TypeExpression {
-            kind: TypeExpressionKind::Product(product),
-            span: iter.end_span(),
-        }),
+        // Module path
+        Identifier(name) if iter.peek(0).is_some_and(|t| *t == Colon) => {
+            let mut path = vec![name];
+            while iter.eat(Colon).is_some() {
+                path.push(iter.eat_ident()?);
+            }
+            TypeExpressionKind::ModulePath(path)
+        }
+        Identifier(name) => TypeExpressionKind::Identifier(name),
+        _ => return Err(iter.report_error(ExpectedExpression, [])),
     }
+    .with_span(iter.end_span()))
+}
+
+pub fn parse_type_expression(iter: it!(), precedence: Precedence) -> Result<TypeExpression> {
+    let mut current = parse_primary(iter)?;
+    while let Some(next) = iter.peek(0) {
+        const TERMINAL_TOKENS: [TokenKind; 8] =
+            [Equal, RightParen, RightBrace, End, Comma, Pipe, Let, Type];
+        if TERMINAL_TOKENS.contains(&*next) {
+            break;
+        }
+        iter.start_span();
+        // Binary op
+        if let Ok(op) = BinaryTypeOp::try_from(&*next) {
+            let new_precedence = op.precedence();
+            // End precedence climb
+            if ((op.assoc() == LEFT_ASSOC) && new_precedence <= precedence)
+                || (new_precedence < precedence)
+            {
+                iter.end_span();
+                return Ok(current);
+            }
+            iter.skip(1);
+            current = TypeExpression {
+                inner: match op {
+                    BinaryTypeOp::Arrow => TypeExpressionKind::Function(
+                        Box::new(current),
+                        Box::new(parse_type_expression(iter, new_precedence)?),
+                    ),
+                },
+                span: iter.end_span(),
+            };
+        }
+        // Tuple
+        else if precedence < TYPE_STAR_PREC && *next == Star {
+            let mut tuple = vec![current];
+            while iter.eat(Star).is_some() {
+                tuple.push(parse_type_expression(iter, TYPE_STAR_PREC)?);
+            }
+            current = TypeExpressionKind::Product(tuple).with_span(iter.end_span());
+        } else if precedence < CALL_PREC {
+            current = TypeExpressionKind::Call(
+                Box::new(current),
+                Box::new(parse_type_expression(iter, CALL_PREC)?),
+            )
+            .with_span(iter.end_span());
+        } else {
+            break;
+        }
+    }
+    Ok(current)
 }

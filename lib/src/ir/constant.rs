@@ -1,4 +1,4 @@
-use crate::semantic::{Type, TypeRef};
+use crate::semantic::Type;
 
 #[derive(Clone, Debug)]
 pub enum ConstValue {
@@ -8,6 +8,12 @@ pub enum ConstValue {
     Boolean(bool),
     String(String),
     Glyph(char),
+}
+
+impl sx::SXRepr for ConstValue {
+    fn sx(self) -> sx::SX {
+        sx::SX::Atom(format!("{self}"))
+    }
 }
 
 impl std::fmt::Display for ConstValue {
@@ -24,7 +30,7 @@ impl std::fmt::Display for ConstValue {
 }
 
 impl ConstValue {
-    pub fn type_of(&self) -> TypeRef {
+    pub fn type_of(&self) -> Type {
         match self {
             ConstValue::Unit => Type::Unit,
             ConstValue::Integer(_) => Type::Integer,

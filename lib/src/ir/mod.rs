@@ -1,190 +1,144 @@
 mod build_ir;
+mod build_types;
 pub mod constant;
 mod namespace;
 mod path;
 mod pattern;
-pub mod printing;
 
 use std::collections::HashMap;
 
-use crate::{lint::*, operator::*, semantic::*};
+use crate::{Visit, lint::*, semantic::*};
 
 pub use build_ir::*;
+use build_types::*;
 pub use constant::*;
 pub use namespace::*;
 pub use path::*;
 pub use pattern::*;
 
-pub type IrPtr = usize;
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, sx::SXRepr)]
 pub enum IrKind {
-    Declaration {
+    Let {
         assignee: Pattern,
-        value: IrPtr,
-        in_: Option<IrPtr>,
+        value: Box<IrNode>,
+        in_: Option<Box<IrNode>>,
     },
     Immediate(ConstValue),
     Identifier(Path),
-    Tuple(Vec<IrPtr>),
-    StructLiteral {
+    Tuple(Vec<IrNode>),
+    Struct {
         field_names: Vec<String>,
-        field_values: Vec<IrPtr>,
+        field_values: Vec<IrNode>,
     },
     Field {
-        of: IrPtr,
+        of: Box<IrNode>,
         index: String,
     },
-    Binary {
-        op: BinaryOp,
-        left: IrPtr,
-        right: IrPtr,
-    },
-    Unary {
-        op: UnaryOp,
-        child: IrPtr,
-    },
-    FunctionDef {
+    Function {
         parameter_name: Option<Path>,
         parameter_span: Span,
-        parameter_type: Option<TypeRef>,
+        parameter_type: Option<Type>,
         captures: Vec<Path>,
-        capture_types: Vec<TypeRef>,
-        body: IrPtr,
+        capture_types: Vec<Type>,
+        body: Box<IrNode>,
     },
-    FunctionCall {
-        callee: IrPtr,
-        argument: IrPtr,
+    Call {
+        callee: Box<IrNode>,
+        argument: Box<IrNode>,
+        argument_first: bool,
     },
     If {
-        predicate: IrPtr,
-        then: IrPtr,
-        else_: Option<IrPtr>,
+        predicate: Box<IrNode>,
+        then: Box<IrNode>,
+        else_: Option<Box<IrNode>>,
     },
     Match {
-        scrutinee: IrPtr,
+        scrutinee: Box<IrNode>,
         predicates: Vec<Pattern>,
-        branches: Vec<IrPtr>,
+        branches: Vec<IrNode>,
     },
-    ImportedSymbol(Path, TypeRef),
+    ImportedSymbol(Path, Type),
 }
 
-#[derive(Debug, Clone)]
-pub struct IrNode {
-    pub kind: IrKind,
-    pub span: Span,
-    pub type_: TypeRef,
-}
+pub type IrNode = Typed<Spanned<IrKind>>;
 
-impl Unify for IrNode {
-    fn unify(&mut self, tv: TypeVariable, type_: &Type) {
-        self.type_.unify(tv, type_);
-        match &mut self.kind {
-            IrKind::FunctionDef { capture_types, .. } => {
-                capture_types.iter_mut().for_each(|old_t| {
-                    old_t.unify(tv, type_);
-                })
-            }
-            IrKind::Match { predicates, .. } => {
-                predicates.iter_mut().for_each(|p| p.unify(tv, type_))
-            }
-            IrKind::Declaration { assignee, .. } => assignee.unify(tv, type_),
-            _ => {}
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, sx::SXRepr)]
 pub enum ModuleItem {
-    Let(Pattern, IrPtr),
-    Type(Path, TypeRef),
+    Let(Pattern, Box<IrNode>),
+    Type(Path),
     Constructor(Path, Constructor),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, sx::SXRepr)]
 pub struct IrModule {
     pub module_name: Path,
-    pub universe: HashMap<Path, TypeRef>,
     pub items: Vec<ModuleItem>,
-    pub nodes: Vec<IrNode>,
 }
 
-impl Unify for IrModule {
-    fn unify(&mut self, tv: TypeVariable, type_: &Type) {
-        self.universe
-            .iter_mut()
-            .for_each(|(_, t)| t.unify(tv, type_));
-        self.nodes.iter_mut().for_each(|n| n.unify(tv, type_));
+impl Visit<IrNode> for IrNode {
+    fn _visit(&mut self, f: &mut impl FnMut(&mut IrNode)) {
+        use IrKind::*;
+        match &mut *self.inner {
+            Let { value, in_, .. } => {
+                value._visit(f);
+                in_._visit(f);
+            }
+            Field { of, .. } => of._visit(f),
+            Call {
+                callee, argument, ..
+            } => {
+                callee._visit(f);
+                argument._visit(f);
+            }
+            Function { body, .. } => {
+                body._visit(f);
+            }
+            If {
+                predicate,
+                then,
+                else_,
+            } => {
+                predicate._visit(f);
+                then._visit(f);
+                else_._visit(f);
+            }
+            Match {
+                scrutinee,
+                branches,
+                ..
+            } => {
+                scrutinee._visit(f);
+                branches._visit(f);
+            }
+            Tuple(items)
+            | Struct {
+                field_values: items,
+                ..
+            } => items._visit(f),
+            _ => {}
+        }
+        f(self);
     }
 }
 
-impl IrModule {
-    pub fn ir_range(&self, start: IrPtr) -> std::ops::Range<IrPtr> {
-        let mut current = start;
-        loop {
-            use IrKind::*;
-            current = *match &self[current].kind {
-                Declaration { value, in_, .. } => {
-                    if let Some(in_) = in_ {
-                        in_
-                    } else {
-                        value
-                    }
-                }
-                FunctionCall {
-                    argument: arguments,
-                    ..
-                } => arguments,
-                StructLiteral {
-                    field_values: items,
-                    ..
-                }
-                | Tuple(items) => {
-                    if let Some(last) = items.last() {
-                        last
-                    } else {
-                        break;
-                    }
-                }
-                FunctionDef { body: last, .. }
-                | Binary { right: last, .. }
-                | Unary { child: last, .. }
-                | Field { of: last, .. } => last,
-                If { then, else_, .. } => {
-                    if let Some(else_) = else_ {
-                        else_
-                    } else {
-                        then
-                    }
-                }
-                Match {
-                    scrutinee,
-                    branches,
+impl Visit<Type> for IrNode {
+    fn _visit(&mut self, mut f: &mut impl FnMut(&mut Type)) {
+        self._visit(&mut |n: &mut IrNode| {
+            n.type_.visit(&mut f);
+            match &mut ***n {
+                IrKind::Let { assignee, .. } => assignee._visit(f),
+                IrKind::Function {
+                    parameter_type,
+                    capture_types,
                     ..
                 } => {
-                    if let Some(last) = branches.last() {
-                        last
-                    } else {
-                        scrutinee
-                    }
+                    parameter_type._visit(f);
+                    capture_types._visit(f);
                 }
-                ImportedSymbol(..) | Immediate(..) | Identifier(..) => break,
+                IrKind::Match { predicates, .. } => predicates._visit(f),
+                IrKind::ImportedSymbol(_, t) => t._visit(f),
+                _ => {}
             }
-        }
-        start..(current + 1)
-    }
-}
-
-impl std::ops::Index<usize> for IrModule {
-    type Output = IrNode;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        &self.nodes[index]
-    }
-}
-
-impl std::ops::IndexMut<usize> for IrModule {
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        &mut self.nodes[index]
+        })
     }
 }
