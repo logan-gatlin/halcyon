@@ -78,6 +78,7 @@ pub fn _compile(input: &str) -> Option<Vec<u8>> {
         let typed_ir = type_solve(ir);
         println!("Typed IR:\n{}", typed_ir.clone().sx());
     }
+    Universe::print();
     Some(vec![])
 }
 

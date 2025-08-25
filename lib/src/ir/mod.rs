@@ -35,8 +35,7 @@ pub enum IrKind {
         index: String,
     },
     Function {
-        parameter_name: Option<Path>,
-        parameter_span: Span,
+        parameter_name: Option<Spanned<Path>>,
         parameter_type: Option<Type>,
         captures: Vec<Path>,
         capture_types: Vec<Type>,

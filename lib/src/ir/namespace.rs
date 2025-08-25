@@ -155,6 +155,18 @@ impl ModuleNameSpace {
         self.values.define_global(name, NameInfo::default())
     }
 
+    pub fn define_type(&mut self, name: &str, type_: Type) -> Result<Path> {
+        let path = self.types.define_global(name, Type::Any)?;
+        self.types.value_table.insert(path.clone(), type_.clone());
+        Universe::get().new_named_type(path.clone(), type_.clone());
+        Ok(path)
+    }
+
+    pub fn update_type(&mut self, name: Path, type_: Type) {
+        self.types.value_table.insert(name.clone(), type_.clone());
+        Universe::get().modify_named_type(name, type_);
+    }
+
     pub fn get_value(&mut self, name: &str) -> Result<Path> {
         let mangle = self.values.get_path(name)?;
         let name_info = self.values.get(name)?;
@@ -168,13 +180,6 @@ impl ModuleNameSpace {
         }
         */
         Ok(mangle)
-    }
-
-    pub fn define_named_type(&mut self, name: &str) -> Result<Path> {
-        let path = self.types.define_global(name, Type::Any)?;
-        let named_type = Type::Named(path.clone(), vec![]);
-        self.types.update(&path, named_type.clone());
-        Ok(path)
     }
 
     pub fn begin_capture(&mut self) {

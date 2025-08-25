@@ -1,4 +1,4 @@
 module Demo =
   import builtin
-  type t = fn A B => A B
+  type intfunc = () ()
 end

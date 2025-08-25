@@ -21,7 +21,7 @@ pub type ModuleExpression = Expression<ModuleExpressionKind>;
 #[allow(dead_code)]
 #[derive(Debug, Clone, sx::SXRepr)]
 pub struct _ParsedModule {
-    pub name: String,
+    pub name: Spanned<String>,
     pub contents: Vec<ModuleExpression>,
 }
 
@@ -32,7 +32,7 @@ pub fn parse_module(iter: it!()) -> Result<ParsedModule> {
     // module keyword
     iter.eat_or_error(Module)?;
     // name
-    let name = iter.eat_ident()?;
+    let name = iter.eat_ident()?.with_span(iter.last_span);
     iter.eat_or_error(Equal)?;
     let mut contents = vec![];
     // top-level expressions

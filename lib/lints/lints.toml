@@ -105,6 +105,10 @@ help = "Cannot find a structure with at least the fields: `%``"
 reason = "Pattern is not exhaustive"
 help = "Patterns in let expressions must cover every possible case. Make this pattern more broad so that it covers all elements of the type `%`."
 
+[4005]
+reason = "Incomplete instantiation"
+help = "This type has % parameter(s), but was provided % parameter(s). Types cannot be partially instantiated."
+
 # Compiler bug
 [9000]
 reason = "(COMPILER BUG) WAT failed validation"

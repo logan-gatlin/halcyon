@@ -1,4 +1,6 @@
-use crate::{Visit, ir::Path};
+use sx::SXRepr;
+
+use crate::{Visit, ir::Path, semantic::freshen_type_variables};
 
 pub type TypeVariable = usize;
 
@@ -81,27 +83,47 @@ pub enum Type {
     },
     /// Function type
     Function(Box<Type>, Box<Type>),
-    TypeFunction(TypeVariable, Box<Type>),
     /// Placeholder until arrays are implemented, so I can
     /// generate `anyref` array in type section
     _ClosureCapture,
-    Named(Path),
+    Instantiation(Path, Vec<Type>),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Kindness(usize);
+#[derive(Debug, Clone)]
+pub struct AbstractType {
+    pub arity: usize,
+    base: Type,
+}
+
+impl AbstractType {
+    pub fn instantiate(mut self, parameters: &[Type]) -> Type {
+        if parameters.len() != self.arity {
+            panic!("Kindness error");
+        }
+        self.base.visit(|t: &mut Type| {
+            if let Type::Variable(tv) = t {
+                *t = parameters[*tv].clone()
+            }
+        });
+        self.base
+    }
+}
 
 static UNIVERSE: OnceLock<Mutex<Universe>> = OnceLock::new();
 
 #[derive(Debug, Clone, Default)]
 pub struct Universe {
-    name_map: HashMap<Path, Type>,
-    kind_map: HashMap<Path, Kindness>,
+    name_map: HashMap<Path, AbstractType>,
 }
+
 impl Universe {
+    fn new() -> Self {
+        Self::default()
+    }
+
     pub fn get() -> std::sync::MutexGuard<'static, Self> {
         UNIVERSE
-            .get_or_init(|| Mutex::new(Universe::default()))
+            .get_or_init(|| Mutex::new(Universe::new()))
             .lock()
             .unwrap()
     }
@@ -111,8 +133,39 @@ impl Universe {
         t.visit(|tv: &mut TypeVariable| {
             type_variables.insert(*tv);
         });
-        self.name_map.insert(path.clone(), t);
-        self.kind_map.insert(path, Kindness(type_variables.len()));
+        let mut arity = 0;
+        freshen_type_variables(&mut t, &HashSet::new(), || {
+            let old = arity;
+            arity += 1;
+            old
+        });
+        self.name_map
+            .insert(path.clone(), AbstractType { arity, base: t });
+    }
+
+    pub fn modify_named_type(&mut self, path: Path, t: Type) {
+        self.name_map.remove(&path);
+        self.new_named_type(path, t);
+    }
+
+    pub fn get_named_type(&self, path: &Path) -> AbstractType {
+        self.name_map
+            .get(path)
+            .unwrap_or_else(|| panic!("No named type exists: {path}"))
+            .clone()
+    }
+
+    pub fn print() {
+        println!(
+            "{}",
+            Self::get()
+                .name_map
+                .clone()
+                .into_iter()
+                .map(|(k, v)| (k, v.base))
+                .collect::<Vec<_>>()
+                .sx()
+        );
     }
 }
 
@@ -144,7 +197,6 @@ impl Visit<Type> for Type {
     fn _visit(&mut self, f: &mut impl FnMut(&mut Type)) {
         match self {
             Type::_ClosureCapture
-            | Type::Named(_)
             | Type::Any
             | Type::Unit
             | Type::Integer
@@ -153,6 +205,9 @@ impl Visit<Type> for Type {
             | Type::String
             | Type::Glyph
             | Type::Variable(_) => f(self),
+            Type::Instantiation(_, types) => {
+                types._visit(f);
+            }
             Type::Sum {
                 variant_types: items,
                 ..
@@ -162,9 +217,6 @@ impl Visit<Type> for Type {
                 member_types: items,
                 ..
             } => items._visit(f),
-            Type::TypeFunction(_, t) => {
-                t._visit(f);
-            }
             Type::Function(a, b) => {
                 a._visit(f);
                 b._visit(f);
@@ -178,8 +230,6 @@ impl Visit<TypeVariable> for Type {
         self._visit(&mut |t: &mut Type| {
             if let Type::Variable(tv) = t {
                 f(tv);
-            } else if let Type::TypeFunction(tv, _) = t {
-                f(tv)
             }
         })
     }
@@ -243,7 +293,9 @@ impl PartialEq for Type {
                 },
             ) => t1 == t2 && n1 == n2,
             (t::Variable(t1), t::Variable(t2)) => t1 == t2,
-            (t::Named(a, a_types), t::Named(b, b_types)) => a == b && a_types == b_types,
+            (t::Instantiation(name1, types1), t::Instantiation(name2, types2)) => {
+                name1 == name2 && types1 == types2
+            }
             _ => false,
         }
     }
@@ -263,11 +315,10 @@ impl std::hash::Hash for Type {
                 member_types: types,
             } => {
                 names.hash(state);
-                types.iter().for_each(|t| {
-                    t.hash(state);
-                })
+                types.hash(state);
             }
             Type::Function(a, b) => {
+                "function".hash(state);
                 a.hash(state);
                 b.hash(state);
             }
@@ -284,8 +335,11 @@ impl std::hash::Hash for Type {
                     item.hash(state);
                 }
             }
-            Type::Named(_, _)
-            | Type::Unit
+            Type::Instantiation(name, types) => {
+                name.hash(state);
+                types.hash(state);
+            }
+            Type::Unit
             | Type::_ClosureCapture
             | Type::Integer
             | Type::Real
@@ -345,7 +399,10 @@ impl std::fmt::Display for Type {
                     .collect::<Vec<_>>()
                     .join(" | ")
             ),
-            Type::Named(name, types) => {
+            Type::Instantiation(name, types) if types.is_empty() => {
+                write!(f, "{name}")
+            }
+            Type::Instantiation(name, types) => {
                 write!(
                     f,
                     "{name} {}",

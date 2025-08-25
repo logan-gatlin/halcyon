@@ -1,5 +1,3 @@
-use crate::operator::{BinaryOp, UnaryOp};
-
 use super::*;
 
 pub trait Infer {
@@ -114,7 +112,6 @@ impl Infer for IrNode {
             Field { of, index } => todo!(),
             Function {
                 parameter_name,
-                parameter_span,
                 parameter_type,
                 captures,
                 capture_types,
@@ -122,8 +119,8 @@ impl Infer for IrNode {
             } => {
                 let mut new_free = free.clone();
                 let parameter_inferred_type = if let Some(parameter_name) = parameter_name.clone() {
-                    let tv = env.define(parameter_name.clone());
-                    new_free.insert(parameter_name);
+                    let tv = env.define((*parameter_name).clone());
+                    new_free.insert((*parameter_name).clone());
                     Type::Variable(tv)
                 } else {
                     Type::Unit
@@ -132,7 +129,7 @@ impl Infer for IrNode {
                     env.type_constraint(
                         assert_type,
                         parameter_inferred_type.clone(),
-                        parameter_span,
+                        parameter_name.clone().map(|o| o.span).unwrap_or(body.span),
                     );
                 }
                 let capture_types = captures
@@ -144,7 +141,6 @@ impl Infer for IrNode {
                     Type::Function(parameter_inferred_type.into(), body.type_.clone().into());
                 Function {
                     parameter_name,
-                    parameter_span,
                     parameter_type,
                     captures,
                     capture_types,

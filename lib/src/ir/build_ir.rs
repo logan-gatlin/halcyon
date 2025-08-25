@@ -5,7 +5,7 @@ pub fn build_ir(
     module: ParsedModule,
     context: &HashMap<Path, ModuleInterface>,
 ) -> Result<IrModule> {
-    let module_name = Path::from(module.name.clone());
+    let module_name = Path::from((*module.name).clone());
     let mut ns = ModuleNameSpace::new(module_name.clone());
     let mut items = vec![];
     for item in module.contents.clone() {
@@ -31,7 +31,7 @@ fn module_expr(
             assignee_span,
             value,
         } => {
-            type_def(ns, assignee, assignee_span, vec![], *value, items)?;
+            type_def(ns, assignee, assignee_span, *value, items)?;
         }
         ModuleExpressionKind::Import { name } => {
             let interface = context.get(&name.clone().into()).ok_or(lint(
@@ -128,8 +128,7 @@ pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> Result<IrN
             return value_expr(
                 ns,
                 FunctionDef {
-                    arguments: vec![SHORTHAND_NAME.into()],
-                    argument_spans: vec![expr.span],
+                    arguments: vec![SHORTHAND_NAME.to_string().with_span(expr.span)],
                     types: vec![None],
                     body: Match {
                         scrutinee: Identifier(SHORTHAND_NAME.into())
@@ -146,7 +145,6 @@ pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> Result<IrN
         }
         FunctionDef {
             arguments,
-            argument_spans,
             types,
             body,
         } => {
@@ -157,7 +155,6 @@ pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> Result<IrN
                 let captures = ns.end_capture();
                 ir::Function {
                     parameter_name: None,
-                    parameter_span: span,
                     parameter_type: Some(Type::Unit),
                     capture_types: vec![Type::Any; captures.len()],
                     captures,
@@ -166,21 +163,23 @@ pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> Result<IrN
             } else {
                 fn curry(
                     ns: &mut ModuleNameSpace,
-                    mut arguments: impl Iterator<Item = (String, Span, Option<TypeExpression>)>,
+                    mut arguments: impl Iterator<Item = (Spanned<String>, Option<TypeExpression>)>,
                     body: Box<ValueExpression>,
                     span: Span,
                 ) -> Result<Box<IrNode>> {
                     Ok(Box::new(
                         match arguments.next() {
-                            Some((argument, span, type_)) => {
+                            Some((argument, type_)) => {
                                 ns.begin_capture();
-                                let parameter_name = Some(ns.define_local_value(&argument, true));
+                                let parameter_name = Some(
+                                    ns.define_local_value(&argument, true)
+                                        .with_span(argument.span),
+                                );
                                 let body = curry(ns, arguments, body, span)?;
                                 let captures = ns.end_capture();
                                 ns.values.end_local_scopes(1);
                                 ir::Function {
                                     parameter_name,
-                                    parameter_span: span,
                                     parameter_type: match type_ {
                                         Some(t) => Some(type_expr(ns, t)?),
                                         None => None,
@@ -196,16 +195,7 @@ pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> Result<IrN
                         .with_type(Type::Any),
                     ))
                 }
-                return Ok(*curry(
-                    ns,
-                    arguments
-                        .into_iter()
-                        .zip(argument_spans)
-                        .zip(types)
-                        .map(|((a, b), c)| (a, b, c)),
-                    body,
-                    span,
-                )?);
+                return Ok(*curry(ns, arguments.into_iter().zip(types), body, span)?);
             }
         }
         FunctionCall { callee, argument } => ir::Call {

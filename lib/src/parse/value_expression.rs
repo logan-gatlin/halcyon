@@ -33,8 +33,7 @@ pub enum ValueExpressionKind {
         child: Box<ValueExpression>,
     },
     FunctionDef {
-        arguments: Vec<String>,
-        argument_spans: Vec<Span>,
+        arguments: Vec<Spanned<String>>,
         types: Vec<Option<TypeExpression>>,
         body: Box<ValueExpression>,
     },
@@ -116,23 +115,20 @@ fn parse_primary(iter: it!()) -> Result<ValueExpression> {
         Fn => {
             let mut arguments = vec![];
             let mut types = vec![];
-            let mut spans = vec![];
             loop {
                 if iter.eat(FatArrow).is_some() {
                     break;
                 }
                 // Typed parameter
                 if iter.eat(LeftParen).is_some() {
-                    arguments.push(iter.eat_ident()?);
-                    spans.push(iter.last_span);
+                    arguments.push(iter.eat_ident()?.with_span(iter.last_span));
                     iter.eat_or_error(Colon)?;
                     types.push(Some(parse_type_expression(iter, 0)?));
                     iter.eat_or_error(RightParen)?;
                 }
                 // Untyped parameter
                 else {
-                    arguments.push(iter.eat_ident()?);
-                    spans.push(iter.last_span);
+                    arguments.push(iter.eat_ident()?.with_span(iter.last_span));
                     types.push(None);
                 }
             }
@@ -141,15 +137,14 @@ fn parse_primary(iter: it!()) -> Result<ValueExpression> {
                 if !parameter_set.insert(&arguments[i]) {
                     return Err(lint(
                         NameLint::ParamRedefinition,
-                        spans[i],
-                        ["function".to_string(), arguments[i].clone()],
+                        arguments[i].span,
+                        ["function".to_string(), (*arguments[i]).clone()],
                     ));
                 }
             }
             let body = Box::new(parse_value_expression(iter, 0)?);
             e::FunctionDef {
                 arguments,
-                argument_spans: spans,
                 types,
                 body,
             }
