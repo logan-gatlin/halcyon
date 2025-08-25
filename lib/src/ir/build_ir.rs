@@ -31,7 +31,7 @@ fn module_expr(
             assignee_span,
             value,
         } => {
-            type_def(ns, assignee, assignee_span, *value, items)?;
+            type_def(ns, assignee, assignee_span, *value, items, 0)?;
         }
         ModuleExpressionKind::Import { name } => {
             let interface = context.get(&name.clone().into()).ok_or(lint(

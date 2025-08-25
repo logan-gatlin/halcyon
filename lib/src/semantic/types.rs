@@ -71,6 +71,7 @@ pub enum Type {
     Variable(TypeVariable),
     /// Record type
     Struct {
+        name: Path,
         member_names: Vec<String>,
         member_types: Vec<Type>,
     },
@@ -78,6 +79,7 @@ pub enum Type {
     Product(Vec<Type>),
     /// Variant
     Sum {
+        name: Path,
         variant_names: Vec<String>,
         variant_types: Vec<Type>,
     },
@@ -270,28 +272,10 @@ impl PartialEq for Type {
             | (t::Boolean, t::Boolean)
             | (t::Glyph, t::Glyph)
             | (t::String, t::String) => true,
-            (
-                t::Struct {
-                    member_names: names1,
-                    member_types: types1,
-                },
-                t::Struct {
-                    member_names: names2,
-                    member_types: types2,
-                },
-            ) => names1 == names2 && types1 == types2,
+            (t::Struct { name: name1, .. }, t::Struct { name: name2, .. }) => name1 == name2,
             (t::Function(p1, r1), t::Function(p2, r2)) => p1 == p2 && r1 == r2,
             (t::Product(t1), t::Product(t2)) => t1 == t2,
-            (
-                t::Sum {
-                    variant_names: n1,
-                    variant_types: t1,
-                },
-                t::Sum {
-                    variant_names: n2,
-                    variant_types: t2,
-                },
-            ) => t1 == t2 && n1 == n2,
+            (t::Sum { name: name1, .. }, t::Sum { name: name2, .. }) => name1 == name2,
             (t::Variable(t1), t::Variable(t2)) => t1 == t2,
             (t::Instantiation(name1, types1), t::Instantiation(name2, types2)) => {
                 name1 == name2 && types1 == types2
@@ -306,16 +290,8 @@ impl Eq for Type {}
 impl std::hash::Hash for Type {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         match self {
-            Type::Sum {
-                variant_names: names,
-                variant_types: types,
-            }
-            | Type::Struct {
-                member_names: names,
-                member_types: types,
-            } => {
-                names.hash(state);
-                types.hash(state);
+            Type::Sum { name, .. } | Type::Struct { name, .. } => {
+                name.hash(state);
             }
             Type::Function(a, b) => {
                 "function".hash(state);
@@ -363,17 +339,8 @@ impl std::fmt::Display for Type {
             Type::Boolean => write!(f, "boolean"),
             Type::String => write!(f, "string"),
             Type::Glyph => write!(f, "glyph"),
-            Type::Struct {
-                member_names,
-                member_types,
-            } => {
-                let fields = member_names
-                    .iter()
-                    .zip(member_types)
-                    .map(|(name, type_)| format!("{name}: {type_}"))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                write!(f, "{{ {fields} }}")
+            Type::Sum { name, .. } | Type::Struct { name, .. } => {
+                write!(f, "{name}")
             }
             Type::Function(a, b) => write!(f, "({a} -> {b})"),
             Type::Variable(id) => write!(f, "'{id}"),
@@ -385,19 +352,6 @@ impl std::fmt::Display for Type {
                     .map(|i| format!("{}", i))
                     .collect::<Vec<_>>()
                     .join(" * ")
-            ),
-            Type::Sum {
-                variant_names,
-                variant_types,
-            } => write!(
-                f,
-                "{}",
-                variant_names
-                    .iter()
-                    .zip(variant_types)
-                    .map(|(name, type_)| format!("{name} of {type_}"))
-                    .collect::<Vec<_>>()
-                    .join(" | ")
             ),
             Type::Instantiation(name, types) if types.is_empty() => {
                 write!(f, "{name}")

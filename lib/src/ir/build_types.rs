@@ -7,6 +7,7 @@ pub fn type_def(
     assignee_span: Span,
     type_: TypeDefinition,
     items: &mut Vec<ModuleItem>,
+    parameters: usize,
 ) -> Result<()> {
     use TypeDefinitionKind::*;
     match type_.inner {
@@ -14,27 +15,33 @@ pub fn type_def(
             for (id, arg) in arguments.iter().enumerate() {
                 ns.types.define_local(arg, Type::Variable(id));
             }
-            type_def(ns, assignee, assignee_span, *body, items)?;
+            type_def(ns, assignee, assignee_span, *body, items, arguments.len())?;
             ns.types.end_local_scopes(arguments.len());
         }
         Structure { lhs, rhs } => {
+            let member_types = rhs.into_iter().map(|t| type_expr(ns, t)).try_collect()?;
+            let path = ns.define_temporary_type(&assignee, parameters)?;
             let type_ = Type::Struct {
+                name: path.clone(),
                 member_names: lhs,
-                member_types: rhs.into_iter().map(|t| type_expr(ns, t)).try_collect()?,
+                member_types,
             };
-            let path = ns.define_type(&assignee, type_).span(assignee_span)?;
+            ns.update_type(path.clone(), type_);
             items.push(ModuleItem::Type(path));
         }
         Sum {
             variant_names,
             variant_types,
         } => {
-            let path = ns.define_type(&assignee, Type::Any).span(assignee_span)?;
+            let path = ns
+                .define_temporary_type(&assignee, parameters)
+                .span(assignee_span)?;
             let variant_types: Vec<_> = variant_types
                 .into_iter()
                 .map(|t| type_expr(ns, t))
                 .try_collect()?;
             let sum_type = Type::Sum {
+                name: path.clone(),
                 variant_names: variant_names.clone(),
                 variant_types: variant_types.clone(),
             };
@@ -83,7 +90,7 @@ pub fn type_expr(ns: &ModuleNameSpace, type_: TypeExpression) -> Result<Type> {
                 .into_iter()
                 .map(|t| type_expr(ns, t))
                 .try_collect::<Vec<_>>()?;
-            abstract_type.instantiate(&parameters)
+            Type::Instantiation(callee.inner, parameters)
         }
         Identifier(id) => {
             let type_ = ns.types.get(&id).span(type_.span)?;

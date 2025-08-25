@@ -162,6 +162,16 @@ impl ModuleNameSpace {
         Ok(path)
     }
 
+    pub fn define_temporary_type(&mut self, name: &str, parameters: usize) -> Result<Path> {
+        let path = self.types.define_global(name, Type::Any)?;
+        // TODO hack, but probably ok
+        Universe::get().new_named_type(
+            path.clone(),
+            Type::Product((0..parameters).map(Type::Variable).collect()),
+        );
+        Ok(path)
+    }
+
     pub fn update_type(&mut self, name: Path, type_: Type) {
         self.types.value_table.insert(name.clone(), type_.clone());
         Universe::get().modify_named_type(name, type_);
