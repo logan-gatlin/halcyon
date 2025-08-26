@@ -1,3 +1,5 @@
+use sx::SXRepr;
+
 use super::*;
 
 pub trait Infer {
@@ -35,7 +37,7 @@ impl Infer for Pattern {
     fn infer(mut self, env: &mut Environment, free: &mut FreeVariableSet) -> Self {
         self.inner.inner = match (*self).clone().inner {
             PatternKind::Name(path) => {
-                let fresh_tv = env.define(path.clone());
+                let fresh_tv = env.define_unknown(path.clone());
                 free.insert(path.clone());
                 self.type_ = Type::Variable(fresh_tv);
                 PatternKind::Name(path)
@@ -119,7 +121,7 @@ impl Infer for IrNode {
             } => {
                 let mut new_free = free.clone();
                 let parameter_inferred_type = if let Some(parameter_name) = parameter_name.clone() {
-                    let tv = env.define((*parameter_name).clone());
+                    let tv = env.define_unknown((*parameter_name).clone());
                     new_free.insert((*parameter_name).clone());
                     Type::Variable(tv)
                 } else {
@@ -237,6 +239,8 @@ impl Infer for ModuleItem {
                 let mut new_free = free.clone();
                 let mut pattern = assignee.infer(&mut new_env, &mut new_free);
                 let mut node = node.infer(&mut new_env, &mut new_free);
+                println!("TYPES: \n{}", node.clone().sx());
+                new_env.print_constraints();
                 new_env.type_constraint(pattern.type_.clone(), node.type_.clone(), pattern.span);
                 let solution = new_env.solve_constraints();
                 unify_all(&mut pattern, &solution);
@@ -245,6 +249,10 @@ impl Infer for ModuleItem {
                     env.map.borrow_mut().insert(path.clone(), t.clone());
                 });
                 ModuleItem::Let(pattern, node)
+            }
+            ModuleItem::Constructor(path, cons) => {
+                env.define(path.clone(), cons.function_type());
+                ModuleItem::Constructor(path, cons)
             }
             _ => self,
         }

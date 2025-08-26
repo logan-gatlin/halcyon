@@ -185,13 +185,25 @@ impl Type {
     }
 
     pub fn contains_type_variable(&self, tv: TypeVariable) -> bool {
-        let mut ret = false;
-        self.clone().visit(|t: &mut TypeVariable| {
-            if *t == tv {
-                ret = true;
+        match self {
+            Type::Any
+            | Type::Sum { .. }
+            | Type::Unit
+            | Type::Integer
+            | Type::Real
+            | Type::Boolean
+            | Type::String
+            | Type::Glyph => false,
+            Type::Variable(t) => *t == tv,
+            Type::Struct {
+                member_types: items,
+                ..
             }
-        });
-        ret
+            | Type::Product(items) => items.iter().any(|t| t.contains_type_variable(tv)),
+            Type::Function(a, b) => a.contains_type_variable(tv) || b.contains_type_variable(tv),
+            Type::_ClosureCapture => false,
+            Type::Instantiation(_, items) => items.iter().any(|t| t.contains_type_variable(tv)),
+        }
     }
 }
 

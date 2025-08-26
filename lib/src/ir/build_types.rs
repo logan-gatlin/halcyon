@@ -40,11 +40,10 @@ pub fn type_def(
                 .into_iter()
                 .map(|t| type_expr(ns, t))
                 .try_collect()?;
-            let sum_type = Type::Sum {
-                name: path.clone(),
-                variant_names: variant_names.clone(),
-                variant_types: variant_types.clone(),
-            };
+            let sum_type = Type::Instantiation(
+                path.clone(),
+                (0..parameters).map(|t| Type::Variable(t)).collect(),
+            );
             for (id, (type_, name)) in variant_types.iter().zip(&variant_names).enumerate() {
                 let constructor = Constructor {
                     variant: id,
@@ -52,6 +51,7 @@ pub fn type_def(
                     out_type: sum_type.clone(),
                 };
                 let path = ns.constructors.define_global(name, constructor.clone())?;
+                ns.define_global_value(name)?;
                 items.push(ModuleItem::Constructor(path, constructor));
             }
             ns.update_type(path.clone(), sum_type);

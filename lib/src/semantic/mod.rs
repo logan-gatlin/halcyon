@@ -11,6 +11,7 @@ use std::{
 use crate::{Visit, lint::*};
 pub use constraint::*;
 pub use infer::*;
+use sx::SXRepr;
 pub use types::*;
 
 use crate::ir::*;
@@ -32,14 +33,19 @@ pub struct Environment {
 }
 
 impl Environment {
-    pub fn define(&mut self, path: Path) -> TypeVariable {
+    pub fn define(&mut self, path: Path, mut type_: Type) {
+        self.freshen_type_variables(&mut type_, &HashSet::new());
+        self.map.borrow_mut().insert(path, type_);
+    }
+
+    pub fn define_unknown(&mut self, path: Path) -> TypeVariable {
         let tv = self.new_tv();
         self.map.borrow_mut().insert(path, Type::Variable(tv));
         tv
     }
 
     pub fn type_constraint(&mut self, a: Type, b: Type, span: Span) {
-        self.constraints.push(TypeConstraint(a, b, span))
+        self.constraints.push(TypeConstraint(a, b))
     }
 
     fn new_tv(&mut self) -> TypeVariable {
@@ -83,6 +89,10 @@ impl Environment {
             }
         });
         type_
+    }
+
+    pub fn print_constraints(&self) {
+        println!("CONSTRAINTS:\n{}", self.constraints.clone().sx());
     }
 }
 

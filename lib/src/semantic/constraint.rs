@@ -3,7 +3,7 @@ use sx::SXRepr;
 use super::*;
 
 #[derive(Debug, Clone, PartialEq, Eq, sx::SXRepr)]
-pub struct TypeConstraint(pub Type, pub Type, pub Span);
+pub struct TypeConstraint(pub Type, pub Type);
 
 #[derive(Debug, Clone, PartialEq, Eq, sx::SXRepr)]
 pub struct StructConstraint {
@@ -50,7 +50,7 @@ impl Environment {
     pub fn solve_constraints(self) -> Vec<Solution> {
         let mut constraints = self.constraints;
         let mut solution: Vec<Solution> = vec![];
-        while let Some(TypeConstraint(a, b, span)) = constraints.pop() {
+        while let Some(TypeConstraint(a, b)) = constraints.pop() {
             match (a, b) {
                 (Type::Variable(t1), Type::Variable(t2)) if t1 != t2 => {
                     let new_solution = Solution(t1, Type::Variable(t2));
@@ -66,10 +66,42 @@ impl Environment {
                     solution.push(new_solution);
                 }
                 (Type::Function(a1, b1), Type::Function(a2, b2)) => {
-                    constraints.push(TypeConstraint(*a1, *a2, span));
-                    constraints.push(TypeConstraint(*b1, *b2, span));
+                    constraints.push(TypeConstraint(*a1, *a2));
+                    constraints.push(TypeConstraint(*b1, *b2));
                 }
-                c => panic!("{:?}", c),
+                (Type::Product(p1), Type::Product(p2)) if p1.len() == p2.len() => {
+                    for (t1, t2) in p1.into_iter().zip(p2) {
+                        constraints.push(TypeConstraint(t1, t2));
+                    }
+                }
+                (
+                    Type::Sum {
+                        variant_names: names1,
+                        variant_types: types1,
+                        ..
+                    },
+                    Type::Sum {
+                        variant_names: names2,
+                        variant_types: types2,
+                        ..
+                    },
+                ) if names1 == names2 => {
+                    for (t1, t2) in types1.into_iter().zip(types2) {
+                        constraints.push(TypeConstraint(t1, t2));
+                    }
+                }
+                (Type::Instantiation(_, types1), Type::Instantiation(_, types2))
+                    if types1.len() == types2.len() =>
+                {
+                    for (t1, t2) in types1.into_iter().zip(types2) {
+                        constraints.push(TypeConstraint(t1, t2));
+                    }
+                }
+                (Type::Instantiation(path, types), t2) | (t2, Type::Instantiation(path, types)) => {
+                    let t1 = Universe::get().get_named_type(&path).instantiate(&types);
+                    constraints.push(TypeConstraint(t1, t2));
+                }
+                c => panic!("{:#?}", c),
             }
         }
         solution

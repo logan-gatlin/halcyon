@@ -7,6 +7,7 @@ mod operator;
 mod parse;
 mod semantic;
 //mod std_hc;
+mod compile;
 mod map;
 #[cfg(test)]
 mod test;
