@@ -2,7 +2,7 @@ use crate::semantic::{Type, Universe};
 
 use super::*;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ReducedType {
     AnyRef,
     Sum,
@@ -16,28 +16,9 @@ pub enum ReducedType {
     Indirection(usize),
 }
 
-impl Type {
-    fn reduce(self) -> ReducedType {
-        use ReducedType::*;
-        match self {
-            Type::Any => panic!(),
-            Type::Unit => Struct(vec![]),
-            Type::Integer => I64,
-            Type::Real => F64,
-            Type::Boolean => I8,
-            Type::String => Array(I8.into()),
-            Type::Glyph => I32,
-            Type::Variable(_) => AnyRef,
-            Type::Product(items)
-            | Type::Struct {
-                member_types: items,
-                ..
-            } => Struct(items.into_iter().map(|t| t.reduce()).collect()),
-            Type::Sum { .. } => Sum,
-            Type::Function(a, b) => Function(a.reduce().into(), b.reduce().into()),
-            Type::_ClosureCapture => Array(AnyRef.into()),
-            Type::Instantiation(..) => Indirection(todo!()),
-        }
+impl ReducedType {
+    fn capture() -> Self {
+        Self::Array(Self::AnyRef.into())
     }
 }
 
@@ -50,13 +31,76 @@ enum RegisteredType {
 
 #[derive(Debug, Clone)]
 pub struct TypeEncoder {
-    id_map: HashMap<Type, u32>,
-    val_map: HashMap<Type, ValType>,
+    lowering_map: HashMap<(Path, Vec<Type>), usize>,
+    indirect_map: Vec<ReducedType>,
+
+    id_map: HashMap<ReducedType, u32>,
+    value_map: HashMap<ReducedType, ValType>,
     type_section: Vec<RegisteredType>,
 }
 
+impl Encode<ReducedType> for TypeEncoder {
+    fn encode(&mut self, type_: ReducedType) -> &mut Self {
+        use ReducedType::*;
+        let rt = match type_.clone() {
+            AnyRef => {
+                self.value_map.insert(type_, ValType::Ref(RefType::ANYREF));
+                return self;
+            },
+            Sum => todo!(),
+            I64 => todo!(),
+            F64 => todo!(),
+            I32 => todo!(),
+            I8 => todo!(),
+            Struct(reduced_types) => todo!(),
+            Array(reduced_type) => todo!(),
+            Function(reduced_type, reduced_type1) => todo!(),
+            Indirection(_) => todo!(),
+        }
+    }
+}
+
 impl TypeEncoder {
-    fn add_type_to_registry(&mut self, type_: Type, rt: RegisteredType) -> StorageType {
+    fn lower_type(&mut self, type_: Type) -> ReducedType {
+        use ReducedType::*;
+        match type_ {
+            Type::Any => panic!(),
+            Type::Unit => Struct(vec![]),
+            Type::Integer => I64,
+            Type::Real => F64,
+            Type::Boolean => I8,
+            Type::String => Array(I8.into()),
+            Type::Glyph => I32,
+            Type::Variable(_) => AnyRef,
+            Type::Struct {
+                member_types: items,
+                ..
+            }
+            | Type::Product(items) => {
+                Struct(items.into_iter().map(|t| self.lower_type(t)).collect())
+            }
+            Type::Sum { .. } => Sum,
+            Type::Function(a, b) => {
+                Function(self.lower_type(*a).into(), self.lower_type(*b).into())
+            }
+            Type::_ClosureCapture => Array(AnyRef.into()),
+            Type::Instantiation(path, items) => {
+                let instantiated = Universe::get().get_named_type(&path).instantiate(&items);
+                let key = (path, items);
+                if let Some(id) = self.lowering_map.get(&key) {
+                    Indirection(*id)
+                } else {
+                    let id = self.indirect_map.len();
+                    self.lowering_map.insert(key, id);
+                    let rt = self.lower_type(instantiated);
+                    self.indirect_map.push(rt);
+                    Indirection(id)
+                }
+            }
+        }
+    }
+
+    fn add_type_to_registry(&mut self, type_: ReducedType, rt: RegisteredType) -> StorageType {
         let id = self.type_section.len() as u32;
         self.type_section.push(rt);
         let valtype = ValType::Ref(RefType {
@@ -64,10 +108,11 @@ impl TypeEncoder {
             heap_type: HeapType::Concrete(id),
         });
         self.id_map.insert(type_.clone(), id);
-        self.val_map.insert(type_, valtype);
+        self.value_map.insert(type_, valtype);
         StorageType::Val(valtype)
     }
 
+    /*
     fn lower_type(&mut self, type_: Type) -> StorageType {
         use RegisteredType as rt;
         use StorageType as st;
@@ -109,11 +154,8 @@ impl TypeEncoder {
         };
         self.add_type_to_registry(type_, registered_type)
     }
-}
 
-impl Encode<Type> for TypeEncoder {
-    fn encode(&mut self, type_: Type) -> &mut Self {
-        self.lower_type(type_);
-        self
+
     }
+    */
 }

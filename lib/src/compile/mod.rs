@@ -26,10 +26,6 @@ where
     }
 }
 
-pub struct ModuleEncoder {
-    code_section: Vec<Function>,
-}
-
 impl Encode<Function> for ModuleEncoder {
     fn encode(&mut self, obj: Function) -> &mut Self {
         self.code_section.push(obj);
@@ -37,10 +33,28 @@ impl Encode<Function> for ModuleEncoder {
     }
 }
 
+impl<'a> Encode<Function> for FunctionEncoder<'a> {
+    fn encode(&mut self, obj: Function) -> &mut Self {
+        self.module_encoder.encode(obj);
+        self
+    }
+}
+
+impl<'a> Encode<Instruction> for FunctionEncoder<'a> {
+    fn encode(&mut self, obj: Instruction) -> &mut Self {
+        self.instructions.push(obj);
+        self
+    }
+}
+
+pub struct ModuleEncoder {
+    code_section: Vec<Function>,
+}
+
 impl ModuleEncoder {
-    pub fn function(&mut self) -> FunctionEncoder<'_, ModuleEncoder> {
+    pub fn function(&mut self) -> FunctionEncoder<'_> {
         FunctionEncoder {
-            parent: self,
+            module_encoder: self,
             local_names: HashMap::new(),
             parameter: None,
             has_closure: false,
@@ -50,8 +64,8 @@ impl ModuleEncoder {
     }
 }
 
-pub struct FunctionEncoder<'a, T: Encode<Function>> {
-    parent: &'a mut T,
+pub struct FunctionEncoder<'a> {
+    module_encoder: &'a mut ModuleEncoder,
     local_names: HashMap<Path, u32>,
     parameter: Option<ValType>,
     has_closure: bool,
@@ -59,24 +73,10 @@ pub struct FunctionEncoder<'a, T: Encode<Function>> {
     instructions: Vec<Instruction>,
 }
 
-impl<'a, T: Encode<Function>> Encode<Function> for FunctionEncoder<'a, T> {
-    fn encode(&mut self, obj: Function) -> &mut Self {
-        self.parent.encode(obj);
-        self
-    }
-}
-
-impl<'a, T: Encode<Function>> Encode<Instruction> for FunctionEncoder<'a, T> {
-    fn encode(&mut self, obj: Instruction) -> &mut Self {
-        self.instructions.push(obj);
-        self
-    }
-}
-
-impl<'a, T: Encode<Function>> FunctionEncoder<'a, T> {
-    pub fn function(&'a mut self) -> FunctionEncoder<'a, T> {
+impl<'a> FunctionEncoder<'a> {
+    pub fn function(&'a mut self) -> FunctionEncoder<'a> {
         FunctionEncoder {
-            parent: &mut self.parent,
+            module_encoder: self.module_encoder,
             local_names: HashMap::new(),
             parameter: None,
             has_closure: false,
