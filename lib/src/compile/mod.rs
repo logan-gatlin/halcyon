@@ -1,3 +1,6 @@
+mod lower;
+mod types;
+
 use std::collections::HashMap;
 
 use wasm_encoder::{Instruction::*, *};
@@ -8,7 +11,19 @@ use crate::ir::*;
 // 14
 
 pub trait Encode<T> {
-    fn encode(&mut self, obj: T);
+    fn encode(&mut self, obj: T) -> &mut Self;
+}
+
+impl<T, U, const N: usize> Encode<[T; N]> for U
+where
+    U: Encode<T>,
+{
+    fn encode(&mut self, objs: [T; N]) -> &mut Self {
+        for obj in objs {
+            self.encode(obj);
+        }
+        self
+    }
 }
 
 pub struct ModuleEncoder {
@@ -16,13 +31,14 @@ pub struct ModuleEncoder {
 }
 
 impl Encode<Function> for ModuleEncoder {
-    fn encode(&mut self, obj: Function) {
+    fn encode(&mut self, obj: Function) -> &mut Self {
         self.code_section.push(obj);
+        self
     }
 }
 
 impl ModuleEncoder {
-    pub fn function(&mut self) -> FunctionEncoder<'_> {
+    pub fn function(&mut self) -> FunctionEncoder<'_, ModuleEncoder> {
         FunctionEncoder {
             parent: self,
             local_names: HashMap::new(),
@@ -43,8 +59,22 @@ pub struct FunctionEncoder<'a, T: Encode<Function>> {
     instructions: Vec<Instruction>,
 }
 
-impl<'a> FunctionEncoder<'a> {
-    pub fn function(&'a mut self) -> FunctionEncoder<'a> {
+impl<'a, T: Encode<Function>> Encode<Function> for FunctionEncoder<'a, T> {
+    fn encode(&mut self, obj: Function) -> &mut Self {
+        self.parent.encode(obj);
+        self
+    }
+}
+
+impl<'a, T: Encode<Function>> Encode<Instruction> for FunctionEncoder<'a, T> {
+    fn encode(&mut self, obj: Instruction) -> &mut Self {
+        self.instructions.push(obj);
+        self
+    }
+}
+
+impl<'a, T: Encode<Function>> FunctionEncoder<'a, T> {
+    pub fn function(&'a mut self) -> FunctionEncoder<'a, T> {
         FunctionEncoder {
             parent: &mut self.parent,
             local_names: HashMap::new(),
@@ -54,4 +84,8 @@ impl<'a> FunctionEncoder<'a> {
             instructions: vec![],
         }
     }
+}
+
+fn test() {
+    let f = Function::new_with_locals_types(vec![]);
 }
