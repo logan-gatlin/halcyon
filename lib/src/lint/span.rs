@@ -50,6 +50,9 @@ impl<T> std::ops::DerefMut for Spanned<T> {
 
 pub trait WithSpan: Sized {
     fn with_span(self, span: Span) -> Spanned<Self>;
+    fn with_default_span(self) -> Spanned<Self> {
+        self.with_span(Span { start: 0, width: 0 })
+    }
 }
 
 impl<T> WithSpan for T {

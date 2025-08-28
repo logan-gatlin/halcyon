@@ -1,4 +1,7 @@
-use crate::semantic::{Type, Universe};
+use crate::{
+    WithSpan,
+    semantic::{Type, Universe},
+};
 
 use super::*;
 
@@ -15,8 +18,37 @@ pub enum ReducedType {
     Array(Box<ReducedType>),
 }
 
+impl Type {
+    fn reduce(self) -> ReducedType {
+        use ReducedType::*;
+        match self {
+            Type::Any => panic!(),
+            Type::Unit => Struct(vec![]),
+            Type::Integer => I64,
+            Type::Real => F64,
+            Type::Boolean => I8,
+            Type::String => Array(I8.into()),
+            Type::Glyph => I32,
+            Type::Variable(_) => AnyRef,
+            Type::Struct {
+                member_types: items,
+                ..
+            }
+            | Type::Product(items) => Struct(items.into_iter().map(|t| t.reduce()).collect()),
+            Type::Sum { .. } => Sum,
+            Type::Function(..) => Function,
+            // All type recursion must pass through a sum type, and sum types are not
+            // recursive at the WASM level. Therefore no rist of infinite recursion here
+            Type::Instantiation(path, items) => Universe::get()
+                .get_named_type(&path)
+                .instantiate(&items)
+                .reduce(),
+        }
+    }
+}
+
 impl ReducedType {
-    fn capture() -> Self {
+    pub fn capture() -> Self {
         Self::Array(Self::AnyRef.into())
     }
 }
@@ -38,7 +70,7 @@ impl Encode<ReducedType> for TypeEncoder {
 impl Encode<Type> for TypeEncoder {
     fn encode(&mut self, type_: Type) -> &mut Self {
         if self.type_map.get(&type_).is_none() {
-            let rtype = Self::lower_type(type_.clone());
+            let rtype = type_.clone().reduce();
             self.type_map.insert(type_, rtype.clone());
             self.make_storage_type(rtype);
         }
@@ -52,37 +84,11 @@ pub struct TypeEncoder {
     pub id_map: HashMap<ReducedType, u32>,
     pub value_map: HashMap<ReducedType, ValType>,
     type_section: Vec<RegisteredType>,
+    pub function_map: HashMap<(ReducedType, ReducedType), u32>,
+    function_section: Vec<u32>,
 }
 
 impl TypeEncoder {
-    fn lower_type(type_: Type) -> ReducedType {
-        use ReducedType::*;
-        match type_ {
-            Type::Any => panic!(),
-            Type::Unit => Struct(vec![]),
-            Type::Integer => I64,
-            Type::Real => F64,
-            Type::Boolean => I8,
-            Type::String => Array(I8.into()),
-            Type::Glyph => I32,
-            Type::Variable(_) => AnyRef,
-            Type::Struct {
-                member_types: items,
-                ..
-            }
-            | Type::Product(items) => {
-                Struct(items.into_iter().map(|t| Self::lower_type(t)).collect())
-            }
-            Type::Sum { .. } => Sum,
-            Type::Function(..) => Function,
-            // All type recursion must pass through a sum type, and sum types are not
-            // recursive at the WASM level. Therefore no rist of infinite recursion here
-            Type::Instantiation(path, items) => {
-                Self::lower_type(Universe::get().get_named_type(&path).instantiate(&items))
-            }
-        }
-    }
-
     fn add_type_to_registry(&mut self, type_: ReducedType, rt: RegisteredType) -> StorageType {
         let id = self.type_section.len() as u32;
         self.type_section.push(rt);
@@ -93,6 +99,27 @@ impl TypeEncoder {
         self.id_map.insert(type_.clone(), id);
         self.value_map.insert(type_, valtype);
         StorageType::Val(valtype)
+    }
+
+    fn make_function_type(&mut self, parameter_type: ReducedType, return_type: ReducedType) -> u32 {
+        let id = self.type_section.len() as u32;
+        self.make_storage_type(parameter_type.clone());
+        self.make_storage_type(return_type.clone());
+        self.make_storage_type(ReducedType::capture());
+        let parameter_valtype = self.value_map.get(&parameter_type).cloned().unwrap();
+        let capture_valtype = self
+            .value_map
+            .get(&ReducedType::capture())
+            .cloned()
+            .unwrap();
+        let return_valtype = self.value_map.get(&return_type).cloned().unwrap();
+        RegisteredType::Function(FuncType::new(
+            [parameter_valtype, capture_valtype],
+            [return_valtype],
+        ));
+        self.function_map
+            .insert((parameter_type, return_type), id as u32);
+        id
     }
 
     fn make_storage_type(&mut self, type_: ReducedType) -> StorageType {

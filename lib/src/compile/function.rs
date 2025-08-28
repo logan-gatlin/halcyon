@@ -13,6 +13,7 @@ pub struct FunctionEncoder<'a> {
 
 #[derive(Debug, Clone)]
 pub struct EncodedFunction {
+    id: u32,
     parameters: Vec<ValType>,
     locals: Vec<ValType>,
     instructions: Vec<Instruction>,
@@ -37,10 +38,6 @@ impl<'a> FunctionEncoder<'a> {
             local_types,
             instructions: vec![],
         }
-    }
-
-    pub fn function(&'a mut self, parameter_name: Path, parameter_type: &Type) -> Self {
-        self.module_encoder.function(parameter_name, parameter_type)
     }
 
     pub fn with_capture(&mut self, capture_names: &[Path], capture_types: &[Type]) -> &mut Self {
@@ -82,6 +79,19 @@ impl<'a> FunctionEncoder<'a> {
 
     pub fn set_symbol(&mut self, path: &Path) -> &mut Self {
         self.encode(self.find_symbol(path).get())
+    }
+
+    pub fn end(&mut self) -> u32 {
+        self.module_encoder.encode(EncodedFunction {
+            id: self.id,
+            parameters: vec![
+                self.parameter,
+                self.module_encoder.reduced_valtype(&ReducedType::capture()),
+            ],
+            locals: self.local_types.clone(),
+            instructions: self.instructions.clone(),
+        });
+        self.id
     }
 }
 

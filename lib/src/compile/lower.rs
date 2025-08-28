@@ -1,3 +1,5 @@
+use crate::WithSpan;
+
 use super::*;
 
 impl FunctionEncoder<'_> {
@@ -122,17 +124,70 @@ impl Encode<IrNode> for FunctionEncoder<'_> {
             IrKind::Field { of, index } => todo!(),
             IrKind::Function {
                 parameter_name,
-                parameter_type,
                 captures,
-                capture_types,
                 body,
+                ..
             } => {
-                todo!()
+                let parameter_name = parameter_name
+                    .unwrap_or(Path::from("_").with_default_span())
+                    .inner;
+                let Type::Function(parameter_type, return_type) = node.type_.clone() else {
+                    panic!()
+                };
+                let function = RefFunc(
+                    self.module_encoder
+                        .function(parameter_name, &parameter_type)
+                        .encode(body)
+                        .end(),
+                );
+                self.encode(function);
+                for capture in &captures {
+                    self.get_symbol(capture);
+                }
+                self.encode([
+                    ArrayNewFixed {
+                        array_type_index: self
+                            .module_encoder
+                            .reduced_type_id(&ReducedType::capture()),
+                        array_size: captures.len() as u32,
+                    },
+                    StructNew(self.module_encoder.reduced_type_id(&ReducedType::Function)),
+                ])
             }
             IrKind::Call {
                 callee,
                 argument,
-                argument_first,
+                argument_first: false,
+            } => {
+                let Type::Function(parameter_type, return_type) = callee.type_.clone() else {
+                    panic!()
+                };
+                let temporary = self.new_temporary(&callee.type_);
+                let function_wrapper_id =
+                    self.module_encoder.reduced_type_id(&ReducedType::Function);
+                self.encode(callee)
+                    .encode(LocalSet(temporary))
+                    .encode(argument)
+                    .encode([
+                        LocalGet(temporary),
+                        // Get closure
+                        StructGet {
+                            struct_type_index: function_wrapper_id,
+                            field_index: 1,
+                        },
+                        LocalGet(temporary),
+                        // Get funcref
+                        StructGet {
+                            struct_type_index: function_wrapper_id,
+                            field_index: 0,
+                        },
+                        CallRef(todo!()),
+                    ])
+            }
+            IrKind::Call {
+                callee,
+                argument,
+                argument_first: true,
             } => todo!(),
             IrKind::If {
                 predicate,

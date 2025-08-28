@@ -46,14 +46,20 @@ pub struct ModuleEncoder {
 }
 
 impl ModuleEncoder {
+    pub fn reduced_valtype(&self, type_: &ReducedType) -> ValType {
+        self.type_section.value_map.get(type_).unwrap().clone()
+    }
+
+    pub fn reduced_type_id(&self, type_: &ReducedType) -> u32 {
+        self.type_section.id_map.get(type_).unwrap().clone()
+    }
+
     pub fn valtype(&self, type_: &Type) -> ValType {
-        let rt = self.type_section.type_map.get(type_).unwrap();
-        self.type_section.value_map.get(rt).unwrap().clone()
+        self.reduced_valtype(self.type_section.type_map.get(type_).unwrap())
     }
 
     pub fn type_id(&self, type_: &Type) -> u32 {
-        let rt = self.type_section.type_map.get(type_).unwrap();
-        self.type_section.id_map.get(rt).unwrap().clone()
+        self.reduced_type_id(self.type_section.type_map.get(type_).unwrap())
     }
 
     pub fn find_symbol(&self, path: &Path) -> u32 {
