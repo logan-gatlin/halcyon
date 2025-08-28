@@ -44,7 +44,7 @@ pub enum ValueExpressionKind {
     If {
         predicate: Box<ValueExpression>,
         then: Box<ValueExpression>,
-        else_: Option<Box<ValueExpression>>,
+        else_: Box<ValueExpression>,
     },
     Match {
         scrutinee: Box<ValueExpression>,
@@ -189,10 +189,9 @@ fn parse_primary(iter: it!()) -> Result<ValueExpression> {
                 iter.eat_or_error(Then)?;
                 Box::new(parse_value_expression(iter, 0)?)
             },
-            else_: if iter.eat(Else).is_some() {
-                Some(Box::new(parse_value_expression(iter, 0)?))
-            } else {
-                None
+            else_: {
+                iter.eat_or_error(Else)?;
+                Box::new(parse_value_expression(iter, 0)?)
             },
         },
         Match => {

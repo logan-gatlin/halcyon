@@ -49,7 +49,7 @@ pub enum IrKind {
     If {
         predicate: Box<IrNode>,
         then: Box<IrNode>,
-        else_: Option<Box<IrNode>>,
+        else_: Box<IrNode>,
     },
     Match {
         scrutinee: Box<IrNode>,

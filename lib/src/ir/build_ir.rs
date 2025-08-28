@@ -210,10 +210,7 @@ pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> Result<IrN
         } => ir::If {
             predicate: rec!(predicate),
             then: rec!(then),
-            else_: match else_ {
-                Some(else_) => Some(rec!(else_)),
-                None => None,
-            },
+            else_: rec!(else_),
         },
         Match {
             scrutinee,

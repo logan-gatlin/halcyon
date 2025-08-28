@@ -178,8 +178,8 @@ impl Infer for IrNode {
                 env.type_constraint(predicate.type_.clone(), Type::Boolean, predicate.span);
                 env.type_constraint(
                     then.type_.clone(),
-                    else_.clone().map(|t| t.type_).unwrap_or(Type::Unit),
-                    then.span + else_.iter().map(|e| e.span).next().unwrap_or(then.span),
+                    else_.type_.clone(),
+                    then.span + else_.span,
                 );
                 self.type_ = then.type_.clone();
                 If {
