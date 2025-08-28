@@ -85,9 +85,6 @@ pub enum Type {
     },
     /// Function type
     Function(Box<Type>, Box<Type>),
-    /// Placeholder until arrays are implemented, so I can
-    /// generate `anyref` array in type section
-    _ClosureCapture,
     Instantiation(Path, Vec<Type>),
 }
 
@@ -201,7 +198,6 @@ impl Type {
             }
             | Type::Product(items) => items.iter().any(|t| t.contains_type_variable(tv)),
             Type::Function(a, b) => a.contains_type_variable(tv) || b.contains_type_variable(tv),
-            Type::_ClosureCapture => false,
             Type::Instantiation(_, items) => items.iter().any(|t| t.contains_type_variable(tv)),
         }
     }
@@ -210,8 +206,7 @@ impl Type {
 impl Visit<Type> for Type {
     fn _visit(&mut self, f: &mut impl FnMut(&mut Type)) {
         match self {
-            Type::_ClosureCapture
-            | Type::Any
+            Type::Any
             | Type::Unit
             | Type::Integer
             | Type::Real
@@ -277,8 +272,7 @@ impl PartialEq for Type {
             (t::Any, t::Any) => {
                 panic!("Tried to compare ambiguous types")
             }
-            (t::_ClosureCapture, t::_ClosureCapture)
-            | (t::Unit, t::Unit)
+            (t::Unit, t::Unit)
             | (t::Integer, t::Integer)
             | (t::Real, t::Real)
             | (t::Boolean, t::Boolean)
@@ -328,7 +322,6 @@ impl std::hash::Hash for Type {
                 types.hash(state);
             }
             Type::Unit
-            | Type::_ClosureCapture
             | Type::Integer
             | Type::Real
             | Type::Boolean
@@ -344,7 +337,6 @@ impl std::fmt::Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Type::Any => write!(f, "any"),
-            Type::_ClosureCapture => write!(f, "capture"),
             Type::Unit => write!(f, "unit"),
             Type::Integer => write!(f, "integer"),
             Type::Real => write!(f, "real"),

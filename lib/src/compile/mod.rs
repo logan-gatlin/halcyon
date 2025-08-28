@@ -1,12 +1,16 @@
+mod function;
 mod lower;
 mod types;
+
+use function::*;
+use types::*;
 
 use std::collections::HashMap;
 
 use wasm_encoder::{Instruction::*, *};
 type Instruction = wasm_encoder::Instruction<'static>;
 
-use crate::ir::*;
+use crate::{ir::*, semantic::Type};
 
 // 14
 
@@ -33,56 +37,20 @@ impl Encode<Function> for ModuleEncoder {
     }
 }
 
-impl<'a> Encode<Function> for FunctionEncoder<'a> {
-    fn encode(&mut self, obj: Function) -> &mut Self {
-        self.module_encoder.encode(obj);
-        self
-    }
-}
-
-impl<'a> Encode<Instruction> for FunctionEncoder<'a> {
-    fn encode(&mut self, obj: Instruction) -> &mut Self {
-        self.instructions.push(obj);
-        self
-    }
-}
-
 pub struct ModuleEncoder {
+    type_section: TypeEncoder,
     code_section: Vec<Function>,
 }
 
 impl ModuleEncoder {
-    pub fn function(&mut self) -> FunctionEncoder<'_> {
-        FunctionEncoder {
-            module_encoder: self,
-            local_names: HashMap::new(),
-            parameter: None,
-            has_closure: false,
-            local_types: vec![],
-            instructions: vec![],
-        }
+    pub fn valtype(&self, type_: &Type) -> ValType {
+        let rt = self.type_section.type_map.get(&type_).unwrap();
+        self.type_section.value_map.get(rt).unwrap().clone()
     }
-}
 
-pub struct FunctionEncoder<'a> {
-    module_encoder: &'a mut ModuleEncoder,
-    local_names: HashMap<Path, u32>,
-    parameter: Option<ValType>,
-    has_closure: bool,
-    local_types: Vec<ValType>,
-    instructions: Vec<Instruction>,
-}
-
-impl<'a> FunctionEncoder<'a> {
-    pub fn function(&'a mut self) -> FunctionEncoder<'a> {
-        FunctionEncoder {
-            module_encoder: self.module_encoder,
-            local_names: HashMap::new(),
-            parameter: None,
-            has_closure: false,
-            local_types: vec![],
-            instructions: vec![],
-        }
+    pub fn type_id(&self, type_: &Type) -> u32 {
+        let rt = self.type_section.type_map.get(&type_).unwrap();
+        self.type_section.id_map.get(rt).unwrap().clone()
     }
 }
 

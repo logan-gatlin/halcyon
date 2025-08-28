@@ -10,10 +10,9 @@ pub enum ReducedType {
     F64,
     I32,
     I8,
+    Function,
     Struct(Vec<ReducedType>),
     Array(Box<ReducedType>),
-    Function(Box<ReducedType>, Box<ReducedType>),
-    Indirection(usize),
 }
 
 impl ReducedType {
@@ -29,39 +28,34 @@ enum RegisteredType {
     Struct(Vec<StorageType>),
 }
 
-#[derive(Debug, Clone)]
-pub struct TypeEncoder {
-    lowering_map: HashMap<(Path, Vec<Type>), usize>,
-    indirect_map: Vec<ReducedType>,
-
-    id_map: HashMap<ReducedType, u32>,
-    value_map: HashMap<ReducedType, ValType>,
-    type_section: Vec<RegisteredType>,
-}
-
 impl Encode<ReducedType> for TypeEncoder {
-    fn encode(&mut self, type_: ReducedType) -> &mut Self {
-        use ReducedType::*;
-        let rt = match type_.clone() {
-            AnyRef => {
-                self.value_map.insert(type_, ValType::Ref(RefType::ANYREF));
-                return self;
-            },
-            Sum => todo!(),
-            I64 => todo!(),
-            F64 => todo!(),
-            I32 => todo!(),
-            I8 => todo!(),
-            Struct(reduced_types) => todo!(),
-            Array(reduced_type) => todo!(),
-            Function(reduced_type, reduced_type1) => todo!(),
-            Indirection(_) => todo!(),
-        }
+    fn encode(&mut self, obj: ReducedType) -> &mut Self {
+        self.make_storage_type(obj);
+        self
     }
 }
 
+impl Encode<Type> for TypeEncoder {
+    fn encode(&mut self, type_: Type) -> &mut Self {
+        if self.type_map.get(&type_).is_none() {
+            let rtype = Self::lower_type(type_.clone());
+            self.type_map.insert(type_, rtype.clone());
+            self.make_storage_type(rtype);
+        }
+        self
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TypeEncoder {
+    pub type_map: HashMap<Type, ReducedType>,
+    pub id_map: HashMap<ReducedType, u32>,
+    pub value_map: HashMap<ReducedType, ValType>,
+    type_section: Vec<RegisteredType>,
+}
+
 impl TypeEncoder {
-    fn lower_type(&mut self, type_: Type) -> ReducedType {
+    fn lower_type(type_: Type) -> ReducedType {
         use ReducedType::*;
         match type_ {
             Type::Any => panic!(),
@@ -77,25 +71,14 @@ impl TypeEncoder {
                 ..
             }
             | Type::Product(items) => {
-                Struct(items.into_iter().map(|t| self.lower_type(t)).collect())
+                Struct(items.into_iter().map(|t| Self::lower_type(t)).collect())
             }
             Type::Sum { .. } => Sum,
-            Type::Function(a, b) => {
-                Function(self.lower_type(*a).into(), self.lower_type(*b).into())
-            }
-            Type::_ClosureCapture => Array(AnyRef.into()),
+            Type::Function(..) => Function,
+            // All type recursion must pass through a sum type, and sum types are not
+            // recursive at the WASM level. Therefore no rist of infinite recursion here
             Type::Instantiation(path, items) => {
-                let instantiated = Universe::get().get_named_type(&path).instantiate(&items);
-                let key = (path, items);
-                if let Some(id) = self.lowering_map.get(&key) {
-                    Indirection(*id)
-                } else {
-                    let id = self.indirect_map.len();
-                    self.lowering_map.insert(key, id);
-                    let rt = self.lower_type(instantiated);
-                    self.indirect_map.push(rt);
-                    Indirection(id)
-                }
+                Self::lower_type(Universe::get().get_named_type(&path).instantiate(&items))
             }
         }
     }
@@ -112,8 +95,8 @@ impl TypeEncoder {
         StorageType::Val(valtype)
     }
 
-    /*
-    fn lower_type(&mut self, type_: Type) -> StorageType {
+    fn make_storage_type(&mut self, type_: ReducedType) -> StorageType {
+        use ReducedType::*;
         use RegisteredType as rt;
         use StorageType as st;
         use ValType as vt;
@@ -123,39 +106,32 @@ impl TypeEncoder {
                 heap_type: HeapType::Concrete(*id),
             }));
         }
-        let registered_type = match type_.clone() {
-            Type::Any => todo!(),
-            Type::_ClosureCapture => todo!(),
-            Type::Unit => rt::Struct(vec![]),
-            Type::Integer => rt::Struct(vec![st::Val(vt::I64)]),
-            Type::Real => rt::Struct(vec![st::Val(vt::F64)]),
-            Type::Boolean => rt::Struct(vec![st::I8]),
-            Type::String => rt::Array(st::I8),
-            Type::Glyph => rt::Struct(vec![st::Val(vt::I32)]),
-            Type::Variable(_) => {
-                self.val_map.insert(type_.clone(), vt::Ref(RefType::ANYREF));
-                return st::Val(vt::Ref(RefType::ANYREF));
+        let rt = match type_.clone() {
+            AnyRef => {
+                let vt = ValType::Ref(RefType::ANYREF);
+                self.value_map.insert(type_, vt.clone());
+                return st::Val(vt);
             }
-            Type::Product(items)
-            | Type::Struct {
-                member_types: items,
-                ..
-            } => rt::Struct(items.into_iter().map(|t| self.lower_type(t)).collect()),
-            Type::Sum { .. } => {
-                rt::Struct(vec![st::Val(vt::I32), st::Val(vt::Ref(RefType::ANYREF))])
-            }
-            Type::Function(_, _) => rt::Struct(vec![
-                st::Val(vt::I32),
-                self.lower_type(Type::_ClosureCapture),
+            Sum => RegisteredType::Struct(vec![
+                StorageType::Val(ValType::I32),
+                StorageType::Val(ValType::Ref(RefType::ANYREF)),
             ]),
-            Type::Instantiation(path, types) => {
-                return self.lower_type(Universe::get().get_named_type(&path).instantiate(&types));
-            }
+            I64 => rt::Struct(vec![st::Val(vt::I64)]),
+            F64 => rt::Struct(vec![st::Val(vt::F64)]),
+            I8 | I32 => rt::Struct(vec![st::Val(vt::I32)]),
+            Struct(types) => rt::Struct(
+                types
+                    .into_iter()
+                    .map(|t| self.make_storage_type(t))
+                    .collect(),
+            ),
+            Array(type_) if type_ == I8.into() => rt::Array(st::I8),
+            Array(type_) => rt::Array(self.make_storage_type(*type_)),
+            Function => rt::Struct(vec![
+                st::Val(vt::Ref(RefType::FUNCREF)),
+                self.make_storage_type(ReducedType::capture()),
+            ]),
         };
-        self.add_type_to_registry(type_, registered_type)
+        self.add_type_to_registry(type_, rt)
     }
-
-
-    }
-    */
 }

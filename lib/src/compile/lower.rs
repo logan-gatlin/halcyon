@@ -1,45 +1,45 @@
 use super::*;
 
-impl<T: Encode<Function>> Encode<IrNode> for FunctionEncoder<'_, T> {
+impl Encode<IrNode> for FunctionEncoder<'_> {
     fn encode(&mut self, node: IrNode) -> &mut Self {
-        use IrKind::*;
+        self.encode(node.type_);
         match node.inner.inner {
-            Let {
+            IrKind::Let {
                 assignee,
                 value,
                 in_,
             } => todo!(),
-            Immediate(const_value) => todo!(),
-            Identifier(path) => todo!(),
-            Tuple(typeds) => todo!(),
-            Struct {
+            IrKind::Immediate(const_value) => todo!(),
+            IrKind::Identifier(path) => todo!(),
+            IrKind::Tuple(typeds) => todo!(),
+            IrKind::Struct {
                 field_names,
                 field_values,
             } => todo!(),
-            Field { of, index } => todo!(),
-            Function {
+            IrKind::Field { of, index } => todo!(),
+            IrKind::Function {
                 parameter_name,
                 parameter_type,
                 captures,
                 capture_types,
                 body,
             } => todo!(),
-            Call {
+            IrKind::Call {
                 callee,
                 argument,
                 argument_first,
             } => todo!(),
-            If {
+            IrKind::If {
                 predicate,
                 then,
                 else_,
             } => todo!(),
-            Match {
+            IrKind::Match {
                 scrutinee,
                 predicates,
                 branches,
             } => todo!(),
-            ImportedSymbol(path, _) => todo!(),
+            IrKind::ImportedSymbol(path, _) => todo!(),
         }
     }
 }
