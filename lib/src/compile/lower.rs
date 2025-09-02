@@ -1,17 +1,22 @@
-use crate::WithSpan;
+use crate::{WithSpan, operator::BinaryOp};
 
 use super::*;
 
 impl FunctionEncoder<'_> {
-    fn lower_pattern(&mut self, pattern: Pattern, temporary: u32) {
+    fn lower_pattern(&mut self, pattern: Pattern, scope: ScopeKind) {
+        self.encode(pattern.type_.clone());
         match pattern.inner.inner {
-            PatternKind::Name(path) => {
-                self.encode(LocalGet(temporary))
+            PatternKind::Name(path) if scope == ScopeKind::Local => {
+                self
                     .new_local(&path, &pattern.type_)
                     .set_symbol(&path);
             }
+            PatternKind::Name(path) /* if global */ => {
+                self.set_symbol(&path);
+            }
             PatternKind::Tuple(patterns) => {
-                let next_temporary = self.new_temporary(&pattern.type_);
+                let temporary = self.new_temporary(&pattern.type_);
+                self.encode(LocalSet(temporary));
                 let struct_type_id = self.module_encoder.type_id(&pattern.type_);
                 for (index, pattern) in patterns.into_iter().enumerate() {
                     self.encode([
@@ -20,9 +25,8 @@ impl FunctionEncoder<'_> {
                             struct_type_index: struct_type_id,
                             field_index: index as u32,
                         },
-                        LocalSet(next_temporary),
                     ])
-                    .lower_pattern(pattern, next_temporary);
+                    .lower_pattern(pattern, scope);
                 }
             }
             PatternKind::Constructor(
@@ -31,19 +35,20 @@ impl FunctionEncoder<'_> {
                     in_type,
                     out_type,
                 },
-                pattern,
+                next_pattern,
             ) => {
-                let next_temporary = self.new_temporary(&pattern.type_);
+                self.encode([in_type.clone(), out_type.clone()]);
+                let temporary = self.new_temporary(&pattern.type_);
                 let out_type_id = self.module_encoder.type_id(&out_type);
                 let in_type_id = self.module_encoder.type_id(&in_type);
                 self.encode([
+                    LocalTee(temporary),
                     // Check sum type tag
-                    I32Const(variant as i32),
-                    LocalGet(temporary),
                     StructGet {
                         struct_type_index: out_type_id,
                         field_index: 0,
                     },
+                    I32Const(variant as i32),
                     I32Ne,
                     BrIf(0),
                     // Pass on the inner value
@@ -53,28 +58,67 @@ impl FunctionEncoder<'_> {
                         field_index: 1,
                     },
                     RefCastNonNull(HeapType::Concrete(in_type_id)),
-                    LocalSet(next_temporary),
                 ])
-                .lower_pattern(*pattern, next_temporary);
+                .lower_pattern(*next_pattern, scope);
             }
             PatternKind::Literal(const_value) => {
-                todo!()
+                let function_temporary = self.new_temporary(&Type::func(Type::Variable(0), Type::Boolean));
+                self.get_symbol(&BinaryOp::DoubleEqual.path())
+                    .call_function(Type::Variable(0), Type::func(Type::Variable(0), Type::Boolean))
+                    .encode(LocalSet(function_temporary)).encode(const_value).encode(LocalGet(function_temporary))
+                    .call_function(Type::Variable(0), Type::Boolean)
+                    ;
+                    /*
+                self.encode(const_value)
+                    .get_symbol(&BinaryOp::DoubleEqual.path())
+                    .encode([
+                        LocalTee(func_temporary),
+                        StructGet {
+                            struct_type_index: func_wrapper_id,
+                            field_index: 1,
+                        },
+                        LocalGet(func_temporary),
+                        StructGet {
+                            struct_type_index: func_wrapper_id,
+                            field_index: 0,
+                        },
+                        CallRef(func_id_1),
+                        LocalGet(temporary),
+                        LocalTee(func_temporary),
+                        StructGet {
+                            struct_type_index: func_wrapper_id,
+                            field_index: 1,
+                        },
+                        LocalGet(func_temporary),
+                        StructGet {
+                            struct_type_index: func_wrapper_id,
+                            field_index: 0,
+                        },
+                        CallRef(func_id_2),
+                        StructGet {
+                            struct_type_index: boolean_type_id,
+                            field_index: 0,
+                        },
+                        I32Const(0),
+                        I32Eq,
+                        BrIf(0),
+                    ]);
+                    */
             }
         };
     }
 }
 
-impl Encode<Pattern> for FunctionEncoder<'_> {
-    fn encode(&mut self, pattern: Pattern) -> &mut Self {
-        let temporary = self.new_temporary(&pattern.type_);
-        self.encode(LocalSet(temporary))
-            .lower_pattern(pattern, temporary);
+impl Encode<(Pattern, ScopeKind)> for FunctionEncoder<'_> {
+    fn encode(&mut self, (pattern, scope): (Pattern, ScopeKind)) -> &mut Self {
+        self.lower_pattern(pattern, scope);
         self
     }
 }
 
 impl Encode<ConstValue> for FunctionEncoder<'_> {
     fn encode(&mut self, obj: ConstValue) -> &mut Self {
+        self.encode(obj.type_of());
         let type_id = self.module_encoder.type_id(&obj.type_of());
         match obj {
             ConstValue::Unit => self.encode(StructNew(type_id)),
@@ -95,6 +139,97 @@ impl Encode<ConstValue> for FunctionEncoder<'_> {
     }
 }
 
+impl Encode<ModuleItem> for FunctionEncoder<'_> {
+    fn encode(&mut self, item: ModuleItem) -> &mut Self {
+        match item {
+            ModuleItem::Let(mut pattern, node) => {
+                pattern.visit(|(path, type_)| {
+                    self.module_encoder.new_global(path, type_);
+                });
+                self.encode(node.type_.clone())
+                    .encode(node)
+                    .encode((pattern, ScopeKind::Global))
+            }
+            ModuleItem::Constructor(
+                path,
+                Constructor {
+                    variant,
+                    in_type,
+                    out_type,
+                },
+            ) => {
+                self.encode([
+                    in_type.clone(),
+                    out_type.clone(),
+                    Type::func(in_type.clone(), out_type.clone()),
+                ]);
+                let function_type = Type::func(in_type.clone(), out_type.clone());
+                let parameter_name = Path::from("_");
+                let struct_type_id = self.module_encoder.reduced_type_id(&ReducedType::Sum);
+                let capture_type_id = self.module_encoder.reduced_type_id(&ReducedType::capture());
+                let function_id = self
+                    .module_encoder
+                    .new_global(&path, &function_type)
+                    .function(parameter_name.clone(), &in_type, &out_type)
+                    .encode(I32Const(variant as i32))
+                    .get_symbol(&parameter_name)
+                    .encode(StructNew(struct_type_id))
+                    .finish();
+                self.encode([
+                    RefFunc(function_id),
+                    ArrayNewFixed {
+                        array_type_index: capture_type_id,
+                        array_size: 0,
+                    },
+                    StructNew(self.module_encoder.type_id(&function_type)),
+                ])
+                .set_symbol(&path)
+            }
+            ModuleItem::Import {
+                path,
+                type_,
+                major,
+                minor,
+            } => {
+                todo!()
+            }
+            ModuleItem::Type(_) => self,
+        }
+    }
+}
+
+impl FunctionEncoder<'_> {
+    /// Expects [argument, function] on the stack
+    pub fn call_function(&mut self, argument_type: Type, return_type: Type) -> &mut Self {
+        let callee_type = Type::func(argument_type.clone(), return_type.clone());
+        let function_temporary = self.new_temporary(&callee_type);
+        let function_type_id = self.module_encoder.function_type_id(&callee_type);
+        let function_wrapper_id = self.module_encoder.type_id(&callee_type);
+        self.encode([
+            LocalTee(function_temporary),
+            // Get capture
+            StructGet {
+                struct_type_index: function_wrapper_id,
+                field_index: 1,
+            },
+            LocalGet(function_temporary),
+            // Get funcref
+            StructGet {
+                struct_type_index: function_wrapper_id,
+                field_index: 0,
+            },
+            CallRef(function_type_id),
+        ]);
+        let return_type = return_type.reduce();
+        if return_type != ReducedType::AnyRef {
+            let this_type_id = self.module_encoder.reduced_type_id(&return_type);
+            self.encode(RefCastNonNull(HeapType::Concrete(this_type_id)))
+        } else {
+            self
+        }
+    }
+}
+
 impl Encode<IrNode> for FunctionEncoder<'_> {
     fn encode(&mut self, node: IrNode) -> &mut Self {
         self.encode(node.type_.clone());
@@ -103,7 +238,10 @@ impl Encode<IrNode> for FunctionEncoder<'_> {
                 assignee,
                 value,
                 in_,
-            } => self.encode(value).encode(assignee).encode(in_),
+            } => self
+                .encode(value)
+                .encode((assignee, ScopeKind::Local))
+                .encode(in_),
             IrKind::Immediate(const_value) => self.encode(const_value),
             IrKind::Identifier(path) => {
                 self.get_symbol(&path);
@@ -125,6 +263,7 @@ impl Encode<IrNode> for FunctionEncoder<'_> {
             IrKind::Function {
                 parameter_name,
                 captures,
+                capture_types,
                 body,
                 ..
             } => {
@@ -136,9 +275,10 @@ impl Encode<IrNode> for FunctionEncoder<'_> {
                 };
                 let function = RefFunc(
                     self.module_encoder
-                        .function(parameter_name, &parameter_type)
+                        .function(parameter_name, &parameter_type, &return_type)
+                        .with_capture(&captures, &capture_types)
                         .encode(body)
-                        .end(),
+                        .finish(),
                 );
                 self.encode(function);
                 for capture in &captures {
@@ -151,44 +291,25 @@ impl Encode<IrNode> for FunctionEncoder<'_> {
                             .reduced_type_id(&ReducedType::capture()),
                         array_size: captures.len() as u32,
                     },
-                    StructNew(self.module_encoder.reduced_type_id(&ReducedType::Function)),
+                    StructNew(self.module_encoder.type_id(&node.type_)),
                 ])
             }
             IrKind::Call {
                 callee,
                 argument,
-                argument_first: false,
+                argument_first,
             } => {
-                let Type::Function(parameter_type, return_type) = callee.type_.clone() else {
-                    panic!()
-                };
                 let temporary = self.new_temporary(&callee.type_);
-                let function_wrapper_id =
-                    self.module_encoder.reduced_type_id(&ReducedType::Function);
+                let callee_type_id = self.module_encoder.type_id(&callee.type_);
                 self.encode(callee)
-                    .encode(LocalSet(temporary))
-                    .encode(argument)
                     .encode([
-                        LocalGet(temporary),
-                        // Get closure
-                        StructGet {
-                            struct_type_index: function_wrapper_id,
-                            field_index: 1,
-                        },
-                        LocalGet(temporary),
-                        // Get funcref
-                        StructGet {
-                            struct_type_index: function_wrapper_id,
-                            field_index: 0,
-                        },
-                        CallRef(todo!()),
+                        RefCastNonNull(HeapType::Concrete(callee_type_id)),
+                        LocalSet(temporary),
                     ])
+                    .encode(argument.clone())
+                    .encode(LocalGet(temporary))
+                    .call_function(argument.type_, node.type_)
             }
-            IrKind::Call {
-                callee,
-                argument,
-                argument_first: true,
-            } => todo!(),
             IrKind::If {
                 predicate,
                 then,
@@ -213,8 +334,27 @@ impl Encode<IrNode> for FunctionEncoder<'_> {
                 scrutinee,
                 predicates,
                 branches,
-            } => todo!(),
-            IrKind::ImportedSymbol(path, _) => todo!(),
+            } => {
+                let branches_valtype = self.module_encoder.valtype(&node.type_);
+                let scrutinee_temp = self.new_temporary(&scrutinee.type_);
+                self.encode(scrutinee).encode([
+                    LocalSet(scrutinee_temp),
+                    Block(BlockType::Result(branches_valtype)),
+                ]);
+                for (pattern, branch) in predicates.into_iter().zip(branches) {
+                    self.encode(Block(BlockType::Empty))
+                        .encode(LocalGet(scrutinee_temp))
+                        .encode((pattern, ScopeKind::Local))
+                        .encode(branch)
+                        .encode([Br(1), End]);
+                }
+                self.encode([Unreachable, End])
+            }
+            IrKind::ImportedSymbol(path, _) => self.get_symbol(&path),
+            IrKind::AsmLiteral(f) => {
+                f.0(self);
+                self
+            }
         }
     }
 }

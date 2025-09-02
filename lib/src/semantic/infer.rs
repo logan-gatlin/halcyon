@@ -226,6 +226,7 @@ impl Infer for IrNode {
                 self.type_ = type_.clone();
                 ImportedSymbol(path, type_)
             }
+            AsmLiteral(_) => panic!(),
         };
         self
     }
@@ -239,7 +240,6 @@ impl Infer for ModuleItem {
                 let mut new_free = free.clone();
                 let mut pattern = assignee.infer(&mut new_env, &mut new_free);
                 let mut node = node.infer(&mut new_env, &mut new_free);
-                println!("TYPES: \n{}", node.clone().sx());
                 new_env.print_constraints();
                 new_env.type_constraint(pattern.type_.clone(), node.type_.clone(), pattern.span);
                 let solution = new_env.solve_constraints();

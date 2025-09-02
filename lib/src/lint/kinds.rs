@@ -46,6 +46,7 @@ pub enum TypeLint {
     NoStructWithFields = 4003,
     NonExhaustive = 4004,
     PartialInstantiation = 4005,
+    InvalidImportType = 4006,
 }
 
 #[repr(usize)]

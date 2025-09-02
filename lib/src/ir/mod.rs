@@ -5,9 +5,14 @@ mod namespace;
 mod path;
 mod pattern;
 
-use std::collections::HashMap;
+use std::{collections::HashMap, rc::Rc};
 
-use crate::{Visit, lint::*, semantic::*};
+use crate::{
+    Visit,
+    compile::{ForeignFunctionType, FunctionEncoder},
+    lint::*,
+    semantic::*,
+};
 
 pub use build_ir::*;
 use build_types::*;
@@ -56,7 +61,23 @@ pub enum IrKind {
         predicates: Vec<Pattern>,
         branches: Vec<IrNode>,
     },
+    AsmLiteral(AsmLiteral),
     ImportedSymbol(Path, Type),
+}
+
+#[derive(Clone)]
+pub struct AsmLiteral(pub Rc<dyn Fn(&mut FunctionEncoder)>);
+
+impl std::fmt::Debug for AsmLiteral {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "AsmLiteral")
+    }
+}
+
+impl sx::SXRepr for AsmLiteral {
+    fn sx(self) -> sx::SX {
+        sx::SX::Nil
+    }
 }
 
 pub type IrNode = Typed<Spanned<IrKind>>;
@@ -66,6 +87,12 @@ pub enum ModuleItem {
     Let(Pattern, Box<IrNode>),
     Type(Path),
     Constructor(Path, Constructor),
+    Import {
+        path: Path,
+        type_: ForeignFunctionType,
+        major: String,
+        minor: String,
+    },
 }
 
 #[derive(Debug, Clone, sx::SXRepr)]
@@ -139,5 +166,36 @@ impl Visit<Type> for IrNode {
                 _ => {}
             }
         })
+    }
+}
+
+impl Visit<Type> for ModuleItem {
+    fn _visit(&mut self, f: &mut impl FnMut(&mut Type)) {
+        match self {
+            ModuleItem::Let(pattern, node) => {
+                pattern._visit(f);
+                node._visit(f);
+            }
+            ModuleItem::Type(_) => {}
+            ModuleItem::Constructor(
+                _,
+                Constructor {
+                    in_type, out_type, ..
+                },
+            ) => {
+                in_type._visit(f);
+                out_type._visit(f);
+            }
+            ModuleItem::Import { type_, .. } => {
+                let mut type_: Type = type_.clone().into();
+                type_._visit(f);
+            }
+        }
+    }
+}
+
+impl Visit<Type> for IrModule {
+    fn _visit(&mut self, f: &mut impl FnMut(&mut Type)) {
+        self.items._visit(f);
     }
 }

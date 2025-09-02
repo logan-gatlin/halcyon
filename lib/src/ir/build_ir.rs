@@ -7,6 +7,9 @@ pub fn build_ir(
 ) -> Result<IrModule> {
     let module_name = Path::from((*module.name).clone());
     let mut ns = ModuleNameSpace::new(module_name.clone());
+    for interface in context.values() {
+        ns.import_module(interface)?;
+    }
     let mut items = vec![];
     for item in module.contents.clone() {
         module_expr(&mut ns, context, item, &mut items)?;
@@ -33,13 +36,20 @@ fn module_expr(
         } => {
             type_def(ns, assignee, assignee_span, *value, items, 0)?;
         }
-        ModuleExpressionKind::Import { name } => {
-            let interface = context.get(&name.clone().into()).ok_or(lint(
-                NameLint::NoSuchModule,
-                e.span,
-                [name],
-            ))?;
-            ns.import_module(interface).span(e.span)?;
+        ModuleExpressionKind::Import {
+            name,
+            type_,
+            major,
+            minor,
+        } => {
+            let type_ = type_expr(ns, *type_)?;
+            let path = ns.define_global_value(&name).span(e.span)?;
+            items.push(ModuleItem::Import {
+                path,
+                type_: todo!(),
+                major,
+                minor,
+            });
         }
     }
     Ok(())
@@ -63,6 +73,40 @@ fn lit(literal: Literal) -> Result<ConstValue> {
     })
 }
 
+fn curry(
+    ns: &mut ModuleNameSpace,
+    mut arguments: impl Iterator<Item = (Spanned<String>, Option<TypeExpression>)>,
+    body: Box<ValueExpression>,
+    span: Span,
+) -> Result<Box<IrNode>> {
+    Ok(Box::new(
+        match arguments.next() {
+            Some((argument, type_)) => {
+                ns.begin_capture();
+                let parameter_name = Some(
+                    ns.define_local_value(&argument, true)
+                        .with_span(argument.span),
+                );
+                let body = curry(ns, arguments, body, span)?;
+                let captures = ns.end_capture();
+                ns.values.end_local_scopes(1);
+                IrKind::Function {
+                    parameter_name,
+                    parameter_type: match type_ {
+                        Some(t) => Some(type_expr(ns, t)?),
+                        None => None,
+                    },
+                    capture_types: vec![Type::Any; captures.len()],
+                    captures,
+                    body,
+                }
+            }
+            None => return value_expr(ns, *body).map(Box::new),
+        }
+        .with_span(span)
+        .with_type(Type::Any),
+    ))
+}
 pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> Result<IrNode> {
     use IrKind as ir;
     use ValueExpressionKind::*;
@@ -161,40 +205,6 @@ pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> Result<IrN
                     body,
                 }
             } else {
-                fn curry(
-                    ns: &mut ModuleNameSpace,
-                    mut arguments: impl Iterator<Item = (Spanned<String>, Option<TypeExpression>)>,
-                    body: Box<ValueExpression>,
-                    span: Span,
-                ) -> Result<Box<IrNode>> {
-                    Ok(Box::new(
-                        match arguments.next() {
-                            Some((argument, type_)) => {
-                                ns.begin_capture();
-                                let parameter_name = Some(
-                                    ns.define_local_value(&argument, true)
-                                        .with_span(argument.span),
-                                );
-                                let body = curry(ns, arguments, body, span)?;
-                                let captures = ns.end_capture();
-                                ns.values.end_local_scopes(1);
-                                ir::Function {
-                                    parameter_name,
-                                    parameter_type: match type_ {
-                                        Some(t) => Some(type_expr(ns, t)?),
-                                        None => None,
-                                    },
-                                    capture_types: vec![Type::Any; captures.len()],
-                                    captures,
-                                    body,
-                                }
-                            }
-                            None => return value_expr(ns, *body).map(Box::new),
-                        }
-                        .with_span(span)
-                        .with_type(Type::Any),
-                    ))
-                }
                 return Ok(*curry(ns, arguments.into_iter().zip(types), body, span)?);
             }
         }

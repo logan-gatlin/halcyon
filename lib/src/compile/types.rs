@@ -1,7 +1,6 @@
-use crate::{
-    WithSpan,
-    semantic::{Type, Universe},
-};
+use wasm_encoder::FieldType;
+
+use crate::semantic::{Type, Universe};
 
 use super::*;
 
@@ -13,15 +12,15 @@ pub enum ReducedType {
     F64,
     I32,
     I8,
-    Function,
+    Function(Box<ReducedType>, Box<ReducedType>),
     Struct(Vec<ReducedType>),
     Array(Box<ReducedType>),
 }
 
 impl Type {
-    fn reduce(self) -> ReducedType {
+    pub fn reduce(self) -> ReducedType {
         use ReducedType::*;
-        match self {
+        match self.clone() {
             Type::Any => panic!(),
             Type::Unit => Struct(vec![]),
             Type::Integer => I64,
@@ -36,12 +35,15 @@ impl Type {
             }
             | Type::Product(items) => Struct(items.into_iter().map(|t| t.reduce()).collect()),
             Type::Sum { .. } => Sum,
-            Type::Function(..) => Function,
+            Type::Function(a, b) => Struct(vec![
+                Function(a.reduce().into(), b.reduce().into()),
+                Array(AnyRef.into()),
+            ]),
             // All type recursion must pass through a sum type, and sum types are not
             // recursive at the WASM level. Therefore no rist of infinite recursion here
-            Type::Instantiation(path, items) => Universe::get()
-                .get_named_type(&path)
-                .instantiate(&items)
+            Type::Instantiation(ref path, ref items) => Universe::get()
+                .get_named_type(path)
+                .instantiate(items)
                 .reduce(),
         }
     }
@@ -68,27 +70,44 @@ impl Encode<ReducedType> for TypeEncoder {
 }
 
 impl Encode<Type> for TypeEncoder {
-    fn encode(&mut self, type_: Type) -> &mut Self {
-        if self.type_map.get(&type_).is_none() {
-            let rtype = type_.clone().reduce();
-            self.type_map.insert(type_, rtype.clone());
-            self.make_storage_type(rtype);
-        }
+    #[allow(clippy::map_entry)]
+    fn encode(&mut self, mut type_: Type) -> &mut Self {
+        type_.visit(|t: &mut Type| {
+            let type_ = t.clone();
+            let reduced_type = type_.clone().reduce();
+            self.make_storage_type(reduced_type);
+        });
         self
     }
 }
 
-#[derive(Debug, Clone)]
+impl Encode<ForeignFunctionType> for TypeEncoder {
+    fn encode(&mut self, obj: ForeignFunctionType) -> &mut Self {
+        if self.foreign_function_map.contains_key(&obj) {
+            self
+        } else {
+            let id = self.type_section.len() as u32;
+            self.type_section.push(RegisteredType::Function(obj.into()));
+            self.foreign_function_map.insert(obj, id);
+            self
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
 pub struct TypeEncoder {
-    pub type_map: HashMap<Type, ReducedType>,
     pub id_map: HashMap<ReducedType, u32>,
     pub value_map: HashMap<ReducedType, ValType>,
+    pub foreign_function_map: HashMap<ForeignFunctionType, u32>,
     type_section: Vec<RegisteredType>,
-    pub function_map: HashMap<(ReducedType, ReducedType), u32>,
-    function_section: Vec<u32>,
+    main_type_id: Option<u32>,
 }
 
 impl TypeEncoder {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     fn add_type_to_registry(&mut self, type_: ReducedType, rt: RegisteredType) -> StorageType {
         let id = self.type_section.len() as u32;
         self.type_section.push(rt);
@@ -101,25 +120,17 @@ impl TypeEncoder {
         StorageType::Val(valtype)
     }
 
-    fn make_function_type(&mut self, parameter_type: ReducedType, return_type: ReducedType) -> u32 {
-        let id = self.type_section.len() as u32;
-        self.make_storage_type(parameter_type.clone());
-        self.make_storage_type(return_type.clone());
-        self.make_storage_type(ReducedType::capture());
-        let parameter_valtype = self.value_map.get(&parameter_type).cloned().unwrap();
-        let capture_valtype = self
-            .value_map
-            .get(&ReducedType::capture())
-            .cloned()
-            .unwrap();
-        let return_valtype = self.value_map.get(&return_type).cloned().unwrap();
-        RegisteredType::Function(FuncType::new(
-            [parameter_valtype, capture_valtype],
-            [return_valtype],
-        ));
-        self.function_map
-            .insert((parameter_type, return_type), id as u32);
-        id
+    pub fn main_fn_type_id(&mut self) -> u32 {
+        match self.main_type_id {
+            Some(id) => id,
+            None => {
+                let id = self.type_section.len() as u32;
+                self.type_section
+                    .push(RegisteredType::Function(FuncType::new([], [])));
+                self.main_type_id = Some(id);
+                id
+            }
+        }
     }
 
     fn make_storage_type(&mut self, type_: ReducedType) -> StorageType {
@@ -132,6 +143,11 @@ impl TypeEncoder {
                 nullable: false,
                 heap_type: HeapType::Concrete(*id),
             }));
+        }
+        if AnyRef == type_
+            && let Some(t) = self.value_map.get(&AnyRef).cloned()
+        {
+            return st::Val(t);
         }
         let rt = match type_.clone() {
             AnyRef => {
@@ -154,11 +170,79 @@ impl TypeEncoder {
             ),
             Array(type_) if type_ == I8.into() => rt::Array(st::I8),
             Array(type_) => rt::Array(self.make_storage_type(*type_)),
-            Function => rt::Struct(vec![
-                st::Val(vt::Ref(RefType::FUNCREF)),
-                self.make_storage_type(ReducedType::capture()),
-            ]),
+            Function(a, b) => {
+                self.make_storage_type(*a.clone());
+                self.make_storage_type(*b.clone());
+                self.make_storage_type(ReducedType::capture());
+                let a_valtype = self.value_map.get(&a).unwrap().clone();
+                let capture_valtype = self.value_map.get(&ReducedType::capture()).unwrap().clone();
+                let b_valtype = self.value_map.get(&b).unwrap().clone();
+                rt::Function(FuncType::new([a_valtype, capture_valtype], [b_valtype]))
+            }
         };
         self.add_type_to_registry(type_, rt)
+    }
+
+    pub fn finish(self) -> TypeSection {
+        self.type_section
+            .into_iter()
+            .fold(TypeSection::new(), |mut ts, t| {
+                match t {
+                    RegisteredType::Function(func_type) => ts.ty().func_type(&func_type),
+                    RegisteredType::Array(storage_type) => ts.ty().array(&storage_type, false),
+                    RegisteredType::Struct(storage_types) => {
+                        ts.ty().struct_(storage_types.iter().map(|t| FieldType {
+                            element_type: *t,
+                            mutable: false,
+                        }))
+                    }
+                };
+                ts
+            })
+    }
+}
+
+impl ModuleEncoder {
+    pub fn foreign_function_type(&self, type_: ForeignFunctionType) -> u32 {
+        *self
+            .type_encoder
+            .foreign_function_map
+            .get(&type_)
+            .unwrap_or_else(|| panic!("Foreign function type was not encoded: {type_:?}"))
+    }
+
+    pub fn function_type_id(&self, type_: &Type) -> u32 {
+        let Type::Function(a, b) = type_.clone() else {
+            panic!("Tried to get function ID of not a function: {type_}")
+        };
+        self.type_encoder
+            .id_map
+            .get(&ReducedType::Function(a.reduce().into(), b.reduce().into()))
+            .unwrap_or_else(|| panic!("No function type id for {type_:?}"))
+            .clone()
+    }
+
+    pub fn reduced_valtype(&self, type_: &ReducedType) -> ValType {
+        self.type_encoder
+            .value_map
+            .get(type_)
+            .unwrap_or_else(|| panic!("No reduced valtype for {type_:?}"))
+            .clone()
+    }
+
+    pub fn reduced_type_id(&self, type_: &ReducedType) -> u32 {
+        self.type_encoder
+            .id_map
+            .get(type_)
+            .unwrap_or_else(|| panic!("No reduced type ID for: {type_:?}"))
+            .clone()
+    }
+
+    pub fn valtype(&self, type_: &Type) -> ValType {
+        self.reduced_valtype(&type_.clone().reduce())
+    }
+
+    pub fn type_id(&self, type_: &Type) -> u32 {
+        self.reduced_type_id(&type_.clone().reduce())
     }
 }

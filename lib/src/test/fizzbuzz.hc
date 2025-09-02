@@ -9,7 +9,7 @@ module FizzBuzz =
       | (_, _) => "---"
     in
       if from <= to then
-        std:print_string (to_str from);
+        std::print_string (to_str from);
         fizzbuzz (from + 1) to
   let () = fizzbuzz 1 30
 end

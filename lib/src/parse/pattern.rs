@@ -38,7 +38,7 @@ pub fn parse_pattern(iter: it!()) -> Result<PatternExpression> {
         // Identifier, path, or constructor
         Identifier(name) => {
             let mut path = vec![name];
-            while iter.eat(Colon).is_some() {
+            while iter.eat(DoubleColon).is_some() {
                 path.push(iter.eat_ident()?);
             }
             match iter.eat_or_error(Of) {

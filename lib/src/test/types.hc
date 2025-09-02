@@ -3,12 +3,12 @@ module TypeTest =
 
   -- Primitive aliases
 
-  type integer = std:integer
-  type real = std:real
-  type unit = std:unit
-  type boolean = std:boolean
-  type string = std:string
-  type glyph = std:glyph
+  type integer = std::integer
+  type real = std::real
+  type unit = std::unit
+  type boolean = std::boolean
+  type string = std::string
+  type glyph = std::glyph
 
   -- ADT's
   type struct = {
@@ -24,7 +24,7 @@ module TypeTest =
 
   -- Struct field inference
   type specific_struct1 = {
-    specific_name1: std:integer
+    specific_name1: integer
   }
   type specific_struct2 = {
     specific_name2: specific_struct1

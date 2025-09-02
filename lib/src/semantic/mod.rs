@@ -18,7 +18,7 @@ use crate::ir::*;
 
 #[derive(Debug, Clone, Default, sx::SXRepr)]
 pub struct ModuleInterface {
-    pub types: HashMap<Path, Type>,
+    pub types: HashSet<Path>,
     pub values: HashMap<Path, Type>,
     pub constructors: HashMap<Path, Constructor>,
 }
@@ -115,8 +115,33 @@ pub fn freshen_type_variables(
     });
 }
 
-pub fn type_solve(module: IrModule) -> IrModule {
+pub fn type_solve(module: IrModule) -> (IrModule, ModuleInterface) {
     let mut env = Environment::default();
     let mut free = HashSet::default();
-    module.infer(&mut env, &mut free)
+    let mut interface = ModuleInterface::default();
+    let module = module.infer(&mut env, &mut free);
+    for item in &module.items {
+        match item {
+            ModuleItem::Let(pattern, _) => {
+                pattern.clone().visit(|(path, type_)| {
+                    interface.values.insert(path.clone(), type_.clone());
+                });
+            }
+            ModuleItem::Type(path) => {}
+            ModuleItem::Constructor(path, constructor) => {
+                interface
+                    .values
+                    .insert(path.clone(), constructor.function_type());
+            }
+            ModuleItem::Import {
+                path,
+                type_,
+                major,
+                minor,
+            } => {
+                interface.values.insert(path.clone(), type_.clone().into());
+            }
+        }
+    }
+    (module, interface)
 }

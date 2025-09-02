@@ -83,11 +83,11 @@ fn parse_primary(iter: it!()) -> Result<ValueExpression> {
         GlyphLiteral(value) => e::Literal(Literal::Glyph(value)),
         True => e::Literal(Literal::Boolean(true)),
         False => e::Literal(Literal::Boolean(false)),
-        Identifier(ident) if iter.peek(0).is_none_or(|t| *t != Colon) => e::Identifier(ident),
+        Identifier(ident) if iter.peek(0).is_none_or(|t| *t != DoubleColon) => e::Identifier(ident),
         // Module field
         Identifier(ident) => {
             let mut path = vec![ident];
-            while iter.eat(Colon).is_some() {
+            while iter.eat(DoubleColon).is_some() {
                 path.push(iter.eat_ident()?);
             }
             e::ModuleField(path)
@@ -133,12 +133,12 @@ fn parse_primary(iter: it!()) -> Result<ValueExpression> {
                 }
             }
             let mut parameter_set = HashSet::new();
-            for i in 0..arguments.len() {
-                if !parameter_set.insert(&arguments[i]) {
+            for arg in &arguments {
+                if !parameter_set.insert(arg) {
                     return Err(lint(
                         NameLint::ParamRedefinition,
-                        arguments[i].span,
-                        ["function".to_string(), (*arguments[i]).clone()],
+                        arg.span,
+                        ["function".to_string(), arg.inner.clone()],
                     ));
                 }
             }

@@ -50,7 +50,7 @@ impl AsRef<str> for Path {
 }
 
 impl Path {
-    const SEP: &str = ":";
+    const SEP: &str = "::";
 
     pub fn child(&self, s: impl std::fmt::Display) -> Self {
         let mut new = self.clone();

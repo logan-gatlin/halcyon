@@ -40,21 +40,24 @@ pub fn type_def(
                 .into_iter()
                 .map(|t| type_expr(ns, t))
                 .try_collect()?;
-            let sum_type = Type::Instantiation(
-                path.clone(),
-                (0..parameters).map(|t| Type::Variable(t)).collect(),
-            );
+            let sum_type = Type::Sum {
+                name: path.clone(),
+                variant_names: variant_names.clone(),
+                variant_types: variant_types.clone(),
+            };
+            let named_type =
+                Type::Instantiation(path.clone(), (0..parameters).map(Type::Variable).collect());
             for (id, (type_, name)) in variant_types.iter().zip(&variant_names).enumerate() {
                 let constructor = Constructor {
                     variant: id,
                     in_type: type_.clone(),
-                    out_type: sum_type.clone(),
+                    out_type: named_type.clone(),
                 };
                 let path = ns.constructors.define_global(name, constructor.clone())?;
                 ns.define_global_value(name)?;
                 items.push(ModuleItem::Constructor(path, constructor));
             }
-            ns.update_type(path.clone(), sum_type);
+            Universe::get().modify_named_type(path.clone(), sum_type);
             items.push(ModuleItem::Type(path))
         }
         Expression(expr) => {
@@ -69,6 +72,7 @@ pub fn type_def(
 
 pub fn type_expr(ns: &ModuleNameSpace, type_: TypeExpression) -> Result<Type> {
     use TypeExpressionKind::*;
+    let span = type_.span;
     Ok(match type_.inner {
         Function(a, b) => Type::func(type_expr(ns, *a)?, type_expr(ns, *b)?),
         Call(..) => {
@@ -93,17 +97,32 @@ pub fn type_expr(ns: &ModuleNameSpace, type_: TypeExpression) -> Result<Type> {
             Type::Instantiation(callee.inner, parameters)
         }
         Identifier(id) => {
-            let type_ = ns.types.get(&id).span(type_.span)?;
+            let path = ns.types.get_path(&id).span(type_.span)?;
+            let type_ = Universe::get().get_named_type(&path);
             // Incomplete instantiation
-            if let Type::Instantiation(name, types) = &type_
-                && Universe::get().get_named_type(name).arity != types.len()
-            {
-                panic!()
+            if type_.arity != 0 {
+                return Err(lint(
+                    TypeLint::PartialInstantiation,
+                    span,
+                    [format!("{}", type_.arity), format!("{}", 0)],
+                ));
             }
-            type_
+            type_.instantiate(&[])
         }
         Product(items) => Type::Product(items.into_iter().map(|t| type_expr(ns, t)).try_collect()?),
-        ModulePath(items) => ns.types.get_exact(&Path::from(items)).span(type_.span)?,
+        ModulePath(items) => {
+            let path = Path::from(items);
+            let type_ = Universe::get().get_named_type(&path);
+            // Incomplete instantiation
+            if type_.arity != 0 {
+                return Err(lint(
+                    TypeLint::PartialInstantiation,
+                    span,
+                    [format!("{}", type_.arity), format!("{}", 0)],
+                ));
+            }
+            type_.instantiate(&[])
+        }
         Unit => Type::Unit,
     })
 }

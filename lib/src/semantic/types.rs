@@ -213,7 +213,7 @@ impl Visit<Type> for Type {
             | Type::Boolean
             | Type::String
             | Type::Glyph
-            | Type::Variable(_) => f(self),
+            | Type::Variable(_) => {}
             Type::Instantiation(_, types) => {
                 types._visit(f);
             }
@@ -231,6 +231,7 @@ impl Visit<Type> for Type {
                 b._visit(f);
             }
         }
+        f(self)
     }
 }
 

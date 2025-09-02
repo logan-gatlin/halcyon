@@ -13,6 +13,9 @@ pub enum ModuleExpressionKind {
     },
     Import {
         name: String,
+        type_: Box<TypeExpression>,
+        major: String,
+        minor: String,
     },
 }
 
@@ -76,9 +79,20 @@ pub fn parse_module_expression(iter: it!()) -> Result<ModuleExpression> {
             }
         }
         // Import
-        2 => ModuleExpressionKind::Import {
-            name: iter.eat_ident()?,
-        },
+        2 => {
+            let name = iter.eat_ident()?;
+            iter.eat_or_error(Colon)?;
+            let type_ = parse_type_expression(iter, 0)?.into();
+            iter.eat_or_error(Equal)?;
+            let major = iter.eat_ident()?;
+            let minor = iter.eat_ident()?;
+            ModuleExpressionKind::Import {
+                name,
+                type_,
+                major,
+                minor,
+            }
+        }
         _ => unreachable!(),
     }
     .with_span(iter.end_span()))

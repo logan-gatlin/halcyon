@@ -4,8 +4,7 @@ use super::*;
 
 pub struct FunctionEncoder<'a> {
     pub module_encoder: &'a mut ModuleEncoder,
-    id: u32,
-    parameter: ValType,
+    type_id: u32,
     local_names: HashMap<Path, u32>,
     local_types: Vec<ValType>,
     instructions: Vec<Instruction>,
@@ -13,36 +12,80 @@ pub struct FunctionEncoder<'a> {
 
 #[derive(Debug, Clone)]
 pub struct EncodedFunction {
-    id: u32,
-    parameters: Vec<ValType>,
+    pub type_id: u32,
     locals: Vec<ValType>,
     instructions: Vec<Instruction>,
 }
 
+impl EncodedFunction {
+    pub fn fix_function_ids(mut self, id_map: &[FunctionKind], imports: u32) -> Self {
+        self.instructions.iter_mut().for_each(|i| {
+            if let RefFunc(id) = i {
+                match id_map[*id as usize] {
+                    FunctionKind::Import(new_id) => *id = new_id,
+                    FunctionKind::Native(new_id) => *id = new_id + imports,
+                }
+            }
+        });
+        self
+    }
+}
+
+impl Into<Function> for EncodedFunction {
+    fn into(self) -> Function {
+        self.instructions
+            .iter()
+            .fold(Function::new_with_locals_types(self.locals), |mut f, i| {
+                f.instruction(i);
+                f
+            })
+    }
+}
+
 impl<'a> FunctionEncoder<'a> {
+    pub fn new_main(module_encoder: &'a mut ModuleEncoder) -> Self {
+        Self {
+            type_id: module_encoder.type_encoder.main_fn_type_id(),
+            module_encoder,
+            local_names: HashMap::new(),
+            local_types: vec![],
+            instructions: vec![],
+        }
+    }
+
     pub fn new(
         module_encoder: &'a mut ModuleEncoder,
-        id: u32,
         parameter_name: Path,
         parameter_type: &Type,
+        return_type: &Type,
     ) -> Self {
         let mut local_names = HashMap::new();
+        let type_id = module_encoder
+            .function_type_id(&Type::func(parameter_type.clone(), return_type.clone()));
         local_names.insert(parameter_name, 0);
-        let parameter = module_encoder.valtype(parameter_type);
-        let local_types = vec![parameter];
         FunctionEncoder {
             module_encoder,
-            id,
-            parameter,
+            type_id,
             local_names,
-            local_types,
+            local_types: vec![],
             instructions: vec![],
         }
     }
 
     pub fn with_capture(&mut self, capture_names: &[Path], capture_types: &[Type]) -> &mut Self {
-        for (name, type_) in capture_names.iter().zip(capture_types) {
-            self.new_local(name, type_);
+        let capture_type = self.module_encoder.reduced_type_id(&ReducedType::capture());
+        for (id, (name, type_)) in capture_names.iter().zip(capture_types).enumerate() {
+            let reduced_type = type_.clone().reduce();
+            self.new_local(name, type_).encode([
+                LocalGet(1),
+                I32Const(id as i32),
+                ArrayGet(capture_type),
+            ]);
+            if reduced_type != ReducedType::AnyRef {
+                let type_id = self.module_encoder.reduced_type_id(&reduced_type);
+                self.encode(RefCastNonNull(HeapType::Concrete(type_id)));
+            }
+            self.set_symbol(name);
         }
         self
     }
@@ -59,12 +102,18 @@ impl<'a> FunctionEncoder<'a> {
         if let Some(id) = self.local_names.get(path).cloned() {
             VariableKind::Local(id)
         } else {
-            VariableKind::Global(self.module_encoder.find_symbol(path))
+            VariableKind::Global(self.module_encoder.get_global_id(path))
         }
     }
 
     pub fn new_temporary(&mut self, type_: &Type) -> u32 {
         self._new_local(type_)
+    }
+
+    pub fn new_raw_temporary(&mut self, type_: ValType) -> u32 {
+        let local_id = 2 + self.local_types.len() as u32;
+        self.local_types.push(type_);
+        local_id
     }
 
     pub fn new_local(&mut self, path: &Path, type_: &Type) -> &mut Self {
@@ -74,24 +123,38 @@ impl<'a> FunctionEncoder<'a> {
     }
 
     pub fn get_symbol(&mut self, path: &Path) -> &mut Self {
-        self.encode(self.find_symbol(path).get())
+        match self.find_symbol(path) {
+            VariableKind::Global(id) => self.encode([GlobalGet(id), RefAsNonNull]),
+            VariableKind::Local(id) => self.encode(LocalGet(id)),
+        }
     }
 
     pub fn set_symbol(&mut self, path: &Path) -> &mut Self {
-        self.encode(self.find_symbol(path).get())
+        self.encode(self.find_symbol(path).set())
     }
 
-    pub fn end(&mut self) -> u32 {
+    pub fn finish(&mut self) -> u32 {
+        self.encode(End);
+        let id = self.module_encoder.element_section.len() as u32;
         self.module_encoder.encode(EncodedFunction {
-            id: self.id,
-            parameters: vec![
-                self.parameter,
-                self.module_encoder.reduced_valtype(&ReducedType::capture()),
-            ],
             locals: self.local_types.clone(),
             instructions: self.instructions.clone(),
+            type_id: self.type_id,
         });
-        self.id
+        id
+    }
+
+    pub fn finish_mainfn(&mut self) -> u32 {
+        self.encode(End);
+        let id = self.module_encoder.element_section.len() as u32;
+        let mut locals = vec![ValType::Ref(RefType::ANYREF); 2];
+        locals.extend_from_slice(&self.local_types);
+        self.module_encoder.encode(EncodedFunction {
+            locals,
+            instructions: self.instructions.clone(),
+            type_id: self.type_id,
+        });
+        id
     }
 }
 
@@ -104,7 +167,14 @@ impl Encode<Instruction> for FunctionEncoder<'_> {
 
 impl Encode<Type> for FunctionEncoder<'_> {
     fn encode(&mut self, obj: Type) -> &mut Self {
-        self.module_encoder.type_section.encode(obj);
+        self.module_encoder.type_encoder.encode(obj);
+        self
+    }
+}
+
+impl Encode<ReducedType> for FunctionEncoder<'_> {
+    fn encode(&mut self, obj: ReducedType) -> &mut Self {
+        self.module_encoder.type_encoder.encode(obj);
         self
     }
 }

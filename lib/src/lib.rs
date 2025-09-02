@@ -1,14 +1,14 @@
-#![allow(clippy::clone_on_copy)]
+#![allow(clippy::clone_on_copy, clippy::from_over_into)]
 #![feature(iterator_try_collect, box_patterns, if_let_guard)]
 //mod compile;
+mod compile;
 mod ir;
 mod lint;
+mod map;
 mod operator;
 mod parse;
 mod semantic;
-//mod std_hc;
-mod compile;
-mod map;
+mod std_hc;
 #[cfg(test)]
 mod test;
 mod token;
@@ -28,7 +28,11 @@ use std::{
 use token::*;
 use wasm_bindgen::prelude::*;
 
-use crate::operator::BinaryOp;
+use crate::{
+    compile::{ModuleEncoder, encoding::Encode},
+    operator::BinaryOp,
+    std_hc::compile_builtin,
+};
 pub const BUILTIN_MODULE: &str = "builtin";
 
 pub fn compiler_print(s: String) {
@@ -38,16 +42,6 @@ pub fn compiler_print(s: String) {
 }
 
 static OUTPUT: OnceLock<Mutex<String>> = OnceLock::new();
-
-macro_rules! bt {
-    ($($name:expr, $value:expr;)*) => {
-        {
-            let mut map = HashMap::new();
-            $(map.insert(Path::from(format!("{BUILTIN_MODULE}:{}", $name)), $value);)*
-            map
-        }
-    };
-}
 
 #[allow(unused_mut)]
 pub fn _compile(input: &str) -> Option<Vec<u8>> {
@@ -59,27 +53,21 @@ pub fn _compile(input: &str) -> Option<Vec<u8>> {
     let linter = Linter::new(input.to_string());
     let tokens = tokenize(input.chars()).handle(&linter)?;
     let parsed_modules = parse(tokens).handle(&linter)?;
+    let mut encoder = ModuleEncoder::new();
     let mut interfaces = HashMap::new();
-    interfaces.insert(
-        Path::from(BUILTIN_MODULE),
-        ModuleInterface {
-            types: bt! {
-                "integer", Type::Integer;
-                "string", Type::String;
-            },
-            values: bt! {
-                BinaryOp::Plus, Type::curry(&[Type::Integer, Type::Integer], Type::Integer);
-                BinaryOp::DoubleEqual, Type::curry(&[Type::Variable(0), Type::Variable(0)], Type::Boolean);
-            },
-            constructors: HashMap::new(),
-        },
-    );
+    compile_builtin(&mut encoder, &mut interfaces);
     for module in parsed_modules {
+        let module_path = module.name.inner.clone().into();
         let ir = build_ir(module, &interfaces).handle(&linter)?;
-        let typed_ir = type_solve(ir);
+        let (typed_ir, interface) = type_solve(ir);
+        interfaces.insert(module_path, interface);
         println!("Typed IR:\n{}", typed_ir.clone().sx());
+        encoder.encode(typed_ir);
     }
-    Universe::print();
+    let wasm = encoder.finish();
+    let wat = wasmprinter::print_bytes(&wasm).unwrap();
+    println!("{wat}");
+    wasmparser::validate(&wasm).unwrap();
     Some(vec![])
 }
 

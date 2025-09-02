@@ -177,11 +177,18 @@ impl BinaryOp {
 
 impl UnaryOp {
     pub fn get_type(&self) -> Type {
-        use UnaryOp::*;
+        Type::func(self.parameter_type(), self.parameter_type())
+    }
+
+    pub fn parameter_type(&self) -> Type {
         match self {
-            Minus => Type::func(Type::Integer, Type::Integer),
-            MinusDot => Type::func(Type::Real, Type::Real),
-            Not => Type::func(Type::Boolean, Type::Boolean),
+            UnaryOp::Minus => Type::Integer,
+            UnaryOp::MinusDot => Type::Real,
+            UnaryOp::Not => Type::Boolean,
         }
+    }
+
+    pub fn return_type(&self) -> Type {
+        self.parameter_type()
     }
 }

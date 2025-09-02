@@ -157,8 +157,7 @@ impl ModuleNameSpace {
 
     pub fn define_type(&mut self, name: &str, type_: Type) -> Result<Path> {
         let path = self.types.define_global(name, Type::Any)?;
-        self.types.value_table.insert(path.clone(), type_.clone());
-        Universe::get().new_named_type(path.clone(), type_.clone());
+        Universe::get().new_named_type(path.clone(), type_);
         Ok(path)
     }
 
@@ -173,7 +172,6 @@ impl ModuleNameSpace {
     }
 
     pub fn update_type(&mut self, name: Path, type_: Type) {
-        self.types.value_table.insert(name.clone(), type_.clone());
         Universe::get().modify_named_type(name, type_);
     }
 
@@ -217,8 +215,8 @@ impl ModuleNameSpace {
         for (name, cons) in interface.constructors.clone() {
             self.constructors.define_import(name, cons)?;
         }
-        for (name, type_) in interface.types.clone() {
-            self.types.define_import(name, type_)?;
+        for name in interface.types.clone() {
+            self.types.define_import(name, Type::Any)?;
         }
         Ok(())
     }

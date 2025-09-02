@@ -76,7 +76,7 @@ pub fn parse_type_definition(iter: it!()) -> Result<TypeDefinition> {
                 }
                 let name = iter.eat_ident()?;
                 lhs.push(name);
-                iter.eat_or_error(Colon)?;
+                iter.eat_or_error(DoubleColon)?;
                 let expr = parse_type_expression(iter, 0)?;
                 rhs.push(expr);
                 if iter.eat(Comma).is_none() && iter.peek(0).is_none_or(|t| *t != RightBrace) {
@@ -129,9 +129,9 @@ fn parse_primary(iter: it!()) -> Result<TypeExpression> {
             return Ok(inner);
         }
         // Module path
-        Identifier(name) if iter.peek(0).is_some_and(|t| *t == Colon) => {
+        Identifier(name) if iter.peek(0).is_some_and(|t| *t == DoubleColon) => {
             let mut path = vec![name];
-            while iter.eat(Colon).is_some() {
+            while iter.eat(DoubleColon).is_some() {
                 path.push(iter.eat_ident()?);
             }
             TypeExpressionKind::ModulePath(path)
@@ -179,7 +179,7 @@ pub fn parse_type_expression(iter: it!(), precedence: Precedence) -> Result<Type
                 tuple.push(parse_type_expression(iter, TYPE_STAR_PREC)?);
             }
             current = TypeExpressionKind::Product(tuple).with_span(iter.end_span());
-        } else if precedence < CALL_PREC {
+        } else if precedence < CALL_PREC && !TERMINAL_TOKENS.contains(&*next) {
             current = TypeExpressionKind::Call(
                 Box::new(current),
                 Box::new(parse_type_expression(iter, CALL_PREC)?),
