@@ -1,4 +1,131 @@
+use std::collections::HashSet;
+
 use super::*;
+
+#[derive(Debug, Clone, Default)]
+pub struct ModuleNameSpace {
+    module_name: Path,
+    salt: usize,
+    // Values
+    value_lookup: HashMap<String, Path>,
+    value_history: Vec<NameEvent>,
+    capture_list: Vec<Vec<Path>>,
+    values_available: HashSet<Path>,
+    imported_value_types: HashMap<Path, Type>,
+    // Constructors
+    constructor_lookup: HashMap<String, Path>,
+    constructors_available: HashMap<Path, Constructor>,
+    // Types
+    type_lookup: HashMap<String, Path>,
+    type_history: Vec<NameEvent>,
+    types_available: HashSet<Path>,
+    local_types: HashMap<Path, Type>,
+}
+
+impl ModuleNameSpace {
+    pub fn new(module_name: impl Into<Path>) -> Self {
+        Self {
+            module_name: module_name.into(),
+            ..Default::default()
+        }
+    }
+
+    pub fn import_interface(&mut self, interface: &ModuleInterface) -> Result<()> {
+        todo!()
+    }
+    // Values
+    pub fn new_global_value(&mut self, name: &str) -> Result<Path> {
+        todo!()
+    }
+
+    pub fn new_local_value(&mut self, name: &str, is_parameter: bool) -> Path {
+        todo!()
+    }
+
+    pub fn get_value(&mut self, name: &str) -> Result<Path> {
+        todo!()
+    }
+
+    pub fn get_imported_value_type(&self, path: &Path) -> Result<Type> {
+        todo!()
+    }
+
+    pub fn begin_capture(&mut self) {
+        self.capture_list.push(vec![]);
+    }
+
+    pub fn end_capture(&mut self) -> Vec<Path> {
+        self.capture_list
+            .pop()
+            .expect("Popped an empty capture list")
+    }
+
+    pub fn end_value_scopes(&mut self, num: usize) {
+        for _ in 0..num {
+            let NameEvent {
+                name,
+                previous_value,
+            } = self.value_history.pop().unwrap();
+            if let Some(p) = previous_value {
+                self.value_lookup.insert(name, p);
+            } else {
+                self.value_lookup.remove(&name);
+            }
+        }
+    }
+
+    // Constructors
+    pub fn new_constructor(&mut self, name: &str, constructor: Constructor) -> Result<Path> {
+        todo!()
+    }
+
+    pub fn get_constructor(&self, name: &str) -> Result<Constructor> {
+        todo!()
+    }
+
+    pub fn get_constructor_exact(&self, path: &Path) -> Result<Constructor> {
+        todo!()
+    }
+
+    // Types
+    pub fn new_global_type(&mut self, name: &str) -> Result<Path> {
+        todo!()
+    }
+
+    pub fn new_local_type(&mut self, name: &str, type_: Type) {
+        todo!()
+    }
+
+    pub fn get_type(&self, name: &str) -> Result<Type> {
+        todo!()
+    }
+
+    pub fn get_type_exact(&self, path: &Path) -> Result<Type> {
+        todo!()
+    }
+
+    pub fn get_type_path(&self, name: &str) -> Result<Path> {
+        todo!()
+    }
+
+    pub fn get_type_path_exact(&self, path: &Path) -> Result<Path> {
+        todo!()
+    }
+
+    pub fn end_type_scopes(&mut self, num: usize) {
+        for _ in 0..num {
+            let NameEvent {
+                name,
+                previous_value,
+            } = self.type_history.pop().unwrap();
+            if let Some(p) = previous_value {
+                self.type_lookup.insert(name, p);
+            } else {
+                self.type_lookup.remove(&name);
+            }
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 struct NameEvent {
@@ -6,6 +133,7 @@ struct NameEvent {
     previous_value: Option<Path>,
 }
 
+/*
 #[derive(Debug, Clone, Default)]
 pub struct NameSpace<T: Clone> {
     module_name: Path,
@@ -221,6 +349,7 @@ impl ModuleNameSpace {
         Ok(())
     }
 }
+*/
 
 #[derive(Debug, Clone, sx::SXRepr)]
 pub struct Constructor {

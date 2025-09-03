@@ -25,9 +25,9 @@ fn primitive_types(enc: &mut FunctionEncoder, interface: &mut ModuleInterface) {
     .into_iter()
     .for_each(|(name, type_)| {
         enc.encode(type_.clone());
-        interface
-            .types
-            .insert(Path::from(BUILTIN_MODULE_NAME).child(name), type_);
+        let path = Path::from(BUILTIN_MODULE_NAME).child(name);
+        interface.types.insert(path.clone());
+        Universe::get().new_named_type(path, type_);
     });
 }
 

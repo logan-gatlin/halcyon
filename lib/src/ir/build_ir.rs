@@ -8,7 +8,7 @@ pub fn build_ir(
     let module_name = Path::from((*module.name).clone());
     let mut ns = ModuleNameSpace::new(module_name.clone());
     for interface in context.values() {
-        ns.import_module(interface)?;
+        ns.import_interface(interface)?;
     }
     let mut items = vec![];
     for item in module.contents.clone() {
@@ -42,11 +42,11 @@ fn module_expr(
             major,
             minor,
         } => {
-            let type_ = type_expr(ns, *type_)?;
-            let path = ns.define_global_value(&name).span(e.span)?;
+            let type_ = ForeignFunctionType::try_from(type_expr(ns, *type_)?).span(e.span)?;
+            let path = ns.new_global_value(&name).span(e.span)?;
             items.push(ModuleItem::Import {
                 path,
-                type_: todo!(),
+                type_,
                 major,
                 minor,
             });
@@ -83,13 +83,11 @@ fn curry(
         match arguments.next() {
             Some((argument, type_)) => {
                 ns.begin_capture();
-                let parameter_name = Some(
-                    ns.define_local_value(&argument, true)
-                        .with_span(argument.span),
-                );
+                let parameter_name =
+                    Some(ns.new_local_value(&argument, true).with_span(argument.span));
                 let body = curry(ns, arguments, body, span)?;
                 let captures = ns.end_capture();
-                ns.values.end_local_scopes(1);
+                ns.end_value_scopes(1);
                 IrKind::Function {
                     parameter_name,
                     parameter_type: match type_ {
@@ -128,7 +126,7 @@ pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> Result<IrN
                 Some(in_) => Some(rec!(in_)),
                 None => None,
             };
-            ns.values.end_local_scopes(assignee.introduced_names());
+            ns.end_value_scopes(assignee.introduced_names());
             ir::Let {
                 assignee,
                 value,
@@ -233,7 +231,7 @@ pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> Result<IrN
             for (predicate, branch) in predicates.into_iter().zip(branches) {
                 let predicate = pattern_expr(ns, predicate, false)?;
                 let branch = value_expr(ns, branch)?;
-                ns.values.end_local_scopes(predicate.introduced_names());
+                ns.end_value_scopes(predicate.introduced_names());
                 new_predicates.push(predicate);
                 new_branches.push(branch);
             }
@@ -259,7 +257,7 @@ pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> Result<IrN
         },
         ModuleField(items) => {
             let path = Path::from(items);
-            let t = ns.get_import_type(&path).span(span)?;
+            let t = ns.get_imported_value_type(&path).span(span)?;
             ir::ImportedSymbol(path, t)
         }
     }
@@ -277,9 +275,9 @@ fn pattern_expr(
     Ok(match pattern.inner {
         Literal(literal) => PatternKind::Literal(lit(literal).span(span)?),
         Identifier(id) => PatternKind::Name(if global {
-            ns.define_global_value(&id)?
+            ns.new_global_value(&id)?
         } else {
-            ns.define_local_value(&id, false)
+            ns.new_local_value(&id, false)
         }),
         Tuple(expressions) => PatternKind::Tuple(
             expressions
@@ -289,9 +287,9 @@ fn pattern_expr(
         ),
         Constructor(items, expression) => {
             let cons = if items.len() == 1 {
-                ns.constructors.get(&items[0])
+                ns.get_constructor(&items[0])
             } else {
-                ns.constructors.get_exact(&Path::from(items))
+                ns.get_constructor_exact(&Path::from(items))
             }?;
             PatternKind::Constructor(cons, Box::new(pattern_expr(ns, *expression, global)?))
         }
