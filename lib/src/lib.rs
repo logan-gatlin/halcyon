@@ -79,9 +79,9 @@ pub fn compile(input: &str) -> std::result::Result<Vec<u8>, String> {
     compile_single(input, &mut encoder, &mut interfaces)?;
     let wasm = encoder.finish();
     //println!("FILE SIZE: {:.2} kb", (wasm.len() as f64) / 1024.0);
-    //let _wat = wasmprinter::print_bytes(&wasm).unwrap();
+    let _wat = wasmprinter::print_bytes(&wasm).unwrap();
     //println!("{_wat}");
-    //std::fs::write("./demo.wat", &_wat).unwrap();
+    std::fs::write("./demo.wat", &_wat).unwrap();
     wasmparser::validate(&wasm)
         .map_err(|e| format!("COMPILER BUG: WASM failed validation with error:\n{e}"))?;
     Ok(wasm)

@@ -51,12 +51,14 @@ impl Infer for Pattern {
                 self.type_ = Type::Product(patterns.iter().map(|p| p.type_.clone()).collect());
                 PatternKind::Tuple(patterns)
             }
-            PatternKind::Constructor(constructor, pattern) => {
+            PatternKind::Constructor(mut constructor, pattern) => {
                 let mut out_type = constructor.out_type.clone();
                 env.freshen_type_variables(&mut out_type, &HashSet::new());
+                constructor.out_type = out_type.clone();
                 self.type_ = out_type;
                 let mut in_type = constructor.in_type.clone();
                 env.freshen_type_variables(&mut in_type, &HashSet::new());
+                constructor.in_type = in_type.clone();
                 let pattern = pattern.infer(env, free)?;
                 env.type_constraint(in_type, pattern.type_.clone(), self.span);
                 PatternKind::Constructor(constructor, pattern)
@@ -246,7 +248,7 @@ impl Infer for IrNode {
                 let mut new_type = type_.clone();
                 env.freshen_type_variables(&mut new_type, &HashSet::new());
                 self.type_ = new_type.clone();
-                ImportedSymbol(path, type_)
+                ImportedSymbol(path, new_type)
             }
             AsmLiteral(_) => unreachable!(),
         };

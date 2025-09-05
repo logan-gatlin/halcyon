@@ -49,9 +49,9 @@
   (type (;47;) (struct (field (ref 46)) (field (ref 7))))
   (type (;48;) (func (param (ref any) (ref 7)) (result (ref any))))
   (type (;49;) (struct (field (ref 48)) (field (ref 7))))
-  (type (;50;) (func (param (ref any) (ref 7)) (result (ref any))))
-  (type (;51;) (struct (field (ref 50)) (field (ref 7))))
-  (type (;52;) (struct (field (ref 2)) (field (ref 2))))
+  (type (;50;) (struct (field (ref 2)) (field (ref 2))))
+  (type (;51;) (func (param (ref any) (ref 7)) (result (ref any))))
+  (type (;52;) (struct (field (ref 51)) (field (ref 7))))
   (type (;53;) (func (param (ref any) (ref 7)) (result (ref any))))
   (type (;54;) (struct (field (ref 53)) (field (ref 7))))
   (type (;55;) (func (param (ref any) (ref 7)) (result (ref any))))
@@ -66,8 +66,8 @@
   (type (;64;) (struct (field (ref 63)) (field (ref 7))))
   (type (;65;) (func (param (ref any) (ref 7)) (result (ref any))))
   (type (;66;) (struct (field (ref 65)) (field (ref 7))))
-  (type (;67;) (func (param (ref any) (ref 7)) (result (ref any))))
-  (type (;68;) (struct (field (ref 67)) (field (ref 7))))
+  (type (;67;) (func (param i64 i64)))
+  (type (;68;) (struct (field i32) (field (ref any))))
   (type (;69;) (func (param (ref any) (ref 7)) (result (ref any))))
   (type (;70;) (struct (field (ref 69)) (field (ref 7))))
   (type (;71;) (func (param (ref any) (ref 7)) (result (ref any))))
@@ -76,8 +76,8 @@
   (type (;74;) (struct (field (ref 73)) (field (ref 7))))
   (type (;75;) (func (param (ref any) (ref 7)) (result (ref any))))
   (type (;76;) (struct (field (ref 75)) (field (ref 7))))
-  (type (;77;) (func (param i64 i64)))
-  (type (;78;) (struct (field i32) (field (ref any))))
+  (type (;77;) (func (param (ref any) (ref 7)) (result (ref any))))
+  (type (;78;) (struct (field (ref 77)) (field (ref 7))))
   (type (;79;) (func (param (ref any) (ref 7)) (result (ref any))))
   (type (;80;) (struct (field (ref 79)) (field (ref 7))))
   (type (;81;) (func (param (ref any) (ref 7)) (result (ref any))))
@@ -96,47 +96,31 @@
   (type (;94;) (struct (field (ref 93)) (field (ref 7))))
   (type (;95;) (func (param (ref any) (ref 7)) (result (ref any))))
   (type (;96;) (struct (field (ref 95)) (field (ref 7))))
-  (type (;97;) (func (param (ref any) (ref 7)) (result (ref any))))
-  (type (;98;) (struct (field (ref 97)) (field (ref 7))))
-  (type (;99;) (func (param (ref any) (ref 7)) (result (ref any))))
-  (type (;100;) (struct (field (ref 99)) (field (ref 7))))
-  (type (;101;) (func (param (ref any) (ref 7)) (result (ref any))))
-  (type (;102;) (struct (field (ref 101)) (field (ref 7))))
-  (type (;103;) (func (param (ref any) (ref 7)) (result (ref any))))
-  (type (;104;) (struct (field (ref 103)) (field (ref 7))))
-  (type (;105;) (func (param (ref any) (ref 7)) (result (ref any))))
-  (type (;106;) (struct (field (ref 105)) (field (ref 7))))
-  (type (;107;) (func (param (ref any) (ref 7)) (result (ref any))))
-  (type (;108;) (struct (field (ref 107)) (field (ref 7))))
-  (type (;109;) (func (param (ref any) (ref 7)) (result (ref any))))
-  (type (;110;) (struct (field (ref 109)) (field (ref 7))))
-  (type (;111;) (func (param (ref any) (ref 7)) (result (ref any))))
-  (type (;112;) (struct (field (ref 111)) (field (ref 7))))
+  (type (;97;) (struct (field (ref any)) (field (ref 68))))
+  (type (;98;) (func (param (ref any) (ref 7)) (result (ref any))))
+  (type (;99;) (struct (field (ref 98)) (field (ref 7))))
+  (type (;100;) (func (param (ref any) (ref 7)) (result (ref any))))
+  (type (;101;) (struct (field (ref 100)) (field (ref 7))))
+  (type (;102;) (func (param (ref any) (ref 7)) (result (ref any))))
+  (type (;103;) (struct (field (ref 102)) (field (ref 7))))
+  (type (;104;) (func (param (ref any) (ref 7)) (result (ref any))))
+  (type (;105;) (struct (field (ref 104)) (field (ref 7))))
+  (type (;106;) (func (param (ref any) (ref 7)) (result (ref any))))
+  (type (;107;) (struct (field (ref 106)) (field (ref 7))))
+  (type (;108;) (func (param (ref any) (ref 7)) (result (ref any))))
+  (type (;109;) (struct (field (ref 108)) (field (ref 7))))
+  (type (;110;) (func (param (ref any) (ref 7)) (result (ref any))))
+  (type (;111;) (struct (field (ref 110)) (field (ref 7))))
+  (type (;112;) (struct (field (ref 2)) (field (ref 68))))
   (type (;113;) (func (param (ref any) (ref 7)) (result (ref any))))
   (type (;114;) (struct (field (ref 113)) (field (ref 7))))
   (type (;115;) (func (param (ref any) (ref 7)) (result (ref any))))
   (type (;116;) (struct (field (ref 115)) (field (ref 7))))
   (type (;117;) (func (param (ref any) (ref 7)) (result (ref any))))
   (type (;118;) (struct (field (ref 117)) (field (ref 7))))
-  (type (;119;) (func (param (ref any) (ref 7)) (result (ref any))))
-  (type (;120;) (struct (field (ref 119)) (field (ref 7))))
-  (type (;121;) (struct (field (ref any)) (field (ref 78))))
-  (type (;122;) (func (param (ref any) (ref 7)) (result (ref any))))
-  (type (;123;) (struct (field (ref 122)) (field (ref 7))))
-  (type (;124;) (func (param (ref any) (ref 7)) (result (ref any))))
-  (type (;125;) (struct (field (ref 124)) (field (ref 7))))
-  (type (;126;) (func (param (ref any) (ref 7)) (result (ref any))))
-  (type (;127;) (struct (field (ref 126)) (field (ref 7))))
-  (type (;128;) (func (param (ref any) (ref 7)) (result (ref any))))
-  (type (;129;) (struct (field (ref 128)) (field (ref 7))))
-  (type (;130;) (func (param (ref any) (ref 7)) (result (ref any))))
-  (type (;131;) (struct (field (ref 130)) (field (ref 7))))
-  (type (;132;) (func (param (ref any) (ref 7)) (result (ref any))))
-  (type (;133;) (struct (field (ref 132)) (field (ref 7))))
-  (type (;134;) (struct (field (ref 2)) (field (ref 78))))
-  (import "sys" "print_string" (func (;0;) (type 77)))
+  (import "sys" "print_string" (func (;0;) (type 67)))
   (import "sys" "memory" (memory (;0;) 1))
-  (table (;0;) 110 110 funcref)
+  (table (;0;) 113 113 funcref)
   (global (;0;) (mut (ref null 9)) ref.null 9)
   (global (;1;) (mut (ref null 11)) ref.null 11)
   (global (;2;) (mut (ref null 13)) ref.null 13)
@@ -165,41 +149,42 @@
   (global (;25;) (mut (ref null 39)) ref.null 39)
   (global (;26;) (mut (ref null 43)) ref.null 43)
   (global (;27;) (mut (ref null 45)) ref.null 45)
-  (global (;28;) (mut (ref null 51)) ref.null 51)
+  (global (;28;) (mut (ref null 49)) ref.null 49)
   (global (;29;) (mut (ref null 39)) ref.null 39)
-  (global (;30;) (mut (ref null 54)) ref.null 54)
-  (global (;31;) (mut (ref null 51)) ref.null 51)
-  (global (;32;) (mut (ref null 60)) ref.null 60)
-  (global (;33;) (mut (ref null 80)) ref.null 80)
-  (global (;34;) (mut (ref null 82)) ref.null 82)
-  (global (;35;) (mut (ref null 80)) ref.null 80)
-  (global (;36;) (mut (ref null 80)) ref.null 80)
-  (global (;37;) (mut (ref null 86)) ref.null 86)
-  (global (;38;) (mut (ref null 92)) ref.null 92)
-  (global (;39;) (mut (ref null 100)) ref.null 100)
-  (global (;40;) (mut (ref null 104)) ref.null 104)
-  (global (;41;) (mut (ref null 104)) ref.null 104)
-  (global (;42;) (mut (ref null 106)) ref.null 106)
-  (global (;43;) (mut (ref null 104)) ref.null 104)
-  (global (;44;) (mut (ref null 104)) ref.null 104)
-  (global (;45;) (mut (ref null 100)) ref.null 100)
-  (global (;46;) (mut (ref null 100)) ref.null 100)
-  (global (;47;) (mut (ref null 110)) ref.null 110)
-  (global (;48;) (mut (ref null 110)) ref.null 110)
-  (global (;49;) (mut (ref null 112)) ref.null 112)
-  (global (;50;) (mut (ref null 116)) ref.null 116)
-  (global (;51;) (mut (ref null 84)) ref.null 84)
-  (global (;52;) (mut (ref null 123)) ref.null 123)
-  (global (;53;) (mut (ref null 82)) ref.null 82)
-  (global (;54;) (mut (ref null 86)) ref.null 86)
-  (global (;55;) (mut (ref null 92)) ref.null 92)
-  (global (;56;) (mut (ref null 106)) ref.null 106)
-  (global (;57;) (mut (ref null 127)) ref.null 127)
-  (global (;58;) (mut (ref null 131)) ref.null 131)
-  (global (;59;) (mut (ref null 110)) ref.null 110)
-  (global (;60;) (mut (ref null 133)) ref.null 133)
-  (start 109)
-  (elem (;0;) (i32.const 0) func 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 0 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95 96 97 98 99 100 101 102 103 104 105 106 107 108 109)
+  (global (;30;) (mut (ref null 52)) ref.null 52)
+  (global (;31;) (mut (ref null 49)) ref.null 49)
+  (global (;32;) (mut (ref null 56)) ref.null 56)
+  (global (;33;) (mut (ref null 70)) ref.null 70)
+  (global (;34;) (mut (ref null 72)) ref.null 72)
+  (global (;35;) (mut (ref null 70)) ref.null 70)
+  (global (;36;) (mut (ref null 70)) ref.null 70)
+  (global (;37;) (mut (ref null 76)) ref.null 76)
+  (global (;38;) (mut (ref null 80)) ref.null 80)
+  (global (;39;) (mut (ref null 84)) ref.null 84)
+  (global (;40;) (mut (ref null 86)) ref.null 86)
+  (global (;41;) (mut (ref null 86)) ref.null 86)
+  (global (;42;) (mut (ref null 88)) ref.null 88)
+  (global (;43;) (mut (ref null 86)) ref.null 86)
+  (global (;44;) (mut (ref null 86)) ref.null 86)
+  (global (;45;) (mut (ref null 84)) ref.null 84)
+  (global (;46;) (mut (ref null 84)) ref.null 84)
+  (global (;47;) (mut (ref null 90)) ref.null 90)
+  (global (;48;) (mut (ref null 90)) ref.null 90)
+  (global (;49;) (mut (ref null 92)) ref.null 92)
+  (global (;50;) (mut (ref null 96)) ref.null 96)
+  (global (;51;) (mut (ref null 74)) ref.null 74)
+  (global (;52;) (mut (ref null 99)) ref.null 99)
+  (global (;53;) (mut (ref null 72)) ref.null 72)
+  (global (;54;) (mut (ref null 76)) ref.null 76)
+  (global (;55;) (mut (ref null 80)) ref.null 80)
+  (global (;56;) (mut (ref null 88)) ref.null 88)
+  (global (;57;) (mut (ref null 105)) ref.null 105)
+  (global (;58;) (mut (ref null 109)) ref.null 109)
+  (global (;59;) (mut (ref null 90)) ref.null 90)
+  (global (;60;) (mut (ref null 111)) ref.null 111)
+  (global (;61;) (mut (ref null 114)) ref.null 114)
+  (start 112)
+  (elem (;0;) (i32.const 0) func 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 0 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95 96 97 98 99 100 101 102 103 104 105 106 107 108 109 110 111 112)
   (func (;1;) (type 8) (param (ref any) (ref 7)) (result (ref any))
     (local (ref 2))
     local.get 0
@@ -1684,7 +1669,7 @@
       unreachable
     end
   )
-  (func (;52;) (type 50) (param (ref any) (ref 7)) (result (ref any))
+  (func (;52;) (type 48) (param (ref any) (ref 7)) (result (ref any))
     (local (ref 5))
     local.get 0
     ref.cast (ref 5)
@@ -1699,31 +1684,31 @@
     global.set 27
     ref.func 52
     array.new_fixed 7 0
-    struct.new 51
+    struct.new 49
     global.set 28
   )
-  (func (;54;) (type 53) (param (ref any) (ref 7)) (result (ref any))
-    (local (ref 52))
+  (func (;54;) (type 51) (param (ref any) (ref 7)) (result (ref any))
+    (local (ref 50))
     local.get 0
-    ref.cast (ref 52)
+    ref.cast (ref 50)
     local.set 2
     local.get 2
-    struct.get 52 0
+    struct.get 50 0
     struct.get 2 0
     local.get 2
-    struct.get 52 1
+    struct.get 50 1
     struct.get 2 0
     call 0
     struct.new 1
   )
-  (func (;55;) (type 50) (param (ref any) (ref 7)) (result (ref any))
-    (local (ref 5) (ref 47) (ref 56) (ref 41) (ref 43) (ref 43) (ref 41) (ref 56) (ref 54) (ref 35) (ref 35) (ref 54) (ref 47))
+  (func (;55;) (type 48) (param (ref any) (ref 7)) (result (ref any))
+    (local (ref 5) (ref 47) (ref 54) (ref 41) (ref 43) (ref 43) (ref 41) (ref 54) (ref 52) (ref 35) (ref 35) (ref 52) (ref 47))
     local.get 0
     ref.cast (ref 5)
     local.set 2
     global.get 4
     ref.as_non_null
-    ref.cast (ref 56)
+    ref.cast (ref 54)
     local.set 4
     global.get 26
     ref.as_non_null
@@ -1750,15 +1735,15 @@
     ref.cast (ref 1)
     local.get 4
     local.tee 9
-    struct.get 56 1
+    struct.get 54 1
     local.get 9
-    struct.get 56 0
-    call_ref 55
+    struct.get 54 0
+    call_ref 53
     ref.cast (ref 47)
     local.set 3
     global.get 30
     ref.as_non_null
-    ref.cast (ref 54)
+    ref.cast (ref 52)
     local.set 10
     i64.const 0
     struct.new 2
@@ -1775,13 +1760,13 @@
     struct.get 35 0
     call_ref 34
     ref.cast (ref 2)
-    struct.new 52
+    struct.new 50
     local.get 10
     local.tee 13
-    struct.get 54 1
+    struct.get 52 1
     local.get 13
-    struct.get 54 0
-    call_ref 53
+    struct.get 52 0
+    call_ref 51
     ref.cast (ref 1)
     local.get 3
     local.tee 14
@@ -1791,7 +1776,7 @@
     call_ref 46
     ref.cast (ref 1)
   )
-  (func (;56;) (type 59) (param (ref any) (ref 7)) (result (ref any))
+  (func (;56;) (type 55) (param (ref any) (ref 7)) (result (ref any))
     (local (ref 2) (ref 2) (ref 29) (ref 31) (ref 29) (ref 29) (ref 31) (ref 29) (ref 29) (ref 31) (ref 29) (ref 29) (ref 31) (ref 29) (ref 29) (ref 31) (ref 29) (ref 29) (ref 31) (ref 29) (ref 29) (ref 31) (ref 29) (ref 29) (ref 31) (ref 29) (ref 29) (ref 31) (ref 29) (ref 29) (ref 31) (ref 29) (ref 2))
     local.get 0
     ref.cast (ref 2)
@@ -2090,14 +2075,14 @@
       unreachable
     end
   )
-  (func (;57;) (type 59) (param (ref any) (ref 7)) (result (ref any))
-    (local (ref 2) (ref 60) (ref 2) (ref 29) (ref 31) (ref 29) (ref 2) (ref 62) (ref 64) (ref 72) (ref 74) (ref 9) (ref 23) (ref 23) (ref 9) (ref 74) (ref 72) (ref 64) (ref 76) (ref 9) (ref 23) (ref 23) (ref 9) (ref 76) (ref any) (ref 39) (ref 39) (ref 62))
+  (func (;57;) (type 55) (param (ref any) (ref 7)) (result (ref any))
+    (local (ref 2) (ref 56) (ref 2) (ref 29) (ref 31) (ref 29) (ref 2) (ref 58) (ref 60) (ref 62) (ref 64) (ref 9) (ref 23) (ref 23) (ref 9) (ref 64) (ref 62) (ref 60) (ref 66) (ref 9) (ref 23) (ref 23) (ref 9) (ref 66) (ref any) (ref 39) (ref 39) (ref 58))
     local.get 0
     ref.cast (ref 2)
     local.set 2
     ref.func 56
     array.new_fixed 7 0
-    struct.new 60
+    struct.new 56
     local.set 3
     local.get 2
     ref.cast (ref 2)
@@ -2135,11 +2120,11 @@
         local.set 8
         global.get 3
         ref.as_non_null
-        ref.cast (ref 64)
+        ref.cast (ref 60)
         local.set 10
         global.get 3
         ref.as_non_null
-        ref.cast (ref 74)
+        ref.cast (ref 64)
         local.set 12
         global.get 9
         ref.as_non_null
@@ -2166,32 +2151,32 @@
         ref.cast (ref 2)
         local.get 12
         local.tee 17
-        struct.get 74 1
-        local.get 17
-        struct.get 74 0
-        call_ref 73
-        ref.cast (ref 72)
-        local.set 11
-        local.get 3
-        ref.cast (ref 60)
-        local.get 11
-        local.tee 18
-        struct.get 72 1
-        local.get 18
-        struct.get 72 0
-        call_ref 71
-        ref.cast (ref 5)
-        local.get 10
-        local.tee 19
         struct.get 64 1
-        local.get 19
+        local.get 17
         struct.get 64 0
         call_ref 63
         ref.cast (ref 62)
+        local.set 11
+        local.get 3
+        ref.cast (ref 56)
+        local.get 11
+        local.tee 18
+        struct.get 62 1
+        local.get 18
+        struct.get 62 0
+        call_ref 61
+        ref.cast (ref 5)
+        local.get 10
+        local.tee 19
+        struct.get 60 1
+        local.get 19
+        struct.get 60 0
+        call_ref 59
+        ref.cast (ref 58)
         local.set 9
         global.get 32
         ref.as_non_null
-        ref.cast (ref 76)
+        ref.cast (ref 66)
         local.set 20
         global.get 8
         ref.as_non_null
@@ -2218,10 +2203,10 @@
         ref.cast (ref 2)
         local.get 20
         local.tee 25
-        struct.get 76 1
+        struct.get 66 1
         local.get 25
-        struct.get 76 0
-        call_ref 75
+        struct.get 66 0
+        call_ref 65
         local.set 26
         global.get 25
         ref.as_non_null
@@ -2238,10 +2223,10 @@
         ref.cast (ref 37)
         local.get 9
         local.tee 29
-        struct.get 62 1
+        struct.get 58 1
         local.get 29
-        struct.get 62 0
-        call_ref 61
+        struct.get 58 0
+        call_ref 57
         ref.cast (ref 5)
         br 1 (;@1;)
       end
@@ -2256,79 +2241,79 @@
     global.set 29
     ref.func 54
     array.new_fixed 7 0
-    struct.new 54
+    struct.new 52
     global.set 30
     ref.func 55
     array.new_fixed 7 0
-    struct.new 51
+    struct.new 49
     global.set 31
     ref.func 57
     array.new_fixed 7 0
-    struct.new 60
+    struct.new 56
     global.set 32
   )
-  (func (;59;) (type 79) (param (ref any) (ref 7)) (result (ref any))
+  (func (;59;) (type 69) (param (ref any) (ref 7)) (result (ref any))
     (local (ref any))
     local.get 0
     nop
     local.set 2
     i32.const 0
     local.get 2
-    struct.new 78
+    struct.new 68
   )
-  (func (;60;) (type 81) (param (ref any) (ref 7)) (result (ref any))
+  (func (;60;) (type 71) (param (ref any) (ref 7)) (result (ref any))
     (local (ref 1))
     local.get 0
     ref.cast (ref 1)
     local.set 2
     i32.const 1
     local.get 2
-    struct.new 78
+    struct.new 68
   )
   (func (;61;) (type 0)
     (local (ref any) (ref any))
     ref.func 59
     array.new_fixed 7 0
-    struct.new 80
+    struct.new 70
     global.set 33
     ref.func 60
     array.new_fixed 7 0
-    struct.new 82
+    struct.new 72
     global.set 34
   )
-  (func (;62;) (type 79) (param (ref any) (ref 7)) (result (ref any))
+  (func (;62;) (type 69) (param (ref any) (ref 7)) (result (ref any))
     (local (ref any))
     local.get 0
     nop
     local.set 2
     i32.const 0
     local.get 2
-    struct.new 78
+    struct.new 68
   )
-  (func (;63;) (type 79) (param (ref any) (ref 7)) (result (ref any))
+  (func (;63;) (type 69) (param (ref any) (ref 7)) (result (ref any))
     (local (ref any))
     local.get 0
     nop
     local.set 2
     i32.const 1
     local.get 2
-    struct.new 78
+    struct.new 68
   )
   (func (;64;) (type 0)
     (local (ref any) (ref any))
     ref.func 62
     array.new_fixed 7 0
-    struct.new 80
+    struct.new 70
     global.set 35
     ref.func 63
     array.new_fixed 7 0
-    struct.new 80
+    struct.new 70
     global.set 36
   )
-  (func (;65;) (type 83) (param (ref any) (ref 7)) (result (ref any))
-    (local (ref 78) (ref 15) (ref 78) (ref 78) (ref any) (ref 80) (ref 15) (ref 15) (ref 80) (ref 78) (ref 82) (ref 82))
+  (func (;65;) (type 73) (param (ref any) (ref 7)) (result (ref any))
+    (local (ref 68) (ref 15) (ref 68) (ref 68) (ref any) (ref 70) (ref 15) (ref 15) (ref 70) (ref 68) (ref 72) (ref 72))
     local.get 0
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 2
     local.get 1
     i32.const 0
@@ -2336,23 +2321,23 @@
     ref.cast (ref 15)
     local.set 3
     local.get 2
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 4
-    block (result (ref 78)) ;; label = @1
+    block (result (ref 68)) ;; label = @1
       block ;; label = @2
         local.get 4
         local.tee 5
-        struct.get 78 0
+        struct.get 68 0
         i32.const 0
         i32.ne
         br_if 0 (;@2;)
         local.get 5
-        struct.get 78 1
-        ref.cast (ref 86)
+        struct.get 68 1
+        nop
         local.set 6
         global.get 33
         ref.as_non_null
-        ref.cast (ref 80)
+        ref.cast (ref 70)
         local.set 7
         local.get 3
         ref.cast (ref 15)
@@ -2366,11 +2351,11 @@
         call_ref 14
         local.get 7
         local.tee 10
-        struct.get 80 1
+        struct.get 70 1
         local.get 10
-        struct.get 80 0
-        call_ref 79
-        ref.cast (ref 78)
+        struct.get 70 0
+        call_ref 69
+        ref.cast (ref 68)
         br 1 (;@1;)
       end
       block ;; label = @2
@@ -2378,22 +2363,22 @@
         local.set 11
         global.get 34
         ref.as_non_null
-        ref.cast (ref 82)
+        ref.cast (ref 72)
         local.set 12
         struct.new 1
         local.get 12
         local.tee 13
-        struct.get 82 1
+        struct.get 72 1
         local.get 13
-        struct.get 82 0
-        call_ref 81
-        ref.cast (ref 78)
+        struct.get 72 0
+        call_ref 71
+        ref.cast (ref 68)
         br 1 (;@1;)
       end
       unreachable
     end
   )
-  (func (;66;) (type 85) (param (ref any) (ref 7)) (result (ref any))
+  (func (;66;) (type 75) (param (ref any) (ref 7)) (result (ref any))
     (local (ref 15))
     local.get 0
     ref.cast (ref 15)
@@ -2401,7 +2386,7 @@
     ref.func 65
     local.get 2
     array.new_fixed 7 1
-    struct.new 84
+    struct.new 74
   )
   (func (;67;) (type 14) (param (ref any) (ref 7)) (result (ref any))
     (local (ref any) (ref 15) (ref 15) (ref 21) (ref 15) (ref 15) (ref 21) (ref 15))
@@ -2443,10 +2428,10 @@
     struct.get 15 0
     call_ref 14
   )
-  (func (;68;) (type 89) (param (ref any) (ref 7)) (result (ref any))
-    (local (ref 78) (ref 15) (ref 47) (ref 94) (ref 84) (ref 86) (ref 86) (ref 84) (ref 94) (ref 47))
+  (func (;68;) (type 77) (param (ref any) (ref 7)) (result (ref any))
+    (local (ref 68) (ref 15) (ref 47) (ref 82) (ref 74) (ref 76) (ref 76) (ref 74) (ref 82) (ref 47))
     local.get 0
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 2
     local.get 1
     i32.const 0
@@ -2455,11 +2440,11 @@
     local.set 3
     global.get 4
     ref.as_non_null
-    ref.cast (ref 94)
+    ref.cast (ref 82)
     local.set 5
     global.get 37
     ref.as_non_null
-    ref.cast (ref 86)
+    ref.cast (ref 76)
     local.set 7
     ref.func 67
     local.get 3
@@ -2467,27 +2452,27 @@
     struct.new 15
     local.get 7
     local.tee 8
-    struct.get 86 1
+    struct.get 76 1
     local.get 8
-    struct.get 86 0
-    call_ref 85
-    ref.cast (ref 84)
+    struct.get 76 0
+    call_ref 75
+    ref.cast (ref 74)
     local.set 6
     local.get 2
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.get 6
     local.tee 9
-    struct.get 84 1
+    struct.get 74 1
     local.get 9
-    struct.get 84 0
-    call_ref 83
-    ref.cast (ref 78)
+    struct.get 74 0
+    call_ref 73
+    ref.cast (ref 68)
     local.get 5
     local.tee 10
-    struct.get 94 1
+    struct.get 82 1
     local.get 10
-    struct.get 94 0
-    call_ref 93
+    struct.get 82 0
+    call_ref 81
     ref.cast (ref 47)
     local.set 4
     struct.new 1
@@ -2499,7 +2484,7 @@
     call_ref 46
     ref.cast (ref 1)
   )
-  (func (;69;) (type 91) (param (ref any) (ref 7)) (result (ref any))
+  (func (;69;) (type 79) (param (ref any) (ref 7)) (result (ref any))
     (local (ref 15))
     local.get 0
     ref.cast (ref 15)
@@ -2507,27 +2492,27 @@
     ref.func 68
     local.get 2
     array.new_fixed 7 1
-    struct.new 90
+    struct.new 78
   )
-  (func (;70;) (type 99) (param (ref any) (ref 7)) (result (ref any))
-    (local (ref 78) (ref 78) (ref 78) (ref any) (ref 78) (ref 33) (ref 33))
+  (func (;70;) (type 83) (param (ref any) (ref 7)) (result (ref any))
+    (local (ref 68) (ref 68) (ref 68) (ref any) (ref 68) (ref 33) (ref 33))
     local.get 0
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 2
     local.get 2
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 3
     block (result (ref any)) ;; label = @1
       block ;; label = @2
         local.get 3
         local.tee 4
-        struct.get 78 0
+        struct.get 68 0
         i32.const 0
         i32.ne
         br_if 0 (;@2;)
         local.get 4
-        struct.get 78 1
-        ref.cast (ref 100)
+        struct.get 68 1
+        nop
         local.set 5
         local.get 5
         br 1 (;@1;)
@@ -2551,25 +2536,25 @@
       unreachable
     end
   )
-  (func (;71;) (type 103) (param (ref any) (ref 7)) (result (ref any))
-    (local (ref 78) (ref 78) (ref 78) (ref any) (ref 78))
+  (func (;71;) (type 85) (param (ref any) (ref 7)) (result (ref any))
+    (local (ref 68) (ref 68) (ref 68) (ref any) (ref 68))
     local.get 0
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 2
     local.get 2
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 3
     block (result (ref 4)) ;; label = @1
       block ;; label = @2
         local.get 3
         local.tee 4
-        struct.get 78 0
+        struct.get 68 0
         i32.const 0
         i32.ne
         br_if 0 (;@2;)
         local.get 4
-        struct.get 78 1
-        ref.cast (ref 104)
+        struct.get 68 1
+        nop
         local.set 5
         i32.const 1
         struct.new 4
@@ -2585,10 +2570,10 @@
       unreachable
     end
   )
-  (func (;72;) (type 103) (param (ref any) (ref 7)) (result (ref any))
-    (local (ref 78) (ref 13) (ref 104) (ref 104) (ref 13))
+  (func (;72;) (type 85) (param (ref any) (ref 7)) (result (ref any))
+    (local (ref 68) (ref 13) (ref 86) (ref 86) (ref 13))
     local.get 0
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 2
     global.get 2
     ref.as_non_null
@@ -2596,16 +2581,16 @@
     local.set 3
     global.get 40
     ref.as_non_null
-    ref.cast (ref 104)
+    ref.cast (ref 86)
     local.set 4
     local.get 2
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.get 4
     local.tee 5
-    struct.get 104 1
+    struct.get 86 1
     local.get 5
-    struct.get 104 0
-    call_ref 103
+    struct.get 86 0
+    call_ref 85
     ref.cast (ref 4)
     local.get 3
     local.tee 6
@@ -2615,73 +2600,73 @@
     call_ref 12
     ref.cast (ref 4)
   )
-  (func (;73;) (type 83) (param (ref any) (ref 7)) (result (ref any))
-    (local (ref 78) (ref any) (ref 78) (ref 78) (ref 80) (ref 80) (ref 78) (ref any) (ref 80) (ref 80))
+  (func (;73;) (type 73) (param (ref any) (ref 7)) (result (ref any))
+    (local (ref 68) (ref any) (ref 68) (ref 68) (ref 70) (ref 70) (ref 68) (ref any) (ref 70) (ref 70))
     local.get 0
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 2
     local.get 1
     i32.const 0
     array.get 7
     local.set 3
     local.get 2
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 4
-    block (result (ref 78)) ;; label = @1
+    block (result (ref 68)) ;; label = @1
       block ;; label = @2
         local.get 4
         local.tee 5
-        struct.get 78 0
+        struct.get 68 0
         i32.const 1
         i32.ne
         br_if 0 (;@2;)
         local.get 5
-        struct.get 78 1
+        struct.get 68 1
         ref.cast (ref 1)
         drop
         global.get 36
         ref.as_non_null
-        ref.cast (ref 80)
+        ref.cast (ref 70)
         local.set 6
         local.get 3
         local.get 6
         local.tee 7
-        struct.get 80 1
+        struct.get 70 1
         local.get 7
-        struct.get 80 0
-        call_ref 79
-        ref.cast (ref 78)
+        struct.get 70 0
+        call_ref 69
+        ref.cast (ref 68)
         br 1 (;@1;)
       end
       block ;; label = @2
         local.get 4
         local.tee 8
-        struct.get 78 0
+        struct.get 68 0
         i32.const 0
         i32.ne
         br_if 0 (;@2;)
         local.get 8
-        struct.get 78 1
-        ref.cast (ref 106)
+        struct.get 68 1
+        nop
         local.set 9
         global.get 35
         ref.as_non_null
-        ref.cast (ref 80)
+        ref.cast (ref 70)
         local.set 10
         local.get 9
         local.get 10
         local.tee 11
-        struct.get 80 1
+        struct.get 70 1
         local.get 11
-        struct.get 80 0
-        call_ref 79
-        ref.cast (ref 78)
+        struct.get 70 0
+        call_ref 69
+        ref.cast (ref 68)
         br 1 (;@1;)
       end
       unreachable
     end
   )
-  (func (;74;) (type 105) (param (ref any) (ref 7)) (result (ref any))
+  (func (;74;) (type 87) (param (ref any) (ref 7)) (result (ref any))
     (local (ref any))
     local.get 0
     nop
@@ -2689,54 +2674,54 @@
     ref.func 73
     local.get 2
     array.new_fixed 7 1
-    struct.new 84
+    struct.new 74
   )
   (func (;75;) (type 0)
     (local (ref any) (ref any))
     ref.func 66
     array.new_fixed 7 0
-    struct.new 86
+    struct.new 76
     global.set 37
     ref.func 69
     array.new_fixed 7 0
-    struct.new 92
+    struct.new 80
     global.set 38
     ref.func 70
     array.new_fixed 7 0
-    struct.new 100
+    struct.new 84
     global.set 39
     ref.func 71
     array.new_fixed 7 0
-    struct.new 104
+    struct.new 86
     global.set 40
     ref.func 72
     array.new_fixed 7 0
-    struct.new 104
+    struct.new 86
     global.set 41
     ref.func 74
     array.new_fixed 7 0
-    struct.new 106
+    struct.new 88
     global.set 42
   )
-  (func (;76;) (type 103) (param (ref any) (ref 7)) (result (ref any))
-    (local (ref 78) (ref 78) (ref 78) (ref any) (ref 78))
+  (func (;76;) (type 85) (param (ref any) (ref 7)) (result (ref any))
+    (local (ref 68) (ref 68) (ref 68) (ref any) (ref 68))
     local.get 0
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 2
     local.get 2
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 3
     block (result (ref 4)) ;; label = @1
       block ;; label = @2
         local.get 3
         local.tee 4
-        struct.get 78 0
+        struct.get 68 0
         i32.const 0
         i32.ne
         br_if 0 (;@2;)
         local.get 4
-        struct.get 78 1
-        ref.cast (ref 104)
+        struct.get 68 1
+        nop
         local.set 5
         i32.const 1
         struct.new 4
@@ -2752,25 +2737,25 @@
       unreachable
     end
   )
-  (func (;77;) (type 103) (param (ref any) (ref 7)) (result (ref any))
-    (local (ref 78) (ref 78) (ref 78) (ref any) (ref 78))
+  (func (;77;) (type 85) (param (ref any) (ref 7)) (result (ref any))
+    (local (ref 68) (ref 68) (ref 68) (ref any) (ref 68))
     local.get 0
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 2
     local.get 2
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 3
     block (result (ref 4)) ;; label = @1
       block ;; label = @2
         local.get 3
         local.tee 4
-        struct.get 78 0
+        struct.get 68 0
         i32.const 1
         i32.ne
         br_if 0 (;@2;)
         local.get 4
-        struct.get 78 1
-        ref.cast (ref 78)
+        struct.get 68 1
+        nop
         local.set 5
         i32.const 1
         struct.new 4
@@ -2786,25 +2771,25 @@
       unreachable
     end
   )
-  (func (;78;) (type 99) (param (ref any) (ref 7)) (result (ref any))
-    (local (ref 78) (ref 78) (ref 78) (ref any) (ref 78) (ref 33) (ref 33))
+  (func (;78;) (type 83) (param (ref any) (ref 7)) (result (ref any))
+    (local (ref 68) (ref 68) (ref 68) (ref any) (ref 68) (ref 33) (ref 33))
     local.get 0
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 2
     local.get 2
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 3
     block (result (ref any)) ;; label = @1
       block ;; label = @2
         local.get 3
         local.tee 4
-        struct.get 78 0
+        struct.get 68 0
         i32.const 0
         i32.ne
         br_if 0 (;@2;)
         local.get 4
-        struct.get 78 1
-        ref.cast (ref 100)
+        struct.get 68 1
+        nop
         local.set 5
         local.get 5
         br 1 (;@1;)
@@ -2828,25 +2813,25 @@
       unreachable
     end
   )
-  (func (;79;) (type 99) (param (ref any) (ref 7)) (result (ref any))
-    (local (ref 78) (ref 78) (ref 78) (ref any) (ref 78) (ref 33) (ref 33))
+  (func (;79;) (type 83) (param (ref any) (ref 7)) (result (ref any))
+    (local (ref 68) (ref 68) (ref 68) (ref any) (ref 68) (ref 33) (ref 33))
     local.get 0
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 2
     local.get 2
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 3
     block (result (ref any)) ;; label = @1
       block ;; label = @2
         local.get 3
         local.tee 4
-        struct.get 78 0
+        struct.get 68 0
         i32.const 1
         i32.ne
         br_if 0 (;@2;)
         local.get 4
-        struct.get 78 1
-        ref.cast (ref 78)
+        struct.get 68 1
+        nop
         local.set 5
         local.get 5
         br 1 (;@1;)
@@ -2870,156 +2855,156 @@
       unreachable
     end
   )
-  (func (;80;) (type 83) (param (ref any) (ref 7)) (result (ref any))
-    (local (ref 78) (ref 78) (ref 78) (ref 78) (ref 78) (ref any) (ref 78) (ref any))
+  (func (;80;) (type 73) (param (ref any) (ref 7)) (result (ref any))
+    (local (ref 68) (ref 68) (ref 68) (ref 68) (ref 68) (ref any) (ref 68) (ref any))
     local.get 0
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 2
     local.get 1
     i32.const 0
     array.get 7
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 3
     local.get 1
     i32.const 1
     array.get 7
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 4
     local.get 4
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 5
-    block (result (ref 78)) ;; label = @1
+    block (result (ref 68)) ;; label = @1
       block ;; label = @2
         local.get 5
         local.tee 6
-        struct.get 78 0
+        struct.get 68 0
         i32.const 0
         i32.ne
         br_if 0 (;@2;)
         local.get 6
-        struct.get 78 1
-        ref.cast (ref 110)
+        struct.get 68 1
+        nop
         local.set 7
         local.get 2
-        ref.cast (ref 78)
+        ref.cast (ref 68)
         br 1 (;@1;)
       end
       block ;; label = @2
         local.get 5
         local.tee 8
-        struct.get 78 0
+        struct.get 68 0
         i32.const 1
         i32.ne
         br_if 0 (;@2;)
         local.get 8
-        struct.get 78 1
-        ref.cast (ref 78)
+        struct.get 68 1
+        nop
         local.set 9
         local.get 4
-        ref.cast (ref 78)
+        ref.cast (ref 68)
         br 1 (;@1;)
       end
       unreachable
     end
   )
-  (func (;81;) (type 109) (param (ref any) (ref 7)) (result (ref any))
-    (local (ref 78))
+  (func (;81;) (type 89) (param (ref any) (ref 7)) (result (ref any))
+    (local (ref 68))
     local.get 0
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 2
     ref.func 80
     local.get 2
     local.get 2
     array.new_fixed 7 2
-    struct.new 84
+    struct.new 74
   )
-  (func (;82;) (type 83) (param (ref any) (ref 7)) (result (ref any))
-    (local (ref 78) (ref 78) (ref 78) (ref 78) (ref 78) (ref any) (ref 78) (ref any))
+  (func (;82;) (type 73) (param (ref any) (ref 7)) (result (ref any))
+    (local (ref 68) (ref 68) (ref 68) (ref 68) (ref 68) (ref any) (ref 68) (ref any))
     local.get 0
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 2
     local.get 1
     i32.const 0
     array.get 7
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 3
     local.get 1
     i32.const 1
     array.get 7
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 4
     local.get 4
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 5
-    block (result (ref 78)) ;; label = @1
+    block (result (ref 68)) ;; label = @1
       block ;; label = @2
         local.get 5
         local.tee 6
-        struct.get 78 0
+        struct.get 68 0
         i32.const 0
         i32.ne
         br_if 0 (;@2;)
         local.get 6
-        struct.get 78 1
-        ref.cast (ref 110)
+        struct.get 68 1
+        nop
         local.set 7
         local.get 4
-        ref.cast (ref 78)
+        ref.cast (ref 68)
         br 1 (;@1;)
       end
       block ;; label = @2
         local.get 5
         local.tee 8
-        struct.get 78 0
+        struct.get 68 0
         i32.const 1
         i32.ne
         br_if 0 (;@2;)
         local.get 8
-        struct.get 78 1
-        ref.cast (ref 78)
+        struct.get 68 1
+        nop
         local.set 9
         local.get 2
-        ref.cast (ref 78)
+        ref.cast (ref 68)
         br 1 (;@1;)
       end
       unreachable
     end
   )
-  (func (;83;) (type 109) (param (ref any) (ref 7)) (result (ref any))
-    (local (ref 78))
+  (func (;83;) (type 89) (param (ref any) (ref 7)) (result (ref any))
+    (local (ref 68))
     local.get 0
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 2
     ref.func 82
     local.get 2
     local.get 2
     array.new_fixed 7 2
-    struct.new 84
+    struct.new 74
   )
   (func (;84;) (type 14) (param (ref any) (ref 7)) (result (ref any))
-    (local (ref any) (ref 78) (ref 78) (ref 78) (ref any) (ref 78) (ref any))
+    (local (ref any) (ref 68) (ref 68) (ref 68) (ref any) (ref 68) (ref any))
     local.get 0
     nop
     local.set 2
     local.get 1
     i32.const 0
     array.get 7
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 3
     local.get 3
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 4
     block (result (ref any)) ;; label = @1
       block ;; label = @2
         local.get 4
         local.tee 5
-        struct.get 78 0
+        struct.get 68 0
         i32.const 0
         i32.ne
         br_if 0 (;@2;)
         local.get 5
-        struct.get 78 1
-        ref.cast (ref 112)
+        struct.get 68 1
+        nop
         local.set 6
         local.get 6
         br 1 (;@1;)
@@ -3027,13 +3012,13 @@
       block ;; label = @2
         local.get 4
         local.tee 7
-        struct.get 78 0
+        struct.get 68 0
         i32.const 1
         i32.ne
         br_if 0 (;@2;)
         local.get 7
-        struct.get 78 1
-        ref.cast (ref 78)
+        struct.get 68 1
+        nop
         local.set 8
         local.get 2
         br 1 (;@1;)
@@ -3041,49 +3026,49 @@
       unreachable
     end
   )
-  (func (;85;) (type 111) (param (ref any) (ref 7)) (result (ref any))
-    (local (ref 78))
+  (func (;85;) (type 91) (param (ref any) (ref 7)) (result (ref any))
+    (local (ref 68))
     local.get 0
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 2
     ref.func 84
     local.get 2
     array.new_fixed 7 1
     struct.new 15
   )
-  (func (;86;) (type 113) (param (ref any) (ref 7)) (result (ref any))
-    (local (ref 15) (ref 78) (ref 78) (ref 78) (ref 78) (ref any) (ref 80) (ref 15) (ref 15) (ref 80) (ref 78) (ref any))
+  (func (;86;) (type 93) (param (ref any) (ref 7)) (result (ref any))
+    (local (ref 15) (ref 68) (ref 68) (ref 68) (ref 68) (ref any) (ref 70) (ref 15) (ref 15) (ref 70) (ref 68) (ref any))
     local.get 0
     ref.cast (ref 15)
     local.set 2
     local.get 1
     i32.const 0
     array.get 7
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 3
     local.get 1
     i32.const 1
     array.get 7
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 4
     local.get 4
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 5
-    block (result (ref 78)) ;; label = @1
+    block (result (ref 68)) ;; label = @1
       block ;; label = @2
         local.get 5
         local.tee 6
-        struct.get 78 0
+        struct.get 68 0
         i32.const 0
         i32.ne
         br_if 0 (;@2;)
         local.get 6
-        struct.get 78 1
-        ref.cast (ref 116)
+        struct.get 68 1
+        nop
         local.set 7
         global.get 35
         ref.as_non_null
-        ref.cast (ref 80)
+        ref.cast (ref 70)
         local.set 8
         local.get 2
         ref.cast (ref 15)
@@ -3097,74 +3082,74 @@
         call_ref 14
         local.get 8
         local.tee 11
-        struct.get 80 1
+        struct.get 70 1
         local.get 11
-        struct.get 80 0
-        call_ref 79
-        ref.cast (ref 78)
+        struct.get 70 0
+        call_ref 69
+        ref.cast (ref 68)
         br 1 (;@1;)
       end
       block ;; label = @2
         local.get 5
         local.tee 12
-        struct.get 78 0
+        struct.get 68 0
         i32.const 1
         i32.ne
         br_if 0 (;@2;)
         local.get 12
-        struct.get 78 1
-        ref.cast (ref 78)
+        struct.get 68 1
+        nop
         local.set 13
         local.get 4
-        ref.cast (ref 78)
+        ref.cast (ref 68)
         br 1 (;@1;)
       end
       unreachable
     end
   )
-  (func (;87;) (type 115) (param (ref any) (ref 7)) (result (ref any))
-    (local (ref 78))
+  (func (;87;) (type 95) (param (ref any) (ref 7)) (result (ref any))
+    (local (ref 68))
     local.get 0
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 2
     ref.func 86
     local.get 2
     local.get 2
     array.new_fixed 7 2
-    struct.new 114
+    struct.new 94
   )
-  (func (;88;) (type 83) (param (ref any) (ref 7)) (result (ref any))
-    (local (ref 78) (ref 78) (ref 78) (ref any) (ref 80) (ref 80) (ref 78) (ref 82) (ref 82))
+  (func (;88;) (type 73) (param (ref any) (ref 7)) (result (ref any))
+    (local (ref 68) (ref 68) (ref 68) (ref any) (ref 70) (ref 70) (ref 68) (ref 72) (ref 72))
     local.get 0
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 2
     local.get 2
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 3
-    block (result (ref 78)) ;; label = @1
+    block (result (ref 68)) ;; label = @1
       block ;; label = @2
         local.get 3
         local.tee 4
-        struct.get 78 0
+        struct.get 68 0
         i32.const 0
         i32.ne
         br_if 0 (;@2;)
         local.get 4
-        struct.get 78 1
-        ref.cast (ref 84)
+        struct.get 68 1
+        nop
         local.set 5
         global.get 33
         ref.as_non_null
-        ref.cast (ref 80)
+        ref.cast (ref 70)
         local.set 6
         local.get 5
         local.get 6
         local.tee 7
-        struct.get 80 1
+        struct.get 70 1
         local.get 7
-        struct.get 80 0
-        call_ref 79
-        ref.cast (ref 78)
+        struct.get 70 0
+        call_ref 69
+        ref.cast (ref 68)
         br 1 (;@1;)
       end
       block ;; label = @2
@@ -3172,16 +3157,16 @@
         local.set 8
         global.get 34
         ref.as_non_null
-        ref.cast (ref 82)
+        ref.cast (ref 72)
         local.set 9
         struct.new 1
         local.get 9
         local.tee 10
-        struct.get 82 1
+        struct.get 72 1
         local.get 10
-        struct.get 82 0
-        call_ref 81
-        ref.cast (ref 78)
+        struct.get 72 0
+        call_ref 71
+        ref.cast (ref 68)
         br 1 (;@1;)
       end
       unreachable
@@ -3191,63 +3176,63 @@
     (local (ref any) (ref any))
     ref.func 76
     array.new_fixed 7 0
-    struct.new 104
+    struct.new 86
     global.set 43
     ref.func 77
     array.new_fixed 7 0
-    struct.new 104
+    struct.new 86
     global.set 44
     ref.func 78
     array.new_fixed 7 0
-    struct.new 100
+    struct.new 84
     global.set 45
     ref.func 79
     array.new_fixed 7 0
-    struct.new 100
+    struct.new 84
     global.set 46
     ref.func 81
     array.new_fixed 7 0
-    struct.new 110
+    struct.new 90
     global.set 47
     ref.func 83
     array.new_fixed 7 0
-    struct.new 110
+    struct.new 90
     global.set 48
     ref.func 85
     array.new_fixed 7 0
-    struct.new 112
+    struct.new 92
     global.set 49
     ref.func 87
     array.new_fixed 7 0
-    struct.new 116
+    struct.new 96
     global.set 50
     ref.func 88
     array.new_fixed 7 0
-    struct.new 84
+    struct.new 74
     global.set 51
   )
-  (func (;90;) (type 122) (param (ref any) (ref 7)) (result (ref any))
-    (local (ref 121))
+  (func (;90;) (type 98) (param (ref any) (ref 7)) (result (ref any))
+    (local (ref 97))
     local.get 0
-    ref.cast (ref 121)
+    ref.cast (ref 97)
     local.set 2
     i32.const 0
     local.get 2
-    struct.new 78
+    struct.new 68
   )
-  (func (;91;) (type 81) (param (ref any) (ref 7)) (result (ref any))
+  (func (;91;) (type 71) (param (ref any) (ref 7)) (result (ref any))
     (local (ref 1))
     local.get 0
     ref.cast (ref 1)
     local.set 2
     i32.const 1
     local.get 2
-    struct.new 78
+    struct.new 68
   )
-  (func (;92;) (type 83) (param (ref any) (ref 7)) (result (ref any))
-    (local (ref 78) (ref 15) (ref 15) (ref 78) (ref 78) (ref 121) (ref any) (ref 78) (ref 123) (ref 15) (ref 15) (ref 120) (ref 125) (ref 125) (ref 86) (ref 86) (ref 120) (ref 123) (ref 78) (ref 82) (ref 82))
+  (func (;92;) (type 73) (param (ref any) (ref 7)) (result (ref any))
+    (local (ref 68) (ref 15) (ref 15) (ref 68) (ref 68) (ref 97) (ref any) (ref 68) (ref 99) (ref 15) (ref 15) (ref 101) (ref 103) (ref 103) (ref 76) (ref 76) (ref 101) (ref 99) (ref 68) (ref 72) (ref 72))
     local.get 0
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 2
     local.get 1
     i32.const 0
@@ -3260,29 +3245,29 @@
     ref.cast (ref 15)
     local.set 4
     local.get 2
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 5
-    block (result (ref 78)) ;; label = @1
+    block (result (ref 68)) ;; label = @1
       block ;; label = @2
         local.get 5
         local.tee 6
-        struct.get 78 0
+        struct.get 68 0
         i32.const 0
         i32.ne
         br_if 0 (;@2;)
         local.get 6
-        struct.get 78 1
-        ref.cast (ref 121)
+        struct.get 68 1
+        ref.cast (ref 97)
         local.set 7
         local.get 7
-        struct.get 121 0
+        struct.get 97 0
         local.set 8
         local.get 7
-        struct.get 121 1
+        struct.get 97 1
         local.set 9
         global.get 52
         ref.as_non_null
-        ref.cast (ref 123)
+        ref.cast (ref 99)
         local.set 10
         local.get 4
         ref.cast (ref 15)
@@ -3296,77 +3281,77 @@
         call_ref 14
         global.get 3
         ref.as_non_null
-        ref.cast (ref 125)
+        ref.cast (ref 103)
         local.set 14
         local.get 9
-        ref.cast (ref 78)
+        ref.cast (ref 68)
         local.get 14
         local.tee 15
-        struct.get 125 1
+        struct.get 103 1
         local.get 15
-        struct.get 125 0
-        call_ref 124
-        ref.cast (ref 120)
+        struct.get 103 0
+        call_ref 102
+        ref.cast (ref 101)
         local.set 13
         global.get 54
         ref.as_non_null
-        ref.cast (ref 86)
+        ref.cast (ref 76)
         local.set 16
         local.get 4
         ref.cast (ref 15)
         local.get 16
         local.tee 17
-        struct.get 86 1
+        struct.get 76 1
         local.get 17
-        struct.get 86 0
-        call_ref 85
-        ref.cast (ref 84)
+        struct.get 76 0
+        call_ref 75
+        ref.cast (ref 74)
         local.get 13
         local.tee 18
-        struct.get 120 1
+        struct.get 101 1
         local.get 18
-        struct.get 120 0
-        call_ref 119
-        ref.cast (ref 78)
-        struct.new 121
+        struct.get 101 0
+        call_ref 100
+        ref.cast (ref 68)
+        struct.new 97
         local.get 10
         local.tee 19
-        struct.get 123 1
+        struct.get 99 1
         local.get 19
-        struct.get 123 0
-        call_ref 122
-        ref.cast (ref 78)
+        struct.get 99 0
+        call_ref 98
+        ref.cast (ref 68)
         br 1 (;@1;)
       end
       block ;; label = @2
         local.get 5
         local.tee 20
-        struct.get 78 0
+        struct.get 68 0
         i32.const 1
         i32.ne
         br_if 0 (;@2;)
         local.get 20
-        struct.get 78 1
+        struct.get 68 1
         ref.cast (ref 1)
         drop
         global.get 53
         ref.as_non_null
-        ref.cast (ref 82)
+        ref.cast (ref 72)
         local.set 21
         struct.new 1
         local.get 21
         local.tee 22
-        struct.get 82 1
+        struct.get 72 1
         local.get 22
-        struct.get 82 0
-        call_ref 81
-        ref.cast (ref 78)
+        struct.get 72 0
+        call_ref 71
+        ref.cast (ref 68)
         br 1 (;@1;)
       end
       unreachable
     end
   )
-  (func (;93;) (type 85) (param (ref any) (ref 7)) (result (ref any))
+  (func (;93;) (type 75) (param (ref any) (ref 7)) (result (ref any))
     (local (ref 15))
     local.get 0
     ref.cast (ref 15)
@@ -3375,7 +3360,7 @@
     local.get 2
     local.get 2
     array.new_fixed 7 2
-    struct.new 84
+    struct.new 74
   )
   (func (;94;) (type 14) (param (ref any) (ref 7)) (result (ref any))
     (local (ref any) (ref 15) (ref 15) (ref 21) (ref 15) (ref 15) (ref 21) (ref 15))
@@ -3417,10 +3402,10 @@
     struct.get 15 0
     call_ref 14
   )
-  (func (;95;) (type 89) (param (ref any) (ref 7)) (result (ref any))
-    (local (ref 78) (ref 15) (ref 47) (ref 94) (ref 84) (ref 86) (ref 86) (ref 84) (ref 94) (ref 47))
+  (func (;95;) (type 77) (param (ref any) (ref 7)) (result (ref any))
+    (local (ref 68) (ref 15) (ref 47) (ref 82) (ref 74) (ref 76) (ref 76) (ref 74) (ref 82) (ref 47))
     local.get 0
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 2
     local.get 1
     i32.const 0
@@ -3429,11 +3414,11 @@
     local.set 3
     global.get 4
     ref.as_non_null
-    ref.cast (ref 94)
+    ref.cast (ref 82)
     local.set 5
     global.get 54
     ref.as_non_null
-    ref.cast (ref 86)
+    ref.cast (ref 76)
     local.set 7
     ref.func 94
     local.get 3
@@ -3441,27 +3426,27 @@
     struct.new 15
     local.get 7
     local.tee 8
-    struct.get 86 1
+    struct.get 76 1
     local.get 8
-    struct.get 86 0
-    call_ref 85
-    ref.cast (ref 84)
+    struct.get 76 0
+    call_ref 75
+    ref.cast (ref 74)
     local.set 6
     local.get 2
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.get 6
     local.tee 9
-    struct.get 84 1
+    struct.get 74 1
     local.get 9
-    struct.get 84 0
-    call_ref 83
-    ref.cast (ref 78)
+    struct.get 74 0
+    call_ref 73
+    ref.cast (ref 68)
     local.get 5
     local.tee 10
-    struct.get 94 1
+    struct.get 82 1
     local.get 10
-    struct.get 94 0
-    call_ref 93
+    struct.get 82 0
+    call_ref 81
     ref.cast (ref 47)
     local.set 4
     struct.new 1
@@ -3473,7 +3458,7 @@
     call_ref 46
     ref.cast (ref 1)
   )
-  (func (;96;) (type 91) (param (ref any) (ref 7)) (result (ref any))
+  (func (;96;) (type 79) (param (ref any) (ref 7)) (result (ref any))
     (local (ref 15))
     local.get 0
     ref.cast (ref 15)
@@ -3481,12 +3466,12 @@
     ref.func 95
     local.get 2
     array.new_fixed 7 1
-    struct.new 90
+    struct.new 78
   )
-  (func (;97;) (type 83) (param (ref any) (ref 7)) (result (ref any))
-    (local (ref 78) (ref any) (ref any) (ref 78) (ref 78) (ref 121) (ref any) (ref 78) (ref 123) (ref 84) (ref 106) (ref 106) (ref 84) (ref 123) (ref 78) (ref 123) (ref 82) (ref 82) (ref 123))
+  (func (;97;) (type 73) (param (ref any) (ref 7)) (result (ref any))
+    (local (ref 68) (ref any) (ref any) (ref 68) (ref 68) (ref 97) (ref any) (ref 68) (ref 99) (ref 74) (ref 88) (ref 88) (ref 74) (ref 99) (ref 68) (ref 99) (ref 72) (ref 72) (ref 99))
     local.get 0
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 2
     local.get 1
     i32.const 0
@@ -3497,105 +3482,105 @@
     array.get 7
     local.set 4
     local.get 2
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 5
-    block (result (ref 78)) ;; label = @1
+    block (result (ref 68)) ;; label = @1
       block ;; label = @2
         local.get 5
         local.tee 6
-        struct.get 78 0
+        struct.get 68 0
         i32.const 0
         i32.ne
         br_if 0 (;@2;)
         local.get 6
-        struct.get 78 1
-        ref.cast (ref 121)
+        struct.get 68 1
+        ref.cast (ref 97)
         local.set 7
         local.get 7
-        struct.get 121 0
+        struct.get 97 0
         local.set 8
         local.get 7
-        struct.get 121 1
+        struct.get 97 1
         local.set 9
         global.get 52
         ref.as_non_null
-        ref.cast (ref 123)
+        ref.cast (ref 99)
         local.set 10
         local.get 8
         global.get 56
         ref.as_non_null
-        ref.cast (ref 106)
+        ref.cast (ref 88)
         local.set 12
         local.get 4
         local.get 12
         local.tee 13
-        struct.get 106 1
+        struct.get 88 1
         local.get 13
-        struct.get 106 0
-        call_ref 105
-        ref.cast (ref 84)
+        struct.get 88 0
+        call_ref 87
+        ref.cast (ref 74)
         local.set 11
         local.get 9
-        ref.cast (ref 78)
+        ref.cast (ref 68)
         local.get 11
         local.tee 14
-        struct.get 84 1
+        struct.get 74 1
         local.get 14
-        struct.get 84 0
-        call_ref 83
-        ref.cast (ref 78)
-        struct.new 121
+        struct.get 74 0
+        call_ref 73
+        ref.cast (ref 68)
+        struct.new 97
         local.get 10
         local.tee 15
-        struct.get 123 1
+        struct.get 99 1
         local.get 15
-        struct.get 123 0
-        call_ref 122
-        ref.cast (ref 78)
+        struct.get 99 0
+        call_ref 98
+        ref.cast (ref 68)
         br 1 (;@1;)
       end
       block ;; label = @2
         local.get 5
         local.tee 16
-        struct.get 78 0
+        struct.get 68 0
         i32.const 1
         i32.ne
         br_if 0 (;@2;)
         local.get 16
-        struct.get 78 1
+        struct.get 68 1
         ref.cast (ref 1)
         drop
         global.get 52
         ref.as_non_null
-        ref.cast (ref 123)
+        ref.cast (ref 99)
         local.set 17
         local.get 4
         global.get 53
         ref.as_non_null
-        ref.cast (ref 82)
+        ref.cast (ref 72)
         local.set 18
         struct.new 1
         local.get 18
         local.tee 19
-        struct.get 82 1
+        struct.get 72 1
         local.get 19
-        struct.get 82 0
-        call_ref 81
-        ref.cast (ref 78)
-        struct.new 121
+        struct.get 72 0
+        call_ref 71
+        ref.cast (ref 68)
+        struct.new 97
         local.get 17
         local.tee 20
-        struct.get 123 1
+        struct.get 99 1
         local.get 20
-        struct.get 123 0
-        call_ref 122
-        ref.cast (ref 78)
+        struct.get 99 0
+        call_ref 98
+        ref.cast (ref 68)
         br 1 (;@1;)
       end
       unreachable
     end
   )
-  (func (;98;) (type 105) (param (ref any) (ref 7)) (result (ref any))
+  (func (;98;) (type 87) (param (ref any) (ref 7)) (result (ref any))
     (local (ref any))
     local.get 0
     nop
@@ -3604,33 +3589,33 @@
     local.get 2
     local.get 2
     array.new_fixed 7 2
-    struct.new 84
+    struct.new 74
   )
-  (func (;99;) (type 126) (param (ref any) (ref 7)) (result (ref any))
-    (local (ref 78) (ref 78) (ref 78) (ref 121) (ref any) (ref 78) (ref 9) (ref 23) (ref 23) (ref 127) (ref 127) (ref 9) (ref 78))
+  (func (;99;) (type 104) (param (ref any) (ref 7)) (result (ref any))
+    (local (ref 68) (ref 68) (ref 68) (ref 97) (ref any) (ref 68) (ref 9) (ref 23) (ref 23) (ref 105) (ref 105) (ref 9) (ref 68))
     local.get 0
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 2
     local.get 2
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 3
     block (result (ref 2)) ;; label = @1
       block ;; label = @2
         local.get 3
         local.tee 4
-        struct.get 78 0
+        struct.get 68 0
         i32.const 0
         i32.ne
         br_if 0 (;@2;)
         local.get 4
-        struct.get 78 1
-        ref.cast (ref 121)
+        struct.get 68 1
+        ref.cast (ref 97)
         local.set 5
         local.get 5
-        struct.get 121 0
+        struct.get 97 0
         local.set 6
         local.get 5
-        struct.get 121 1
+        struct.get 97 1
         local.set 7
         global.get 5
         ref.as_non_null
@@ -3648,16 +3633,16 @@
         local.set 8
         global.get 57
         ref.as_non_null
-        ref.cast (ref 127)
+        ref.cast (ref 105)
         local.set 11
         local.get 7
-        ref.cast (ref 78)
+        ref.cast (ref 68)
         local.get 11
         local.tee 12
-        struct.get 127 1
+        struct.get 105 1
         local.get 12
-        struct.get 127 0
-        call_ref 126
+        struct.get 105 0
+        call_ref 104
         ref.cast (ref 2)
         local.get 8
         local.tee 13
@@ -3671,12 +3656,12 @@
       block ;; label = @2
         local.get 3
         local.tee 14
-        struct.get 78 0
+        struct.get 68 0
         i32.const 1
         i32.ne
         br_if 0 (;@2;)
         local.get 14
-        struct.get 78 1
+        struct.get 68 1
         ref.cast (ref 1)
         drop
         i64.const 0
@@ -3686,10 +3671,10 @@
       unreachable
     end
   )
-  (func (;100;) (type 99) (param (ref any) (ref 7)) (result (ref any))
-    (local (ref 78) (ref 21) (ref any) (ref 21) (ref any) (ref 78) (ref 78) (ref 121) (ref any) (ref 78) (ref 15) (ref 21) (ref 21) (ref 100) (ref 129) (ref 131) (ref 131) (ref 129) (ref 100) (ref 15) (ref 78))
+  (func (;100;) (type 83) (param (ref any) (ref 7)) (result (ref any))
+    (local (ref 68) (ref 21) (ref any) (ref 21) (ref any) (ref 68) (ref 68) (ref 97) (ref any) (ref 68) (ref 15) (ref 21) (ref 21) (ref 84) (ref 107) (ref 109) (ref 109) (ref 107) (ref 84) (ref 15) (ref 68))
     local.get 0
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 2
     local.get 1
     i32.const 0
@@ -3710,25 +3695,25 @@
     array.get 7
     local.set 6
     local.get 2
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 7
     block (result (ref any)) ;; label = @1
       block ;; label = @2
         local.get 7
         local.tee 8
-        struct.get 78 0
+        struct.get 68 0
         i32.const 0
         i32.ne
         br_if 0 (;@2;)
         local.get 8
-        struct.get 78 1
-        ref.cast (ref 121)
+        struct.get 68 1
+        ref.cast (ref 97)
         local.set 9
         local.get 9
-        struct.get 121 0
+        struct.get 97 0
         local.set 10
         local.get 9
-        struct.get 121 1
+        struct.get 97 1
         local.set 11
         local.get 5
         ref.cast (ref 21)
@@ -3744,35 +3729,35 @@
         local.set 12
         global.get 58
         ref.as_non_null
-        ref.cast (ref 131)
+        ref.cast (ref 109)
         local.set 17
         local.get 5
         ref.cast (ref 21)
         local.get 17
         local.tee 18
-        struct.get 131 1
+        struct.get 109 1
         local.get 18
-        struct.get 131 0
-        call_ref 130
-        ref.cast (ref 129)
+        struct.get 109 0
+        call_ref 108
+        ref.cast (ref 107)
         local.set 16
         local.get 10
         local.get 16
         local.tee 19
-        struct.get 129 1
+        struct.get 107 1
         local.get 19
-        struct.get 129 0
-        call_ref 128
-        ref.cast (ref 100)
+        struct.get 107 0
+        call_ref 106
+        ref.cast (ref 84)
         local.set 15
         local.get 11
-        ref.cast (ref 78)
+        ref.cast (ref 68)
         local.get 15
         local.tee 20
-        struct.get 100 1
+        struct.get 84 1
         local.get 20
-        struct.get 100 0
-        call_ref 99
+        struct.get 84 0
+        call_ref 83
         local.get 12
         local.tee 21
         struct.get 15 1
@@ -3784,12 +3769,12 @@
       block ;; label = @2
         local.get 7
         local.tee 22
-        struct.get 78 0
+        struct.get 68 0
         i32.const 1
         i32.ne
         br_if 0 (;@2;)
         local.get 22
-        struct.get 78 1
+        struct.get 68 1
         ref.cast (ref 1)
         drop
         local.get 6
@@ -3798,7 +3783,7 @@
       unreachable
     end
   )
-  (func (;101;) (type 128) (param (ref any) (ref 7)) (result (ref any))
+  (func (;101;) (type 106) (param (ref any) (ref 7)) (result (ref any))
     (local (ref any) (ref 21) (ref 21))
     local.get 0
     nop
@@ -3819,9 +3804,9 @@
     local.get 4
     local.get 2
     array.new_fixed 7 4
-    struct.new 100
+    struct.new 84
   )
-  (func (;102;) (type 130) (param (ref any) (ref 7)) (result (ref any))
+  (func (;102;) (type 108) (param (ref any) (ref 7)) (result (ref any))
     (local (ref 21))
     local.get 0
     ref.cast (ref 21)
@@ -3830,109 +3815,109 @@
     local.get 2
     local.get 2
     array.new_fixed 7 2
-    struct.new 129
+    struct.new 107
   )
-  (func (;103;) (type 83) (param (ref any) (ref 7)) (result (ref any))
-    (local (ref 78) (ref 78) (ref 78) (ref 78) (ref 121) (ref any) (ref 78) (ref 123) (ref 84) (ref 110) (ref 110) (ref 84) (ref 123) (ref 78))
+  (func (;103;) (type 73) (param (ref any) (ref 7)) (result (ref any))
+    (local (ref 68) (ref 68) (ref 68) (ref 68) (ref 97) (ref any) (ref 68) (ref 99) (ref 74) (ref 90) (ref 90) (ref 74) (ref 99) (ref 68))
     local.get 0
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 2
     local.get 1
     i32.const 0
     array.get 7
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 3
     local.get 3
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 4
-    block (result (ref 78)) ;; label = @1
+    block (result (ref 68)) ;; label = @1
       block ;; label = @2
         local.get 4
         local.tee 5
-        struct.get 78 0
+        struct.get 68 0
         i32.const 0
         i32.ne
         br_if 0 (;@2;)
         local.get 5
-        struct.get 78 1
-        ref.cast (ref 121)
+        struct.get 68 1
+        ref.cast (ref 97)
         local.set 6
         local.get 6
-        struct.get 121 0
+        struct.get 97 0
         local.set 7
         local.get 6
-        struct.get 121 1
+        struct.get 97 1
         local.set 8
         global.get 52
         ref.as_non_null
-        ref.cast (ref 123)
+        ref.cast (ref 99)
         local.set 9
         local.get 7
         global.get 59
         ref.as_non_null
-        ref.cast (ref 110)
+        ref.cast (ref 90)
         local.set 11
         local.get 8
-        ref.cast (ref 78)
+        ref.cast (ref 68)
         local.get 11
         local.tee 12
-        struct.get 110 1
+        struct.get 90 1
         local.get 12
-        struct.get 110 0
-        call_ref 109
-        ref.cast (ref 84)
+        struct.get 90 0
+        call_ref 89
+        ref.cast (ref 74)
         local.set 10
         local.get 2
-        ref.cast (ref 78)
+        ref.cast (ref 68)
         local.get 10
         local.tee 13
-        struct.get 84 1
+        struct.get 74 1
         local.get 13
-        struct.get 84 0
-        call_ref 83
-        ref.cast (ref 78)
-        struct.new 121
+        struct.get 74 0
+        call_ref 73
+        ref.cast (ref 68)
+        struct.new 97
         local.get 9
         local.tee 14
-        struct.get 123 1
+        struct.get 99 1
         local.get 14
-        struct.get 123 0
-        call_ref 122
-        ref.cast (ref 78)
+        struct.get 99 0
+        call_ref 98
+        ref.cast (ref 68)
         br 1 (;@1;)
       end
       block ;; label = @2
         local.get 4
         local.tee 15
-        struct.get 78 0
+        struct.get 68 0
         i32.const 1
         i32.ne
         br_if 0 (;@2;)
         local.get 15
-        struct.get 78 1
+        struct.get 68 1
         ref.cast (ref 1)
         drop
         local.get 2
-        ref.cast (ref 78)
+        ref.cast (ref 68)
         br 1 (;@1;)
       end
       unreachable
     end
   )
-  (func (;104;) (type 109) (param (ref any) (ref 7)) (result (ref any))
-    (local (ref 78))
+  (func (;104;) (type 89) (param (ref any) (ref 7)) (result (ref any))
+    (local (ref 68))
     local.get 0
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 2
     ref.func 103
     local.get 2
     array.new_fixed 7 1
-    struct.new 84
+    struct.new 74
   )
-  (func (;105;) (type 83) (param (ref any) (ref 7)) (result (ref any))
-    (local (ref 78) (ref 2) (ref 134) (ref 134) (ref 29) (ref 31) (ref 29) (ref 78) (ref 121) (ref any) (ref 78) (ref 80) (ref 80) (ref 134) (ref 2) (ref 78) (ref 121) (ref any) (ref 78) (ref 84) (ref 133) (ref 9) (ref 23) (ref 23) (ref 9) (ref 133) (ref 84) (ref 134) (ref 2) (ref 78) (ref 82) (ref 82))
+  (func (;105;) (type 73) (param (ref any) (ref 7)) (result (ref any))
+    (local (ref 68) (ref 2) (ref 112) (ref 112) (ref 29) (ref 31) (ref 29) (ref 68) (ref 97) (ref any) (ref 68) (ref 70) (ref 70) (ref 112) (ref 2) (ref 68) (ref 97) (ref any) (ref 68) (ref 74) (ref 111) (ref 9) (ref 23) (ref 23) (ref 9) (ref 111) (ref 74) (ref 112) (ref 2) (ref 68) (ref 72) (ref 72))
     local.get 0
-    ref.cast (ref 78)
+    ref.cast (ref 68)
     local.set 2
     local.get 1
     i32.const 0
@@ -3942,15 +3927,15 @@
     local.get 3
     ref.cast (ref 2)
     local.get 2
-    ref.cast (ref 78)
-    struct.new 134
+    ref.cast (ref 68)
+    struct.new 112
     local.set 4
-    block (result (ref 78)) ;; label = @1
+    block (result (ref 68)) ;; label = @1
       block ;; label = @2
         local.get 4
         local.set 5
         local.get 5
-        struct.get 134 0
+        struct.get 112 0
         global.get 17
         ref.as_non_null
         local.tee 7
@@ -3974,62 +3959,62 @@
         i32.xor
         br_if 0 (;@2;)
         local.get 5
-        struct.get 134 1
+        struct.get 112 1
         local.tee 9
-        struct.get 78 0
+        struct.get 68 0
         i32.const 0
         i32.ne
         br_if 0 (;@2;)
         local.get 9
-        struct.get 78 1
-        ref.cast (ref 121)
+        struct.get 68 1
+        ref.cast (ref 97)
         local.set 10
         local.get 10
-        struct.get 121 0
+        struct.get 97 0
         local.set 11
         local.get 10
-        struct.get 121 1
+        struct.get 97 1
         local.set 12
         global.get 33
         ref.as_non_null
-        ref.cast (ref 80)
+        ref.cast (ref 70)
         local.set 13
         local.get 11
         local.get 13
         local.tee 14
-        struct.get 80 1
+        struct.get 70 1
         local.get 14
-        struct.get 80 0
-        call_ref 79
-        ref.cast (ref 78)
+        struct.get 70 0
+        call_ref 69
+        ref.cast (ref 68)
         br 1 (;@1;)
       end
       block ;; label = @2
         local.get 4
         local.set 15
         local.get 15
-        struct.get 134 0
+        struct.get 112 0
         local.set 16
         local.get 15
-        struct.get 134 1
+        struct.get 112 1
         local.tee 17
-        struct.get 78 0
+        struct.get 68 0
         i32.const 0
         i32.ne
         br_if 0 (;@2;)
         local.get 17
-        struct.get 78 1
-        ref.cast (ref 121)
+        struct.get 68 1
+        ref.cast (ref 97)
         local.set 18
         local.get 18
-        struct.get 121 0
+        struct.get 97 0
         local.set 19
         local.get 18
-        struct.get 121 1
+        struct.get 97 1
         local.set 20
         global.get 60
         ref.as_non_null
-        ref.cast (ref 133)
+        ref.cast (ref 111)
         local.set 22
         global.get 6
         ref.as_non_null
@@ -4056,58 +4041,58 @@
         ref.cast (ref 2)
         local.get 22
         local.tee 27
-        struct.get 133 1
+        struct.get 111 1
         local.get 27
-        struct.get 133 0
-        call_ref 132
-        ref.cast (ref 84)
+        struct.get 111 0
+        call_ref 110
+        ref.cast (ref 74)
         local.set 21
         local.get 20
-        ref.cast (ref 78)
+        ref.cast (ref 68)
         local.get 21
         local.tee 28
-        struct.get 84 1
+        struct.get 74 1
         local.get 28
-        struct.get 84 0
-        call_ref 83
-        ref.cast (ref 78)
+        struct.get 74 0
+        call_ref 73
+        ref.cast (ref 68)
         br 1 (;@1;)
       end
       block ;; label = @2
         local.get 4
         local.set 29
         local.get 29
-        struct.get 134 0
+        struct.get 112 0
         local.set 30
         local.get 29
-        struct.get 134 1
+        struct.get 112 1
         local.tee 31
-        struct.get 78 0
+        struct.get 68 0
         i32.const 1
         i32.ne
         br_if 0 (;@2;)
         local.get 31
-        struct.get 78 1
+        struct.get 68 1
         ref.cast (ref 1)
         drop
         global.get 34
         ref.as_non_null
-        ref.cast (ref 82)
+        ref.cast (ref 72)
         local.set 32
         struct.new 1
         local.get 32
         local.tee 33
-        struct.get 82 1
+        struct.get 72 1
         local.get 33
-        struct.get 82 0
-        call_ref 81
-        ref.cast (ref 78)
+        struct.get 72 0
+        call_ref 71
+        ref.cast (ref 68)
         br 1 (;@1;)
       end
       unreachable
     end
   )
-  (func (;106;) (type 132) (param (ref any) (ref 7)) (result (ref any))
+  (func (;106;) (type 110) (param (ref any) (ref 7)) (result (ref any))
     (local (ref 2))
     local.get 0
     ref.cast (ref 2)
@@ -4115,68 +4100,438 @@
     ref.func 105
     local.get 2
     array.new_fixed 7 1
-    struct.new 84
+    struct.new 74
   )
   (func (;107;) (type 0)
     (local (ref any) (ref any))
     ref.func 90
     array.new_fixed 7 0
-    struct.new 123
+    struct.new 99
     global.set 52
     ref.func 91
     array.new_fixed 7 0
-    struct.new 82
+    struct.new 72
     global.set 53
     ref.func 93
     array.new_fixed 7 0
-    struct.new 86
+    struct.new 76
     global.set 54
     ref.func 96
     array.new_fixed 7 0
-    struct.new 92
+    struct.new 80
     global.set 55
     ref.func 98
     array.new_fixed 7 0
-    struct.new 106
+    struct.new 88
     global.set 56
     ref.func 99
     array.new_fixed 7 0
-    struct.new 127
+    struct.new 105
     global.set 57
     ref.func 102
     array.new_fixed 7 0
-    struct.new 131
+    struct.new 109
     global.set 58
     ref.func 104
     array.new_fixed 7 0
-    struct.new 110
+    struct.new 90
     global.set 59
     ref.func 106
     array.new_fixed 7 0
-    struct.new 133
+    struct.new 111
     global.set 60
   )
-  (func (;108;) (type 0)
-    (local (ref any) (ref any) (ref 51) (ref 51))
-    global.get 31
-    ref.as_non_null
-    ref.cast (ref 51)
+  (func (;108;) (type 55) (param (ref any) (ref 7)) (result (ref any))
+    (local (ref 2) (ref 50) (ref 9) (ref 23) (ref 23) (ref 9) (ref 9) (ref 23) (ref 23) (ref 9) (ref 50) (ref 29) (ref 31) (ref 29) (ref 29) (ref 31) (ref 29) (ref 50) (ref 29) (ref 31) (ref 29) (ref 2) (ref 50) (ref 2) (ref 29) (ref 31) (ref 29) (ref 50) (ref 2) (ref 2))
+    local.get 0
+    ref.cast (ref 2)
     local.set 2
-    i32.const 97
-    i32.const 115
-    i32.const 100
-    i32.const 102
-    array.new_fixed 5 4
+    global.get 9
+    ref.as_non_null
+    ref.cast (ref 23)
+    local.set 5
     local.get 2
-    local.tee 3
-    struct.get 51 1
+    ref.cast (ref 2)
+    local.get 5
+    local.tee 6
+    struct.get 23 1
+    local.get 6
+    struct.get 23 0
+    call_ref 22
+    ref.cast (ref 9)
+    local.set 4
+    i64.const 3
+    struct.new 2
+    local.get 4
+    local.tee 7
+    struct.get 9 1
+    local.get 7
+    struct.get 9 0
+    call_ref 8
+    ref.cast (ref 2)
+    global.get 9
+    ref.as_non_null
+    ref.cast (ref 23)
+    local.set 9
+    local.get 2
+    ref.cast (ref 2)
+    local.get 9
+    local.tee 10
+    struct.get 23 1
+    local.get 10
+    struct.get 23 0
+    call_ref 22
+    ref.cast (ref 9)
+    local.set 8
+    i64.const 5
+    struct.new 2
+    local.get 8
+    local.tee 11
+    struct.get 9 1
+    local.get 11
+    struct.get 9 0
+    call_ref 8
+    ref.cast (ref 2)
+    struct.new 50
+    local.set 3
+    block (result (ref 5)) ;; label = @1
+      block ;; label = @2
+        local.get 3
+        local.set 12
+        local.get 12
+        struct.get 50 0
+        global.get 17
+        ref.as_non_null
+        local.tee 14
+        struct.get 31 1
+        local.get 14
+        struct.get 31 0
+        call_ref 30
+        ref.cast (ref 29)
+        local.set 13
+        i64.const 0
+        struct.new 2
+        local.get 13
+        local.tee 15
+        struct.get 29 1
+        local.get 15
+        struct.get 29 0
+        call_ref 28
+        ref.cast (ref 4)
+        struct.get 4 0
+        i32.const 1
+        i32.xor
+        br_if 0 (;@2;)
+        local.get 12
+        struct.get 50 1
+        global.get 17
+        ref.as_non_null
+        local.tee 17
+        struct.get 31 1
+        local.get 17
+        struct.get 31 0
+        call_ref 30
+        ref.cast (ref 29)
+        local.set 16
+        i64.const 0
+        struct.new 2
+        local.get 16
+        local.tee 18
+        struct.get 29 1
+        local.get 18
+        struct.get 29 0
+        call_ref 28
+        ref.cast (ref 4)
+        struct.get 4 0
+        i32.const 1
+        i32.xor
+        br_if 0 (;@2;)
+        i32.const 70
+        i32.const 105
+        i32.const 122
+        i32.const 122
+        i32.const 66
+        i32.const 117
+        i32.const 122
+        i32.const 122
+        array.new_fixed 5 8
+        br 1 (;@1;)
+      end
+      block ;; label = @2
+        local.get 3
+        local.set 19
+        local.get 19
+        struct.get 50 0
+        global.get 17
+        ref.as_non_null
+        local.tee 21
+        struct.get 31 1
+        local.get 21
+        struct.get 31 0
+        call_ref 30
+        ref.cast (ref 29)
+        local.set 20
+        i64.const 0
+        struct.new 2
+        local.get 20
+        local.tee 22
+        struct.get 29 1
+        local.get 22
+        struct.get 29 0
+        call_ref 28
+        ref.cast (ref 4)
+        struct.get 4 0
+        i32.const 1
+        i32.xor
+        br_if 0 (;@2;)
+        local.get 19
+        struct.get 50 1
+        local.set 23
+        i32.const 70
+        i32.const 105
+        i32.const 122
+        i32.const 122
+        array.new_fixed 5 4
+        br 1 (;@1;)
+      end
+      block ;; label = @2
+        local.get 3
+        local.set 24
+        local.get 24
+        struct.get 50 0
+        local.set 25
+        local.get 24
+        struct.get 50 1
+        global.get 17
+        ref.as_non_null
+        local.tee 27
+        struct.get 31 1
+        local.get 27
+        struct.get 31 0
+        call_ref 30
+        ref.cast (ref 29)
+        local.set 26
+        i64.const 0
+        struct.new 2
+        local.get 26
+        local.tee 28
+        struct.get 29 1
+        local.get 28
+        struct.get 29 0
+        call_ref 28
+        ref.cast (ref 4)
+        struct.get 4 0
+        i32.const 1
+        i32.xor
+        br_if 0 (;@2;)
+        i32.const 66
+        i32.const 117
+        i32.const 122
+        i32.const 122
+        array.new_fixed 5 4
+        br 1 (;@1;)
+      end
+      block ;; label = @2
+        local.get 3
+        local.set 29
+        local.get 29
+        struct.get 50 0
+        local.set 30
+        local.get 29
+        struct.get 50 1
+        local.set 31
+        i32.const 45
+        i32.const 45
+        i32.const 45
+        array.new_fixed 5 3
+        br 1 (;@1;)
+      end
+      unreachable
+    end
+  )
+  (func (;109;) (type 40) (param (ref any) (ref 7)) (result (ref any))
+    (local (ref 2) (ref 2) (ref 2) (ref 2) (ref 56) (ref 116) (ref 118) (ref 118) (ref 116) (ref 47) (ref 54) (ref 49) (ref 56) (ref 56) (ref 49) (ref 54) (ref 41) (ref 114) (ref 9) (ref 23) (ref 23) (ref 9) (ref 114) (ref 41) (ref 47))
+    local.get 0
+    ref.cast (ref 2)
+    local.set 2
+    local.get 1
+    i32.const 0
+    array.get 7
+    ref.cast (ref 2)
+    local.set 3
+    local.get 1
+    i32.const 1
+    array.get 7
+    ref.cast (ref 2)
+    local.set 4
+    local.get 1
+    i32.const 2
+    array.get 7
+    ref.cast (ref 2)
+    local.set 5
+    ref.func 108
+    array.new_fixed 7 0
+    struct.new 56
+    local.set 6
+    global.get 19
+    ref.as_non_null
+    ref.cast (ref 118)
+    local.set 8
+    local.get 5
+    ref.cast (ref 2)
+    local.get 8
+    local.tee 9
+    struct.get 118 1
+    local.get 9
+    struct.get 118 0
+    call_ref 117
+    ref.cast (ref 116)
+    local.set 7
+    local.get 2
+    ref.cast (ref 2)
+    local.get 7
+    local.tee 10
+    struct.get 116 1
+    local.get 10
+    struct.get 116 0
+    call_ref 115
+    ref.cast (ref 4)
+    struct.get 4 0
+    if (result (ref 1)) ;; label = @1
+      global.get 4
+      ref.as_non_null
+      ref.cast (ref 54)
+      local.set 12
+      global.get 28
+      ref.as_non_null
+      ref.cast (ref 49)
+      local.set 13
+      local.get 6
+      ref.cast (ref 56)
+      local.set 14
+      local.get 5
+      ref.cast (ref 2)
+      local.get 14
+      local.tee 15
+      struct.get 56 1
+      local.get 15
+      struct.get 56 0
+      call_ref 55
+      ref.cast (ref 5)
+      local.get 13
+      local.tee 16
+      struct.get 49 1
+      local.get 16
+      struct.get 49 0
+      call_ref 48
+      ref.cast (ref 1)
+      local.get 12
+      local.tee 17
+      struct.get 54 1
+      local.get 17
+      struct.get 54 0
+      call_ref 53
+      ref.cast (ref 47)
+      local.set 11
+      global.get 61
+      ref.as_non_null
+      ref.cast (ref 114)
+      local.set 19
+      global.get 5
+      ref.as_non_null
+      ref.cast (ref 23)
+      local.set 21
+      local.get 5
+      ref.cast (ref 2)
+      local.get 21
+      local.tee 22
+      struct.get 23 1
+      local.get 22
+      struct.get 23 0
+      call_ref 22
+      ref.cast (ref 9)
+      local.set 20
+      i64.const 1
+      struct.new 2
+      local.get 20
+      local.tee 23
+      struct.get 9 1
+      local.get 23
+      struct.get 9 0
+      call_ref 8
+      ref.cast (ref 2)
+      local.get 19
+      local.tee 24
+      struct.get 114 1
+      local.get 24
+      struct.get 114 0
+      call_ref 113
+      ref.cast (ref 41)
+      local.set 18
+      local.get 2
+      ref.cast (ref 2)
+      local.get 18
+      local.tee 25
+      struct.get 41 1
+      local.get 25
+      struct.get 41 0
+      call_ref 40
+      ref.cast (ref 1)
+      local.get 11
+      local.tee 26
+      struct.get 47 1
+      local.get 26
+      struct.get 47 0
+      call_ref 46
+      ref.cast (ref 1)
+    else
+      struct.new 1
+    end
+  )
+  (func (;110;) (type 113) (param (ref any) (ref 7)) (result (ref any))
+    (local (ref 2))
+    local.get 0
+    ref.cast (ref 2)
+    local.set 2
+    ref.func 109
+    local.get 2
+    local.get 2
+    local.get 2
+    array.new_fixed 7 3
+    struct.new 41
+  )
+  (func (;111;) (type 0)
+    (local (ref any) (ref any) (ref 41) (ref 114) (ref 114) (ref 41))
+    ref.func 110
+    array.new_fixed 7 0
+    struct.new 114
+    global.set 61
+    global.get 61
+    ref.as_non_null
+    ref.cast (ref 114)
+    local.set 3
+    i64.const 1
+    struct.new 2
     local.get 3
-    struct.get 51 0
-    call_ref 50
+    local.tee 4
+    struct.get 114 1
+    local.get 4
+    struct.get 114 0
+    call_ref 113
+    ref.cast (ref 41)
+    local.set 2
+    i64.const 30
+    struct.new 2
+    local.get 2
+    local.tee 5
+    struct.get 41 1
+    local.get 5
+    struct.get 41 0
+    call_ref 40
     ref.cast (ref 1)
     drop
   )
-  (func (;109;) (type 0)
+  (func (;112;) (type 0)
     (local (ref any) (ref any))
     call 50
     call 53
@@ -4186,6 +4541,6 @@
     call 75
     call 89
     call 107
-    call 108
+    call 111
   )
 )
