@@ -148,6 +148,7 @@ impl FunctionEncoder<'_> {
         minor: impl Into<String>,
         ftype: ForeignFunctionType,
     ) -> &mut Self {
+        self.encode(Type::Integer);
         self.module_encoder.type_encoder.encode(ftype);
         let import_function_id = self.module_encoder.import_encoder.push(
             major.into(),

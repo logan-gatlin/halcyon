@@ -9,6 +9,11 @@ module string =
   type t = std::string
   let s = string::concatenate
 
+  import unsafe_print : (std::integer * std::integer) -> () = sys::print_string
+  let print = fn s =>
+    string::unsafe_store s 0;
+    unsafe_print (0, (string::length s))
+
   -- Author: Logan Williams
   let from_integer = 
     fn x => 

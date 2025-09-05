@@ -175,12 +175,18 @@ impl ModuleEncoder {
 
     pub fn finish(mut self) -> Vec<u8> {
         let init_functions = self.init_functions.clone();
-        let main_function = init_functions
+        let imported_function_count = self.import_encoder.functions();
+        let main_function_id = init_functions
             .into_iter()
             .fold(&mut self.main_function(), |mf, f| mf.encode(Call(f)))
             .finish_mainfn();
+        let main_function_id = match self.element_section[main_function_id as usize] {
+            FunctionKind::Import(id) => id,
+            FunctionKind::Native(id) => id + imported_function_count,
+        };
         let function_count = self.function_section.len() as u64;
-        let imported_function_count = self.import_encoder.functions();
+        println!("FUNCTION SECTION: {function_count}");
+        println!("IMPORTED: {imported_function_count}");
         let mut module = Module::new();
         module
             // Type section
@@ -199,8 +205,8 @@ impl ModuleEncoder {
             .section(TableSection::new().table(wasm_encoder::TableType {
                 element_type: RefType::FUNCREF,
                 table64: false,
-                minimum: function_count,
-                maximum: Some(function_count),
+                minimum: function_count + imported_function_count as u64,
+                maximum: Some(function_count + imported_function_count as u64),
                 shared: false,
             }))
             // Global section
@@ -208,7 +214,7 @@ impl ModuleEncoder {
             // Export section
             // Start section
             .section(&StartSection {
-                function_index: main_function + imported_function_count,
+                function_index: main_function_id,
             })
             // Elements
             .section(

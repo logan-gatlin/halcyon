@@ -97,7 +97,7 @@ pub fn compile_string(enc: &mut FunctionEncoder, interface: &mut ModuleInterface
     // Unsafe memory store
     {
         let p1 = p1.clone();
-        let path = string.child("unsafe_memory_store");
+        let path = string.child("unsafe_store");
         let type_ = Type::curry(&[Type::String, Type::Integer], Type::Unit);
         let string_type = enc.module_encoder.type_id(&Type::String);
         enc.encode(type_.clone());
@@ -109,6 +109,7 @@ pub fn compile_string(enc: &mut FunctionEncoder, interface: &mut ModuleInterface
             move |e| {
                 let index = e.new_raw_temporary(ValType::I32);
                 let length = e.new_raw_temporary(ValType::I32);
+                let integer_type = e.module_encoder.type_id(&Type::Integer);
                 e.encode([I32Const(0), LocalSet(index)])
                     // let index = 0
                     .get_symbol(&p1)
@@ -123,6 +124,15 @@ pub fn compile_string(enc: &mut FunctionEncoder, interface: &mut ModuleInterface
                         // if index < length
                         If(BlockType::Empty),
                         LocalGet(index),
+                    ])
+                    .get_symbol(&p2)
+                    .encode([
+                        StructGet {
+                            struct_type_index: integer_type,
+                            field_index: 0,
+                        },
+                        I32WrapI64,
+                        I32Add,
                     ])
                     .get_symbol(&p1)
                     .encode([
