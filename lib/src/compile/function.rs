@@ -5,7 +5,7 @@ use super::*;
 pub struct FunctionEncoder<'a> {
     pub module_encoder: &'a mut ModuleEncoder,
     type_id: u32,
-    local_names: HashMap<Path, u32>,
+    pub local_names: HashMap<Path, u32>,
     local_types: Vec<ValType>,
     instructions: Vec<Instruction>,
 }
@@ -20,7 +20,7 @@ pub struct EncodedFunction {
 impl EncodedFunction {
     pub fn fix_function_ids(mut self, id_map: &[FunctionKind], imports: u32) -> Self {
         self.instructions.iter_mut().for_each(|i| {
-            if let RefFunc(id) = i {
+            if let RefFunc(id) | Call(id) = i {
                 match id_map[*id as usize] {
                     FunctionKind::Import(new_id) => *id = new_id,
                     FunctionKind::Native(new_id) => *id = new_id + imports,
@@ -62,13 +62,22 @@ impl<'a> FunctionEncoder<'a> {
         let mut local_names = HashMap::new();
         let type_id = module_encoder
             .function_type_id(&Type::func(parameter_type.clone(), return_type.clone()));
-        local_names.insert(parameter_name, 0);
+        local_names.insert(parameter_name, 2);
+        let parameter_type = parameter_type.clone().reduce();
+        let parameter_valtype = module_encoder.reduced_valtype(&parameter_type);
+        let parameter_cast = if parameter_type == ReducedType::AnyRef {
+            Nop
+        } else {
+            RefCastNonNull(HeapType::Concrete(
+                module_encoder.reduced_type_id(&parameter_type),
+            ))
+        };
         FunctionEncoder {
             module_encoder,
             type_id,
             local_names,
-            local_types: vec![],
-            instructions: vec![],
+            local_types: vec![parameter_valtype],
+            instructions: vec![LocalGet(0), parameter_cast, LocalSet(2)],
         }
     }
 
@@ -133,6 +142,7 @@ impl<'a> FunctionEncoder<'a> {
         self.encode(self.find_symbol(path).set())
     }
 
+    #[must_use]
     pub fn finish(&mut self) -> u32 {
         self.encode(End);
         let id = self.module_encoder.element_section.len() as u32;
@@ -144,10 +154,17 @@ impl<'a> FunctionEncoder<'a> {
         id
     }
 
+    #[must_use]
     pub fn finish_mainfn(&mut self) -> u32 {
         self.encode(End);
         let id = self.module_encoder.element_section.len() as u32;
-        let mut locals = vec![ValType::Ref(RefType::ANYREF); 2];
+        let mut locals = vec![
+            ValType::Ref(RefType {
+                nullable: false,
+                heap_type: HeapType::ANY
+            });
+            2
+        ];
         locals.extend_from_slice(&self.local_types);
         self.module_encoder.encode(EncodedFunction {
             locals,

@@ -1,8 +1,3 @@
-use crate::{
-    Span, Spanned,
-    semantic::{Type, Typed},
-};
-
 pub trait Visit<T> {
     fn _visit(&mut self, f: &mut impl FnMut(&mut T));
     fn visit(&mut self, mut f: impl FnMut(&mut T)) {

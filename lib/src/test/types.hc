@@ -1,6 +1,4 @@
 module TypeTest = 
-  import std
-
   -- Primitive aliases
 
   type integer = std::integer
@@ -33,5 +31,7 @@ module TypeTest =
     specific_name3: specific_struct2
   }
   
+  (*
   let tricky_inference = fn a => a.specific_name3.specific_name2.specific_name1
+  *)
 end

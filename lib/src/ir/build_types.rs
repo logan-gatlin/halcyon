@@ -34,6 +34,12 @@ pub fn type_def(
             variant_types,
         } => {
             let path = ns.new_global_type(&assignee).span(assignee_span)?;
+            // HACK: Create an arbitrary type here with N type parameters.
+            // This causes the type scheme to have the correct kindedness
+            Universe::get().new_named_type(
+                path.clone(),
+                Type::Product((0..parameters).map(|tv| Type::Variable(tv)).collect()),
+            );
             let variant_types: Vec<_> = variant_types
                 .into_iter()
                 .map(|t| type_expr(ns, t))
@@ -43,6 +49,7 @@ pub fn type_def(
                 variant_names: variant_names.clone(),
                 variant_types: variant_types.clone(),
             };
+            Universe::get().new_named_type(path.clone(), sum_type);
             let named_type =
                 Type::Instantiation(path.clone(), (0..parameters).map(Type::Variable).collect());
             for (id, (type_, name)) in variant_types.iter().zip(&variant_names).enumerate() {
@@ -54,10 +61,10 @@ pub fn type_def(
                 let path = ns
                     .new_constructor(name, constructor.clone())
                     .span(assignee_span)?;
-                ns.new_global_value(name)?;
+                let value_path = ns.new_global_value(name).span(assignee_span)?;
+                ns.finalize_value(&value_path);
                 items.push(ModuleItem::Constructor(path, constructor));
             }
-            Universe::get().new_named_type(path.clone(), sum_type);
             items.push(ModuleItem::Type(path))
         }
         Expression(expr) => {

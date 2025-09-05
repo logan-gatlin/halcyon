@@ -23,12 +23,27 @@ pub struct ModuleInterface {
     pub constructors: HashMap<Path, Constructor>,
 }
 
+impl ModuleInterface {
+    pub fn merge(&mut self, other: Self) {
+        for type_ in other.types {
+            self.types.insert(type_);
+        }
+        for (path, value) in other.values {
+            self.values.insert(path, value);
+        }
+        for (path, cons) in other.constructors {
+            self.constructors.insert(path, cons);
+        }
+    }
+}
+
 pub type FreeVariableSet = HashSet<Path>;
 
 #[derive(Debug, Clone, Default)]
 pub struct Environment {
     map: Rc<RefCell<HashMap<Path, Type>>>,
     constraints: Vec<TypeConstraint>,
+    struct_constraints: Vec<StructConstraint>,
     current_tv: TypeVariable,
 }
 
@@ -45,7 +60,16 @@ impl Environment {
     }
 
     pub fn type_constraint(&mut self, a: Type, b: Type, span: Span) {
-        self.constraints.push(TypeConstraint(a, b))
+        self.constraints.push(TypeConstraint(a, b, span))
+    }
+
+    pub fn struct_constraint(&mut self, of_t: Type, field_t: Type, name: String, span: Span) {
+        self.struct_constraints.push(StructConstraint {
+            of_t,
+            field_t,
+            name,
+            span,
+        })
     }
 
     fn new_tv(&mut self) -> TypeVariable {
@@ -91,6 +115,7 @@ impl Environment {
         type_
     }
 
+    #[allow(unused)]
     pub fn print_constraints(&self) {
         println!("CONSTRAINTS:\n{}", self.constraints.clone().sx());
     }
@@ -115,11 +140,28 @@ pub fn freshen_type_variables(
     });
 }
 
-pub fn type_solve(module: IrModule) -> (IrModule, ModuleInterface) {
+pub fn normalize_type_variables(t: &mut impl Visit<Type>) {
+    let mut count = 0;
+    let mut map = HashMap::new();
+    t.visit(|type_: &mut Type| {
+        if let Type::Variable(type_var) = type_ {
+            if let Some(replace) = map.get(type_var) {
+                *type_var = *replace;
+            } else {
+                let replace = count;
+                count += 1;
+                map.insert(*type_var, replace);
+                *type_var = replace;
+            }
+        }
+    });
+}
+
+pub fn type_solve(module: IrModule) -> Result<(IrModule, ModuleInterface)> {
     let mut env = Environment::default();
     let mut free = HashSet::default();
     let mut interface = ModuleInterface::default();
-    let module = module.infer(&mut env, &mut free);
+    let module = module.infer(&mut env, &mut free)?;
     for item in &module.items {
         match item {
             ModuleItem::Let(pattern, _) => {
@@ -127,21 +169,21 @@ pub fn type_solve(module: IrModule) -> (IrModule, ModuleInterface) {
                     interface.values.insert(path.clone(), type_.clone());
                 });
             }
-            ModuleItem::Type(path) => {}
+            ModuleItem::Type(path) => {
+                interface.types.insert(path.clone());
+            }
             ModuleItem::Constructor(path, constructor) => {
                 interface
                     .values
                     .insert(path.clone(), constructor.function_type());
+                interface
+                    .constructors
+                    .insert(path.clone(), constructor.clone());
             }
-            ModuleItem::Import {
-                path,
-                type_,
-                major,
-                minor,
-            } => {
+            ModuleItem::Import { path, type_, .. } => {
                 interface.values.insert(path.clone(), type_.clone().into());
             }
         }
     }
-    (module, interface)
+    Ok((module, interface))
 }

@@ -3,6 +3,7 @@ use super::*;
 macro_rules! test {
   ($($name:ident),*) => {
     $(
+      #[allow(unused)]
       #[test]
       fn $name() {
         let path = "./src/test/".to_string() + stringify!($name) + ".hc";
@@ -14,7 +15,7 @@ macro_rules! test {
                 panic!()
             }
         };
-        //execute(wasm);
+        execute(wasm);
       }
     )*
   }
@@ -31,6 +32,7 @@ test!(
     demo
 );
 
+#[allow(unused)]
 fn execute(wasm: Vec<u8>) {
     use wasmtime::*;
     let mut config = Config::default();

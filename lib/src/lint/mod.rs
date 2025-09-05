@@ -3,11 +3,13 @@ pub mod kinds;
 pub mod render;
 pub mod span;
 
+use std::sync::Mutex;
+
 pub(super) use color::*;
 pub use kinds::*;
 pub use span::*;
 
-use crate::{compiler_print, render::Linter};
+use crate::{OUTPUT, compiler_print, render::Linter};
 
 pub type Result<T> = std::result::Result<T, Lint>;
 
@@ -96,13 +98,13 @@ impl<T> ResidualContext for std::result::Result<T, Lint> {
 }
 
 pub trait Handle<T> {
-    fn handle(self, linter: &Linter) -> Option<T>;
+    fn handle(self, linter: &Linter) -> std::result::Result<T, String>;
 }
 
 impl<T> Handle<T> for Result<T> {
-    fn handle(self, linter: &Linter) -> Option<T> {
+    fn handle(self, linter: &Linter) -> std::result::Result<T, String> {
         match self {
-            Ok(v) => Some(v),
+            Ok(v) => Ok(v),
             Err(e) => {
                 compiler_print(
                     "Failed to Compile"
@@ -110,7 +112,11 @@ impl<T> Handle<T> for Result<T> {
                         .to_string(),
                 );
                 compiler_print(linter.render(e).to_string());
-                None
+                Err(OUTPUT
+                    .get_or_init(|| Mutex::new("Failed with no reason (BUG)\n".into()))
+                    .lock()
+                    .unwrap()
+                    .clone())
             }
         }
     }

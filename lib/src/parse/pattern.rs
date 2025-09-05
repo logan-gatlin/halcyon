@@ -50,6 +50,14 @@ pub fn parse_pattern(iter: it!()) -> Result<PatternExpression> {
         // Literals
         IntegerLiteral(i, base) => e::Literal(Literal::Integer(i, base)),
         RealLiteral(r) => e::Literal(Literal::Real(r)),
+        Minus if let Some(IntegerLiteral(num, base)) = iter.peek(0).map(|t| t.inner) => {
+            iter.skip(1);
+            e::Literal(Literal::Integer(format!("-{num}"), base))
+        }
+        Minus if let Some(RealLiteral(num)) = iter.peek(0).map(|t| t.inner) => {
+            iter.skip(1);
+            e::Literal(Literal::Real(format!("-{num}")))
+        }
         True => e::Literal(Literal::Boolean(true)),
         False => e::Literal(Literal::Boolean(false)),
         StringLiteral(s) => e::Literal(Literal::String(s)),

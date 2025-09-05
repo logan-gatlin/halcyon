@@ -1,4 +1,6 @@
-use wasm_encoder::FieldType;
+use std::sync::Arc;
+
+use wasm_encoder::{CompositeInnerType, CompositeType, FieldType, SubType};
 
 use crate::semantic::{Type, Universe};
 
@@ -44,6 +46,7 @@ impl Type {
             Type::Instantiation(ref path, ref items) => Universe::get()
                 .get_named_type(path)
                 .instantiate(items)
+                .unwrap()
                 .reduce(),
         }
     }
@@ -94,7 +97,7 @@ impl Encode<ForeignFunctionType> for TypeEncoder {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct TypeEncoder {
     pub id_map: HashMap<ReducedType, u32>,
     pub value_map: HashMap<ReducedType, ValType>,
@@ -103,11 +106,19 @@ pub struct TypeEncoder {
     main_type_id: Option<u32>,
 }
 
-impl TypeEncoder {
-    pub fn new() -> Self {
-        Self::default()
+impl std::default::Default for TypeEncoder {
+    fn default() -> Self {
+        Self {
+            id_map: Default::default(),
+            value_map: Default::default(),
+            foreign_function_map: Default::default(),
+            type_section: Default::default(),
+            main_type_id: Default::default(),
+        }
     }
+}
 
+impl TypeEncoder {
     fn add_type_to_registry(&mut self, type_: ReducedType, rt: RegisteredType) -> StorageType {
         let id = self.type_section.len() as u32;
         self.type_section.push(rt);
@@ -151,13 +162,19 @@ impl TypeEncoder {
         }
         let rt = match type_.clone() {
             AnyRef => {
-                let vt = ValType::Ref(RefType::ANYREF);
+                let vt = ValType::Ref(RefType {
+                    nullable: false,
+                    heap_type: HeapType::ANY,
+                });
                 self.value_map.insert(type_, vt.clone());
                 return st::Val(vt);
             }
             Sum => RegisteredType::Struct(vec![
                 StorageType::Val(ValType::I32),
-                StorageType::Val(ValType::Ref(RefType::ANYREF)),
+                StorageType::Val(ValType::Ref(RefType {
+                    nullable: false,
+                    heap_type: HeapType::ANY,
+                })),
             ]),
             I64 => rt::Struct(vec![st::Val(vt::I64)]),
             F64 => rt::Struct(vec![st::Val(vt::F64)]),
@@ -174,10 +191,13 @@ impl TypeEncoder {
                 self.make_storage_type(*a.clone());
                 self.make_storage_type(*b.clone());
                 self.make_storage_type(ReducedType::capture());
-                let a_valtype = self.value_map.get(&a).unwrap().clone();
                 let capture_valtype = self.value_map.get(&ReducedType::capture()).unwrap().clone();
+                /*
+                let a_valtype = self.value_map.get(&a).unwrap().clone();
                 let b_valtype = self.value_map.get(&b).unwrap().clone();
-                rt::Function(FuncType::new([a_valtype, capture_valtype], [b_valtype]))
+                */
+                let any_valtype = self.value_map.get(&ReducedType::AnyRef).unwrap().clone();
+                rt::Function(FuncType::new([any_valtype, capture_valtype], [any_valtype]))
             }
         };
         self.add_type_to_registry(type_, rt)
@@ -188,14 +208,14 @@ impl TypeEncoder {
             .into_iter()
             .fold(TypeSection::new(), |mut ts, t| {
                 match t {
-                    RegisteredType::Function(func_type) => ts.ty().func_type(&func_type),
-                    RegisteredType::Array(storage_type) => ts.ty().array(&storage_type, false),
+                    RegisteredType::Array(storage_type) => ts.ty().array(&storage_type, true),
                     RegisteredType::Struct(storage_types) => {
                         ts.ty().struct_(storage_types.iter().map(|t| FieldType {
                             element_type: *t,
                             mutable: false,
                         }))
                     }
+                    RegisteredType::Function(func_type) => ts.ty().func_type(&func_type),
                 };
                 ts
             })

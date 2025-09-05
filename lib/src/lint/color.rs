@@ -32,6 +32,7 @@ where
     }
 }
 
+#[allow(unused)]
 #[cfg(not(target_family = "wasm"))]
 impl<T> ApplyAttribute for T
 where

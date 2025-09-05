@@ -1,16 +1,11 @@
 use wasm_encoder::Instruction;
 
 use super::*;
-pub const BUILTIN_MODULE_NAME: &str = "builtin";
 
-pub fn compile_builtin(enc: &mut ModuleEncoder, interfaces: &mut HashMap<Path, ModuleInterface>) {
-    let mut interface = ModuleInterface::default();
-    let mut init_fn = enc.main_function();
-    primitive_types(&mut init_fn, &mut interface);
-    operator_assembly(&mut init_fn, &mut interface);
-    functions(&mut init_fn, &mut interface);
-    init_fn.finish_mainfn();
-    interfaces.insert(Path::from(BUILTIN_MODULE_NAME), interface);
+pub fn compile_builtin(enc: &mut FunctionEncoder, interface: &mut ModuleInterface) {
+    primitive_types(enc, interface);
+    operator_assembly(enc, interface);
+    functions(enc, interface);
 }
 
 fn primitive_types(enc: &mut FunctionEncoder, interface: &mut ModuleInterface) {
@@ -25,23 +20,25 @@ fn primitive_types(enc: &mut FunctionEncoder, interface: &mut ModuleInterface) {
     .into_iter()
     .for_each(|(name, type_)| {
         enc.encode(type_.clone());
-        let path = Path::from(BUILTIN_MODULE_NAME).child(name);
+        let path = Path::from(STD_MODULE_NAME).child(name);
         interface.types.insert(path.clone());
         Universe::get().new_named_type(path, type_);
     });
 }
 
 fn functions(enc: &mut FunctionEncoder, interface: &mut ModuleInterface) {
-    let bt = Path::from(BUILTIN_MODULE_NAME);
+    let std = Path::from(STD_MODULE_NAME);
+    let p1 = Path::from("a");
+    let p2 = Path::from("b");
     // Panic
     {
-        let path = bt.child("panic");
+        let path = std.child("panic");
         let type_ = Type::func(Type::Unit, Type::Variable(0));
         enc.encode(type_.clone());
         enc.module_encoder.new_global(&path, &type_);
         interface.values.insert(path.clone(), type_.clone());
         enc.encode(curry_function(
-            [("$".into(), Type::Unit)],
+            [(p1.clone(), Type::Unit)],
             Type::Variable(0),
             |e| {
                 e.encode(Unreachable);
@@ -58,6 +55,7 @@ fn operator_assembly(encoder: &mut FunctionEncoder, interface: &mut ModuleInterf
     [
         (UnaryOp::Minus, I64Const(0), I64Sub),
         (UnaryOp::MinusDot, F64Const(0.0.into()), F64Sub),
+        (UnaryOp::Not, I32Const(1), I32Xor),
     ]
     .into_iter()
     .for_each(|(op, zero, sub): (UnaryOp, Instruction, Instruction)| {
@@ -106,14 +104,12 @@ fn operator_assembly(encoder: &mut FunctionEncoder, interface: &mut ModuleInterf
             .module_encoder
             .new_global(&OP.path(), &OP.get_type());
         encoder
-            .encode(curry(
+            .encode(curry_function_with_node(
                 [
                     (p1.clone(), Type::Variable(0)),
                     (p2.clone(), Type::func(Type::Variable(0), Type::Variable(1))),
                 ]
                 .into_iter(),
-                &mut vec![],
-                &mut vec![],
                 Type::Variable(1),
                 IrKind::Call {
                     callee: IrKind::Identifier(p2.clone())
@@ -126,6 +122,26 @@ fn operator_assembly(encoder: &mut FunctionEncoder, interface: &mut ModuleInterf
                         .into(),
                     argument_first: false,
                 },
+            ))
+            .set_symbol(&OP.path());
+    }
+    // Binary ;
+    {
+        const OP: BinaryOp = BinaryOp::Semicolon;
+        interface.values.insert(OP.path(), OP.get_type());
+        encoder.encode(OP.get_type());
+        encoder
+            .module_encoder
+            .new_global(&OP.path(), &OP.get_type());
+        encoder
+            .encode(curry_function_with_node(
+                [
+                    (p1.clone(), Type::Variable(0)),
+                    (p2.clone(), Type::Variable(1)),
+                ]
+                .into_iter(),
+                Type::Variable(1),
+                IrKind::Identifier(p2.clone()),
             ))
             .set_symbol(&OP.path());
     }
@@ -168,7 +184,7 @@ fn operator_assembly(encoder: &mut FunctionEncoder, interface: &mut ModuleInterf
                             struct_type_index: struct_type,
                             field_index: 0,
                         })
-                        .get_symbol(&p1)
+                        .get_symbol(&p2)
                         .encode([
                             StructGet {
                                 struct_type_index: struct_type,

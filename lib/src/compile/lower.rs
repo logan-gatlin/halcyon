@@ -40,7 +40,10 @@ impl FunctionEncoder<'_> {
                 self.encode([in_type.clone(), out_type.clone()]);
                 let temporary = self.new_temporary(&pattern.type_);
                 let out_type_id = self.module_encoder.type_id(&out_type);
-                let in_type_id = self.module_encoder.type_id(&in_type);
+                let in_type_id_cast = match in_type.reduce() {
+                    ReducedType::AnyRef => Nop,
+                    t => RefCastNonNull(HeapType::Concrete(self.module_encoder.reduced_type_id(&t)))
+                };
                 self.encode([
                     LocalTee(temporary),
                     // Check sum type tag
@@ -57,53 +60,29 @@ impl FunctionEncoder<'_> {
                         struct_type_index: out_type_id,
                         field_index: 1,
                     },
-                    RefCastNonNull(HeapType::Concrete(in_type_id)),
+                    in_type_id_cast
                 ])
                 .lower_pattern(*next_pattern, scope);
             }
+            PatternKind::Literal(ConstValue::Unit) => {
+                self.encode(Drop);
+            }
             PatternKind::Literal(const_value) => {
                 let function_temporary = self.new_temporary(&Type::func(Type::Variable(0), Type::Boolean));
+                let boolean_type = self.module_encoder.type_id(&Type::Boolean);
                 self.get_symbol(&BinaryOp::DoubleEqual.path())
                     .call_function(Type::Variable(0), Type::func(Type::Variable(0), Type::Boolean))
                     .encode(LocalSet(function_temporary)).encode(const_value).encode(LocalGet(function_temporary))
-                    .call_function(Type::Variable(0), Type::Boolean)
+                    .call_function(Type::Variable(0), Type::Boolean).encode([
+                        StructGet {
+                            struct_type_index: boolean_type,
+                            field_index: 0,
+                        },
+                        I32Const(1),
+                        I32Xor,
+                        BrIf(0)
+                    ])
                     ;
-                    /*
-                self.encode(const_value)
-                    .get_symbol(&BinaryOp::DoubleEqual.path())
-                    .encode([
-                        LocalTee(func_temporary),
-                        StructGet {
-                            struct_type_index: func_wrapper_id,
-                            field_index: 1,
-                        },
-                        LocalGet(func_temporary),
-                        StructGet {
-                            struct_type_index: func_wrapper_id,
-                            field_index: 0,
-                        },
-                        CallRef(func_id_1),
-                        LocalGet(temporary),
-                        LocalTee(func_temporary),
-                        StructGet {
-                            struct_type_index: func_wrapper_id,
-                            field_index: 1,
-                        },
-                        LocalGet(func_temporary),
-                        StructGet {
-                            struct_type_index: func_wrapper_id,
-                            field_index: 0,
-                        },
-                        CallRef(func_id_2),
-                        StructGet {
-                            struct_type_index: boolean_type_id,
-                            field_index: 0,
-                        },
-                        I32Const(0),
-                        I32Eq,
-                        BrIf(0),
-                    ]);
-                    */
             }
         };
     }
@@ -191,7 +170,9 @@ impl Encode<ModuleItem> for FunctionEncoder<'_> {
                 major,
                 minor,
             } => {
-                todo!()
+                self.module_encoder.new_global(&path, &type_.into());
+                self.new_import_function(major, minor, type_)
+                    .set_symbol(&path)
             }
             ModuleItem::Type(_) => self,
         }
@@ -259,7 +240,7 @@ impl Encode<IrNode> for FunctionEncoder<'_> {
                 let type_id = self.module_encoder.type_id(&node.type_);
                 self.encode(items.as_slice()).encode(StructNew(type_id))
             }
-            IrKind::Field { of, index } => todo!(),
+            IrKind::Field { .. } => todo!(),
             IrKind::Function {
                 parameter_name,
                 captures,
@@ -297,18 +278,14 @@ impl Encode<IrNode> for FunctionEncoder<'_> {
             IrKind::Call {
                 callee,
                 argument,
-                argument_first,
+                argument_first: _,
             } => {
                 let temporary = self.new_temporary(&callee.type_);
-                let callee_type_id = self.module_encoder.type_id(&callee.type_);
                 self.encode(callee)
-                    .encode([
-                        RefCastNonNull(HeapType::Concrete(callee_type_id)),
-                        LocalSet(temporary),
-                    ])
+                    .encode([LocalSet(temporary)])
                     .encode(argument.clone())
                     .encode(LocalGet(temporary))
-                    .call_function(argument.type_, node.type_)
+                    .call_function(argument.type_, node.type_.clone())
             }
             IrKind::If {
                 predicate,
@@ -350,7 +327,14 @@ impl Encode<IrNode> for FunctionEncoder<'_> {
                 }
                 self.encode([Unreachable, End])
             }
-            IrKind::ImportedSymbol(path, _) => self.get_symbol(&path),
+            IrKind::ImportedSymbol(path, _) => {
+                self.get_symbol(&path);
+                if !matches!(node.type_, Type::Variable(_)) {
+                    let this_type_id = self.module_encoder.type_id(&node.type_);
+                    self.encode(RefCastNonNull(HeapType::Concrete(this_type_id)));
+                }
+                self
+            }
             IrKind::AsmLiteral(f) => {
                 f.0(self);
                 self

@@ -1,5 +1,4 @@
 module LiteralTest =
-  import std
   let () = ()
   let _ = 0.1
   let _ = std::assert (1e9 == 1000000000.0)

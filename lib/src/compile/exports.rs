@@ -9,10 +9,6 @@ pub struct ExportEncoder {
 }
 
 impl ExportEncoder {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     pub fn new_global(&mut self, path: Path, type_id: u32) {
         let id = self.global_section.len() as u32;
         self.global_section.push(type_id);

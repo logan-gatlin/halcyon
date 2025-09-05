@@ -76,7 +76,7 @@ pub fn parse_type_definition(iter: it!()) -> Result<TypeDefinition> {
                 }
                 let name = iter.eat_ident()?;
                 lhs.push(name);
-                iter.eat_or_error(DoubleColon)?;
+                iter.eat_or_error(Colon)?;
                 let expr = parse_type_expression(iter, 0)?;
                 rhs.push(expr);
                 if iter.eat(Comma).is_none() && iter.peek(0).is_none_or(|t| *t != RightBrace) {

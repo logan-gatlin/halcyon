@@ -18,7 +18,7 @@ pub enum ValueExpressionKind {
     Let {
         assignee: PatternExpression,
         value: Box<ValueExpression>,
-        in_: Option<Box<ValueExpression>>,
+        in_: Box<ValueExpression>,
     },
     Literal(Literal),
     Identifier(String),
@@ -155,10 +155,9 @@ fn parse_primary(iter: it!()) -> Result<ValueExpression> {
                 iter.eat_or_error(Equal)?;
                 Box::new(parse_value_expression(iter, 0)?)
             },
-            in_: if iter.eat(In).is_some() {
-                Some(Box::new(parse_value_expression(iter, 0)?))
-            } else {
-                None
+            in_: {
+                iter.eat_one_of([In, Semicolon])?;
+                Box::new(parse_value_expression(iter, 0)?)
             },
         },
         // Struct literal

@@ -85,6 +85,7 @@ pub fn parse_module_expression(iter: it!()) -> Result<ModuleExpression> {
             let type_ = parse_type_expression(iter, 0)?.into();
             iter.eat_or_error(Equal)?;
             let major = iter.eat_ident()?;
+            iter.eat_or_error(DoubleColon)?;
             let minor = iter.eat_ident()?;
             ModuleExpressionKind::Import {
                 name,

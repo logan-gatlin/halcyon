@@ -1,9 +1,10 @@
-use crate::{BUILTIN_MODULE, ir::Path, semantic::Type, token::*};
+use crate::std_hc::STD_MODULE_NAME;
+use crate::{ir::Path, semantic::Type, token::*};
 
 pub type Precedence = usize;
 
 macro_rules! op {
-  ($name:ident; $($op:ident, $prec:expr, $assoc:expr);*;) => {
+  ($name:ident; $prefix:literal; $($op:ident, $prec:expr, $assoc:expr);*;) => {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub enum $name {
       $($op,)*
@@ -24,14 +25,14 @@ macro_rules! op {
       }
 
       pub fn path(&self) -> Path {
-          Path::from(format!("{BUILTIN_MODULE}:{self}"))
+          Path::from(STD_MODULE_NAME).child(format!("{self}"))
       }
     }
 
     impl std::fmt::Display for $name {
       fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-          $(Self::$op => write!(f, "{}{}", stringify!($name), TokenKind::$op)),*
+          $(Self::$op => write!(f, "({}{})", $prefix, TokenKind::$op)),*
         }
       }
     }
@@ -48,7 +49,7 @@ macro_rules! op {
 
     impl sx::SXRepr for $name {
         fn sx(self) -> sx::SX {
-            sx::SX::Atom(format!("{self}"))
+            sx::SX::Atom(format!("{}{self}", $prefix))
         }
     }
   }
@@ -61,7 +62,7 @@ pub const CALL_PREC: Precedence = 12;
 
 // Name, precedence, associativity;
 op! {
-  BinaryOp;
+  BinaryOp; "";
   Star, 15, LEFT_ASSOC;
   StarDot, 15, LEFT_ASSOC;
   Slash, 15, LEFT_ASSOC;
@@ -85,7 +86,7 @@ op! {
 }
 
 op! {
-  UnaryOp;
+  UnaryOp; "unary_";
   Minus, 15, LEFT_ASSOC;
   MinusDot, 15, LEFT_ASSOC;
   Not, 15, LEFT_ASSOC;
@@ -94,20 +95,11 @@ op! {
 pub const TYPE_STAR_PREC: Precedence = 15;
 
 op! {
-  BinaryTypeOp;
+  BinaryTypeOp; "";
   Arrow, 5, RIGHT_ASSOC;
 }
 
 impl BinaryOp {
-    pub const POLYMORPHIC: [Self; 6] = [
-        Self::DoubleEqual,
-        Self::BangEqual,
-        Self::LessEqual,
-        Self::GreaterEqual,
-        Self::Less,
-        Self::Greater,
-    ];
-
     pub fn parameter_type(&self) -> Type {
         match self {
             BinaryOp::Minus

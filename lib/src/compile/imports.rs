@@ -26,6 +26,22 @@ impl ForeignFunctionType {
             returns,
         }
     }
+
+    pub fn parameter_type(&self) -> Type {
+        match self.parameters {
+            0 => Type::Unit,
+            1 => Type::Integer,
+            n => Type::Product(vec![Type::Integer; n]),
+        }
+    }
+
+    pub fn return_type(&self) -> Type {
+        match self.returns {
+            0 => Type::Unit,
+            1 => Type::Integer,
+            n => Type::Product(vec![Type::Integer; n]),
+        }
+    }
 }
 
 impl Into<FuncType> for ForeignFunctionType {
@@ -65,7 +81,9 @@ impl TryFrom<Type> for ForeignFunctionType {
             match t {
                 Type::Unit => Ok(0),
                 Type::Integer => Ok(1),
-                Type::Product(v) if v.iter().all(|t| t == &Type::Integer) => Ok(v.len()),
+                Type::Product(v) if v.len() != 1 && v.iter().all(|t| t == &Type::Integer) => {
+                    Ok(v.len())
+                }
                 _ => Err(lint_nospan(TypeLint::InvalidImportType)),
             }
         }
@@ -81,7 +99,7 @@ pub struct ImportEncoder(Vec<ImportSymbol>);
 
 impl ImportEncoder {
     fn push(&mut self, major: String, minor: String, entity: EntityType) -> u32 {
-        let id = self.0.len() as u32;
+        let id = self.functions();
         self.0.push(ImportSymbol {
             major,
             minor,
@@ -123,22 +141,91 @@ impl ImportEncoder {
     }
 }
 
-impl ModuleEncoder {
+impl FunctionEncoder<'_> {
     pub fn new_import_function(
         &mut self,
         major: impl Into<String>,
         minor: impl Into<String>,
-        i64_parameters: usize,
-        i64_returns: usize,
-    ) -> u32 {
-        let foreign_type = ForeignFunctionType::new(i64_parameters, i64_returns);
-        self.type_encoder.encode(foreign_type);
-        let type_id = self.foreign_function_type(foreign_type);
-        let import_id = self.import_encoder.functions();
-        self.import_encoder
-            .push(major.into(), minor.into(), EntityType::Function(type_id));
-        let element_id = self.element_section.len() as u32;
-        self.element_section.push(FunctionKind::Import(import_id));
-        element_id
+        ftype: ForeignFunctionType,
+    ) -> &mut Self {
+        self.module_encoder.type_encoder.encode(ftype);
+        let import_function_id = self.module_encoder.import_encoder.push(
+            major.into(),
+            minor.into(),
+            EntityType::Function(self.module_encoder.foreign_function_type(ftype)),
+        );
+        let element_id = self.module_encoder.element_section.len() as u32;
+        self.module_encoder
+            .element_section
+            .push(FunctionKind::Import(import_function_id));
+        let parameter = Path::from("a");
+        let mut enc = self.module_encoder.function(
+            parameter.clone(),
+            &ftype.parameter_type(),
+            &ftype.return_type(),
+        );
+        let integer_type = enc.module_encoder.type_id(&Type::Integer);
+        match ftype.parameters {
+            0 => {}
+            1 => {
+                enc.get_symbol(&parameter).encode(StructGet {
+                    struct_type_index: integer_type,
+                    field_index: 0,
+                });
+            }
+            n => {
+                let tuple_type = enc
+                    .module_encoder
+                    .type_id(&Type::Product(vec![Type::Integer; ftype.parameters]));
+                for i in 0..(n as u32) {
+                    enc.get_symbol(&parameter).encode([
+                        StructGet {
+                            struct_type_index: tuple_type,
+                            field_index: i,
+                        },
+                        StructGet {
+                            struct_type_index: integer_type,
+                            field_index: 0,
+                        },
+                    ]);
+                }
+            }
+        };
+        enc.encode(Call(element_id));
+        match ftype.returns {
+            0 => {
+                enc.encode(ConstValue::Unit);
+            }
+            1 => {
+                enc.encode(StructNew(integer_type));
+            }
+            n => {
+                let mut locals = vec![];
+                for _ in 0..n {
+                    let temp = enc.new_temporary(&Type::Integer);
+                    locals.push(temp);
+                    enc.encode([StructNew(integer_type), LocalSet(temp)]);
+                }
+                for l in locals {
+                    enc.encode(LocalGet(l));
+                }
+                let tuple_type = enc
+                    .module_encoder
+                    .type_id(&Type::Product(vec![Type::Integer; ftype.returns]));
+                enc.encode(StructNew(tuple_type));
+            }
+        }
+        let fid = enc.finish();
+        let capture_type_id = self.module_encoder.reduced_type_id(&ReducedType::capture());
+        let function_type = self.module_encoder.type_id(&ftype.into());
+        self.encode([
+            RefFunc(fid),
+            ArrayNewFixed {
+                array_type_index: capture_type_id,
+                array_size: 0,
+            },
+            StructNew(function_type),
+        ]);
+        self
     }
 }

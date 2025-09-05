@@ -1,6 +1,6 @@
 use sx::SXRepr;
 
-use crate::{Visit, ir::Path, semantic::freshen_type_variables};
+use crate::{TypeLint, Visit, ir::Path, lint::*, semantic::freshen_type_variables};
 
 pub type TypeVariable = usize;
 
@@ -95,16 +95,23 @@ pub struct AbstractType {
 }
 
 impl AbstractType {
-    pub fn instantiate(mut self, parameters: &[Type]) -> Type {
+    pub fn instantiate(mut self, parameters: &[Type]) -> Result<Type> {
         if parameters.len() != self.arity {
-            panic!("Kindness error");
+            return Err(lint_nospan(TypeLint::PartialInstantiation))
+                .context(format!("{}", self.arity))
+                .context(format!("{}", parameters.len()));
         }
         self.base.visit(|t: &mut Type| {
             if let Type::Variable(tv) = t {
                 *t = parameters[*tv].clone()
             }
         });
-        self.base
+        Ok(self.base)
+    }
+
+    pub fn instantiate_with(self, mut f: impl FnMut() -> TypeVariable) -> Result<Type> {
+        let parameters = vec![Type::Variable(f()); self.arity];
+        self.instantiate(&parameters)
     }
 }
 
@@ -142,11 +149,6 @@ impl Universe {
             .insert(path.clone(), AbstractType { arity, base: t });
     }
 
-    pub fn modify_named_type(&mut self, path: Path, t: Type) {
-        self.name_map.remove(&path);
-        self.new_named_type(path, t);
-    }
-
     pub fn get_named_type(&self, path: &Path) -> AbstractType {
         self.name_map
             .get(path)
@@ -154,6 +156,29 @@ impl Universe {
             .clone()
     }
 
+    pub fn find_struct_with_names(&self, names: &HashSet<String>) -> Vec<AbstractType> {
+        self.name_map
+            .values()
+            .filter_map(|at| {
+                if let Type::Struct {
+                    ref member_names, ..
+                } = at.base
+                {
+                    let member_names = HashSet::from_iter(member_names.clone());
+                    if &member_names == names {
+                        Some(at)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            })
+            .cloned()
+            .collect::<Vec<_>>()
+    }
+
+    #[allow(unused)]
     pub fn print() {
         println!(
             "{}",
@@ -179,6 +204,26 @@ impl Type {
 
     pub fn func(parameter: Type, returns: Type) -> Type {
         Type::Function(parameter.into(), returns.into())
+    }
+
+    pub fn field_type(&self, name: &str) -> Option<Type> {
+        if let Type::Struct {
+            member_names,
+            member_types,
+            ..
+        } = self
+            && let Some(id) = member_names.iter().position(|n| n == name)
+        {
+            Some(member_types[id].clone())
+        } else if let Type::Instantiation(path, types) = self {
+            Universe::get()
+                .get_named_type(path)
+                .instantiate(types)
+                .unwrap()
+                .field_type(name)
+        } else {
+            None
+        }
     }
 
     pub fn contains_type_variable(&self, tv: TypeVariable) -> bool {

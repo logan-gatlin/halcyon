@@ -1,6 +1,7 @@
 mod build_ir;
 mod build_types;
 pub mod constant;
+pub mod constructor;
 mod namespace;
 mod path;
 mod pattern;
@@ -17,6 +18,7 @@ use crate::{
 pub use build_ir::*;
 use build_types::*;
 pub use constant::*;
+pub use constructor::*;
 pub use namespace::*;
 pub use path::*;
 pub use pattern::*;
@@ -26,7 +28,7 @@ pub enum IrKind {
     Let {
         assignee: Pattern,
         value: Box<IrNode>,
-        in_: Option<Box<IrNode>>,
+        in_: Box<IrNode>,
     },
     Immediate(ConstValue),
     Identifier(Path),

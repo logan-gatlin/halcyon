@@ -8,25 +8,25 @@ pub fn build_ir(
     let module_name = Path::from((*module.name).clone());
     let mut ns = ModuleNameSpace::new(module_name.clone());
     for interface in context.values() {
-        ns.import_interface(interface)?;
+        ns.import_interface(interface).span(module.span)?;
     }
     let mut items = vec![];
     for item in module.contents.clone() {
-        module_expr(&mut ns, context, item, &mut items)?;
+        module_expr(&mut ns, item, &mut items)?;
     }
     Ok(IrModule { module_name, items })
 }
 
 fn module_expr(
     ns: &mut ModuleNameSpace,
-    context: &HashMap<Path, ModuleInterface>,
     e: ModuleExpression,
     items: &mut Vec<ModuleItem>,
 ) -> Result<()> {
     match e.inner {
         ModuleExpressionKind::Let { assignee, value } => {
-            let assignee = pattern_expr(ns, assignee, true)?;
+            let mut assignee = pattern_expr(ns, assignee, true)?;
             let value = value_expr(ns, *value)?;
+            assignee.visit(|(p, _)| ns.finalize_value(p));
             items.push(ModuleItem::Let(assignee, Box::new(value)));
         }
         ModuleExpressionKind::Type {
@@ -120,12 +120,12 @@ pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> Result<IrN
             value,
             in_,
         } => {
-            let assignee = pattern_expr(ns, assignee, false)?;
+            let mut assignee = pattern_expr(ns, assignee, false)?;
             let value = rec!(value);
-            let in_ = match in_ {
-                Some(in_) => Some(rec!(in_)),
-                None => None,
-            };
+            assignee.visit(|(p, _)| {
+                ns.finalize_value(p);
+            });
+            let in_ = rec!(in_);
             ns.end_value_scopes(assignee.introduced_names());
             ir::Let {
                 assignee,
@@ -229,7 +229,8 @@ pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> Result<IrN
             let mut new_predicates = vec![];
             let mut new_branches = vec![];
             for (predicate, branch) in predicates.into_iter().zip(branches) {
-                let predicate = pattern_expr(ns, predicate, false)?;
+                let mut predicate = pattern_expr(ns, predicate, false)?;
+                predicate.visit(|(p, _)| ns.finalize_value(p));
                 let branch = value_expr(ns, branch)?;
                 ns.end_value_scopes(predicate.introduced_names());
                 new_predicates.push(predicate);
@@ -275,7 +276,7 @@ fn pattern_expr(
     Ok(match pattern.inner {
         Literal(literal) => PatternKind::Literal(lit(literal).span(span)?),
         Identifier(id) => PatternKind::Name(if global {
-            ns.new_global_value(&id)?
+            ns.new_global_value(&id).span(span)?
         } else {
             ns.new_local_value(&id, false)
         }),
@@ -290,7 +291,8 @@ fn pattern_expr(
                 ns.get_constructor(&items[0])
             } else {
                 ns.get_constructor_exact(&Path::from(items))
-            }?;
+            }
+            .span(span)?;
             PatternKind::Constructor(cons, Box::new(pattern_expr(ns, *expression, global)?))
         }
     }

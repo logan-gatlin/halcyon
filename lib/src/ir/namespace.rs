@@ -1,6 +1,15 @@
 use std::collections::HashSet;
 
+use sx::SXRepr;
+
 use super::*;
+
+#[derive(Debug, Clone, Copy)]
+pub struct NameInfo {
+    depth: usize,
+    is_finalized: bool,
+    is_global: bool,
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct ModuleNameSpace {
@@ -9,8 +18,8 @@ pub struct ModuleNameSpace {
     // Values
     value_lookup: HashMap<String, Path>,
     value_history: Vec<NameEvent>,
+    local_value_info: HashMap<Path, NameInfo>,
     capture_list: Vec<Vec<Path>>,
-    values_available: HashSet<Path>,
     imported_value_types: HashMap<Path, Type>,
     // Constructors
     constructor_lookup: HashMap<String, Path>,
@@ -31,23 +40,101 @@ impl ModuleNameSpace {
     }
 
     pub fn import_interface(&mut self, interface: &ModuleInterface) -> Result<()> {
-        todo!()
+        for (path, type_) in interface.values.clone() {
+            self.imported_value_types.insert(path, type_);
+        }
+        for (path, constructor) in interface.constructors.clone() {
+            self.constructors_available.insert(path, constructor);
+        }
+        for path in interface.types.clone() {
+            self.types_available.insert(path);
+        }
+        Ok(())
     }
     // Values
     pub fn new_global_value(&mut self, name: &str) -> Result<Path> {
-        todo!()
+        let name = if name == "_" {
+            let salt = self.salt;
+            self.salt += 1;
+            format!("_#{salt}")
+        } else {
+            name.to_string()
+        };
+        let path = self.module_name.child(&name);
+        if self
+            .value_lookup
+            .insert(name.clone(), path.clone())
+            .is_some()
+            || self.imported_value_types.contains_key(&path)
+        {
+            return Err(lint_nospan(NameLint::NameRedefinition)).context(name);
+        }
+        self.local_value_info.insert(
+            path.clone(),
+            NameInfo {
+                depth: 0,
+                is_finalized: false,
+                is_global: true,
+            },
+        );
+        Ok(path)
     }
 
     pub fn new_local_value(&mut self, name: &str, is_parameter: bool) -> Path {
-        todo!()
+        let salt = self.salt;
+        self.salt += 1;
+        let path = Path::from(format!("{name}#{salt}"));
+        self.value_history.push(NameEvent {
+            name: name.to_string(),
+            previous_value: self.value_lookup.insert(name.to_string(), path.clone()),
+        });
+        self.local_value_info.insert(
+            path.clone(),
+            NameInfo {
+                depth: self.capture_list.len(),
+                is_finalized: is_parameter,
+                is_global: false,
+            },
+        );
+        path
     }
 
     pub fn get_value(&mut self, name: &str) -> Result<Path> {
-        todo!()
+        let path = self
+            .value_lookup
+            .get(name)
+            .ok_or(lint_nospan(NameLint::UndefinedName))
+            .context(name)?
+            .clone();
+        if let Some(NameInfo {
+            depth,
+            is_finalized,
+            is_global,
+        }) = self.local_value_info.get(&path).copied()
+            && !is_global
+        {
+            let current_depth = self.capture_list.len();
+            if !is_finalized && current_depth <= depth {
+                return Err(lint_nospan(NameLint::CyclicalDefinition)).context(name);
+            }
+
+            for capture in depth..current_depth {
+                self.capture_list[capture].push(path.clone());
+            }
+        }
+        Ok(path)
+    }
+
+    pub fn finalize_value(&mut self, path: &Path) {
+        self.local_value_info.get_mut(path).unwrap().is_finalized = true;
     }
 
     pub fn get_imported_value_type(&self, path: &Path) -> Result<Type> {
-        todo!()
+        self.imported_value_types
+            .get(path)
+            .ok_or(lint_nospan(NameLint::UndefinedName))
+            .context(path)
+            .cloned()
     }
 
     pub fn begin_capture(&mut self) {
@@ -76,40 +163,102 @@ impl ModuleNameSpace {
 
     // Constructors
     pub fn new_constructor(&mut self, name: &str, constructor: Constructor) -> Result<Path> {
-        todo!()
+        let path = self.module_name.child(name);
+        if self
+            .constructor_lookup
+            .insert(name.to_string(), path.clone())
+            .is_some()
+        {
+            return Err(lint_nospan(NameLint::NameRedefinition)).context(name);
+        }
+        self.constructors_available
+            .insert(path.clone(), constructor);
+        Ok(path)
     }
 
     pub fn get_constructor(&self, name: &str) -> Result<Constructor> {
-        todo!()
+        let path = self
+            .constructor_lookup
+            .get(name)
+            .ok_or(lint_nospan(NameLint::UndefinedName))
+            .context(name)?;
+        Ok(self.constructors_available.get(path).unwrap().clone())
     }
 
     pub fn get_constructor_exact(&self, path: &Path) -> Result<Constructor> {
-        todo!()
+        self.constructors_available
+            .get(path)
+            .ok_or(lint_nospan(NameLint::UndefinedName))
+            .context(path)
+            .cloned()
     }
 
     // Types
     pub fn new_global_type(&mut self, name: &str) -> Result<Path> {
-        todo!()
+        let path = self.module_name.child(name);
+        if self
+            .type_lookup
+            .insert(name.to_string(), path.clone())
+            .is_some()
+        {
+            return Err(lint_nospan(NameLint::NameRedefinition)).context(name);
+        }
+        self.types_available.insert(path.clone());
+        Ok(path)
     }
 
     pub fn new_local_type(&mut self, name: &str, type_: Type) {
-        todo!()
+        let salt = self.salt;
+        self.salt += 1;
+        let path = Path::from(format!("{name}#{salt}"));
+        self.type_history.push(NameEvent {
+            name: name.to_string(),
+            previous_value: self.type_lookup.insert(name.to_string(), path.clone()),
+        });
+        self.local_types.insert(path, type_);
     }
 
     pub fn get_type(&self, name: &str) -> Result<Type> {
-        todo!()
+        let path = self
+            .type_lookup
+            .get(name)
+            .ok_or(lint_nospan(NameLint::UndefinedName))
+            .context(name)?;
+        match self.local_types.get(path).cloned() {
+            Some(t) => Ok(t),
+            None => {
+                let at = Universe::get().get_named_type(path);
+                at.clone().instantiate(&[])?;
+                Ok(Type::Instantiation(path.clone(), vec![]))
+            }
+        }
     }
 
     pub fn get_type_exact(&self, path: &Path) -> Result<Type> {
-        todo!()
+        self.types_available
+            .get(path)
+            .ok_or(lint_nospan(NameLint::UndefinedName))
+            .context(path)?;
+        match self.local_types.get(path).cloned() {
+            Some(t) => Ok(t),
+            None => Universe::get().get_named_type(path).instantiate(&[]),
+        }
     }
 
     pub fn get_type_path(&self, name: &str) -> Result<Path> {
-        todo!()
+        self.type_lookup
+            .get(name)
+            .ok_or(lint_nospan(NameLint::UndefinedName))
+            .context(name)
+            .cloned()
     }
 
     pub fn get_type_path_exact(&self, path: &Path) -> Result<Path> {
-        todo!()
+        self.types_available
+            .get(path)
+            .ok_or(lint_nospan(NameLint::UndefinedName))
+            .context(path)
+            .cloned()
     }
 
     pub fn end_type_scopes(&mut self, num: usize) {
@@ -131,235 +280,4 @@ impl ModuleNameSpace {
 struct NameEvent {
     name: String,
     previous_value: Option<Path>,
-}
-
-/*
-#[derive(Debug, Clone, Default)]
-pub struct NameSpace<T: Clone> {
-    module_name: Path,
-    salt: usize,
-    lookup_table: HashMap<String, Path>,
-    value_table: HashMap<Path, T>,
-    state: Vec<NameEvent>,
-}
-
-impl<T: Clone> NameSpace<T> {
-    pub fn new(module_name: Path) -> Self {
-        Self {
-            module_name,
-            salt: 0,
-            lookup_table: HashMap::new(),
-            value_table: HashMap::new(),
-            state: vec![],
-        }
-    }
-
-    fn define_import(&mut self, name: Path, value: T) -> Result<()> {
-        if self.value_table.insert(name.clone(), value).is_some() {
-            Err(lint_nospan(NameLint::NameRedefinition)).context(name)
-        } else {
-            Ok(())
-        }
-    }
-
-    pub fn define_global(&mut self, name: &str, value: T) -> Result<Path> {
-        let name = if name == "_" {
-            let salt = self.salt;
-            self.salt += 1;
-            format!("_#{salt}")
-        } else {
-            name.to_string()
-        };
-        let path = self.module_name.child(&name);
-        if self
-            .lookup_table
-            .insert(name.clone(), path.clone())
-            .is_some()
-        {
-            return Err(lint_nospan(NameLint::NameRedefinition)).context(name);
-        }
-        self.value_table.insert(path.clone(), value);
-        Ok(path)
-    }
-
-    pub fn get(&self, name: &str) -> Result<T> {
-        let path = self
-            .lookup_table
-            .get(name)
-            .ok_or(lint_nospan(NameLint::UndefinedName))
-            .context(name)?;
-        Ok(self.value_table.get(path).unwrap().clone())
-    }
-
-    pub fn get_path(&self, name: &str) -> Result<Path> {
-        self.lookup_table
-            .get(name)
-            .ok_or(lint_nospan(NameLint::UndefinedName))
-            .context(name)
-            .cloned()
-    }
-
-    pub fn get_exact(&self, path: &Path) -> Result<T> {
-        self.value_table
-            .get(path)
-            .ok_or(lint_nospan(NameLint::UndefinedName))
-            .context(path)
-            .cloned()
-    }
-
-    pub fn update(&mut self, path: &Path, new_value: T) {
-        *self.value_table.get_mut(path).unwrap() = new_value;
-    }
-
-    pub fn define_local(&mut self, name: &str, value: T) -> Path {
-        let salt = self.salt;
-        self.salt += 1;
-        let path = Path::from(format!("{name}#{salt}"));
-        self.value_table.insert(path.clone(), value);
-        let ev = NameEvent {
-            name: name.to_string(),
-            previous_value: self.lookup_table.insert(name.to_string(), path.clone()),
-        };
-        self.state.push(ev);
-        path
-    }
-
-    pub fn end_local_scopes(&mut self, num: usize) {
-        for _ in 0..num {
-            let NameEvent {
-                name,
-                previous_value,
-            } = self.state.pop().unwrap();
-            if let Some(p) = previous_value {
-                self.lookup_table.insert(name, p);
-            } else {
-                self.lookup_table.remove(&name);
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct NameInfo {
-    /// How many `fn`s deep
-    depth: usize,
-    is_parameter: bool,
-}
-
-#[derive(Debug, Clone)]
-pub struct ModuleNameSpace {
-    // Type ns
-    pub types: NameSpace<Type>,
-    // Value ns
-    pub values: NameSpace<NameInfo>,
-    value_capture_list: Vec<Vec<Path>>,
-    value_import_types: HashMap<Path, Type>,
-    // Constructor ns
-    pub constructors: NameSpace<Constructor>,
-}
-
-impl ModuleNameSpace {
-    pub fn new(module_name: Path) -> Self {
-        Self {
-            types: NameSpace::new(module_name.clone()),
-            values: NameSpace::new(module_name.clone()),
-            value_capture_list: Default::default(),
-            value_import_types: Default::default(),
-            constructors: NameSpace::new(module_name),
-        }
-    }
-
-    pub fn define_local_value(&mut self, name: &str, is_parameter: bool) -> Path {
-        self.values.define_local(
-            name,
-            NameInfo {
-                depth: self.value_capture_list.len(),
-                is_parameter,
-            },
-        )
-    }
-
-    pub fn define_global_value(&mut self, name: &str) -> Result<Path> {
-        self.values.define_global(name, NameInfo::default())
-    }
-
-    pub fn define_type(&mut self, name: &str, type_: Type) -> Result<Path> {
-        let path = self.types.define_global(name, Type::Any)?;
-        Universe::get().new_named_type(path.clone(), type_);
-        Ok(path)
-    }
-
-    pub fn define_temporary_type(&mut self, name: &str, parameters: usize) -> Result<Path> {
-        let path = self.types.define_global(name, Type::Any)?;
-        // TODO hack, but probably ok
-        Universe::get().new_named_type(
-            path.clone(),
-            Type::Product((0..parameters).map(Type::Variable).collect()),
-        );
-        Ok(path)
-    }
-
-    pub fn update_type(&mut self, name: Path, type_: Type) {
-        Universe::get().modify_named_type(name, type_);
-    }
-
-    pub fn get_value(&mut self, name: &str) -> Result<Path> {
-        let mangle = self.values.get_path(name)?;
-        let name_info = self.values.get(name)?;
-        let current_depth = self.value_capture_list.len();
-        for capture in name_info.depth..current_depth {
-            self.value_capture_list[capture].push(mangle.clone());
-        }
-        /*
-        if !name_info.is_parameter && current_depth <= name_info.depth {
-            return Err(lint_nospan(NameLint::CyclicalDefinition)).context(name);
-        }
-        */
-        Ok(mangle)
-    }
-
-    pub fn begin_capture(&mut self) {
-        self.value_capture_list.push(vec![]);
-    }
-
-    pub fn end_capture(&mut self) -> Vec<Path> {
-        self.value_capture_list.pop().unwrap()
-    }
-
-    pub fn get_import_type(&self, path: &Path) -> Result<Type> {
-        self.value_import_types
-            .get(path)
-            .ok_or(lint_nospan(NameLint::UndefinedName))
-            .context(path)
-            .cloned()
-    }
-
-    pub fn import_module(&mut self, interface: &ModuleInterface) -> Result<()> {
-        for (name, type_) in interface.values.clone() {
-            self.values
-                .define_import(name.clone(), NameInfo::default())?;
-            self.value_import_types.insert(name, type_);
-        }
-        for (name, cons) in interface.constructors.clone() {
-            self.constructors.define_import(name, cons)?;
-        }
-        for name in interface.types.clone() {
-            self.types.define_import(name, Type::Any)?;
-        }
-        Ok(())
-    }
-}
-*/
-
-#[derive(Debug, Clone, sx::SXRepr)]
-pub struct Constructor {
-    pub variant: usize,
-    pub in_type: Type,
-    pub out_type: Type,
-}
-
-impl Constructor {
-    pub fn function_type(&self) -> Type {
-        Type::func(self.in_type.clone(), self.out_type.clone())
-    }
 }

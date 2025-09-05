@@ -6,16 +6,15 @@ mod lower;
 mod types;
 
 pub use encoding::*;
-use exports::*;
 pub use function::*;
 pub use imports::*;
 pub use types::*;
 use wasm_encoder::{
     CodeSection, ConstExpr, ElementMode, ElementSection, ElementSegment, Elements, FunctionSection,
-    Module, TableSection, TypeSection,
+    Module, StartSection, TableSection, TypeSection,
 };
 
-use std::collections::HashMap;
+use std::{collections::HashMap, rc::Rc};
 
 #[allow(unused_imports)]
 pub use wasm_encoder::{
@@ -32,7 +31,69 @@ pub use wasm_encoder::{
 
 type Instruction = wasm_encoder::Instruction<'static>;
 
-use crate::{Visit, compile::exports::ExportEncoder, ir::*, semantic::Type};
+use crate::{
+    Visit, WithSpan,
+    compile::exports::ExportEncoder,
+    ir::*,
+    semantic::{Type, WithType},
+};
+
+fn curry(
+    mut parameters: impl Iterator<Item = (Path, Type)>,
+    captures: &mut Vec<Path>,
+    capture_types: &mut Vec<Type>,
+    returns: Type,
+    body: IrKind,
+) -> IrNode {
+    match parameters.next() {
+        Some((path, parameter_type)) => {
+            let old_captures = captures.clone();
+            let old_capture_types = capture_types.clone();
+            captures.push(path.clone());
+            capture_types.push(parameter_type.clone());
+            let body = Box::new(curry(parameters, captures, capture_types, returns, body));
+            let return_type = body.type_.clone();
+            IrKind::Function {
+                parameter_name: Some(path.with_default_span()),
+                parameter_type: None,
+                captures: old_captures,
+                capture_types: old_capture_types,
+                body,
+            }
+            .with_default_span()
+            .with_type(Type::func(parameter_type, return_type))
+        }
+        None => body.with_default_span().with_type(returns),
+    }
+}
+
+pub fn curry_function_with_node(
+    parameters: impl IntoIterator<Item = (Path, Type)>,
+    returns: Type,
+    body: IrKind,
+) -> IrNode {
+    curry(
+        parameters.into_iter(),
+        &mut vec![],
+        &mut vec![],
+        returns,
+        body,
+    )
+}
+
+pub fn curry_function(
+    parameters: impl IntoIterator<Item = (Path, Type)>,
+    returns: Type,
+    body: impl Fn(&mut FunctionEncoder) + 'static,
+) -> IrNode {
+    curry(
+        parameters.into_iter(),
+        &mut vec![],
+        &mut vec![],
+        returns,
+        IrKind::AsmLiteral(AsmLiteral(Rc::new(body))),
+    )
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FunctionKind {
@@ -52,6 +113,7 @@ pub enum ScopeKind {
     Local,
 }
 
+#[allow(unused)]
 impl VariableKind {
     pub fn set(self) -> Instruction {
         match self {
@@ -76,7 +138,7 @@ pub struct ModuleEncoder {
     import_encoder: ImportEncoder,
     element_section: Vec<FunctionKind>,
     function_section: Vec<u32>,
-    init_functions: Vec<u32>,
+    pub init_functions: Vec<u32>,
 }
 
 impl ModuleEncoder {
@@ -96,6 +158,7 @@ impl ModuleEncoder {
         self.export_encoder.get_global_id(path)
     }
 
+    #[must_use]
     pub fn function(
         &'_ mut self,
         parameter_name: Path,
@@ -105,11 +168,17 @@ impl ModuleEncoder {
         FunctionEncoder::new(self, parameter_name, parameter_type, return_type)
     }
 
+    #[must_use]
     pub fn main_function(&'_ mut self) -> FunctionEncoder<'_> {
         FunctionEncoder::new_main(self)
     }
 
-    pub fn finish(self) -> Vec<u8> {
+    pub fn finish(mut self) -> Vec<u8> {
+        let init_functions = self.init_functions.clone();
+        let main_function = init_functions
+            .into_iter()
+            .fold(&mut self.main_function(), |mf, f| mf.encode(Call(f)))
+            .finish_mainfn();
         let function_count = self.function_section.len() as u64;
         let imported_function_count = self.import_encoder.functions();
         let mut module = Module::new();
@@ -138,6 +207,9 @@ impl ModuleEncoder {
             .section(&self.export_encoder.finish())
             // Export section
             // Start section
+            .section(&StartSection {
+                function_index: main_function + imported_function_count,
+            })
             // Elements
             .section(
                 &ElementSection::new()

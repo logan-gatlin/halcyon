@@ -1,23 +1,8 @@
-module Test =
-  let foo = 1
-  type i = builtin::integer
-end
-
-module Demo =
-  -- import println : integer -> () = sys::println
-  let a = fn a => Test::foo
-
-  let _ = if true then 1 else builtin::panic ()
-  type list = fn t => Pair of t * (list t) | Nil of ()
-
-  let nil = Nil ()
-  let push = fn item list => match list with
-    | Pair of (head, tail) => Pair (head, push item tail)
-    | Nil of () => Pair (item, Nil ())
-  
-  let list = nil
-    |> push 1
-    |> push 2
-    |> push 3
+module s =
+	import print : (std::integer * std::integer) -> () = sys::print_string
+	let to_print = "asdf"
+	let () =
+		string::unsafe_memory_store to_print 0;
+		print (0, string::length to_print)
 end
 

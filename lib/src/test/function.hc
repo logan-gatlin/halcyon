@@ -1,5 +1,4 @@
 module FunctionTest = 
-  import std
   -- Identity
   let () = std::assert ((fn a => a) () == ())
 

@@ -1,5 +1,4 @@
 module FizzBuzz = 
-  import std
   let fizzbuzz = fn from to =>
     let to_str = fn num =>
       match (num % 3, num % 5) with
@@ -9,7 +8,8 @@ module FizzBuzz =
       | (_, _) => "---"
     in
       if from <= to then
-        std::print_string (to_str from);
+        std::println (to_str from);
         fizzbuzz (from + 1) to
+      else ()
   let () = fizzbuzz 1 30
 end
