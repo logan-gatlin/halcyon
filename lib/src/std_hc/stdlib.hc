@@ -2,7 +2,6 @@ module std =
     let assert = fn with
       | true => ()
       | false => std::panic ()
-    let println = fn (a: std::string) => ()
 end
 
 module string =
@@ -15,31 +14,37 @@ module string =
     unsafe_print (0, (string::length s))
 
   -- Author: Logan Williams
-  let from_integer = 
-    fn x => 
-      let digit_to_string = fn with
-        | 0 => "0"
-        | 1 => "1"
-        | 2 => "2"
-        | 3 => "3"
-        | 4 => "4"
-        | 5 => "5"
-        | 6 => "6"
-        | 7 => "7"
-        | 8 => "8"
-        | 9 => "9"
-        | _ => "?"
-      in
-    match x with
+  let from_integer = (
+    let digit_to_string = fn with
+      | 0 => "0"
+      | 1 => "1"
+      | 2 => "2"
+      | 3 => "3"
+      | 4 => "4"
+      | 5 => "5"
+      | 6 => "6"
+      | 7 => "7"
+      | 8 => "8"
+      | 9 => "9"
+      | _ => "?" in
+    let f = fn with
       | 0 => ""
       | x => (x % 10)
         |> digit_to_string
-        |> let a = from_integer (x / 10) in
-          string::concatenate a
+        |> (let a = from_integer (x / 10) in
+          string::concatenate a) in
+    fn with
+      | 0 => "0"
+      | n => f n
+  )
+end
+
+module std = 
+  let println = string::print
 end
 
 module opt =
-  type t = fn a => Some of a | None of ()
+  type t = fn a => Some of a | None
 end
 
 module result =
@@ -49,7 +54,7 @@ end
 module opt =
   let map = fn operation maybe => match maybe with
     | opt::Some of o => opt::Some (operation o)
-    | _ => opt::None ()
+    | _ => opt::None
 
   let iterate =
     fn operation maybe => (map (fn a => operation a; a) maybe); ()
@@ -110,37 +115,37 @@ let is_ok = fn a => match a with
 
   let ok_or_none = fn with
     | result::Ok of val => opt::Some val
-    | _ => opt::None ()
+    | _ => opt::None
 end
 
 module list =
-  type t = fn I => Pair of I * (t I) | Nil of ()
+  type t = fn I => Pair of I * (t I) | Nil
 
   let map = fn operation list => match list with
     | Pair of (head, tail) => Pair (operation head, tail |> map operation)
-    | Nil of () => Nil ()
+    | Nil => Nil
 
   let iterate =
     fn operation list => (map (fn a => operation a; a) list); ()
 
   let push = fn item list => match list with
     | Pair of (head, tail) => Pair (head, push item tail)
-    | Nil of () => Pair (item, Nil ())
+    | Nil => Pair (item, Nil)
 
   let length = fn list => match list with
     | Pair of (head, tail) => 1 + (length tail)
-    | Nil of () => 0
+    | Nil => 0
 
   let fold = fn op acc list => match list with
     | Pair of (head, tail) => op acc (fold op head tail)
-    | Nil of () => acc
+    | Nil => acc
 
   let concatenate = fn list1 list2 => match list1 with
     | Pair of (head, tail) => Pair (head, concatenate tail list2)
-    | Nil of () => list2
+    | Nil => list2
 
   let nth = fn n list => match (n, list) with
     | (0, Pair of (head, _)) => opt::Some head
     | (n, Pair of (head, tail)) => nth (n - 1) tail
-    | (_, Nil of ()) => opt::None ()
+    | (_, Nil of ()) => opt::None
 end

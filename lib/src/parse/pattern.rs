@@ -3,8 +3,10 @@ use super::*;
 pub enum PatternExpressionKind {
     Literal(super::Literal),
     Identifier(String),
+    ModulePath(Vec<String>),
     Tuple(Vec<PatternExpression>),
     Constructor(Vec<String>, Box<PatternExpression>),
+    TypeHint(Box<PatternExpression>, Box<TypeExpression>),
 }
 
 pub type PatternExpression = Expression<PatternExpressionKind>;
@@ -15,9 +17,10 @@ pub fn parse_pattern(iter: it!()) -> Result<PatternExpression> {
     let Some(next) = iter.next().map(without_span) else {
         return Err(iter.report_error(ExpectedExpression, []));
     };
-    Ok(match next {
+    let mut current = match next {
         // Tuple or unit
         LeftParen => {
+            let mut is_tuple = false;
             let mut patterns = vec![];
             loop {
                 if iter.peek_or_error(0, RightParen).is_ok() {
@@ -27,12 +30,15 @@ pub fn parse_pattern(iter: it!()) -> Result<PatternExpression> {
                 if iter.eat(Comma).is_none() {
                     break;
                 }
+                is_tuple = true;
             }
             iter.eat_or_error(RightParen)?;
             if patterns.is_empty() {
                 e::Literal(super::Literal::Unit)
-            } else {
+            } else if is_tuple {
                 e::Tuple(patterns)
+            } else {
+                patterns[0].inner.clone()
             }
         }
         // Identifier, path, or constructor
@@ -44,7 +50,7 @@ pub fn parse_pattern(iter: it!()) -> Result<PatternExpression> {
             match iter.eat_or_error(Of) {
                 Ok(_) => e::Constructor(path, Box::new(parse_pattern(iter)?)),
                 Err(_) if path.len() == 1 => e::Identifier(path[0].clone()),
-                Err(e) => return Err(e),
+                Err(_) => e::ModulePath(path),
             }
         }
         // Literals
@@ -64,5 +70,11 @@ pub fn parse_pattern(iter: it!()) -> Result<PatternExpression> {
         GlyphLiteral(g) => e::Literal(Literal::Glyph(g)),
         _ => return Err(iter.report_error(ParseLint::ExpectedExpression, [])),
     }
-    .with_span(iter.end_span()))
+    .with_span(iter.end_span());
+    if iter.eat(Colon).is_some() {
+        let span = current.span;
+        let type_ = parse_type_expression(iter, 0)?;
+        current = e::TypeHint(current.into(), type_.into()).with_span(span + iter.last_span);
+    }
+    Ok(current)
 }

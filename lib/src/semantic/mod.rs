@@ -78,7 +78,7 @@ impl Environment {
         tv
     }
 
-    pub fn freshen_type_variables(&mut self, type_: &mut Type, free: &FreeVariableSet) {
+    pub fn freshen_type_variables(&mut self, type_: &mut impl Visit<Type>, free: &FreeVariableSet) {
         let free_vars = self.get_free_type_variables(free);
         freshen_type_variables(type_, &free_vars, || self.new_tv());
     }
@@ -122,19 +122,21 @@ impl Environment {
 }
 
 pub fn freshen_type_variables(
-    type_: &mut Type,
+    type_: &mut impl Visit<Type>,
     free: &HashSet<TypeVariable>,
     mut new_tv: impl FnMut() -> TypeVariable,
 ) {
     let mut type_map = HashMap::new();
-    type_.visit(|type_var: &mut TypeVariable| {
-        if !free.contains(type_var) {
-            if let Some(replace) = type_map.get(type_var) {
-                *type_var = *replace;
-            } else {
-                let replace = new_tv();
-                type_map.insert(*type_var, replace);
-                *type_var = replace;
+    type_.visit(|type_| {
+        if let Type::Variable(type_var) = type_ {
+            if !free.contains(type_var) {
+                if let Some(replace) = type_map.get(type_var) {
+                    *type_var = *replace;
+                } else {
+                    let replace = new_tv();
+                    type_map.insert(*type_var, replace);
+                    *type_var = replace;
+                }
             }
         }
     });
@@ -173,9 +175,11 @@ pub fn type_solve(module: IrModule) -> Result<(IrModule, ModuleInterface)> {
                 interface.types.insert(path.clone());
             }
             ModuleItem::Constructor(path, constructor) => {
-                interface
-                    .values
-                    .insert(path.clone(), constructor.function_type());
+                let type_ = match constructor.kind.clone() {
+                    ConstructorKind::Unitary(t) => t,
+                    ConstructorKind::Function(a, b) => Type::func(a, b),
+                };
+                interface.values.insert(path.clone(), type_);
                 interface
                     .constructors
                     .insert(path.clone(), constructor.clone());

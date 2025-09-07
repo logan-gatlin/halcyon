@@ -84,6 +84,10 @@ help = "Cannot find a module called `%`"
 reason = "Cyclical definition"
 help = "The definition of `%` contains itself. This is only allowed when the self-reference happens inside of a function body (i.e. recursive functions)."
 
+[3006]
+reason = "Missing constructor binding"
+help = "`%` is the name of a constructor that is not empty. Either give that value a name, or ignore it by adding `of _`."
+
 # Type errors
 [4000]
 reason = "Type mismatch"
@@ -103,7 +107,7 @@ help = "Cannot find a structure with at least the fields: `%`"
 
 [4004]
 reason = "Pattern is not exhaustive"
-help = "Patterns in let expressions must cover every possible case. Make this pattern more broad so that it covers all elements of the type `%`."
+help = "Patterns in let expressions must cover every possible case. Make this pattern more broad so that it covers all possible values."
 
 [4005]
 reason = "Partial instantiation"

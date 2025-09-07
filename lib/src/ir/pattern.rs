@@ -4,10 +4,12 @@ pub type Pattern = Typed<Spanned<PatternKind>>;
 
 #[derive(Debug, Clone, sx::SXRepr)]
 pub enum PatternKind {
+    Hole,
     Name(Path),
     Tuple(Vec<Pattern>),
     Constructor(Constructor, Box<Pattern>),
     Literal(ConstValue),
+    TypeHint(Box<Pattern>, Type),
 }
 
 impl Pattern {
@@ -20,14 +22,27 @@ impl Pattern {
         });
         count
     }
+
+    pub fn is_irrefutable(&self) -> bool {
+        match &self.inner.inner {
+            PatternKind::Hole | PatternKind::Name(_) => true,
+            PatternKind::Tuple(pats) => pats.iter().all(|p| p.is_irrefutable()),
+            PatternKind::Constructor(..) => false,
+            PatternKind::Literal(const_value) => const_value == &ConstValue::Unit,
+            PatternKind::TypeHint(pat, _) => pat.is_irrefutable(),
+        }
+    }
 }
 
 impl Visit<Pattern> for Pattern {
     fn _visit(&mut self, f: &mut impl FnMut(&mut Pattern)) {
         match &mut *self.inner {
-            PatternKind::Name(_) | PatternKind::Literal(_) => {}
+            PatternKind::Hole | PatternKind::Name(_) | PatternKind::Literal(_) => {}
             PatternKind::Tuple(items) => items._visit(f),
             PatternKind::Constructor(_, items) => items._visit(f),
+            PatternKind::TypeHint(pat, _) => {
+                pat._visit(f);
+            }
         }
         f(self);
     }
@@ -36,9 +51,13 @@ impl Visit<Pattern> for Pattern {
 impl Visit<Type> for Pattern {
     fn _visit(&mut self, f: &mut impl FnMut(&mut Type)) {
         self.visit(|p: &mut Pattern| {
-            if let PatternKind::Constructor(c, _) = &mut ***p {
-                c.in_type._visit(f);
-                c.out_type._visit(f);
+            match &mut p.inner.inner {
+                PatternKind::Constructor(c, _) => c._visit(f),
+                PatternKind::TypeHint(p, t) => {
+                    p._visit(f);
+                    t._visit(f);
+                }
+                _ => {}
             }
             p.type_._visit(f);
         })

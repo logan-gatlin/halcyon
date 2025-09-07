@@ -6,10 +6,9 @@ impl FunctionEncoder<'_> {
     fn lower_pattern(&mut self, pattern: Pattern, scope: ScopeKind) {
         self.encode(pattern.type_.clone());
         match pattern.inner.inner {
+            PatternKind::Hole => {}
             PatternKind::Name(path) if scope == ScopeKind::Local => {
-                self
-                    .new_local(&path, &pattern.type_)
-                    .set_symbol(&path);
+                self.set_symbol(&path);
             }
             PatternKind::Name(path) /* if global */ => {
                 self.set_symbol(&path);
@@ -31,9 +30,27 @@ impl FunctionEncoder<'_> {
             }
             PatternKind::Constructor(
                 Constructor {
-                    variant,
-                    in_type,
-                    out_type,
+                    variant_id,
+                    kind: ConstructorKind::Unitary(t),
+                },
+                _,
+            ) => {
+                    self.encode(t.clone());
+                    let type_id = self.module_encoder.type_id(&t);
+                    self.encode([
+                        StructGet {
+                            struct_type_index: type_id,
+                            field_index: 0,
+                        },
+                        I32Const(variant_id as i32),
+                        I32Ne,
+                        BrIf(0),
+                    ]);
+            },
+            PatternKind::Constructor(
+                Constructor {
+                    variant_id,
+                    kind: ConstructorKind::Function(in_type, out_type),
                 },
                 next_pattern,
             ) => {
@@ -51,7 +68,7 @@ impl FunctionEncoder<'_> {
                         struct_type_index: out_type_id,
                         field_index: 0,
                     },
-                    I32Const(variant as i32),
+                    I32Const(variant_id as i32),
                     I32Ne,
                     BrIf(0),
                     // Pass on the inner value
@@ -83,6 +100,9 @@ impl FunctionEncoder<'_> {
                         BrIf(0)
                     ])
                     ;
+            },
+            PatternKind::TypeHint(p, _) => {
+                self.lower_pattern(*p, scope);
             }
         };
     }
@@ -132,9 +152,23 @@ impl Encode<ModuleItem> for FunctionEncoder<'_> {
             ModuleItem::Constructor(
                 path,
                 Constructor {
-                    variant,
-                    in_type,
-                    out_type,
+                    variant_id,
+                    kind: ConstructorKind::Unitary(t),
+                },
+            ) => {
+                self.encode(t.clone());
+                let type_id = self.module_encoder.type_id(&t);
+                self.module_encoder.new_global(&path, &t);
+                self.encode(I32Const(variant_id as i32))
+                    .encode(ConstValue::Unit)
+                    .encode(StructNew(type_id))
+                    .set_symbol(&path)
+            }
+            ModuleItem::Constructor(
+                path,
+                Constructor {
+                    variant_id,
+                    kind: ConstructorKind::Function(in_type, out_type),
                 },
             ) => {
                 self.encode([
@@ -150,7 +184,7 @@ impl Encode<ModuleItem> for FunctionEncoder<'_> {
                     .module_encoder
                     .new_global(&path, &function_type)
                     .function(parameter_name.clone(), &in_type, &out_type)
-                    .encode(I32Const(variant as i32))
+                    .encode(I32Const(variant_id as i32))
                     .get_symbol(&parameter_name)
                     .encode(StructNew(struct_type_id))
                     .finish();
@@ -216,13 +250,17 @@ impl Encode<IrNode> for FunctionEncoder<'_> {
         self.encode(node.type_.clone());
         match node.inner.inner {
             IrKind::Let {
-                assignee,
+                mut assignee,
                 value,
                 in_,
-            } => self
-                .encode(value)
-                .encode((assignee, ScopeKind::Local))
-                .encode(in_),
+            } => {
+                assignee.visit(|(path, type_)| {
+                    self.new_local(path, type_);
+                });
+                self.encode(value)
+                    .encode((assignee, ScopeKind::Local))
+                    .encode(in_)
+            }
             IrKind::Immediate(const_value) => self.encode(const_value),
             IrKind::Identifier(path) => {
                 self.get_symbol(&path);
@@ -318,7 +356,10 @@ impl Encode<IrNode> for FunctionEncoder<'_> {
                     LocalSet(scrutinee_temp),
                     Block(BlockType::Result(branches_valtype)),
                 ]);
-                for (pattern, branch) in predicates.into_iter().zip(branches) {
+                for (mut pattern, branch) in predicates.into_iter().zip(branches) {
+                    pattern.visit(|(path, type_)| {
+                        self.new_local(path, type_);
+                    });
                     self.encode(Block(BlockType::Empty))
                         .encode(LocalGet(scrutinee_temp))
                         .encode((pattern, ScopeKind::Local))

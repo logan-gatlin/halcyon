@@ -53,13 +53,7 @@ impl ModuleNameSpace {
     }
     // Values
     pub fn new_global_value(&mut self, name: &str) -> Result<Path> {
-        let name = if name == "_" {
-            let salt = self.salt;
-            self.salt += 1;
-            format!("_#{salt}")
-        } else {
-            name.to_string()
-        };
+        let name = name.to_string();
         let path = self.module_name.child(&name);
         if self
             .value_lookup

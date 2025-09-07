@@ -179,15 +179,7 @@ impl Visit<Type> for ModuleItem {
                 node._visit(f);
             }
             ModuleItem::Type(_) => {}
-            ModuleItem::Constructor(
-                _,
-                Constructor {
-                    in_type, out_type, ..
-                },
-            ) => {
-                in_type._visit(f);
-                out_type._visit(f);
-            }
+            ModuleItem::Constructor(_, cons) => cons._visit(f),
             ModuleItem::Import { type_, .. } => {
                 let mut type_: Type = type_.clone().into();
                 type_._visit(f);

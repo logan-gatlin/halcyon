@@ -37,6 +37,11 @@ where
 impl Infer for Pattern {
     fn infer(mut self, env: &mut Environment, free: &mut FreeVariableSet) -> Result<Self> {
         self.inner.inner = match (*self).clone().inner {
+            PatternKind::Hole => {
+                let fresh_tv = env.new_tv();
+                self.type_ = Type::Variable(fresh_tv);
+                PatternKind::Hole
+            }
             PatternKind::Name(path) => {
                 let fresh_tv = env.define_unknown(path.clone());
                 free.insert(path.clone());
@@ -52,13 +57,12 @@ impl Infer for Pattern {
                 PatternKind::Tuple(patterns)
             }
             PatternKind::Constructor(mut constructor, pattern) => {
-                let mut out_type = constructor.out_type.clone();
-                env.freshen_type_variables(&mut out_type, &HashSet::new());
-                constructor.out_type = out_type.clone();
+                env.freshen_type_variables(&mut constructor, &HashSet::new());
+                let (in_type, out_type) = match &constructor.kind {
+                    ConstructorKind::Unitary(t) => (Type::Unit, t.clone()),
+                    ConstructorKind::Function(a, b) => (a.clone(), b.clone()),
+                };
                 self.type_ = out_type;
-                let mut in_type = constructor.in_type.clone();
-                env.freshen_type_variables(&mut in_type, &HashSet::new());
-                constructor.in_type = in_type.clone();
                 let pattern = pattern.infer(env, free)?;
                 env.type_constraint(in_type, pattern.type_.clone(), self.span);
                 PatternKind::Constructor(constructor, pattern)
@@ -66,6 +70,13 @@ impl Infer for Pattern {
             PatternKind::Literal(const_value) => {
                 self.type_ = const_value.type_of();
                 PatternKind::Literal(const_value)
+            }
+            PatternKind::TypeHint(p, mut type_) => {
+                let p = p.infer(env, free)?;
+                self.type_ = p.type_.clone();
+                env.freshen_type_variables(&mut type_, &HashSet::new());
+                env.type_constraint(p.type_.clone(), type_.clone(), self.span);
+                PatternKind::TypeHint(p, type_)
             }
         };
         Ok(self)
@@ -81,6 +92,9 @@ impl Infer for IrNode {
                 value,
                 in_,
             } => {
+                if !assignee.is_irrefutable() {
+                    return Err(lint(TypeLint::NonExhaustive, self.span, []));
+                }
                 let mut new_env = env.clone();
                 let mut new_free = free.clone();
                 let mut assignee = assignee.infer(&mut new_env, &mut new_free)?;
@@ -260,6 +274,9 @@ impl Infer for ModuleItem {
     fn infer(self, env: &mut Environment, free: &mut FreeVariableSet) -> Result<Self> {
         match self {
             ModuleItem::Let(assignee, node) => {
+                if !assignee.is_irrefutable() {
+                    return Err(lint(TypeLint::NonExhaustive, node.span, []));
+                }
                 let mut new_env = env.clone();
                 let mut new_free = free.clone();
                 let mut pattern = assignee.infer(&mut new_env, &mut new_free)?;
@@ -276,7 +293,10 @@ impl Infer for ModuleItem {
                 Ok(this)
             }
             ModuleItem::Constructor(path, cons) => {
-                env.define(path.clone(), cons.function_type());
+                match cons.kind.clone() {
+                    ConstructorKind::Unitary(t) => env.define(path.clone(), t),
+                    ConstructorKind::Function(a, b) => env.define(path.clone(), Type::func(a, b)),
+                }
                 Ok(ModuleItem::Constructor(path, cons))
             }
             ModuleItem::Import {

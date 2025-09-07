@@ -60,7 +60,7 @@ pub fn compile_single(
                 interfaces.insert(module_path, interface);
             }
         };
-        //println!("Typed IR:\n{}", typed_ir.clone().sx());
+        println!("Typed IR:\n{}", typed_ir.clone().sx());
         encoder.encode(typed_ir);
     }
     Ok(())

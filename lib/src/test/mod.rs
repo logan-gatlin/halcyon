@@ -1,7 +1,7 @@
 use super::*;
 
 macro_rules! test {
-  ($($name:ident),*) => {
+  ($($name:ident,)*) => {
     $(
       #[allow(unused)]
       #[test]
@@ -28,8 +28,8 @@ test!(
     control_flow,
     types,
     fizzbuzz,
-    list,
-    demo
+    demo,
+    stdtest,
 );
 
 #[allow(unused)]
@@ -48,16 +48,13 @@ fn execute(wasm: Vec<u8>) {
             "sys",
             "print_string",
             move |_callee: Caller<'_, ()>, ptr: i64, len: i64| {
+                println!("CALLED PRINTLN");
                 let mut buffer = vec![0; len as usize];
                 memory.read(_callee, ptr as usize, &mut buffer).unwrap();
                 let s = String::from_utf8(buffer).unwrap();
                 println!("{s}");
             },
         )
-        .unwrap()
-        .func_wrap("sys", "test", move |_callee: Caller<'_, ()>| {
-            println!("Called test function")
-        })
         .unwrap()
         .define(&mut store, "sys", "memory", Extern::Memory(memory))
         .unwrap();

@@ -33,9 +33,16 @@ pub enum ValueExpressionKind {
         child: Box<ValueExpression>,
     },
     FunctionDef {
-        arguments: Vec<Spanned<String>>,
+        parameters: Vec<Spanned<String>>,
         types: Vec<Option<TypeExpression>>,
         body: Box<ValueExpression>,
+    },
+    /// fn ... with | ...
+    FunctionShorthand {
+        parameters: Vec<Spanned<String>>,
+        types: Vec<Option<TypeExpression>>,
+        predicates: Vec<PatternExpression>,
+        branches: Vec<ValueExpression>,
     },
     FunctionCall {
         callee: Box<ValueExpression>,
@@ -48,11 +55,6 @@ pub enum ValueExpressionKind {
     },
     Match {
         scrutinee: Box<ValueExpression>,
-        predicates: Vec<PatternExpression>,
-        branches: Vec<ValueExpression>,
-    },
-    /// fn with ...
-    FunctionShorthand {
         predicates: Vec<PatternExpression>,
         branches: Vec<ValueExpression>,
     },
@@ -92,48 +94,34 @@ fn parse_primary(iter: it!()) -> Result<ValueExpression> {
             }
             e::ModuleField(path)
         }
-        // Function shorthand
-        Fn if iter.eat(With).is_some() => {
-            let mut predicates = vec![];
-            let mut branches = vec![];
-            // Optional first pipe
-            iter.eat(Pipe);
-            loop {
-                predicates.push(parse_pattern(iter)?);
-                iter.eat_or_error(FatArrow)?;
-                branches.push(parse_value_expression(iter, 0)?);
-                if iter.eat(Pipe).is_none() {
-                    break;
-                }
-            }
-            e::FunctionShorthand {
-                predicates,
-                branches,
-            }
-        }
         // Function definition
         Fn => {
-            let mut arguments = vec![];
+            let mut is_shorthand = false;
+            let mut parameters = vec![];
             let mut types = vec![];
             loop {
                 if iter.eat(FatArrow).is_some() {
                     break;
                 }
+                if iter.eat(With).is_some() {
+                    is_shorthand = true;
+                    break;
+                }
                 // Typed parameter
                 if iter.eat(LeftParen).is_some() {
-                    arguments.push(iter.eat_ident()?.with_span(iter.last_span));
+                    parameters.push(iter.eat_ident()?.with_span(iter.last_span));
                     iter.eat_or_error(Colon)?;
                     types.push(Some(parse_type_expression(iter, 0)?));
                     iter.eat_or_error(RightParen)?;
                 }
                 // Untyped parameter
                 else {
-                    arguments.push(iter.eat_ident()?.with_span(iter.last_span));
+                    parameters.push(iter.eat_ident()?.with_span(iter.last_span));
                     types.push(None);
                 }
             }
             let mut parameter_set = HashSet::new();
-            for arg in &arguments {
+            for arg in &parameters {
                 if !parameter_set.insert(arg) {
                     return Err(lint(
                         NameLint::ParamRedefinition,
@@ -142,11 +130,32 @@ fn parse_primary(iter: it!()) -> Result<ValueExpression> {
                     ));
                 }
             }
-            let body = Box::new(parse_value_expression(iter, 0)?);
-            e::FunctionDef {
-                arguments,
-                types,
-                body,
+            if is_shorthand {
+                let mut predicates = vec![];
+                let mut branches = vec![];
+                // Optional first pipe
+                iter.eat(Pipe);
+                loop {
+                    predicates.push(parse_pattern(iter)?);
+                    iter.eat_or_error(FatArrow)?;
+                    branches.push(parse_value_expression(iter, 0)?);
+                    if iter.eat(Pipe).is_none() {
+                        break;
+                    }
+                }
+                e::FunctionShorthand {
+                    parameters,
+                    types,
+                    predicates,
+                    branches,
+                }
+            } else {
+                let body = Box::new(parse_value_expression(iter, 0)?);
+                e::FunctionDef {
+                    parameters,
+                    types,
+                    body,
+                }
             }
         }
         Let => e::Let {
