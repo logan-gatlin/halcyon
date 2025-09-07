@@ -15,7 +15,7 @@ wasmprinter = "0.235"
 sx = {path = "../sx/sx/"}
 
 [dev-dependencies]
-wasmtime = {version = "34.0", default-features = false, features = ["runtime", "cranelift", "gc", "gc-drc"]}
+wasmtime = {version = "34.0", features = ["runtime", "cranelift", "gc", "gc-drc"]}
 
 [profile.release]
 strip = true

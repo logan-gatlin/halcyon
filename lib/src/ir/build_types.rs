@@ -42,21 +42,35 @@ pub fn type_def(
             );
             let variant_types: Vec<_> = variant_types
                 .into_iter()
-                .map(|t| type_expr(ns, t))
+                .map(|t| {
+                    if let Some(t) = t {
+                        let t = type_expr(ns, t)?;
+                        Ok(Some(t))
+                    } else {
+                        Ok(None)
+                    }
+                })
                 .try_collect()?;
             let sum_type = Type::Sum {
                 name: path.clone(),
                 variant_names: variant_names.clone(),
-                variant_types: variant_types.clone(),
+                variant_types: variant_types
+                    .clone()
+                    .into_iter()
+                    .map(|t| t.unwrap_or(Type::Unit))
+                    .collect(),
             };
             Universe::get().new_named_type(path.clone(), sum_type);
             let named_type =
                 Type::Instantiation(path.clone(), (0..parameters).map(Type::Variable).collect());
             for (id, (type_, name)) in variant_types.iter().zip(&variant_names).enumerate() {
                 let constructor = Constructor {
-                    variant: id,
-                    in_type: type_.clone(),
-                    out_type: named_type.clone(),
+                    variant_id: id,
+                    kind: if let Some(type_) = type_ {
+                        ConstructorKind::Function(type_.clone(), named_type.clone())
+                    } else {
+                        ConstructorKind::Unitary(named_type.clone())
+                    },
                 };
                 let path = ns
                     .new_constructor(name, constructor.clone())

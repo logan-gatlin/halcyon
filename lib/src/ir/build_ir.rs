@@ -1,5 +1,5 @@
 use super::*;
-use crate::{lint::*, parse::*};
+use crate::{lint::*, optimize::CallOptimization, parse::*};
 
 pub fn build_ir(
     module: ParsedModule,
@@ -136,6 +136,11 @@ pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> Result<IrN
         Literal(literal) => ir::Immediate(lit(literal).span(span)?),
         Identifier(ident) => ir::Identifier(ns.get_value(&ident).span(span)?),
         BinaryOp(op) => ir::ImportedSymbol(op.path(), op.get_type()),
+        Binary {
+            op: crate::operator::BinaryOp::Semicolon,
+            left,
+            right,
+        } => ir::Semicolon(rec!(left), rec!(right)),
         Binary { op, left, right } => {
             let left_span = left.span;
             ir::Call {
@@ -145,13 +150,13 @@ pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> Result<IrN
                         .with_type(Type::Any)
                         .into(),
                     argument: rec!(left),
-                    argument_first: true,
+                    opt: Default::default(),
                 }
                 .with_span(left_span)
                 .with_type(Type::Any)
                 .into(),
                 argument: rec!(right),
-                argument_first: true,
+                opt: Default::default(),
             }
         }
         Unary { op, child } => ir::Call {
@@ -160,33 +165,34 @@ pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> Result<IrN
                 .with_type(Type::Any)
                 .into(),
             argument: rec!(child),
-            argument_first: true,
+            opt: Default::default(),
         },
         FunctionShorthand {
+            parameters,
+            types,
             predicates,
             branches,
         } => {
             const SHORTHAND_NAME: &str = "~";
-            return value_expr(
-                ns,
-                FunctionDef {
-                    arguments: vec![SHORTHAND_NAME.to_string().with_span(expr.span)],
-                    types: vec![None],
-                    body: Match {
-                        scrutinee: Identifier(SHORTHAND_NAME.into())
-                            .with_span(expr.span)
-                            .into(),
-                        predicates,
-                        branches,
-                    }
-                    .with_span(expr.span)
-                    .into(),
+            let body = FunctionDef {
+                parameters: vec![SHORTHAND_NAME.to_string().with_span(expr.span)],
+                types: vec![None],
+                body: Match {
+                    scrutinee: Identifier(SHORTHAND_NAME.into())
+                        .with_span(expr.span)
+                        .into(),
+                    predicates,
+                    branches,
                 }
-                .with_span(expr.span),
-            );
+                .with_span(expr.span)
+                .into(),
+            }
+            .with_span(expr.span)
+            .into();
+            return Ok(*curry(ns, parameters.into_iter().zip(types), body, span)?);
         }
         FunctionDef {
-            arguments,
+            parameters: arguments,
             types,
             body,
         } => {
@@ -209,7 +215,7 @@ pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> Result<IrN
         FunctionCall { callee, argument } => ir::Call {
             callee: rec!(callee),
             argument: rec!(argument),
-            argument_first: false,
+            opt: Default::default(),
         },
         If {
             predicate,
@@ -275,11 +281,48 @@ fn pattern_expr(
     let span = pattern.span;
     Ok(match pattern.inner {
         Literal(literal) => PatternKind::Literal(lit(literal).span(span)?),
-        Identifier(id) => PatternKind::Name(if global {
-            ns.new_global_value(&id).span(span)?
-        } else {
-            ns.new_local_value(&id, false)
-        }),
+        ModulePath(path) => {
+            let path = Path::from(path);
+            let cons = ns.get_constructor_exact(&path).span(span)?;
+            if !matches!(cons.kind, ConstructorKind::Unitary(_)) {
+                return Err(lint(
+                    NameLint::MissingConstructorBinding,
+                    span,
+                    [format!("{path}")],
+                ));
+            }
+            PatternKind::Constructor(
+                cons,
+                PatternKind::Literal(ConstValue::Unit)
+                    .with_span(span)
+                    .with_type(Type::Any)
+                    .into(),
+            )
+        }
+        Identifier(id) if id == "_" => PatternKind::Hole,
+        Identifier(id) => match ns.get_constructor(&id) {
+            // Unitary constructor
+            Ok(
+                cons @ crate::Constructor {
+                    kind: ConstructorKind::Unitary(_),
+                    ..
+                },
+            ) => PatternKind::Constructor(
+                cons,
+                PatternKind::Literal(ConstValue::Unit)
+                    .with_span(span)
+                    .with_type(Type::Any)
+                    .into(),
+            ),
+            // Non-unitary constructor
+            Ok(_) => return Err(lint(NameLint::MissingConstructorBinding, span, [id])),
+            // Regular identifier
+            _ => PatternKind::Name(if global {
+                ns.new_global_value(&id).span(span)?
+            } else {
+                ns.new_local_value(&id, false)
+            }),
+        },
         Tuple(expressions) => PatternKind::Tuple(
             expressions
                 .into_iter()
@@ -294,6 +337,11 @@ fn pattern_expr(
             }
             .span(span)?;
             PatternKind::Constructor(cons, Box::new(pattern_expr(ns, *expression, global)?))
+        }
+        TypeHint(pat, type_) => {
+            let pat = pattern_expr(ns, *pat, global)?;
+            let type_ = type_expr(ns, *type_)?;
+            PatternKind::TypeHint(pat.into(), type_)
         }
     }
     .with_span(span)

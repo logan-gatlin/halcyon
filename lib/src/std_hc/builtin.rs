@@ -29,7 +29,6 @@ fn primitive_types(enc: &mut FunctionEncoder, interface: &mut ModuleInterface) {
 fn functions(enc: &mut FunctionEncoder, interface: &mut ModuleInterface) {
     let std = Path::from(STD_MODULE_NAME);
     let p1 = Path::from("a");
-    let p2 = Path::from("b");
     // Panic
     {
         let path = std.child("panic");
@@ -120,7 +119,7 @@ fn operator_assembly(encoder: &mut FunctionEncoder, interface: &mut ModuleInterf
                         .with_default_span()
                         .with_type(Type::Variable(0))
                         .into(),
-                    argument_first: false,
+                    opt: Default::default(),
                 },
             ))
             .set_symbol(&OP.path());
@@ -149,9 +148,9 @@ fn operator_assembly(encoder: &mut FunctionEncoder, interface: &mut ModuleInterf
     // Binary + - * / % +. -. *. /. and or xor
     [
         (Plus, I64Add),
+        (Slash, I64DivS),
         (Minus, I64Sub),
         (Star, I64Mul),
-        (Slash, I64DivS),
         (Percent, I64RemS),
         (PlusDot, F64Add),
         (MinusDot, F64Sub),

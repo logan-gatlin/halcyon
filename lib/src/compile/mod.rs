@@ -148,16 +148,6 @@ impl ModuleEncoder {
         }
     }
 
-    pub fn new_global(&mut self, path: &Path, type_: &Type) -> &mut Self {
-        self.export_encoder
-            .new_global(path.clone(), self.type_id(type_));
-        self
-    }
-
-    pub fn get_global_id(&self, path: &Path) -> u32 {
-        self.export_encoder.get_global_id(path)
-    }
-
     #[must_use]
     pub fn function(
         &'_ mut self,

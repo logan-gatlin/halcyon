@@ -17,7 +17,7 @@ pub enum TypeDefinitionKind {
     },
     Sum {
         variant_names: Vec<String>,
-        variant_types: Vec<TypeExpression>,
+        variant_types: Vec<Option<TypeExpression>>,
     },
     Expression(TypeExpression),
 }
@@ -91,17 +91,26 @@ pub fn parse_type_definition(iter: it!()) -> Result<TypeDefinition> {
             TypeDefinitionKind::Structure { lhs, rhs }
         }
         // Sum
-        Identifier(name) if iter.peek_or_error(1, Of).is_ok() => {
+        Identifier(name)
+            if iter.peek_or_error(1, Of).is_ok() || iter.peek_or_error(1, Pipe).is_ok() =>
+        {
             let mut variant_names = vec![name.clone()];
-            iter.skip(2);
-            let mut variant_types = vec![parse_type_expression(iter, 0)?];
+            iter.skip(1);
+            let mut variant_types = vec![if iter.eat(Of).is_some() {
+                Some(parse_type_expression(iter, 0)?)
+            } else {
+                None
+            }];
             loop {
                 if iter.eat(Pipe).is_none() {
                     break;
                 }
                 variant_names.push(iter.eat_ident()?);
-                iter.eat_or_error(Of)?;
-                variant_types.push(parse_type_expression(iter, 0)?);
+                variant_types.push(if iter.eat(Of).is_some() {
+                    Some(parse_type_expression(iter, 0)?)
+                } else {
+                    None
+                });
             }
             TypeDefinitionKind::Sum {
                 variant_names,

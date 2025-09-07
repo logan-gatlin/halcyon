@@ -36,6 +36,7 @@ pub enum NameLint {
     NotImported = 3003,
     NoSuchModule = 3004,
     CyclicalDefinition = 3005,
+    MissingConstructorBinding = 3006,
 }
 
 #[repr(usize)]

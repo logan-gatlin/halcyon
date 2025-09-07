@@ -1,6 +1,6 @@
 use crate::semantic::Type;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ConstValue {
     Unit,
     Integer(i64),

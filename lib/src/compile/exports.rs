@@ -9,6 +9,10 @@ pub struct ExportEncoder {
 }
 
 impl ExportEncoder {
+    pub fn global_exists(&self, path: &Path) -> bool {
+        self.global_map.contains_key(path)
+    }
+
     pub fn new_global(&mut self, path: Path, type_id: u32) {
         let id = self.global_section.len() as u32;
         self.global_section.push(type_id);
@@ -39,5 +43,21 @@ impl ExportEncoder {
                 );
                 gs
             })
+    }
+}
+
+impl ModuleEncoder {
+    pub fn new_global(&mut self, path: &Path, type_: &Type) -> &mut Self {
+        self.export_encoder
+            .new_global(path.clone(), self.type_id(type_));
+        self
+    }
+
+    pub fn get_global_id(&self, path: &Path) -> u32 {
+        self.export_encoder.get_global_id(path)
+    }
+
+    pub fn global_exists(&self, path: &Path) -> bool {
+        self.export_encoder.global_exists(path)
     }
 }

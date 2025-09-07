@@ -12,6 +12,7 @@ use crate::{
     Visit,
     compile::{ForeignFunctionType, FunctionEncoder},
     lint::*,
+    optimize,
     semantic::*,
 };
 
@@ -51,7 +52,7 @@ pub enum IrKind {
     Call {
         callee: Box<IrNode>,
         argument: Box<IrNode>,
-        argument_first: bool,
+        opt: optimize::CallOptimization,
     },
     If {
         predicate: Box<IrNode>,
@@ -63,6 +64,7 @@ pub enum IrKind {
         predicates: Vec<Pattern>,
         branches: Vec<IrNode>,
     },
+    Semicolon(Box<IrNode>, Box<IrNode>),
     AsmLiteral(AsmLiteral),
     ImportedSymbol(Path, Type),
 }
@@ -111,6 +113,10 @@ impl Visit<IrNode> for IrNode {
                 value._visit(f);
                 in_._visit(f);
             }
+            Semicolon(a, b) => {
+                a._visit(f);
+                b._visit(f);
+            }
             Field { of, .. } => of._visit(f),
             Call {
                 callee, argument, ..
@@ -143,7 +149,10 @@ impl Visit<IrNode> for IrNode {
                 field_values: items,
                 ..
             } => items._visit(f),
-            _ => {}
+            Immediate(_) => {}
+            Identifier(_) => {}
+            AsmLiteral(_) => {}
+            ImportedSymbol(_, _) => {}
         }
         f(self);
     }
@@ -179,15 +188,7 @@ impl Visit<Type> for ModuleItem {
                 node._visit(f);
             }
             ModuleItem::Type(_) => {}
-            ModuleItem::Constructor(
-                _,
-                Constructor {
-                    in_type, out_type, ..
-                },
-            ) => {
-                in_type._visit(f);
-                out_type._visit(f);
-            }
+            ModuleItem::Constructor(_, cons) => cons._visit(f),
             ModuleItem::Import { type_, .. } => {
                 let mut type_: Type = type_.clone().into();
                 type_._visit(f);

@@ -6,6 +6,7 @@ mod ir;
 mod lint;
 mod map;
 mod operator;
+mod optimize;
 mod parse;
 mod semantic;
 mod std_hc;
@@ -17,6 +18,7 @@ use ir::*;
 use lint::render::Linter;
 pub use lint::*;
 pub use map::*;
+use optimize::*;
 use parse::*;
 use semantic::*;
 use std::{
@@ -51,7 +53,7 @@ pub fn compile_single(
     for module in parsed_modules {
         let module_path = module.name.inner.clone().into();
         let ir = build_ir(module, &interfaces).handle(&linter)?;
-        let (typed_ir, interface) = type_solve(ir).handle(&linter)?;
+        let (mut typed_ir, interface) = type_solve(ir).handle(&linter)?;
         match interfaces.get_mut(&module_path) {
             Some(old) => {
                 old.merge(interface);
@@ -60,6 +62,7 @@ pub fn compile_single(
                 interfaces.insert(module_path, interface);
             }
         };
+        optimize_ir(&mut typed_ir);
         //println!("Typed IR:\n{}", typed_ir.clone().sx());
         encoder.encode(typed_ir);
     }

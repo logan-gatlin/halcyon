@@ -60,8 +60,7 @@ impl<'a> FunctionEncoder<'a> {
         return_type: &Type,
     ) -> Self {
         let mut local_names = HashMap::new();
-        let type_id = module_encoder
-            .function_type_id(&Type::func(parameter_type.clone(), return_type.clone()));
+        let type_id = module_encoder.function_type_id();
         local_names.insert(parameter_name, 2);
         let parameter_type = parameter_type.clone().reduce();
         let parameter_valtype = module_encoder.reduced_valtype(&parameter_type);
