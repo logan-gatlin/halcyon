@@ -189,7 +189,7 @@ impl Infer for IrNode {
             Call {
                 callee,
                 argument,
-                argument_first,
+                opt,
             } => {
                 let callee = callee.infer(env, free)?;
                 let argument = argument.infer(env, free)?;
@@ -201,8 +201,14 @@ impl Infer for IrNode {
                 Call {
                     callee,
                     argument,
-                    argument_first,
+                    opt,
                 }
+            }
+            Semicolon(a, b) => {
+                let a = a.infer(env, free)?;
+                let b = b.infer(env, free)?;
+                self.type_ = b.type_.clone();
+                Semicolon(a, b)
             }
             If {
                 predicate,

@@ -38,6 +38,8 @@ fn execute(wasm: Vec<u8>) {
     let mut config = Config::default();
     config.wasm_gc(true);
     config.wasm_function_references(true);
+    config.debug_info(true);
+    config.wasm_backtrace_details(WasmBacktraceDetails::Enable);
     let engine = Engine::new(&config).unwrap();
     let module = Module::new(&engine, &wasm).unwrap();
     let mut linker = Linker::new(&engine);

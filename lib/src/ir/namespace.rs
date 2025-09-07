@@ -113,7 +113,9 @@ impl ModuleNameSpace {
             }
 
             for capture in depth..current_depth {
-                self.capture_list[capture].push(path.clone());
+                if !self.capture_list[capture].contains(&path) {
+                    self.capture_list[capture].push(path.clone());
+                }
             }
         }
         Ok(path)

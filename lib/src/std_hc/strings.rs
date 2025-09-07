@@ -10,7 +10,7 @@ pub fn compile_string(enc: &mut FunctionEncoder, interface: &mut ModuleInterface
     let string = Path::from(STRING_MODULE_NAME);
     let p1 = Path::from("a");
     let p2 = Path::from("b");
-    // Length
+    // string::length
     {
         let p1 = p1.clone();
         let path = string.child("length");
@@ -29,7 +29,7 @@ pub fn compile_string(enc: &mut FunctionEncoder, interface: &mut ModuleInterface
         ))
         .set_symbol(&path);
     }
-    // Concatenate
+    // string::concatenate
     {
         let p1 = p1.clone();
         let p2 = p2.clone();
@@ -94,7 +94,7 @@ pub fn compile_string(enc: &mut FunctionEncoder, interface: &mut ModuleInterface
         ))
         .set_symbol(&path);
     }
-    // Unsafe memory store
+    // string::unsafe_store
     {
         let p1 = p1.clone();
         let path = string.child("unsafe_store");

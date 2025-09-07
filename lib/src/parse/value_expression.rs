@@ -165,7 +165,7 @@ fn parse_primary(iter: it!()) -> Result<ValueExpression> {
                 Box::new(parse_value_expression(iter, 0)?)
             },
             in_: {
-                iter.eat_one_of([In, Semicolon])?;
+                iter.eat_or_error(In)?;
                 Box::new(parse_value_expression(iter, 0)?)
             },
         },

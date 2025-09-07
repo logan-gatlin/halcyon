@@ -14,7 +14,7 @@ pub enum ReducedType {
     F64,
     I32,
     I8,
-    Function(Box<ReducedType>, Box<ReducedType>),
+    Function,
     Struct(Vec<ReducedType>),
     Array(Box<ReducedType>),
 }
@@ -37,10 +37,7 @@ impl Type {
             }
             | Type::Product(items) => Struct(items.into_iter().map(|t| t.reduce()).collect()),
             Type::Sum { .. } => Sum,
-            Type::Function(a, b) => Struct(vec![
-                Function(a.reduce().into(), b.reduce().into()),
-                Array(AnyRef.into()),
-            ]),
+            Type::Function(a, b) => Struct(vec![Function, Array(AnyRef.into())]),
             // All type recursion must pass through a sum type, and sum types are not
             // recursive at the WASM level. Therefore no rist of infinite recursion here
             Type::Instantiation(ref path, ref items) => Universe::get()
@@ -187,15 +184,9 @@ impl TypeEncoder {
             ),
             Array(type_) if type_ == I8.into() => rt::Array(st::I8),
             Array(type_) => rt::Array(self.make_storage_type(*type_)),
-            Function(a, b) => {
-                self.make_storage_type(*a.clone());
-                self.make_storage_type(*b.clone());
+            Function => {
                 self.make_storage_type(ReducedType::capture());
                 let capture_valtype = self.value_map.get(&ReducedType::capture()).unwrap().clone();
-                /*
-                let a_valtype = self.value_map.get(&a).unwrap().clone();
-                let b_valtype = self.value_map.get(&b).unwrap().clone();
-                */
                 let any_valtype = self.value_map.get(&ReducedType::AnyRef).unwrap().clone();
                 rt::Function(FuncType::new([any_valtype, capture_valtype], [any_valtype]))
             }
@@ -231,14 +222,11 @@ impl ModuleEncoder {
             .unwrap_or_else(|| panic!("Foreign function type was not encoded: {type_:?}"))
     }
 
-    pub fn function_type_id(&self, type_: &Type) -> u32 {
-        let Type::Function(a, b) = type_.clone() else {
-            panic!("Tried to get function ID of not a function: {type_}")
-        };
+    pub fn function_type_id(&self) -> u32 {
         self.type_encoder
             .id_map
-            .get(&ReducedType::Function(a.reduce().into(), b.reduce().into()))
-            .unwrap_or_else(|| panic!("No function type id for {type_:?}"))
+            .get(&ReducedType::Function)
+            .unwrap_or_else(|| panic!("No function type id"))
             .clone()
     }
 

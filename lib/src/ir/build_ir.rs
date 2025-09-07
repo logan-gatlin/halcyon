@@ -1,5 +1,5 @@
 use super::*;
-use crate::{lint::*, parse::*};
+use crate::{lint::*, optimize::CallOptimization, parse::*};
 
 pub fn build_ir(
     module: ParsedModule,
@@ -136,6 +136,11 @@ pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> Result<IrN
         Literal(literal) => ir::Immediate(lit(literal).span(span)?),
         Identifier(ident) => ir::Identifier(ns.get_value(&ident).span(span)?),
         BinaryOp(op) => ir::ImportedSymbol(op.path(), op.get_type()),
+        Binary {
+            op: crate::operator::BinaryOp::Semicolon,
+            left,
+            right,
+        } => ir::Semicolon(rec!(left), rec!(right)),
         Binary { op, left, right } => {
             let left_span = left.span;
             ir::Call {
@@ -145,13 +150,13 @@ pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> Result<IrN
                         .with_type(Type::Any)
                         .into(),
                     argument: rec!(left),
-                    argument_first: true,
+                    opt: Default::default(),
                 }
                 .with_span(left_span)
                 .with_type(Type::Any)
                 .into(),
                 argument: rec!(right),
-                argument_first: true,
+                opt: Default::default(),
             }
         }
         Unary { op, child } => ir::Call {
@@ -160,7 +165,7 @@ pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> Result<IrN
                 .with_type(Type::Any)
                 .into(),
             argument: rec!(child),
-            argument_first: true,
+            opt: Default::default(),
         },
         FunctionShorthand {
             parameters,
@@ -210,7 +215,7 @@ pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> Result<IrN
         FunctionCall { callee, argument } => ir::Call {
             callee: rec!(callee),
             argument: rec!(argument),
-            argument_first: false,
+            opt: Default::default(),
         },
         If {
             predicate,
