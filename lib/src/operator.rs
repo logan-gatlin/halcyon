@@ -99,6 +99,7 @@ op! {
   Arrow, 5, RIGHT_ASSOC;
 }
 
+#[allow(unused)]
 impl BinaryOp {
     pub fn parameter_type(&self) -> Type {
         match self {
@@ -167,6 +168,7 @@ impl BinaryOp {
     }
 }
 
+#[allow(unused)]
 impl UnaryOp {
     pub fn get_type(&self) -> Type {
         Type::func(self.parameter_type(), self.parameter_type())

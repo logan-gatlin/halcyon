@@ -57,7 +57,6 @@ impl<'a> FunctionEncoder<'a> {
         module_encoder: &'a mut ModuleEncoder,
         parameter_name: Path,
         parameter_type: &Type,
-        return_type: &Type,
     ) -> Self {
         let mut local_names = HashMap::new();
         let type_id = module_encoder.function_type_id();

@@ -1,7 +1,6 @@
 mod redundancy;
 mod tail_call;
 
-use redundancy::*;
 use tail_call::*;
 
 use crate::ir::{IrModule, IrNode};

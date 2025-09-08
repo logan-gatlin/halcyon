@@ -13,16 +13,29 @@ module string =
 end
 
 module std =
+  let panic = fn (_ : ()) => wasm::unreachable ()
   let assert = fn with
     | true => ()
-    | false => std::panic ()
+    | false => panic ()
 
   let assert_eq = fn a b => assert (a == b)
+  let assert_ne = fn a b => assert (a != b)
+  let assert_ge = fn a b => assert (a >= b)
+  let assert_le = fn a b => assert (a <= b)
+  let assert_gt = fn a b => assert (a > b)
+  let assert_lt = fn a b => assert (a < b)
+
   let println = string::print
 end
 
 module integer =
   let abs = fn i => if i < 0 then -i else i
+  let pow = fn base with
+    | 0 => 1
+    | 1 => base
+    | n =>
+      let b = pow base (n / 2) in
+      b * b * (if n % 2 == 0 then 1 else base)
 end
 
 module real =
@@ -82,11 +95,9 @@ let is_ok = fn a => match a with
   | result::Ok of _ => res
   | result::Error of _ => a
   
-  (*
-  let expect = fn msg a => match a with 
+  let expect = fn msg with 
   | result::Ok of val => val
-  | result::Error of _ => std:print_string msg; std:panic ()
-  *)
+  | result::Error of _ => std::println msg; std::panic ()
   
 let or_else = fn a res => match a with 
 | result::Ok of _ => a
@@ -184,4 +195,10 @@ module format =
       |> integer
       |> string::concatenate "."
     )
+
+    let boolean = fn with
+      | true => "true"
+      | false => "false"
+
+    let unit = fn (_ : ()) => "()"
 end

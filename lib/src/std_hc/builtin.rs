@@ -5,7 +5,6 @@ use super::*;
 pub fn compile_builtin(enc: &mut FunctionEncoder, interface: &mut ModuleInterface) {
     primitive_types(enc, interface);
     operator_assembly(enc, interface);
-    functions(enc, interface);
 }
 
 fn primitive_types(enc: &mut FunctionEncoder, interface: &mut ModuleInterface) {
@@ -24,27 +23,6 @@ fn primitive_types(enc: &mut FunctionEncoder, interface: &mut ModuleInterface) {
         interface.types.insert(path.clone());
         Universe::get().new_named_type(path, type_);
     });
-}
-
-fn functions(enc: &mut FunctionEncoder, interface: &mut ModuleInterface) {
-    let std = Path::from(STD_MODULE_NAME);
-    let p1 = Path::from("a");
-    // Panic
-    {
-        let path = std.child("panic");
-        let type_ = Type::func(Type::Unit, Type::Variable(0));
-        enc.encode(type_.clone());
-        enc.module_encoder.new_global(&path, &type_);
-        interface.values.insert(path.clone(), type_.clone());
-        enc.encode(curry_function(
-            [(p1.clone(), Type::Unit)],
-            Type::Variable(0),
-            |e| {
-                e.encode(Unreachable);
-            },
-        ))
-        .set_symbol(&path);
-    }
 }
 
 fn operator_assembly(encoder: &mut FunctionEncoder, interface: &mut ModuleInterface) {
@@ -70,7 +48,7 @@ fn operator_assembly(encoder: &mut FunctionEncoder, interface: &mut ModuleInterf
         let func_t = encoder.module_encoder.type_id(&op.get_type());
         let id = encoder
             .module_encoder
-            .function(p1.clone(), &op.parameter_type(), &op.return_type())
+            .function(p1.clone(), &op.parameter_type())
             .encode(zero)
             .get_symbol(&p1)
             .encode([

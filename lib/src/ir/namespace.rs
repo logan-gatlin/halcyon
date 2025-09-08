@@ -1,7 +1,5 @@
 use std::collections::HashSet;
 
-use sx::SXRepr;
-
 use super::*;
 
 #[derive(Debug, Clone, Copy)]

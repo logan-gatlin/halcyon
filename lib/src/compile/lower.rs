@@ -194,7 +194,7 @@ impl Encode<ModuleItem> for FunctionEncoder<'_> {
                 let function_id = self
                     .module_encoder
                     .new_global(&path, &function_type)
-                    .function(parameter_name.clone(), &in_type, &out_type)
+                    .function(parameter_name.clone(), &in_type)
                     .encode(I32Const(variant_id as i32))
                     .get_symbol(&parameter_name)
                     .encode(StructNew(struct_type_id))
@@ -321,7 +321,7 @@ impl Encode<IrNode> for FunctionEncoder<'_> {
                 let parameter_name = parameter_name
                     .unwrap_or(Path::from("_").with_default_span())
                     .inner;
-                let Type::Function(parameter_type, return_type) = node.type_.clone() else {
+                let Type::Function(parameter_type, _) = node.type_.clone() else {
                     panic!()
                 };
                 let (captures, capture_types): (Vec<_>, Vec<_>) = captures
@@ -331,7 +331,7 @@ impl Encode<IrNode> for FunctionEncoder<'_> {
                     .unzip();
                 let function = RefFunc(
                     self.module_encoder
-                        .function(parameter_name, &parameter_type, &return_type)
+                        .function(parameter_name, &parameter_type)
                         .with_capture(&captures, &capture_types)
                         .encode(body)
                         .finish(),

@@ -1,5 +1,5 @@
 use super::*;
-use crate::{lint::*, optimize::CallOptimization, parse::*};
+use crate::{lint::*, parse::*};
 
 pub fn build_ir(
     module: ParsedModule,
@@ -121,6 +121,9 @@ pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> Result<IrN
             in_,
         } => {
             let mut assignee = pattern_expr(ns, assignee, false)?;
+            if !assignee.is_irrefutable() {
+                return Err(lint(TypeLint::NonExhaustive, span, []));
+            }
             let value = rec!(value);
             assignee.visit(|(p, _)| {
                 ns.finalize_value(p);
