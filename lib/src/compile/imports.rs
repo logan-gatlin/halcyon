@@ -160,11 +160,9 @@ impl FunctionEncoder<'_> {
             .element_section
             .push(FunctionKind::Import(import_function_id));
         let parameter = Path::from("a");
-        let mut enc = self.module_encoder.function(
-            parameter.clone(),
-            &ftype.parameter_type(),
-            &ftype.return_type(),
-        );
+        let mut enc = self
+            .module_encoder
+            .function(parameter.clone(), &ftype.parameter_type());
         let integer_type = enc.module_encoder.type_id(&Type::Integer);
         match ftype.parameters {
             0 => {}

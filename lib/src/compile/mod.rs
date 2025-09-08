@@ -153,9 +153,8 @@ impl ModuleEncoder {
         &'_ mut self,
         parameter_name: Path,
         parameter_type: &Type,
-        return_type: &Type,
     ) -> FunctionEncoder<'_> {
-        FunctionEncoder::new(self, parameter_name, parameter_type, return_type)
+        FunctionEncoder::new(self, parameter_name, parameter_type)
     }
 
     #[must_use]

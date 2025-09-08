@@ -1,6 +1,4 @@
-use std::sync::Arc;
-
-use wasm_encoder::{CompositeInnerType, CompositeType, FieldType, SubType};
+use wasm_encoder::FieldType;
 
 use crate::semantic::{Type, Universe};
 
@@ -37,7 +35,7 @@ impl Type {
             }
             | Type::Product(items) => Struct(items.into_iter().map(|t| t.reduce()).collect()),
             Type::Sum { .. } => Sum,
-            Type::Function(a, b) => Struct(vec![Function, Array(AnyRef.into())]),
+            Type::Function(_, _) => Struct(vec![Function, Array(AnyRef.into())]),
             // All type recursion must pass through a sum type, and sum types are not
             // recursive at the WASM level. Therefore no rist of infinite recursion here
             Type::Instantiation(ref path, ref items) => Universe::get()
