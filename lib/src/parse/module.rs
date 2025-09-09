@@ -6,6 +6,7 @@ pub enum ModuleExpressionKind {
         assignee: PatternExpression,
         value: Box<ValueExpression>,
     },
+    Do(Box<ValueExpression>),
     Type {
         assignee: String,
         assignee_span: Span,
@@ -56,7 +57,7 @@ pub fn parse_module(iter: it!()) -> Result<ParsedModule> {
 
 pub fn parse_module_expression(iter: it!()) -> Result<ModuleExpression> {
     iter.start_span();
-    let variant = iter.eat_one_of([Let, Type, Import])?;
+    let variant = iter.eat_one_of([Let, Type, Import, Do])?;
     Ok(match variant {
         // Let
         0 => {
@@ -93,6 +94,11 @@ pub fn parse_module_expression(iter: it!()) -> Result<ModuleExpression> {
                 major,
                 minor,
             }
+        }
+        // Do
+        3 => {
+            let value = parse_value_expression(iter, 0)?.into();
+            ModuleExpressionKind::Do(value)
         }
         _ => unreachable!(),
     }

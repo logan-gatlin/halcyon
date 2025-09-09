@@ -179,7 +179,7 @@ pub fn type_solve(mut module: IrModule) -> Result<(IrModule, ModuleInterface)> {
                     env.map.insert(path.clone(), type_.clone());
                     interface.values.insert(path.clone(), type_.clone());
                 });
-                normalize_type_variables(&mut node);
+                //normalize_type_variables(&mut node);
                 Ok(ModuleItem::Let(pattern, node))
             }
             ModuleItem::Type(path) => {

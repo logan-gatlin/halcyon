@@ -72,6 +72,8 @@ op! {
   PlusDot, 14, LEFT_ASSOC;
   Minus, 14, LEFT_ASSOC;
   MinusDot, 14, LEFT_ASSOC;
+  ComposeLeft, 10, LEFT_ASSOC;
+  ComposeRight, 10, LEFT_ASSOC;
   Xor, 10, LEFT_ASSOC;
   Or, 9, LEFT_ASSOC;
   Apply, 9, LEFT_ASSOC;
@@ -118,7 +120,10 @@ impl BinaryOp {
             | BinaryOp::LessEqual
             | BinaryOp::Greater
             | BinaryOp::GreaterEqual => Type::Variable(0),
-            BinaryOp::Apply | BinaryOp::Semicolon => panic!(),
+            BinaryOp::Apply | BinaryOp::Semicolon => Type::Variable(0),
+            BinaryOp::ComposeRight | BinaryOp::ComposeLeft => {
+                Type::func(Type::Variable(0), Type::Variable(1))
+            }
         }
     }
 
@@ -141,7 +146,10 @@ impl BinaryOp {
             | BinaryOp::And
             | BinaryOp::Xor
             | BinaryOp::Or => Type::Boolean,
-            BinaryOp::Apply | BinaryOp::Semicolon => panic!(),
+            BinaryOp::Apply | BinaryOp::Semicolon => Type::Variable(1),
+            BinaryOp::ComposeLeft | BinaryOp::ComposeRight => {
+                Type::func(Type::Variable(0), Type::Variable(2))
+            }
         }
     }
 
@@ -159,6 +167,22 @@ impl BinaryOp {
                     Type::func(Type::Variable(0), Type::Variable(1)),
                     Type::Variable(1),
                 ),
+            ),
+            ComposeRight => t::curry(
+                &[
+                    t::func(t::Variable(0), t::Variable(1)),
+                    t::func(t::Variable(1), t::Variable(2)),
+                    t::Variable(0),
+                ],
+                t::Variable(1),
+            ),
+            ComposeLeft => t::curry(
+                &[
+                    t::func(t::Variable(1), t::Variable(2)),
+                    t::func(t::Variable(0), t::Variable(1)),
+                    t::Variable(0),
+                ],
+                t::Variable(1),
             ),
             op => Type::curry(
                 &[op.parameter_type(), op.parameter_type()],

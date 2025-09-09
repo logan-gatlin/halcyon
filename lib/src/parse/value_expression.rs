@@ -286,8 +286,8 @@ pub fn parse_value_expression(iter: it!(), precedence: Precedence) -> Result<Val
         iter.end_span();
         parse_primary(iter)?
     };
-    const TERMINAL_TOKENS: [TokenKind; 12] = [
-        Let, Type, Import, End, RightParen, RightBrace, In, Then, Else, Comma, With, Pipe,
+    const TERMINAL_TOKENS: [TokenKind; 13] = [
+        Let, Do, Type, Import, End, RightParen, RightBrace, In, Then, Else, Comma, With, Pipe,
     ];
     // Precedence climbing loop
     while let Some(next) = iter.peek(0) {

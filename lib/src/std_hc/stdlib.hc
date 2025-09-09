@@ -25,7 +25,11 @@ module std =
   let assert_gt = fn a b => assert (a > b)
   let assert_lt = fn a b => assert (a < b)
 
-  let println = string::print
+  let print = fn a => string::print
+
+  let println = fn a => string::concatenate a "\n"
+    |> string::print
+
 end
 
 module integer =

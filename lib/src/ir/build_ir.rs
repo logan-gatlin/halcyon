@@ -29,6 +29,11 @@ fn module_expr(
             assignee.visit(|(p, _)| ns.finalize_value(p));
             items.push(ModuleItem::Let(assignee, Box::new(value)));
         }
+        ModuleExpressionKind::Do(expr) => {
+            let assignee = PatternKind::Hole.with_span(expr.span).with_type(Type::Any);
+            let value = value_expr(ns, *expr)?.into();
+            items.push(ModuleItem::Let(assignee, value));
+        }
         ModuleExpressionKind::Type {
             assignee,
             assignee_span,

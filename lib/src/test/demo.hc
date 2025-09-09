@@ -1,8 +1,8 @@
 module test = 
-  let pow = fn base power =>
-    if power == 1 then base
-    else let b = pow base (power / 2) in
-    b + b + b
+  let add1 = fn x => x + 1
+  let mul2 = fn x => x * 2
 
-  let i = pow 1 2
+  do (add1 >> mul2) 1
+    |> format::integer
+    |> std::println
 end

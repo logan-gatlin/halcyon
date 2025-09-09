@@ -40,6 +40,8 @@ pub enum TokenKind {
     Arrow,
     FatArrow,
     Apply,
+    ComposeLeft,
+    ComposeRight,
 
     Bang,
     BangEqual,
@@ -74,6 +76,7 @@ pub enum TokenKind {
     With,
     Let,
     Type,
+    Do,
     Of,
     In,
     If,
@@ -133,6 +136,8 @@ impl std::fmt::Display for TokenKind {
                 Percent => "%",
                 Tilda => "~",
                 Apply => "|>",
+                ComposeLeft => "<<",
+                ComposeRight => ">>",
                 Hash => "#",
                 At => "@",
                 Arrow => "->",
@@ -159,6 +164,7 @@ impl std::fmt::Display for TokenKind {
                 Module => "module",
                 Import => "import",
                 Use => "use",
+                Do => "do",
                 End => "end",
                 Match => "match",
                 With => "with",
@@ -352,8 +358,8 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
                 '!' if not_next('=') => Bang,
                 '?' if not_next('=') => Question,
                 '=' if not_next('=') && not_next('>') => Equal,
-                '<' if not_next('=') => Less,
-                '>' if not_next('=') => Greater,
+                '<' if not_next('=') && not_next('<') => Less,
+                '>' if not_next('=') && not_next('>') => Greater,
                 _ => Idk,
             };
             if kind != Idk {
@@ -375,6 +381,8 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
                 ('=', '>') => FatArrow,
                 (':', ':') => DoubleColon,
                 ('|', '>') => Apply,
+                ('<', '<') => ComposeLeft,
+                ('>', '>') => ComposeRight,
                 ('+', '.') => PlusDot,
                 ('-', '.') => MinusDot,
                 ('*', '.') => StarDot,
@@ -493,6 +501,7 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
         {
             let kind = match buffer.as_str() {
                 "let" => Let,
+                "do" => Do,
                 "in" => In,
                 "module" => Module,
                 "import" => Import,

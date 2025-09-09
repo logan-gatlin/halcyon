@@ -236,6 +236,13 @@ impl FunctionEncoder<'_> {
         let function_temporary = self.new_temporary(&callee_type);
         let function_type_id = self.module_encoder.function_type_id();
         let function_wrapper_id = self.module_encoder.type_id(&callee_type);
+        let return_type = return_type.reduce();
+        let cast = if return_type == ReducedType::AnyRef || tail_call {
+            None
+        } else {
+            let id = self.module_encoder.reduced_type_id(&return_type);
+            Some(RefCastNonNull(HeapType::Concrete(id)))
+        };
         self.encode([
             LocalTee(function_temporary),
             // Get capture
@@ -254,14 +261,8 @@ impl FunctionEncoder<'_> {
             } else {
                 CallRef(function_type_id)
             },
-        ]);
-        let return_type = return_type.reduce();
-        if return_type != ReducedType::AnyRef {
-            let this_type_id = self.module_encoder.reduced_type_id(&return_type);
-            self.encode(RefCastNonNull(HeapType::Concrete(this_type_id)))
-        } else {
-            self
-        }
+        ])
+        .encode(cast)
     }
 
     pub fn call_function(&mut self, argument_type: Type, return_type: Type) -> &mut Self {
