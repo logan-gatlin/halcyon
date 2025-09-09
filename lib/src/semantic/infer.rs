@@ -115,6 +115,15 @@ impl Infer for IrNode {
                 self.type_ = Type::Product(nodes.iter().map(|n| n.type_.clone()).collect());
                 Tuple(nodes)
             }
+            Array(nodes) => {
+                let nodes = nodes.infer(env, free);
+                let tv = env.new_tv();
+                for n in &nodes {
+                    env.type_constraint(Type::Variable(tv), n.type_.clone(), n.span);
+                }
+                self.type_ = Type::Array(Type::Variable(tv).into());
+                Array(nodes)
+            }
             Struct {
                 field_names,
                 field_values,

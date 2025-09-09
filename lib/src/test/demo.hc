@@ -1,8 +1,4 @@
 module test = 
-  let add1 = fn x => x + 1
-  let mul2 = fn x => x * 2
-
-  do (add1 >> mul2) 1
-    |> format::integer
-    |> std::println
+	let foo = array::length [1, 2]
+		|> std::assert_eq 2
 end

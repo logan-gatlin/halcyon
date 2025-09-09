@@ -141,6 +141,7 @@ pub fn freshen_type_variables(
     });
 }
 
+#[allow(unused)]
 pub fn normalize_type_variables(t: &mut impl Visit<Type>) {
     let mut count = 0;
     let mut map = HashMap::new();

@@ -71,6 +71,9 @@ impl Environment {
                     constraints.push(TypeConstraint(*a1, *a2, span));
                     constraints.push(TypeConstraint(*b1, *b2, span));
                 }
+                (Type::Array(t1), Type::Array(t2)) => {
+                    constraints.push(TypeConstraint(*t1, *t2, span));
+                }
                 (Type::Product(p1), Type::Product(p2)) if p1.len() == p2.len() => {
                     for (t1, t2) in p1.into_iter().zip(p2) {
                         constraints.push(TypeConstraint(t1, t2, span));

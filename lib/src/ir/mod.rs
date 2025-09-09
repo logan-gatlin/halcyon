@@ -34,6 +34,7 @@ pub enum IrKind {
     Immediate(ConstValue),
     Identifier(Path),
     Tuple(Vec<IrNode>),
+    Array(Vec<IrNode>),
     Struct {
         field_names: Vec<String>,
         field_values: Vec<IrNode>,
@@ -144,7 +145,8 @@ impl Visit<IrNode> for IrNode {
                 scrutinee._visit(f);
                 branches._visit(f);
             }
-            Tuple(items)
+            Array(items)
+            | Tuple(items)
             | Struct {
                 field_values: items,
                 ..

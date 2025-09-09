@@ -309,7 +309,15 @@ impl Encode<IrNode> for FunctionEncoder<'_> {
             }
             | IrKind::Tuple(items) => {
                 let type_id = self.module_encoder.type_id(&node.type_);
-                self.encode(items.as_slice()).encode(StructNew(type_id))
+                self.encode(items).encode(StructNew(type_id))
+            }
+            IrKind::Array(items) => {
+                let type_id = self.module_encoder.type_id(&node.type_);
+                let array_size = items.len() as u32;
+                self.encode(items).encode(ArrayNewFixed {
+                    array_type_index: type_id,
+                    array_size,
+                })
             }
             IrKind::Field { .. } => todo!(),
             IrKind::Function {

@@ -174,7 +174,7 @@ impl BinaryOp {
                     t::func(t::Variable(1), t::Variable(2)),
                     t::Variable(0),
                 ],
-                t::Variable(1),
+                t::Variable(2),
             ),
             ComposeLeft => t::curry(
                 &[
@@ -182,7 +182,7 @@ impl BinaryOp {
                     t::func(t::Variable(0), t::Variable(1)),
                     t::Variable(0),
                 ],
-                t::Variable(1),
+                t::Variable(2),
             ),
             op => Type::curry(
                 &[op.parameter_type(), op.parameter_type()],

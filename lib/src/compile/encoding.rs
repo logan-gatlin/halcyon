@@ -27,6 +27,18 @@ where
     }
 }
 
+impl<T, U> Encode<Vec<T>> for U
+where
+    U: Encode<T>,
+{
+    fn encode(&mut self, objs: Vec<T>) -> &mut Self {
+        for obj in objs {
+            self.encode(obj);
+        }
+        self
+    }
+}
+
 impl<T, U> Encode<Option<T>> for U
 where
     U: Encode<T>,

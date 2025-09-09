@@ -144,6 +144,7 @@ pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> Result<IrN
         Literal(literal) => ir::Immediate(lit(literal).span(span)?),
         Identifier(ident) => ir::Identifier(ns.get_value(&ident).span(span)?),
         BinaryOp(op) => ir::ImportedSymbol(op.path(), op.get_type()),
+        UnaryOp(op) => ir::ImportedSymbol(op.path(), op.get_type()),
         Binary {
             op: crate::operator::BinaryOp::Semicolon,
             left,
@@ -262,6 +263,7 @@ pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> Result<IrN
                 .map(|e| value_expr(ns, e))
                 .try_collect()?,
         ),
+        Array(items) => ir::Array(items.into_iter().map(|i| value_expr(ns, i)).try_collect()?),
         StructureLiteral { lhs, rhs } => ir::Struct {
             field_names: lhs,
             field_values: rhs.into_iter().map(|e| value_expr(ns, e)).try_collect()?,

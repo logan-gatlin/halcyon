@@ -191,6 +191,18 @@ impl std::fmt::Display for TokenKind {
     }
 }
 
+impl TokenKind {
+    pub fn is_literal(&self) -> bool {
+        match self {
+            Self::GlyphLiteral(_)
+            | Self::RealLiteral(_)
+            | Self::IntegerLiteral(..)
+            | Self::StringLiteral(_) => true,
+            _ => false,
+        }
+    }
+}
+
 pub type Token = Spanned<TokenKind>;
 
 fn t(tk: TokenKind, sp: Span) -> Result<Token> {

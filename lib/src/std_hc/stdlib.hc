@@ -26,10 +26,8 @@ module std =
   let assert_lt = fn a b => assert (a < b)
 
   let print = fn a => string::print
-
   let println = fn a => string::concatenate a "\n"
     |> string::print
-
 end
 
 module integer =
@@ -50,14 +48,13 @@ module opt =
   type t = fn a => Some of a | None
 end
 
-
 module result =
   type t = fn a b => Ok of a | Error of b
 end
 
 module opt =
   let map = fn operation maybe => match maybe with
-    | opt::Some of o => opt::Some (operation o)
+    | opt::Some of o => (operation >> opt::Some) o
     | _ => opt::None
 
   let iterate =
@@ -71,7 +68,7 @@ module opt =
     | opt::Some of _ => true
     | _ => false
 
-  let is_none = fn maybe => not (is_some maybe)
+  let is_none = is_some >> (not)
 
   let ok_or_error = fn error opt => match opt with
     | opt::None of () => result::Error error
@@ -79,41 +76,47 @@ module opt =
 end
 
 module result =
-let is_ok = fn a => match a with 
-  | result::Ok of _ => true
-  | _ => false
+  let map = fn operation with
+    | result::Ok of o => (operation >> result::Ok) o
+    | r => r
+
+  let map_err = fn operation with
+    | result::Error of e => (operation >> result::Error) e
+    | r => r
+
+  let is_ok = fn a => match a with 
+    | result::Ok of _ => true
+    | _ => false
   
-  let is_err = fn a => match a with 
-  | result::Error of _ => true
-  | _ => false
+  let is_err = is_ok >> (not)
   
   let unwrap_ok = fn with 
-  | result::Ok of val => val
-  | _ => std::panic ()
+    | result::Ok of val => val
+    | _ => std::panic ()
 
   let unwrap_err = fn a => match a with
-  | result::Error of val => val
-  | _ => std::panic ()
+    | result::Error of val => val
+    | _ => std::panic ()
   
   let and_also = fn a res => match a with 
-  | result::Ok of _ => res
-  | result::Error of _ => a
+    | result::Ok of _ => res
+    | _ => a
   
   let expect = fn msg with 
-  | result::Ok of val => val
-  | result::Error of _ => std::println msg; std::panic ()
+    | result::Ok of val => val
+    | result::Error of _ => std::println msg; std::panic ()
   
-let or_else = fn a res => match a with 
-| result::Ok of _ => a
-| result::Error of _ => res
+  let or_else = fn a res => match a with 
+    | result::Ok of _ => a
+    | result::Error of _ => res
   
   let unwrap_or = fn a default => match a with
-  | result::Ok of val => val 
-  | result::Error of _ => default
+    | result::Ok of val => val 
+    | result::Error of _ => default
   
   let and_then = fn a op => match a with
-  | result::Ok of val => result::Ok (op val)
-  | result::Error of _ => a 
+    | result::Ok of val => result::Ok (op val)
+    | result::Error of _ => a 
 
   let ok_or_none = fn with
     | result::Ok of val => opt::Some val

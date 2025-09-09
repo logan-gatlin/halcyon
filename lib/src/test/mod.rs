@@ -54,7 +54,7 @@ fn execute(wasm: Vec<u8>) {
                 let mut buffer = vec![0; len as usize];
                 memory.read(_callee, ptr as usize, &mut buffer).unwrap();
                 let s = String::from_utf8(buffer).unwrap();
-                println!("{s}");
+                print!("{s}");
             },
         )
         .unwrap()

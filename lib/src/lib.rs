@@ -63,7 +63,7 @@ pub fn compile_single(
             }
         };
         optimize_ir(&mut typed_ir);
-        println!("Typed IR:\n{}", typed_ir.clone().sx());
+        //println!("Typed IR:\n{}", typed_ir.clone().sx());
         encoder.encode(typed_ir);
     }
     Ok(())
