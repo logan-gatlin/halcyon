@@ -30,6 +30,9 @@ module std =
     |> string::print
 end
 
+module array =
+end
+
 module integer =
   let abs = fn i => if i < 0 then -i else i
   let pow = fn base with

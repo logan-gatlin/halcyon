@@ -265,10 +265,12 @@ impl FunctionEncoder<'_> {
         .encode(cast)
     }
 
+    /// Expects [argument, function] on the stack
     pub fn call_function(&mut self, argument_type: Type, return_type: Type) -> &mut Self {
         self.call_function_maybe_tail(argument_type, return_type, false)
     }
 
+    /// Expects [argument, function] on the stack
     pub fn tail_call_function(&mut self, argument_type: Type, return_type: Type) -> &mut Self {
         self.call_function_maybe_tail(argument_type, return_type, true)
     }
