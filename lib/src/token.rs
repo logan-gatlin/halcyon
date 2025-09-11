@@ -197,7 +197,9 @@ impl TokenKind {
             Self::GlyphLiteral(_)
             | Self::RealLiteral(_)
             | Self::IntegerLiteral(..)
-            | Self::StringLiteral(_) => true,
+            | Self::StringLiteral(_)
+            | Self::True
+            | Self::False => true,
             _ => false,
         }
     }

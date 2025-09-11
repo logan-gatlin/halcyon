@@ -1,7 +1,7 @@
 module OpTest =
   -- Unary ops
-  let _ = std::assert not false
-  let _ = std::assert not not not false
+  let _ = std::assert (not false)
+  let _ = std::assert (not not not false)
   let _ = std::assert (-1 == 0 - 1)
   let _ = std::assert (-.1.0 == 0.0 -. 1.0)
   let _ = std::assert (-1.0 == 0.0 -. 1.0) -- Special case

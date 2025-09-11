@@ -51,36 +51,51 @@ pub fn compile_array(enc: &mut FunctionEncoder, interface: &mut ModuleInterface)
         Type::Array(Type::Variable(0).into()),
         move |e| {
             let array_temp = e.new_temporary(&Type::Array(Type::Variable(0).into()));
-            e.encode(ConstValue::Unit)
+            e.get_symbol(&p(1))
+                .encode([ArrayLen, I32Const(1), I32Add])
+                .new_array(Type::Variable(0))
+                .encode([LocalTee(array_temp), I32Const(0)])
                 .get_symbol(&p(1))
-                .encode([
-                    ArrayLen,
-                    I32Const(1),
-                    I32Add,
-                    // Destination array
-                    ArrayNew(array_type),
-                    LocalTee(array_temp),
-                    // Destination offset
-                    I32Const(0),
-                ])
-                // Src array
+                .array_copy_all()
+                .encode(LocalGet(array_temp))
                 .get_symbol(&p(1))
-                // Src offset
-                .encode(I32Const(0))
-                .get_symbol(&p(1))
-                .encode([
-                    // Length
-                    ArrayLen,
-                    ArrayCopy {
-                        array_type_index_dst: array_type,
-                        array_type_index_src: array_type,
-                    },
-                    LocalGet(array_temp),
-                ])
-                .get_symbol(&p(1))
-                .encode(ArrayLen)
+                .encode([ArrayLen])
                 .get_symbol(&p(0))
                 .encode([ArraySet(array_type), LocalGet(array_temp)]);
+        },
+    );
+
+    // array::set
+    n_params(
+        enc,
+        interface,
+        array.child("set"),
+        [
+            Type::Integer,
+            Type::Variable(0),
+            Type::Array(Type::Variable(0).into()),
+        ],
+        Type::Array(Type::Variable(0).into()),
+        move |e| {
+            let array_type = e
+                .module_encoder
+                .type_id(&Type::Array(Type::Variable(0).into()));
+            let integer_type = e.module_encoder.type_id(&Type::Integer);
+            e.get_symbol(&p(2))
+                .clone_array(Type::Variable(0))
+                .set_symbol(&p(2))
+                .get_symbol(&p(2))
+                .get_symbol(&p(0))
+                .encode([
+                    StructGet {
+                        struct_type_index: integer_type,
+                        field_index: 0,
+                    },
+                    I32WrapI64,
+                ])
+                .get_symbol(&p(1))
+                .encode(ArraySet(array_type))
+                .get_symbol(&p(2));
         },
     );
 

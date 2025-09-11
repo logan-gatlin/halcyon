@@ -1,3 +1,4 @@
+mod array;
 pub mod encoding;
 mod exports;
 pub mod function;
