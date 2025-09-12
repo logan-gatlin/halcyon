@@ -5,6 +5,7 @@ pub enum PatternExpressionKind {
     Identifier(String),
     ModulePath(Vec<String>),
     Tuple(Vec<PatternExpression>),
+    Array(Vec<PatternExpression>),
     Constructor(Vec<String>, Box<PatternExpression>),
     TypeHint(Box<PatternExpression>, Box<TypeExpression>),
 }
@@ -40,6 +41,21 @@ pub fn parse_pattern(iter: it!()) -> Result<PatternExpression> {
             } else {
                 patterns[0].inner.clone()
             }
+        }
+        // Array
+        LeftSquare => {
+            let mut patterns = vec![];
+            loop {
+                if iter.peek_or_error(0, RightSquare).is_ok() {
+                    break;
+                }
+                patterns.push(parse_pattern(iter)?);
+                if iter.eat(Comma).is_none() {
+                    break;
+                }
+            }
+            iter.eat_or_error(RightSquare)?;
+            e::Array(patterns)
         }
         // Identifier, path, or constructor
         Identifier(name) => {

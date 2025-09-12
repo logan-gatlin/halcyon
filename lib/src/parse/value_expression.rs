@@ -60,7 +60,7 @@ pub enum ValueExpressionKind {
         branches: Vec<ValueExpression>,
     },
     Tuple(Vec<ValueExpression>),
-    Array(Vec<ValueExpression>),
+    Array(Vec<ArrayInner>),
     StructureLiteral {
         lhs: Vec<String>,
         rhs: Vec<ValueExpression>,
@@ -70,6 +70,12 @@ pub enum ValueExpressionKind {
         rhs: String,
     },
     ModuleField(Vec<String>),
+}
+
+#[derive(Debug, Clone, sx::SXRepr)]
+pub enum ArrayInner {
+    Splat(ValueExpression),
+    Single(ValueExpression),
 }
 
 pub type ValueExpression = Expression<ValueExpressionKind>;
@@ -199,7 +205,12 @@ fn parse_primary(iter: it!()) -> Result<ValueExpression> {
                 if iter.eat(RightSquare).is_some() {
                     break;
                 }
-                items.push(parse_value_expression(iter, 0)?);
+                let expr = parse_value_expression(iter, 0)?;
+                items.push(if iter.eat(DotDot).is_some() {
+                    ArrayInner::Splat(expr)
+                } else {
+                    ArrayInner::Single(expr)
+                });
                 if iter.eat(Comma).is_none() && iter.peek_or_error(0, RightSquare).is_err() {
                     iter.start_span();
                     return Err(iter.report_error(ExpectedToken, [format!("{RightSquare}")]));
@@ -247,7 +258,7 @@ fn parse_primary(iter: it!()) -> Result<ValueExpression> {
             iter.skip(2);
             e::BinaryOp(op)
         }
-        // Binary op literal
+        // Unary op literal
         LeftParen
             if iter.peek(0).is_some_and(|t| t.inner == Not)
                 && iter.peek(1).is_some_and(|t| *t == RightParen) =>

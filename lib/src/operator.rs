@@ -94,8 +94,6 @@ op! {
   Not, 15, LEFT_ASSOC;
 }
 
-pub const TYPE_STAR_PREC: Precedence = 15;
-
 op! {
   BinaryTypeOp; "";
   Arrow, 5, RIGHT_ASSOC;

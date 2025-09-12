@@ -12,6 +12,18 @@ pub fn compile_array(enc: &mut FunctionEncoder, interface: &mut ModuleInterface)
         .module_encoder
         .type_id(&Type::Array(Type::Variable(0).into()));
 
+    // array::empty
+    {
+        let path = array.child("empty");
+        let type_ = Type::Array(Type::Variable(0).into());
+        enc.module_encoder.new_global(&path, &type_);
+        enc.encode(ArrayNewFixed {
+            array_type_index: array_type,
+            array_size: 0,
+        })
+        .set_symbol(&path);
+        interface.values.insert(path, type_);
+    }
     // array::length
     one_param(
         enc,

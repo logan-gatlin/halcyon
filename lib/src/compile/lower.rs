@@ -27,6 +27,17 @@ impl FunctionEncoder<'_> {
                     .lower_pattern(pattern, scope);
                 }
             }
+            PatternKind::Array(patterns) => {
+                let temporary = self.new_temporary(&pattern.type_);
+                self.encode([
+                    LocalTee(temporary),
+                    ArrayLen,
+                    I32Const(patterns.len() as i32),
+                    I32Ne,
+                    BrIf(0),
+                ]);
+                todo!()
+            }
             PatternKind::Constructor(
                 Constructor {
                     variant_id,

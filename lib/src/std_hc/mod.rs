@@ -113,7 +113,7 @@ fn p(n: usize) -> Path {
     )
 }
 
-fn constant(enc: &mut FunctionEncoder, path: Path, type_: Type, value: Instruction<'static>) {
+fn const_struct(enc: &mut FunctionEncoder, path: Path, type_: Type, value: Instruction<'static>) {
     let type_id = enc.module_encoder.type_id(&type_);
     enc.module_encoder.new_global(&path, &type_);
     enc.encode([value, StructNew(type_id)]).set_symbol(&path);

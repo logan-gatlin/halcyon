@@ -7,6 +7,7 @@ pub enum PatternKind {
     Hole,
     Name(Path),
     Tuple(Vec<Pattern>),
+    Array(Vec<Pattern>),
     Constructor(Constructor, Box<Pattern>),
     Literal(ConstValue),
     TypeHint(Box<Pattern>, Type),
@@ -27,6 +28,7 @@ impl Pattern {
         match &self.inner.inner {
             PatternKind::Hole | PatternKind::Name(_) => true,
             PatternKind::Tuple(pats) => pats.iter().all(|p| p.is_irrefutable()),
+            PatternKind::Array(..) => false,
             PatternKind::Constructor(..) => false,
             PatternKind::Literal(const_value) => const_value == &ConstValue::Unit,
             PatternKind::TypeHint(pat, _) => pat.is_irrefutable(),
@@ -38,7 +40,7 @@ impl Visit<Pattern> for Pattern {
     fn _visit(&mut self, f: &mut impl FnMut(&mut Pattern)) {
         match &mut *self.inner {
             PatternKind::Hole | PatternKind::Name(_) | PatternKind::Literal(_) => {}
-            PatternKind::Tuple(items) => items._visit(f),
+            PatternKind::Array(items) | PatternKind::Tuple(items) => items._visit(f),
             PatternKind::Constructor(_, items) => items._visit(f),
             PatternKind::TypeHint(pat, _) => {
                 pat._visit(f);

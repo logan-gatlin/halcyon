@@ -6,7 +6,7 @@ module string =
   type t = std::string
   let s = string::concatenate
 
-  import unsafe_print : (std::integer * std::integer) -> () = sys::print_string
+  import unsafe_print : (std::integer, std::integer) -> () = sys::print_string
   let print = fn s =>
     string::unsafe_store s 0;
     unsafe_print (0, (string::length s))
@@ -127,7 +127,7 @@ module result =
 end
 
 module list =
-  type t = fn I => Pair of I * (t I) | Nil
+  type t = fn I => Pair of (I, (t I)) | Nil
 
   let map = fn operation list => match list with
     | Pair of (head, tail) => Pair (operation head, tail |> map operation)

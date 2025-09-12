@@ -263,7 +263,58 @@ pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> Result<IrN
                 .map(|e| value_expr(ns, e))
                 .try_collect()?,
         ),
-        Array(items) => ir::Array(items.into_iter().map(|i| value_expr(ns, i)).try_collect()?),
+        //Array(items) => ir::Array(items.into_iter().map(|i| value_expr(ns, i)).try_collect()?),
+        Array(items) => {
+            let mut current = value_expr(
+                ns,
+                ModuleField(vec!["array".into(), "empty".into()]).with_span(span),
+            )?;
+            for item in items {
+                match item {
+                    ArrayInner::Splat(item) => {
+                        let span = item.span;
+                        current = ir::Call {
+                            callee: value_expr(
+                                ns,
+                                FunctionCall {
+                                    callee: ModuleField(vec!["array".into(), "concatenate".into()])
+                                        .with_span(span)
+                                        .into(),
+                                    argument: item.into(),
+                                }
+                                .with_span(span),
+                            )?
+                            .into(),
+                            argument: current.into(),
+                            opt: Default::default(),
+                        }
+                        .with_span(span)
+                        .with_type(Type::Any);
+                    }
+                    ArrayInner::Single(item) => {
+                        let span = item.span;
+                        current = ir::Call {
+                            callee: value_expr(
+                                ns,
+                                FunctionCall {
+                                    callee: ModuleField(vec!["array".into(), "push".into()])
+                                        .with_span(span)
+                                        .into(),
+                                    argument: item.into(),
+                                }
+                                .with_span(span),
+                            )?
+                            .into(),
+                            argument: current.into(),
+                            opt: Default::default(),
+                        }
+                        .with_span(span)
+                        .with_type(Type::Any);
+                    }
+                }
+            }
+            return Ok(current);
+        }
         StructureLiteral { lhs, rhs } => ir::Struct {
             field_names: lhs,
             field_values: rhs.into_iter().map(|e| value_expr(ns, e)).try_collect()?,
@@ -334,6 +385,12 @@ fn pattern_expr(
             }),
         },
         Tuple(expressions) => PatternKind::Tuple(
+            expressions
+                .into_iter()
+                .map(|e| pattern_expr(ns, e, global))
+                .try_collect()?,
+        ),
+        Array(expressions) => PatternKind::Array(
             expressions
                 .into_iter()
                 .map(|e| pattern_expr(ns, e, global))

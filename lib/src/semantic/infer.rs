@@ -53,6 +53,19 @@ impl Infer for Pattern {
                 self.type_ = Type::Product(patterns.iter().map(|p| p.type_.clone()).collect());
                 PatternKind::Tuple(patterns)
             }
+            PatternKind::Array(patterns) => {
+                let tv = env.new_tv();
+                let patterns: Vec<_> = patterns
+                    .into_iter()
+                    .map(|p| {
+                        let p = p.infer(env, free);
+                        env.type_constraint(Type::Variable(tv), p.type_.clone(), p.span);
+                        p
+                    })
+                    .collect();
+                self.type_ = Type::Array(Type::Variable(tv).into());
+                PatternKind::Array(patterns)
+            }
             PatternKind::Constructor(mut constructor, pattern) => {
                 env.freshen_type_variables(&mut constructor, &HashSet::new());
                 let (in_type, out_type) = match &constructor.kind {

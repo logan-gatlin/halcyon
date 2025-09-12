@@ -131,9 +131,9 @@ pub fn compile_numbers(
 
     // real::pi
     let path = real.child("pi");
-    constant(enc, path, Type::Real, F64Const(std::f64::consts::PI.into()));
+    const_struct(enc, path, Type::Real, F64Const(std::f64::consts::PI.into()));
 
     // real::e
     let path = real.child("e");
-    constant(enc, path, Type::Real, F64Const(std::f64::consts::E.into()));
+    const_struct(enc, path, Type::Real, F64Const(std::f64::consts::E.into()));
 }

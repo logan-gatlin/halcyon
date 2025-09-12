@@ -1,4 +1,7 @@
 module test = 
 	let a = [1, 2, 3]
-	let b = array::set 0 2 a
+	let b = [a.., a..]
+	do array::length b
+		|> format::integer
+		|> std::println
 end
