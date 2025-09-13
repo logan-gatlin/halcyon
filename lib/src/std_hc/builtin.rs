@@ -102,6 +102,52 @@ fn operator_assembly(encoder: &mut FunctionEncoder, interface: &mut ModuleInterf
             ))
             .set_symbol(&OP.path());
     }
+    // Binary >> (compose right)
+    {
+        let p1 = p1.clone();
+        let p2 = p2.clone();
+        let p3 = Path::from("c");
+        let p1t = Type::func(Type::Variable(0), Type::Variable(1));
+        let p2t = Type::func(Type::Variable(1), Type::Variable(2));
+        let p3t = Type::Variable(0);
+        n_params(
+            encoder,
+            interface,
+            BinaryOp::ComposeRight.path(),
+            [p1t.clone(), p2t.clone(), p3t.clone()],
+            Type::Variable(1),
+            move |e| {
+                e.get_symbol(&p3)
+                    .get_symbol(&p1)
+                    .call_function(Type::Variable(0), Type::Variable(1))
+                    .get_symbol(&p2)
+                    .call_function(Type::Variable(1), Type::Variable(2));
+            },
+        );
+    }
+    // Binary << (compose right)
+    {
+        let p1 = p1.clone();
+        let p2 = p2.clone();
+        let p3 = Path::from("c");
+        let p1t = Type::func(Type::Variable(1), Type::Variable(2));
+        let p2t = Type::func(Type::Variable(0), Type::Variable(1));
+        let p3t = Type::Variable(0);
+        n_params(
+            encoder,
+            interface,
+            BinaryOp::ComposeLeft.path(),
+            [p1t.clone(), p2t.clone(), p3t.clone()],
+            Type::Variable(1),
+            move |e| {
+                e.get_symbol(&p3)
+                    .get_symbol(&p2)
+                    .call_function(Type::Variable(0), Type::Variable(1))
+                    .get_symbol(&p1)
+                    .call_function(Type::Variable(1), Type::Variable(2));
+            },
+        );
+    }
     // Binary ;
     {
         const OP: BinaryOp = BinaryOp::Semicolon;

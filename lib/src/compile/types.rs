@@ -36,6 +36,7 @@ impl Type {
             | Type::Product(items) => Struct(items.into_iter().map(|t| t.reduce()).collect()),
             Type::Sum { .. } => Sum,
             Type::Function(_, _) => Struct(vec![Function, Array(AnyRef.into())]),
+            Type::Array(t) => Array(t.reduce().into()),
             // All type recursion must pass through a sum type, and sum types are not
             // recursive at the WASM level. Therefore no rist of infinite recursion here
             Type::Instantiation(ref path, ref items) => Universe::get()
@@ -180,8 +181,16 @@ impl TypeEncoder {
                     .map(|t| self.make_storage_type(t))
                     .collect(),
             ),
+            // String optimization
             Array(type_) if type_ == I8.into() => rt::Array(st::I8),
-            Array(type_) => rt::Array(self.make_storage_type(*type_)),
+            // Contravariance
+            Array(t) => {
+                self.make_storage_type(*t);
+                rt::Array(StorageType::Val(ValType::Ref(RefType {
+                    nullable: false,
+                    heap_type: HeapType::ANY,
+                })))
+            }
             Function => {
                 self.make_storage_type(ReducedType::capture());
                 let capture_valtype = self.value_map.get(&ReducedType::capture()).unwrap().clone();

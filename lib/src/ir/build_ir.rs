@@ -29,6 +29,11 @@ fn module_expr(
             assignee.visit(|(p, _)| ns.finalize_value(p));
             items.push(ModuleItem::Let(assignee, Box::new(value)));
         }
+        ModuleExpressionKind::Do(expr) => {
+            let assignee = PatternKind::Hole.with_span(expr.span).with_type(Type::Any);
+            let value = value_expr(ns, *expr)?.into();
+            items.push(ModuleItem::Let(assignee, value));
+        }
         ModuleExpressionKind::Type {
             assignee,
             assignee_span,
@@ -139,6 +144,7 @@ pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> Result<IrN
         Literal(literal) => ir::Immediate(lit(literal).span(span)?),
         Identifier(ident) => ir::Identifier(ns.get_value(&ident).span(span)?),
         BinaryOp(op) => ir::ImportedSymbol(op.path(), op.get_type()),
+        UnaryOp(op) => ir::ImportedSymbol(op.path(), op.get_type()),
         Binary {
             op: crate::operator::BinaryOp::Semicolon,
             left,
@@ -257,6 +263,60 @@ pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> Result<IrN
                 .map(|e| value_expr(ns, e))
                 .try_collect()?,
         ),
+        //Array(items) => ir::Array(items.into_iter().map(|i| value_expr(ns, i)).try_collect()?),
+        Array(items) => {
+            let mut current = value_expr(
+                ns,
+                ModuleField(vec!["array".into(), "empty".into()]).with_span(span),
+            )?;
+            for item in items {
+                match item {
+                    ArrayInner::Splat(item) => {
+                        let span = item.span;
+                        current = ir::Call {
+                            callee: ir::Call {
+                                callee: value_expr(
+                                    ns,
+                                    ModuleField(vec!["array".into(), "concatenate".into()])
+                                        .with_span(span),
+                                )?
+                                .into(),
+                                argument: current.into(),
+                                opt: Default::default(),
+                            }
+                            .with_span(span)
+                            .with_type(Type::Any)
+                            .into(),
+                            argument: value_expr(ns, item)?.into(),
+                            opt: Default::default(),
+                        }
+                        .with_span(span)
+                        .with_type(Type::Any)
+                    }
+                    ArrayInner::Single(item) => {
+                        let span = item.span;
+                        current = ir::Call {
+                            callee: value_expr(
+                                ns,
+                                FunctionCall {
+                                    callee: ModuleField(vec!["array".into(), "push".into()])
+                                        .with_span(span)
+                                        .into(),
+                                    argument: item.into(),
+                                }
+                                .with_span(span),
+                            )?
+                            .into(),
+                            argument: current.into(),
+                            opt: Default::default(),
+                        }
+                        .with_span(span)
+                        .with_type(Type::Any);
+                    }
+                }
+            }
+            return Ok(current);
+        }
         StructureLiteral { lhs, rhs } => ir::Struct {
             field_names: lhs,
             field_values: rhs.into_iter().map(|e| value_expr(ns, e)).try_collect()?,
@@ -332,6 +392,7 @@ fn pattern_expr(
                 .map(|e| pattern_expr(ns, e, global))
                 .try_collect()?,
         ),
+        Array(kind) => todo!(),
         Constructor(items, expression) => {
             let cons = if items.len() == 1 {
                 ns.get_constructor(&items[0])

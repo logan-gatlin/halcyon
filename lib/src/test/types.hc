@@ -17,8 +17,8 @@ module TypeTest =
     e : string,
     f : glyph,
   }
-  type tuple = integer * boolean * real * unit * string * glyph * struct
-  type variant = V_int of integer | V_real of real | V_both of integer * real
+  type tuple = (integer, boolean, real, unit, string, glyph, struct)
+  type variant = V_int of integer | V_real of real | V_both of (integer, real)
 
   -- Struct field inference
   type specific_struct1 = {

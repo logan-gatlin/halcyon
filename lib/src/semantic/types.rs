@@ -75,6 +75,8 @@ pub enum Type {
         member_names: Vec<String>,
         member_types: Vec<Type>,
     },
+    /// Array type
+    Array(Box<Type>),
     /// Tuple
     Product(Vec<Type>),
     /// Variant
@@ -237,6 +239,7 @@ impl Type {
             | Type::String
             | Type::Glyph => false,
             Type::Variable(t) => *t == tv,
+            Type::Array(t) => t.contains_type_variable(tv),
             Type::Struct {
                 member_types: items,
                 ..
@@ -262,6 +265,7 @@ impl Visit<Type> for Type {
             Type::Instantiation(_, types) => {
                 types._visit(f);
             }
+            Type::Array(t) => t._visit(f),
             Type::Sum {
                 variant_types: items,
                 ..
@@ -345,6 +349,10 @@ impl std::hash::Hash for Type {
             Type::Sum { name, .. } | Type::Struct { name, .. } => {
                 name.hash(state);
             }
+            Type::Array(t) => {
+                "array".hash(state);
+                t.hash(state);
+            }
             Type::Function(a, b) => {
                 "function".hash(state);
                 a.hash(state);
@@ -389,6 +397,7 @@ impl std::fmt::Display for Type {
             Type::Boolean => write!(f, "boolean"),
             Type::String => write!(f, "string"),
             Type::Glyph => write!(f, "glyph"),
+            Type::Array(t) => write!(f, "[{t}]"),
             Type::Sum { name, .. } | Type::Struct { name, .. } => {
                 write!(f, "{name}")
             }

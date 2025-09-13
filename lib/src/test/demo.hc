@@ -1,8 +1,8 @@
 module test = 
-  let pow = fn base power =>
-    if power == 1 then base
-    else let b = pow base (power / 2) in
-    b + b + b
-
-  let i = pow 1 2
+	let a = ["a", "b"]
+	do match [] with
+		| [] => std::println "Empty"
+		| [a] => std::println "one"
+		| [a, b] => std::println "two"
+		| [a, b, c] => std::println "three"
 end

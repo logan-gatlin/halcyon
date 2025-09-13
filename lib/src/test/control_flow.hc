@@ -7,9 +7,9 @@ module ControlFlowTest =
     | (2, _) => 2
     | (_, _) => 3
   ) == 3)
-  let () = std::assert match ((1, 2), (3, 4)) with
+  let () = std::assert (match ((1, 2), (3, 4)) with
     | ((1, 2), (4, 3)) => false
     | ((a, b), (c, d)) => (a + b + c + d) == 10
-    | _ => false
+    | _ => false)
 end
 

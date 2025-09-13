@@ -27,6 +27,32 @@ impl FunctionEncoder<'_> {
                     .lower_pattern(pattern, scope);
                 }
             }
+            PatternKind::Array(ArrayPattern::Exact(patterns)) => {
+                let temporary = self.new_temporary(&pattern.type_);
+                self.encode([
+                    LocalTee(temporary),
+                    ArrayLen,
+                    I32Const(patterns.len() as i32),
+                    I32Ne,
+                    BrIf(0),
+                    I32Const(0),
+                ]);
+                let type_ = self.module_encoder.type_id(&pattern.type_);
+                for (id, pat) in patterns.into_iter().enumerate() {
+                    let pattern_type = pat.type_.clone().reduce();
+                    let convert = if pattern_type == ReducedType::AnyRef {
+                        None
+                    } else {
+                        Some(RefCastNonNull(HeapType::Concrete(
+                            self.module_encoder.reduced_type_id(&pattern_type),
+                        )))
+                    };
+                    self.encode([LocalGet(temporary), I32Const(id as i32), ArrayGet(type_)])
+                        .encode(convert)
+                        .lower_pattern(pat, scope);
+                }
+            }
+            PatternKind::Array(_) => todo!(),
             PatternKind::Constructor(
                 Constructor {
                     variant_id,
@@ -236,6 +262,13 @@ impl FunctionEncoder<'_> {
         let function_temporary = self.new_temporary(&callee_type);
         let function_type_id = self.module_encoder.function_type_id();
         let function_wrapper_id = self.module_encoder.type_id(&callee_type);
+        let return_type = return_type.reduce();
+        let cast = if return_type == ReducedType::AnyRef || tail_call {
+            None
+        } else {
+            let id = self.module_encoder.reduced_type_id(&return_type);
+            Some(RefCastNonNull(HeapType::Concrete(id)))
+        };
         self.encode([
             LocalTee(function_temporary),
             // Get capture
@@ -254,20 +287,16 @@ impl FunctionEncoder<'_> {
             } else {
                 CallRef(function_type_id)
             },
-        ]);
-        let return_type = return_type.reduce();
-        if return_type != ReducedType::AnyRef {
-            let this_type_id = self.module_encoder.reduced_type_id(&return_type);
-            self.encode(RefCastNonNull(HeapType::Concrete(this_type_id)))
-        } else {
-            self
-        }
+        ])
+        .encode(cast)
     }
 
+    /// Expects [argument, function] on the stack
     pub fn call_function(&mut self, argument_type: Type, return_type: Type) -> &mut Self {
         self.call_function_maybe_tail(argument_type, return_type, false)
     }
 
+    /// Expects [argument, function] on the stack
     pub fn tail_call_function(&mut self, argument_type: Type, return_type: Type) -> &mut Self {
         self.call_function_maybe_tail(argument_type, return_type, true)
     }
@@ -308,7 +337,7 @@ impl Encode<IrNode> for FunctionEncoder<'_> {
             }
             | IrKind::Tuple(items) => {
                 let type_id = self.module_encoder.type_id(&node.type_);
-                self.encode(items.as_slice()).encode(StructNew(type_id))
+                self.encode(items).encode(StructNew(type_id))
             }
             IrKind::Field { .. } => todo!(),
             IrKind::Function {

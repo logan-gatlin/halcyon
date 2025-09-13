@@ -32,6 +32,7 @@ pub enum ValueExpressionKind {
         op: UnaryOp,
         child: Box<ValueExpression>,
     },
+    UnaryOp(UnaryOp),
     FunctionDef {
         parameters: Vec<Spanned<String>>,
         types: Vec<Option<TypeExpression>>,
@@ -59,6 +60,7 @@ pub enum ValueExpressionKind {
         branches: Vec<ValueExpression>,
     },
     Tuple(Vec<ValueExpression>),
+    Array(Vec<ArrayInner>),
     StructureLiteral {
         lhs: Vec<String>,
         rhs: Vec<ValueExpression>,
@@ -68,6 +70,12 @@ pub enum ValueExpressionKind {
         rhs: String,
     },
     ModuleField(Vec<String>),
+}
+
+#[derive(Debug, Clone, sx::SXRepr)]
+pub enum ArrayInner {
+    Splat(ValueExpression),
+    Single(ValueExpression),
 }
 
 pub type ValueExpression = Expression<ValueExpressionKind>;
@@ -191,6 +199,25 @@ fn parse_primary(iter: it!()) -> Result<ValueExpression> {
             }
             e::StructureLiteral { lhs, rhs }
         }
+        LeftSquare => {
+            let mut items = vec![];
+            loop {
+                if iter.eat(RightSquare).is_some() {
+                    break;
+                }
+                let expr = parse_value_expression(iter, 0)?;
+                items.push(if iter.eat(DotDot).is_some() {
+                    ArrayInner::Splat(expr)
+                } else {
+                    ArrayInner::Single(expr)
+                });
+                if iter.eat(Comma).is_none() && iter.peek_or_error(0, RightSquare).is_err() {
+                    iter.start_span();
+                    return Err(iter.report_error(ExpectedToken, [format!("{RightSquare}")]));
+                }
+            }
+            e::Array(items)
+        }
         If => e::If {
             predicate: Box::new(parse_value_expression(iter, 0)?),
             then: {
@@ -223,13 +250,21 @@ fn parse_primary(iter: it!()) -> Result<ValueExpression> {
                 branches,
             }
         }
-        // Binary op literal
+        // Binary op
         LeftParen
             if let Some(Ok(op)) = iter.peek(0).map(|o| BinaryOp::try_from(&*o))
                 && iter.peek(1).is_some_and(|t| *t == RightParen) =>
         {
             iter.skip(2);
             e::BinaryOp(op)
+        }
+        // Unary op literal
+        LeftParen
+            if iter.peek(0).is_some_and(|t| t.inner == Not)
+                && iter.peek(1).is_some_and(|t| *t == RightParen) =>
+        {
+            iter.skip(2);
+            e::UnaryOp(UnaryOp::Not)
         }
         // Tuple or parenthesis
         LeftParen => {
@@ -286,14 +321,18 @@ pub fn parse_value_expression(iter: it!(), precedence: Precedence) -> Result<Val
         iter.end_span();
         parse_primary(iter)?
     };
-    const TERMINAL_TOKENS: [TokenKind; 12] = [
-        Let, Type, Import, End, RightParen, RightBrace, In, Then, Else, Comma, With, Pipe,
+    /*
+    const TERMINAL_TOKENS: [TokenKind; 13] = [
+        Let, Do, Type, Import, End, RightParen, RightBrace, In, Then, Else, Comma, With, Pipe,
     ];
+    */
     // Precedence climbing loop
     while let Some(next) = iter.peek(0) {
+        /*
         if TERMINAL_TOKENS.contains(&*next) {
             break;
         }
+        */
         iter.start_span();
         // Binary operator
         if let Ok(op) = BinaryOp::try_from(&*next) {
@@ -327,7 +366,14 @@ pub fn parse_value_expression(iter: it!(), precedence: Precedence) -> Result<Val
             }
         }
         // Function call
-        else if precedence < CALL_PREC {
+        else if precedence < CALL_PREC
+            && let Some(next) = iter.peek(0)
+            && (next.inner.is_literal()
+                || next.inner == LeftParen
+                || next.inner == LeftSquare
+                || next.inner == LeftBrace
+                || matches!(next.inner, Identifier(_)))
+        {
             current = ValueExpression {
                 inner: e::FunctionCall {
                     callee: current.into(),

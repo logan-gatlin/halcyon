@@ -120,6 +120,7 @@ pub fn type_expr(ns: &ModuleNameSpace, type_: TypeExpression) -> Result<Type> {
         Identifier(id) => ns.get_type(&id).span(span)?,
         ModulePath(items) => ns.get_type_exact(&Path::from(items)).span(span)?,
         Product(items) => Type::Product(items.into_iter().map(|t| type_expr(ns, t)).try_collect()?),
+        Array(inner) => Type::Array(type_expr(ns, *inner)?.into()),
         Unit => Type::Unit,
     })
 }
@@ -144,6 +145,7 @@ fn reduce_call(
             .span(expr.span)?
             .with_span(expr.span)),
         TypeExpressionKind::Unit
+        | TypeExpressionKind::Array(_)
         | TypeExpressionKind::Product(_)
         | TypeExpressionKind::Function(..) => Err(lint_nospan(TypeLint::PartialInstantiation))
             .context("0")

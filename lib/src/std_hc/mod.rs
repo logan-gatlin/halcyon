@@ -1,8 +1,10 @@
+mod array;
 mod builtin;
 mod numbers;
 mod strings;
 mod wasm;
 
+use array::*;
 use numbers::*;
 use strings::*;
 use wasm::*;
@@ -33,17 +35,20 @@ pub fn compile_std(
         mut integer_interface,
         mut real_interface,
         mut wasm_interface,
+        mut array_interface,
     ) = Default::default();
     let mut init_fn = enc.main_function();
     compile_builtin(&mut init_fn, &mut std_interface);
     compile_string(&mut init_fn, &mut string_interface);
     compile_numbers(&mut init_fn, &mut integer_interface, &mut real_interface);
     compile_wasm(&mut init_fn, &mut wasm_interface);
+    compile_array(&mut init_fn, &mut array_interface);
     interfaces.extend([
         (Path::from(STD_MODULE_NAME), std_interface),
         (Path::from(STRING_MODULE_NAME), string_interface),
         (Path::from(INTEGER_MODULE_NAME), integer_interface),
         (Path::from(REAL_MODULE_NAME), real_interface),
+        (Path::from(ARRAY_MODULE_NAME), array_interface),
         (Path::from(WASM_MODULE_NAME), wasm_interface),
     ]);
     let id = init_fn.finish_mainfn();
@@ -108,7 +113,7 @@ fn p(n: usize) -> Path {
     )
 }
 
-fn constant(enc: &mut FunctionEncoder, path: Path, type_: Type, value: Instruction<'static>) {
+fn const_struct(enc: &mut FunctionEncoder, path: Path, type_: Type, value: Instruction<'static>) {
     let type_id = enc.module_encoder.type_id(&type_);
     enc.module_encoder.new_global(&path, &type_);
     enc.encode([value, StructNew(type_id)]).set_symbol(&path);

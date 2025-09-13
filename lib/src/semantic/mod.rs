@@ -141,6 +141,7 @@ pub fn freshen_type_variables(
     });
 }
 
+#[allow(unused)]
 pub fn normalize_type_variables(t: &mut impl Visit<Type>) {
     let mut count = 0;
     let mut map = HashMap::new();
@@ -179,7 +180,7 @@ pub fn type_solve(mut module: IrModule) -> Result<(IrModule, ModuleInterface)> {
                     env.map.insert(path.clone(), type_.clone());
                     interface.values.insert(path.clone(), type_.clone());
                 });
-                normalize_type_variables(&mut node);
+                //normalize_type_variables(&mut node);
                 Ok(ModuleItem::Let(pattern, node))
             }
             ModuleItem::Type(path) => {
