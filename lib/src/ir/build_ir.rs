@@ -274,22 +274,24 @@ pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> Result<IrN
                     ArrayInner::Splat(item) => {
                         let span = item.span;
                         current = ir::Call {
-                            callee: value_expr(
-                                ns,
-                                FunctionCall {
-                                    callee: ModuleField(vec!["array".into(), "concatenate".into()])
-                                        .with_span(span)
-                                        .into(),
-                                    argument: item.into(),
-                                }
-                                .with_span(span),
-                            )?
+                            callee: ir::Call {
+                                callee: value_expr(
+                                    ns,
+                                    ModuleField(vec!["array".into(), "concatenate".into()])
+                                        .with_span(span),
+                                )?
+                                .into(),
+                                argument: current.into(),
+                                opt: Default::default(),
+                            }
+                            .with_span(span)
+                            .with_type(Type::Any)
                             .into(),
-                            argument: current.into(),
+                            argument: value_expr(ns, item)?.into(),
                             opt: Default::default(),
                         }
                         .with_span(span)
-                        .with_type(Type::Any);
+                        .with_type(Type::Any)
                     }
                     ArrayInner::Single(item) => {
                         let span = item.span;
@@ -390,12 +392,7 @@ fn pattern_expr(
                 .map(|e| pattern_expr(ns, e, global))
                 .try_collect()?,
         ),
-        Array(expressions) => PatternKind::Array(
-            expressions
-                .into_iter()
-                .map(|e| pattern_expr(ns, e, global))
-                .try_collect()?,
-        ),
+        Array(kind) => todo!(),
         Constructor(items, expression) => {
             let cons = if items.len() == 1 {
                 ns.get_constructor(&items[0])

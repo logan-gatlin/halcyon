@@ -178,6 +178,37 @@ pub fn compile_array(enc: &mut FunctionEncoder, interface: &mut ModuleInterface)
             let array_temp = e.new_temporary(&Type::Array(Type::Variable(1).into()));
             let length = e.new_raw_temporary(ValType::I32);
             let index = e.new_raw_temporary(ValType::I32);
+            e.get_symbol(&p(1))
+                .encode(ArrayLen)
+                .new_array(Type::Array(Type::Variable(1).into()))
+                .encode([
+                    LocalTee(array_temp),
+                    ArrayLen,
+                    LocalSet(length),
+                    I32Const(0),
+                    LocalSet(index),
+                    Loop(BlockType::Empty),
+                    LocalGet(index),
+                    LocalGet(length),
+                    I32LtU,
+                    If(BlockType::Empty),
+                    LocalGet(array_temp),
+                    LocalGet(index),
+                ])
+                .get_symbol(&p(1))
+                .encode([LocalGet(index), ArrayGet(array_type)])
+                .get_symbol(&p(0))
+                .call_function(Type::Variable(0), Type::Variable(1))
+                .encode([
+                    ArraySet(array_type),
+                    LocalGet(index),
+                    I32Const(1),
+                    I32Add,
+                    LocalSet(index),
+                    Br(1),
+                ])
+                .encode([End, End, LocalGet(array_temp)]);
+            /*
             e.encode(ConstValue::Unit)
                 .get_symbol(&p(1))
                 .encode([ArrayLen, ArrayNew(array_type), LocalSet(array_temp)])
@@ -193,7 +224,7 @@ pub fn compile_array(enc: &mut FunctionEncoder, interface: &mut ModuleInterface)
                     LocalGet(index),
                     LocalGet(length),
                     I32GeU,
-                    BrIf(1), // break
+                    BrIf(2), // break
                     End,
                     LocalGet(array_temp),
                     LocalGet(index),
@@ -212,6 +243,7 @@ pub fn compile_array(enc: &mut FunctionEncoder, interface: &mut ModuleInterface)
                     End,
                     LocalGet(array_temp),
                 ]);
+                */
         },
     )
 }

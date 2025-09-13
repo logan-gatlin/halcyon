@@ -1,7 +1,8 @@
 module test = 
-	let a = [1, 2, 3]
-	let b = [a.., a..]
-	do array::length b
-		|> format::integer
-		|> std::println
+	let a = ["a", "b"]
+	do match [] with
+		| [] => std::println "Empty"
+		| [a] => std::println "one"
+		| [a, b] => std::println "two"
+		| [a, b, c] => std::println "three"
 end

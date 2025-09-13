@@ -5,9 +5,26 @@ pub enum PatternExpressionKind {
     Identifier(String),
     ModulePath(Vec<String>),
     Tuple(Vec<PatternExpression>),
-    Array(Vec<PatternExpression>),
+    Array(Box<ParsedArrayPattern>),
     Constructor(Vec<String>, Box<PatternExpression>),
     TypeHint(Box<PatternExpression>, Box<TypeExpression>),
+}
+
+#[derive(Debug, Clone, sx::SXRepr)]
+pub enum ParsedArrayPattern {
+    Exact(Vec<PatternExpression>),
+    Leading {
+        head: Vec<PatternExpression>,
+        tail: Option<String>,
+    },
+    Trailing {
+        head: Option<String>,
+        tail: Vec<PatternExpression>,
+    },
+    LeadingAndTrailing {
+        head: Vec<PatternExpression>,
+        tail: Vec<PatternExpression>,
+    },
 }
 
 pub type PatternExpression = Expression<PatternExpressionKind>;
@@ -43,20 +60,24 @@ pub fn parse_pattern(iter: it!()) -> Result<PatternExpression> {
             }
         }
         // Array
+        /*
         LeftSquare => {
-            let mut patterns = vec![];
+            let mut pattern = ParsedArrayPattern::Exact(vec![]);
             loop {
+                use ParsedArrayPattern::*;
                 if iter.peek_or_error(0, RightSquare).is_ok() {
                     break;
                 }
-                patterns.push(parse_pattern(iter)?);
+                let next_pat = parse_pattern(iter)?;
+                let is_splat = iter.eat(DotDot).is_some();
                 if iter.eat(Comma).is_none() {
                     break;
                 }
             }
             iter.eat_or_error(RightSquare)?;
-            e::Array(patterns)
+            e::Array(pattern.into())
         }
+        */
         // Identifier, path, or constructor
         Identifier(name) => {
             let mut path = vec![name];

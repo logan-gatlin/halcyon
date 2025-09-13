@@ -27,7 +27,7 @@ impl FunctionEncoder<'_> {
                     .lower_pattern(pattern, scope);
                 }
             }
-            PatternKind::Array(patterns) => {
+            PatternKind::Array(ArrayPattern::Exact(patterns)) => {
                 let temporary = self.new_temporary(&pattern.type_);
                 self.encode([
                     LocalTee(temporary),
@@ -35,9 +35,24 @@ impl FunctionEncoder<'_> {
                     I32Const(patterns.len() as i32),
                     I32Ne,
                     BrIf(0),
+                    I32Const(0),
                 ]);
-                todo!()
+                let type_ = self.module_encoder.type_id(&pattern.type_);
+                for (id, pat) in patterns.into_iter().enumerate() {
+                    let pattern_type = pat.type_.clone().reduce();
+                    let convert = if pattern_type == ReducedType::AnyRef {
+                        None
+                    } else {
+                        Some(RefCastNonNull(HeapType::Concrete(
+                            self.module_encoder.reduced_type_id(&pattern_type),
+                        )))
+                    };
+                    self.encode([LocalGet(temporary), I32Const(id as i32), ArrayGet(type_)])
+                        .encode(convert)
+                        .lower_pattern(pat, scope);
+                }
             }
+            PatternKind::Array(_) => todo!(),
             PatternKind::Constructor(
                 Constructor {
                     variant_id,
@@ -323,14 +338,6 @@ impl Encode<IrNode> for FunctionEncoder<'_> {
             | IrKind::Tuple(items) => {
                 let type_id = self.module_encoder.type_id(&node.type_);
                 self.encode(items).encode(StructNew(type_id))
-            }
-            IrKind::Array(items) => {
-                let type_id = self.module_encoder.type_id(&node.type_);
-                let array_size = items.len() as u32;
-                self.encode(items).encode(ArrayNewFixed {
-                    array_type_index: type_id,
-                    array_size,
-                })
             }
             IrKind::Field { .. } => todo!(),
             IrKind::Function {

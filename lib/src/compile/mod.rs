@@ -175,8 +175,6 @@ impl ModuleEncoder {
             FunctionKind::Native(id) => id + imported_function_count,
         };
         let function_count = self.function_section.len() as u64;
-        println!("FUNCTION SECTION: {function_count}");
-        println!("IMPORTED: {imported_function_count}");
         let mut module = Module::new();
         module
             // Type section

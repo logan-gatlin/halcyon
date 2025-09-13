@@ -55,14 +55,44 @@ impl Infer for Pattern {
             }
             PatternKind::Array(patterns) => {
                 let tv = env.new_tv();
-                let patterns: Vec<_> = patterns
-                    .into_iter()
-                    .map(|p| {
-                        let p = p.infer(env, free);
-                        env.type_constraint(Type::Variable(tv), p.type_.clone(), p.span);
-                        p
-                    })
-                    .collect();
+                free.insert(tv);
+                let patterns = match patterns {
+                    ArrayPattern::Exact(patterns) => {
+                        let patterns = patterns.infer(env, free);
+                        for p in &patterns {
+                            env.type_constraint(Type::Variable(tv), p.type_.clone(), p.span);
+                        }
+                        ArrayPattern::Exact(patterns)
+                    }
+                    ArrayPattern::Leading { head, tail } => {
+                        let head = head.infer(env, free);
+                        for p in &head {
+                            env.type_constraint(Type::Variable(tv), p.type_.clone(), p.span);
+                        }
+                        if let Some(tail) = &tail {
+                            env.define(tail.clone(), Type::Variable(tv));
+                        }
+                        ArrayPattern::Leading { head, tail }
+                    }
+                    ArrayPattern::Trailing { head, tail } => {
+                        if let Some(head) = &head {
+                            env.define(head.clone(), Type::Variable(tv));
+                        }
+                        let tail = tail.infer(env, free);
+                        for p in &tail {
+                            env.type_constraint(Type::Variable(tv), p.type_.clone(), p.span);
+                        }
+                        ArrayPattern::Trailing { head, tail }
+                    }
+                    ArrayPattern::LeadingAndTrailing { head, tail } => {
+                        let head = head.infer(env, free);
+                        let tail = tail.infer(env, free);
+                        for p in head.iter().chain(&tail) {
+                            env.type_constraint(Type::Variable(tv), p.type_.clone(), p.span);
+                        }
+                        ArrayPattern::LeadingAndTrailing { head, tail }
+                    }
+                };
                 self.type_ = Type::Array(Type::Variable(tv).into());
                 PatternKind::Array(patterns)
             }
@@ -127,15 +157,6 @@ impl Infer for IrNode {
                 let nodes = nodes.infer(env, free);
                 self.type_ = Type::Product(nodes.iter().map(|n| n.type_.clone()).collect());
                 Tuple(nodes)
-            }
-            Array(nodes) => {
-                let nodes = nodes.infer(env, free);
-                let tv = env.new_tv();
-                for n in &nodes {
-                    env.type_constraint(Type::Variable(tv), n.type_.clone(), n.span);
-                }
-                self.type_ = Type::Array(Type::Variable(tv).into());
-                Array(nodes)
             }
             Struct {
                 field_names,

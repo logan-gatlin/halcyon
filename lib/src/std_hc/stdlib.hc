@@ -31,6 +31,8 @@ module std =
 end
 
 module array =
+  let iterate =
+    fn operation array => (array::map (fn a => operation a; a) array); ()
 end
 
 module integer =
