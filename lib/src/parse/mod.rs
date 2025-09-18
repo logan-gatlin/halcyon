@@ -1,7 +1,7 @@
 macro_rules! it {
-  () => {
-    &mut StatefulIter<impl Iterator<Item = Token>>
-  };
+    () => {
+        &mut Parser<impl Iterator<Item = Token>>
+    }
 }
 
 mod module;
@@ -14,146 +14,99 @@ pub use pattern::*;
 pub use type_expression::*;
 pub use value_expression::*;
 
-use multipeek::MultiPeek;
+use multipeek::{MultiPeek, multipeek};
 
-use crate::{lint::*, operator::*, token::*};
-use ParseLint::*;
+use crate::{Logger, Span, Spanned, WithSpan, operator::*, token::*};
 use TokenKind::*;
 
 pub type Expression<K> = Spanned<K>;
 
-pub struct StatefulIter<I: Iterator<Item = Token>> {
+type PResult<T> = Result<T, Spanned<String>>;
+
+struct Parser<I: Iterator<Item = Token>> {
     iter: MultiPeek<I>,
     last_span: Span,
-    span_stack: Vec<Span>,
 }
 
-impl<I: Iterator<Item = Token>> StatefulIter<I> {
-    pub fn start_span(&mut self) {
-        let span = match self.peek(0).map(|t| t.span) {
-            Some(span) => span,
-            None => Span {
-                start: self.last_span.start + self.last_span.width,
-                width: 1,
-            },
-        };
-        self.span_stack.push(span);
-    }
-
-    pub fn end_span(&mut self) -> Span {
-        self.span_stack.pop().unwrap()
-    }
-
-    pub fn span_after_this(&self) -> Span {
-        Span {
-            start: self.last_span.start + self.last_span.width,
-            width: 1,
+impl<I: Iterator<Item = Token>> Parser<I> {
+    fn new(iter: I) -> Self {
+        Self {
+            iter: multipeek(iter),
+            last_span: Span { start: 0, width: 0 },
         }
     }
 
-    pub fn next(&mut self) -> Option<Token> {
-        match self.iter.next() {
-            Some(tok) => {
-                self.last_span = tok.span;
-                self.span_stack.iter_mut().for_each(|s| {
-                    *s += tok.span;
-                });
-                Some(tok)
-            }
-            None => None,
+    fn peek(&mut self) -> PResult<Token> {
+        self.iter.peek().cloned().ok_or_else(|| {
+            "Unexpected end of input"
+                .to_string()
+                .with_span(self.last_span)
+        })
+    }
+
+    fn peek_nth(&mut self, n: usize) -> PResult<Token> {
+        self.iter.peek_nth(n).cloned().ok_or_else(|| {
+            "Unexpected end of input"
+                .to_string()
+                .with_span(self.last_span)
+        })
+    }
+
+    fn next(&mut self) -> PResult<Token> {
+        self.iter.next().ok_or_else(|| {
+            "Unexpected end of input"
+                .to_string()
+                .with_span(self.last_span)
+        })
+    }
+
+    fn skip(&mut self) {
+        if let Some(next) = self.iter.next() {
+            self.last_span = next.span;
         }
     }
 
-    pub fn peek(&mut self, n: usize) -> Option<Token> {
-        self.iter.peek_nth(n).cloned()
-    }
-
-    pub fn eat(&mut self, expect: TokenKind) -> Option<Token> {
-        if self.peek(0).map(|t| *t == expect) == Some(true) {
-            self.next()
-        } else {
-            None
-        }
-    }
-
-    pub fn skip(&mut self, n: usize) {
-        for _ in 0..n {
-            self.next();
-        }
-    }
-
-    pub fn peek_or_error(&mut self, n: usize, expect: TokenKind) -> Result<Token> {
-        if let Some(next) = self.peek(n)
-            && *next == expect
+    fn eat(&mut self, tk: TokenKind) -> PResult<()> {
+        if let Some(next) = self.iter.peek()
+            && next.inner == tk
         {
-            Ok(next)
+            self.skip();
+            Ok(())
         } else {
-            Err(lint(
-                ExpectedToken,
-                self.span_after_this(),
-                [format!("{expect}")],
-            ))
+            Err(format!("Expected {tk} after this").with_span(self.last_span))
         }
     }
 
-    pub fn eat_or_error(&mut self, expect: TokenKind) -> Result<Token> {
-        self.eat(expect.clone()).ok_or(lint(
-            ExpectedToken,
-            self.span_after_this(),
-            [format!("{expect}")],
-        ))
-    }
-
-    pub fn eat_ident(&mut self) -> Result<String> {
-        let Token {
-            inner: Identifier(assignee),
-            ..
-        } = self.eat_or_error(Identifier("".into()))?
-        else {
-            unreachable!();
-        };
-        Ok(assignee)
-    }
-
-    pub fn eat_one_of(&mut self, kinds: impl IntoIterator<Item = TokenKind>) -> Result<usize> {
-        let kinds = kinds.into_iter().collect::<Vec<_>>();
-        let kinds_str = kinds
-            .iter()
-            .map(|k| format!("{k}"))
-            .collect::<Vec<_>>()
-            .join(", ");
-        let Some(next) = self.peek(0) else {
-            return Err(lint(ExpectedOneOf, self.last_span, [kinds_str.to_string()]));
-        };
-        if let Some(pos) = kinds.iter().position(|k| k == &*next) {
-            self.skip(1);
-            Ok(pos)
-        } else {
-            Err(lint(ExpectedOneOf, next.span, [kinds_str.to_string()]))
+    fn eat_one_of(&mut self, items: impl IntoIterator<Item = TokenKind>) -> PResult<usize> {
+        let items = items.into_iter().collect::<Vec<_>>();
+        for (id, item) in items.iter().enumerate() {
+            if self.iter.peek().is_some_and(|t| &t.inner == item) {
+                return Ok(id);
+            }
         }
+        return Err(format!(
+            "Expected one of these: {}",
+            items
+                .iter()
+                .map(|t| format!("{t}"))
+                .collect::<Vec<_>>()
+                .join(",")
+        )
+        .with_span(self.last_span));
     }
 
-    pub fn report_error(
-        &mut self,
-        lint_kind: ParseLint,
-        context: impl IntoIterator<Item = String>,
-    ) -> Lint {
-        let span = self.end_span();
-        lint(lint_kind, span, context)
+    fn eat_ident(&mut self) -> PResult<String> {
+        if let Some(next) = self.iter.peek().cloned()
+            && let Identifier(name) = next.inner
+        {
+            self.skip();
+            Ok(name)
+        } else {
+            Err(format!("Expected identifier after this").with_span(self.last_span))
+        }
     }
 }
 
-pub fn parse(iter: impl IntoIterator<Item = Token>) -> Result<Vec<ParsedModule>> {
-    let mut iter = StatefulIter {
-        iter: multipeek::multipeek(iter),
-        last_span: Span { start: 0, width: 1 },
-        span_stack: vec![],
-    };
-    let mut modules = vec![];
-    while let Some(tok) = iter.peek(0)
-        && *tok != Eof
-    {
-        modules.push(parse_module(&mut iter)?);
-    }
-    Ok(modules)
+pub fn parse(logger: &mut Logger, iter: impl IntoIterator<Item = Token>) -> Vec<ParsedModule> {
+    todo!()
 }

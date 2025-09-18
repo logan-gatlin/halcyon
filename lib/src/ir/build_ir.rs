@@ -23,6 +23,7 @@ fn module_expr(
     items: &mut Vec<ModuleItem>,
 ) -> Result<()> {
     match e.inner {
+        ModuleExpressionKind::Error => {}
         ModuleExpressionKind::Let { assignee, value } => {
             let mut assignee = pattern_expr(ns, assignee, true)?;
             let value = value_expr(ns, *value)?;

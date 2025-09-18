@@ -1,7 +1,14 @@
 #![allow(clippy::clone_on_copy, clippy::from_over_into)]
 #![feature(iterator_try_collect, if_let_guard)]
-//mod compile;
+
+macro_rules! error {
+    ($logger:ident, $span:expr, $($arg:tt)*) => {
+        $logger.log(error(format!($($arg)*)).span($span))
+    };
+}
+
 mod compile;
+mod frontend;
 mod ir;
 mod lint;
 mod map;
@@ -13,7 +20,7 @@ mod std_hc;
 #[cfg(test)]
 mod test;
 mod token;
-//use compile::*;
+pub use frontend::*;
 use ir::*;
 use lint::render::Linter;
 pub use lint::*;
@@ -29,6 +36,7 @@ pub use sx::SXRepr;
 use token::*;
 use wasm_bindgen::prelude::wasm_bindgen;
 
+#[allow(unused_imports)]
 use crate::{
     compile::{ModuleEncoder, encoding::Encode},
     std_hc::compile_std,
@@ -47,9 +55,10 @@ pub fn compile_single(
     encoder: &mut ModuleEncoder,
     interfaces: &mut HashMap<Path, ModuleInterface>,
 ) -> std::result::Result<(), String> {
+    let mut logger = Logger::new("source");
     let linter = Linter::new(input.to_string());
-    let tokens = tokenize(input.chars()).handle(&linter)?;
-    let parsed_modules = parse(tokens).handle(&linter)?;
+    let tokens = tokenize(input.chars(), &mut logger);
+    let parsed_modules = parse(&mut logger, tokens);
     for module in parsed_modules {
         let module_path = module.name.inner.clone().into();
         let ir = build_ir(module, &interfaces).handle(&linter)?;
@@ -63,7 +72,7 @@ pub fn compile_single(
             }
         };
         optimize_ir(&mut typed_ir);
-        println!("Typed IR:\n{}", typed_ir.clone().sx());
+        //println!("Typed IR:\n{}", typed_ir.clone().sx());
         encoder.encode(typed_ir);
     }
     Ok(())
@@ -78,13 +87,10 @@ pub fn compile(input: &str) -> std::result::Result<Vec<u8>, String> {
         .clear();
     let mut encoder = ModuleEncoder::new();
     let mut interfaces = HashMap::new();
-    compile_std(&mut encoder, &mut interfaces)?;
+    //compile_std(&mut encoder, &mut interfaces)?;
     compile_single(input, &mut encoder, &mut interfaces)?;
     let wasm = encoder.finish();
-    //println!("FILE SIZE: {:.2} kb", (wasm.len() as f64) / 1024.0);
     let _wat = wasmprinter::print_bytes(&wasm).unwrap();
-    //println!("{_wat}");
-    //std::fs::write("./demo.wat", &_wat).unwrap();
     wasmparser::validate(&wasm)
         .map_err(|e| format!("COMPILER BUG: WASM failed validation with error:\n{e}"))?;
     Ok(wasm)

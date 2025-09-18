@@ -1,7 +1,4 @@
-use std::collections::HashSet;
-
 use super::*;
-use ValueExpressionKind as e;
 
 #[derive(Debug, Clone, sx::SXRepr)]
 pub enum Literal {
@@ -80,121 +77,92 @@ pub enum ArrayInner {
 
 pub type ValueExpression = Expression<ValueExpressionKind>;
 
-fn parse_primary(iter: it!()) -> Result<ValueExpression> {
-    iter.start_span();
-    let Some(next) = iter.next().map(without_span) else {
-        return Err(iter.report_error(ExpectedExpression, []));
-    };
-    Ok(match next {
-        LeftParen if iter.eat(RightParen).is_some() => e::Literal(Literal::Unit),
-        IntegerLiteral(value, base) => e::Literal(Literal::Integer(value, base)),
-        RealLiteral(value) => e::Literal(Literal::Real(value)),
-        StringLiteral(value) => e::Literal(Literal::String(value)),
-        GlyphLiteral(value) => e::Literal(Literal::Glyph(value)),
+fn primary(logger: &mut Logger, p: it!()) -> PResult<ValueExpression> {
+    use ValueExpressionKind as e;
+    let next = p.next()?;
+    let mut span = next.span;
+    Ok(match next.inner {
+        LeftParen if p.eat(RightParen).is_ok() => e::Literal(Literal::Unit),
+        IntegerLiteral(i, base) => e::Literal(Literal::Integer(i, base)),
+        RealLiteral(r) => e::Literal(Literal::Real(r)),
+        StringLiteral(s) => e::Literal(Literal::String(s)),
+        GlyphLiteral(g) => e::Literal(Literal::Glyph(g)),
         True => e::Literal(Literal::Boolean(true)),
         False => e::Literal(Literal::Boolean(false)),
-        Identifier(ident) if iter.peek(0).is_none_or(|t| *t != DoubleColon) => e::Identifier(ident),
-        // Module field
-        Identifier(ident) => {
-            let mut path = vec![ident];
-            while iter.eat(DoubleColon).is_some() {
-                path.push(iter.eat_ident()?);
+        // Identifier or path
+        Identifier(name) => {
+            // Path
+            if p.eat(DoubleColon).is_ok() {
+                let mut path = vec![name];
+                loop {
+                    let s = p.eat_ident()?;
+                    path.push(s);
+                    if p.eat(DoubleColon).is_err() {
+                        break;
+                    } else {
+                        span += p.last_span;
+                    }
+                }
+                e::ModuleField(path)
+            // Identifier
+            } else {
+                e::Identifier(name)
             }
-            e::ModuleField(path)
         }
-        // Function definition
         Fn => {
-            let mut is_shorthand = false;
             let mut parameters = vec![];
             let mut types = vec![];
             loop {
-                if iter.eat(FatArrow).is_some() {
-                    break;
-                }
-                if iter.eat(With).is_some() {
-                    is_shorthand = true;
-                    break;
-                }
                 // Typed parameter
-                if iter.eat(LeftParen).is_some() {
-                    parameters.push(iter.eat_ident()?.with_span(iter.last_span));
-                    iter.eat_or_error(Colon)?;
-                    types.push(Some(parse_type_expression(iter, 0)?));
-                    iter.eat_or_error(RightParen)?;
-                }
-                // Untyped parameter
-                else {
-                    parameters.push(iter.eat_ident()?.with_span(iter.last_span));
+                if p.eat(LeftParen).is_ok() {
+                    let ident = p.eat_ident()?;
+                    parameters.push(ident.with_span(p.last_span));
+                    p.eat(Colon)?;
+                    // parse type
+                    todo!();
+                } else if let Ok(ident) = p.eat_ident() {
+                    parameters.push(ident.with_span(p.last_span));
                     types.push(None);
                 }
-            }
-            let mut parameter_set = HashSet::new();
-            for arg in &parameters {
-                if !parameter_set.insert(arg) {
-                    return Err(lint(
-                        NameLint::ParamRedefinition,
-                        arg.span,
-                        ["function".to_string(), arg.inner.clone()],
-                    ));
+                // End of parameters
+                else {
+                    p.eat(FatArrow)?;
+                    break;
                 }
             }
-            if is_shorthand {
-                let mut predicates = vec![];
-                let mut branches = vec![];
-                // Optional first pipe
-                iter.eat(Pipe);
-                loop {
-                    predicates.push(parse_pattern(iter)?);
-                    iter.eat_or_error(FatArrow)?;
-                    branches.push(parse_value_expression(iter, 0)?);
-                    if iter.eat(Pipe).is_none() {
-                        break;
-                    }
-                }
-                e::FunctionShorthand {
-                    parameters,
-                    types,
-                    predicates,
-                    branches,
-                }
-            } else {
-                let body = Box::new(parse_value_expression(iter, 0)?);
-                e::FunctionDef {
-                    parameters,
-                    types,
-                    body,
-                }
+            let body = parse_value_expression(logger, p, 0)?.into();
+            e::FunctionDef {
+                parameters,
+                types,
+                body,
             }
         }
         Let => e::Let {
-            assignee: parse_pattern(iter)?,
+            assignee: todo!(),
             value: {
-                iter.eat_or_error(Equal)?;
-                Box::new(parse_value_expression(iter, 0)?)
+                p.eat(Equal)?;
+                Box::new(parse_value_expression(logger, p, 0)?)
             },
             in_: {
-                iter.eat_or_error(In)?;
-                Box::new(parse_value_expression(iter, 0)?)
+                p.eat(In)?;
+                Box::new(parse_value_expression(logger, p, 0)?)
             },
         },
-        // Struct literal
         LeftBrace => {
             let mut rhs = vec![];
             let mut lhs = vec![];
             loop {
-                if iter.eat(RightBrace).is_some() {
+                if let Ok(ident) = p.eat_ident() {
+                    lhs.push(ident);
+                    p.eat(Colon)?;
+                    rhs.push(parse_value_expression(logger, p, 0)?);
+                    if p.eat(Comma).is_err() {
+                        p.eat(RightBrace)?;
+                        break;
+                    }
+                } else {
+                    p.eat(RightBrace)?;
                     break;
-                }
-                lhs.push(iter.eat_ident()?);
-                iter.eat_or_error(Equal)?;
-                rhs.push(parse_value_expression(iter, 0)?);
-                if iter.eat(Comma).is_none() && iter.peek_or_error(0, RightBrace).is_err() {
-                    iter.start_span();
-                    return Err(if iter.peek_or_error(0, Identifier("".into())).is_ok() {
-                        iter.report_error(ExpectedToken, [format!("{Comma}")])
-                    } else {
-                        iter.report_error(ExpectedToken, [format!("{RightBrace}")])
-                    });
                 }
             }
             e::StructureLiteral { lhs, rhs }
@@ -202,45 +170,42 @@ fn parse_primary(iter: it!()) -> Result<ValueExpression> {
         LeftSquare => {
             let mut items = vec![];
             loop {
-                if iter.eat(RightSquare).is_some() {
+                if p.eat(RightSquare).is_ok() {
                     break;
-                }
-                let expr = parse_value_expression(iter, 0)?;
-                items.push(if iter.eat(DotDot).is_some() {
-                    ArrayInner::Splat(expr)
+                } else if p.eat(DotDot).is_ok() {
+                    items.push(ArrayInner::Splat(parse_value_expression(logger, p, 0)?));
                 } else {
-                    ArrayInner::Single(expr)
-                });
-                if iter.eat(Comma).is_none() && iter.peek_or_error(0, RightSquare).is_err() {
-                    iter.start_span();
-                    return Err(iter.report_error(ExpectedToken, [format!("{RightSquare}")]));
+                    items.push(ArrayInner::Single(parse_value_expression(logger, p, 0)?));
+                }
+                if p.eat(Comma).is_err() {
+                    p.eat(RightSquare)?;
+                    break;
                 }
             }
             e::Array(items)
         }
         If => e::If {
-            predicate: Box::new(parse_value_expression(iter, 0)?),
+            predicate: parse_value_expression(logger, p, 0)?.into(),
             then: {
-                iter.eat_or_error(Then)?;
-                Box::new(parse_value_expression(iter, 0)?)
+                p.eat(Then)?;
+                parse_value_expression(logger, p, 0)?.into()
             },
             else_: {
-                iter.eat_or_error(Else)?;
-                Box::new(parse_value_expression(iter, 0)?)
+                p.eat(Else)?;
+                parse_value_expression(logger, p, 0)?.into()
             },
         },
         Match => {
-            let scrutinee = Box::new(parse_value_expression(iter, 0)?);
-            iter.eat_or_error(With)?;
+            let scrutinee = parse_value_expression(logger, p, 0)?.into();
+            p.eat(With)?;
+            p.eat(Pipe); // Intentionally ignore error
             let mut predicates = vec![];
             let mut branches = vec![];
-            // Optional first pipe
-            iter.eat(Pipe);
             loop {
-                predicates.push(parse_pattern(iter)?);
-                iter.eat_or_error(FatArrow)?;
-                branches.push(parse_value_expression(iter, 0)?);
-                if iter.eat(Pipe).is_none() {
+                predicates.push(todo!());
+                p.eat(FatArrow)?;
+                branches.push(parse_value_expression(logger, p, 0)?);
+                if p.eat(Pipe).is_err() {
                     break;
                 }
             }
@@ -250,66 +215,67 @@ fn parse_primary(iter: it!()) -> Result<ValueExpression> {
                 branches,
             }
         }
-        // Binary op
         LeftParen
-            if let Some(Ok(op)) = iter.peek(0).map(|o| BinaryOp::try_from(&*o))
-                && iter.peek(1).is_some_and(|t| *t == RightParen) =>
+            if let Ok(Ok(op)) = p.peek().map(|o| BinaryOp::try_from(&o.inner))
+                && p.peek_nth(0).is_ok_and(|t| *t == RightParen) =>
         {
-            iter.skip(2);
+            p.skip();
+            p.skip();
             e::BinaryOp(op)
         }
-        // Unary op literal
         LeftParen
-            if iter.peek(0).is_some_and(|t| t.inner == Not)
-                && iter.peek(1).is_some_and(|t| *t == RightParen) =>
+            if p.peek().is_ok_and(|t| t.inner == Not)
+                && p.peek_nth(0).is_ok_and(|t| *t == RightParen) =>
         {
-            iter.skip(2);
+            p.skip();
+            p.skip();
             e::UnaryOp(UnaryOp::Not)
         }
-        // Tuple or parenthesis
         LeftParen => {
             let mut inner = vec![];
             let mut is_tuple = false;
             loop {
-                if iter.eat(RightParen).is_some() {
+                if p.eat(RightParen).is_ok() {
                     break;
                 }
-                inner.push(parse_value_expression(iter, 0)?);
-                if iter.eat(Comma).is_some() {
+                inner.push(parse_value_expression(logger, p, 0)?);
+                if p.eat(Comma).is_ok() {
                     is_tuple = true;
-                } else if iter.peek_or_error(0, RightParen).is_err() {
-                    iter.start_span();
-                    return Err(iter.report_error(ExpectedToken, [format!("{RightParen}")]));
+                } else {
+                    p.eat(RightParen)?;
+                    break;
                 }
             }
             if is_tuple {
                 e::Tuple(inner)
             } else {
+                span += p.last_span;
                 let mut inner = inner[0].clone();
-                inner.span = iter.end_span();
+                inner.span = span;
                 return Ok(inner);
             }
         }
-        _ => return Err(iter.report_error(ExpectedExpression, [])),
+        _ => return Err("Expected expression here".to_string().with_span(span)),
     }
-    .with_span(iter.end_span()))
+    .with_span(span + p.last_span))
 }
 
-pub fn parse_value_expression(iter: it!(), precedence: Precedence) -> Result<ValueExpression> {
-    iter.start_span();
+pub fn parse_value_expression(
+    logger: &mut Logger,
+    iter: it!(),
+    precedence: Precedence,
+) -> PResult<ValueExpression> {
+    use ValueExpressionKind as e;
     let unary_ops = [Minus, MinusDot, Not];
     let mut current = if let Ok(id) = iter.eat_one_of(unary_ops.clone()) {
+        let span = iter.last_span;
         let op = UnaryOp::try_from(&unary_ops[id]).unwrap();
-        if op.assoc() == RIGHT_ASSOC {
-            return Err(iter.report_error(ExpectedExpression, []));
-        }
-        let operand = parse_value_expression(iter, op.precedence())?;
+        let operand = parse_value_expression(logger, iter, op.precedence())?;
         let op = if let (UnaryOp::Minus, e::Literal(Literal::Real(_))) = (op, &*operand) {
             UnaryOp::MinusDot
         } else {
             op
         };
-        let span = iter.end_span();
         Expression {
             inner: e::Unary {
                 op,
@@ -318,22 +284,11 @@ pub fn parse_value_expression(iter: it!(), precedence: Precedence) -> Result<Val
             span,
         }
     } else {
-        iter.end_span();
-        parse_primary(iter)?
+        primary(logger, iter)?
     };
-    /*
-    const TERMINAL_TOKENS: [TokenKind; 13] = [
-        Let, Do, Type, Import, End, RightParen, RightBrace, In, Then, Else, Comma, With, Pipe,
-    ];
-    */
     // Precedence climbing loop
-    while let Some(next) = iter.peek(0) {
-        /*
-        if TERMINAL_TOKENS.contains(&*next) {
-            break;
-        }
-        */
-        iter.start_span();
+    while let Ok(next) = iter.peek() {
+        let span = iter.last_span;
         // Binary operator
         if let Ok(op) = BinaryOp::try_from(&*next) {
             let new_precedence = op.precedence();
@@ -341,33 +296,32 @@ pub fn parse_value_expression(iter: it!(), precedence: Precedence) -> Result<Val
             if ((op.assoc() == LEFT_ASSOC) && new_precedence <= precedence)
                 || (new_precedence < precedence)
             {
-                iter.end_span();
                 return Ok(current);
             }
-            iter.skip(1);
+            iter.skip();
             current = ValueExpression {
                 inner: e::Binary {
                     op,
                     left: current.into(),
-                    right: Box::new(parse_value_expression(iter, new_precedence)?),
+                    right: Box::new(parse_value_expression(logger, iter, new_precedence)?),
                 },
-                span: iter.end_span(),
+                span: span + iter.last_span,
             }
         }
         // Field
-        else if precedence < FIELD_PREC && iter.eat(Dot).is_some() {
+        else if precedence < FIELD_PREC && iter.eat(Dot).is_ok() {
             let rhs = iter.eat_ident()?;
             current = ValueExpression {
                 inner: e::Field {
                     lhs: current.into(),
                     rhs,
                 },
-                span: iter.end_span(),
+                span: span + iter.last_span,
             }
         }
         // Function call
         else if precedence < CALL_PREC
-            && let Some(next) = iter.peek(0)
+            && let Ok(next) = iter.peek()
             && (next.inner.is_literal()
                 || next.inner == LeftParen
                 || next.inner == LeftSquare
@@ -377,9 +331,9 @@ pub fn parse_value_expression(iter: it!(), precedence: Precedence) -> Result<Val
             current = ValueExpression {
                 inner: e::FunctionCall {
                     callee: current.into(),
-                    argument: Box::new(parse_value_expression(iter, CALL_PREC)?),
+                    argument: Box::new(parse_value_expression(logger, iter, CALL_PREC)?),
                 },
-                span: iter.end_span(),
+                span: span + iter.last_span,
             }
         } else {
             break;

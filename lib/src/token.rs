@@ -1,4 +1,7 @@
-use crate::Span;
+use std::io::Write;
+
+use crate::Logger;
+use crate::error;
 use crate::lint::*;
 use multipeek::{MultiPeek, multipeek};
 
@@ -8,6 +11,28 @@ pub enum Base {
     Octal = 8,
     Decimal = 10,
     Hex = 16,
+}
+
+impl Base {
+    pub fn prefix(&self) -> &'static str {
+        match self {
+            Base::Binary => "0b",
+            Base::Octal => "0o",
+            Base::Decimal => "",
+            Base::Hex => "0x",
+        }
+    }
+}
+
+impl std::fmt::Display for Base {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Base::Binary => write!(f, "binary"),
+            Base::Octal => write!(f, "octal"),
+            Base::Decimal => write!(f, "decimal"),
+            Base::Hex => write!(f, "hex"),
+        }
+    }
 }
 
 #[allow(dead_code)]
@@ -36,31 +61,21 @@ pub enum TokenKind {
     Star,
     StarDot,
     Percent,
-    Tilda,
     Arrow,
     FatArrow,
     Apply,
     ComposeLeft,
     ComposeRight,
 
-    Bang,
     BangEqual,
-    Question,
-    QuestionEqual,
     Equal,
     DoubleEqual,
     Greater,
     GreaterEqual,
     Less,
     LessEqual,
-    At,
 
     Pipe,
-    Ampersand,
-    Carrot,
-    Hash,
-
-    DotDotEqual,
 
     Identifier(String),
     StringLiteral(String),
@@ -90,12 +105,11 @@ pub enum TokenKind {
     False,
     Fn,
 
-    Whitespace(String),
-    SmallComment(String),
-    BigComment(String),
-
-    Idk,
-    Eof,
+    //Whitespace(String),
+    LineComment(String),
+    BlockComment(String),
+    DocComment(String),
+    Error,
 }
 
 impl PartialEq for TokenKind {
@@ -134,18 +148,12 @@ impl std::fmt::Display for TokenKind {
                 SlashDot => "/.",
                 StarDot => "*.",
                 Percent => "%",
-                Tilda => "~",
                 Apply => "|>",
                 ComposeLeft => "<<",
                 ComposeRight => ">>",
-                Hash => "#",
-                At => "@",
                 Arrow => "->",
                 FatArrow => "=>",
-                Bang => "!",
                 BangEqual => "!=",
-                Question => "?",
-                QuestionEqual => "?=",
                 Equal => "=",
                 DoubleEqual => "==",
                 Greater => ">",
@@ -153,14 +161,11 @@ impl std::fmt::Display for TokenKind {
                 Less => "<",
                 LessEqual => "<=",
                 Pipe => "|",
-                Ampersand => "&",
-                Carrot => "^",
-                DotDotEqual => "..=",
-                Identifier(_) => "identifier",
-                StringLiteral(_) => "string literal",
-                GlyphLiteral(_) => "glyph literal",
-                IntegerLiteral(_, _) => "integer literal",
-                RealLiteral(_) => "float literal",
+                Identifier(id) => return write!(f, "`{id}`"),
+                StringLiteral(s) => return write!(f, "\"{s}\""),
+                GlyphLiteral(g) => return write!(f, "'{g}'"),
+                IntegerLiteral(i, base) => return write!(f, "{}{i}", base.prefix()),
+                RealLiteral(r) => return write!(f, "{r}"),
                 Module => "module",
                 Import => "import",
                 Use => "use",
@@ -182,10 +187,10 @@ impl std::fmt::Display for TokenKind {
                 Fn => "fn",
                 Type => "type",
                 Of => "of",
-                Whitespace(_) => "whitespace",
-                BigComment(_) | SmallComment(_) => "comment",
-                Idk => "unknown symbol",
-                Eof => "EOF",
+                BlockComment(_) => "block comment",
+                LineComment(_) => "line comment",
+                DocComment(_) => "doc comment",
+                Error => "[ERROR]",
             }
         )
     }
@@ -207,146 +212,96 @@ impl TokenKind {
 
 pub type Token = Spanned<TokenKind>;
 
-fn t(tk: TokenKind, sp: Span) -> Result<Token> {
-    Ok(tk.with_span(sp))
-}
-
-pub fn tokenize(chars: impl IntoIterator<Item = char>) -> Result<Vec<Token>> {
-    let c = chars.into_iter();
-    Tokenizer::new(c).try_collect()
-}
-
 struct Tokenizer<I: Iterator<Item = char>> {
     iter: MultiPeek<I>,
-    index: usize,
-    ended: bool,
+    tokens: Vec<Token>,
+    position: usize,
 }
 
 impl<I: Iterator<Item = char>> Tokenizer<I> {
-    pub fn new(iter: I) -> Self {
-        Self {
-            iter: multipeek(iter),
-            index: 0,
-            ended: false,
-        }
+    fn next(&mut self) -> Option<char> {
+        self.position += 1;
+        self.iter.next()
     }
-
-    fn next_char(&mut self) -> Option<char> {
-        match self.iter.next() {
-            Some(c) => {
-                self.index += 1;
-                Some(c)
-            }
-            _ => None,
-        }
+    fn peek(&mut self) -> Option<char> {
+        self.iter.peek().cloned()
     }
-
-    fn delimited(&mut self, terminator: char) -> Option<String> {
-        let mut buffer = String::new();
-        let mut escape = false;
-        loop {
-            let c = match self.next_char() {
-                Some(c) if c == terminator && !escape => {
-                    break;
-                }
-                Some(c) => {
-                    if c == '\\' {
-                        escape = !escape;
-                    } else {
-                        escape = false;
-                    }
-                    c
-                }
-                None => return None,
-            };
-            buffer.push(c)
-        }
-        Some(buffer)
-    }
-
-    fn peek(&mut self, n: usize) -> Option<char> {
+    fn peek_nth(&mut self, n: usize) -> Option<char> {
         self.iter.peek_nth(n).cloned()
     }
 
-    fn _next(&mut self) -> Result<Token> {
-        use TokenKind::*;
-        let mut position = Span {
-            start: self.index,
-            width: 0,
-        };
-        if self.ended {
-            return t(Eof, position);
+    fn push(&mut self, token: TokenKind, start: usize) {
+        self.tokens.push(token.with_span(self.span(start)))
+    }
+    fn span(&self, start: usize) -> Span {
+        Span {
+            start: start,
+            width: self.position - start,
         }
-        let current = match self.next_char() {
-            Some(std::char::REPLACEMENT_CHARACTER) => {
-                return Err(lint(TokenLint::InvalidInput, position, []));
-            }
-            Some(c) => c,
-            None => {
-                self.ended = true;
-                return t(Eof, position);
-            }
-        };
-        // Parse whitespace
+    }
+}
+
+pub fn tokenize(input: impl IntoIterator<Item = char>, logger: &mut Logger) -> Vec<Token> {
+    let mut iter = Tokenizer {
+        iter: multipeek(input),
+        tokens: vec![],
+        position: 0,
+    };
+    while let Some(current) = iter.next() {
+        let start = iter.position - 1;
+        // Skip whitespace
         if current.is_whitespace() {
-            let mut buffer = String::from(current);
-            while let Some(c) = self.peek(0) {
-                if !c.is_whitespace() {
+            continue;
+        }
+        const DOC_COMMENT_START: &str = ">";
+        // Parse multiline comment
+        if let ('(', Some('*')) = (current, iter.peek()) {
+            iter.next();
+            let mut depth = 1;
+            let mut buffer: Vec<u8> = vec![];
+            while let Some(current) = iter.next() {
+                if let ('(', Some('*')) = (current, iter.peek()) {
+                    depth += 1;
+                }
+                if let ('*', Some(')')) = (current, iter.peek()) {
+                    depth -= 1;
+                }
+                if depth == 0 {
+                    iter.next();
                     break;
                 }
-                _ = self.next_char();
-                buffer.push(c);
+                write!(buffer, "{current}").unwrap();
             }
-            position.width = buffer.chars().count();
-            return t(Whitespace(buffer), position);
-        }
-        // Parse multiline comments
-        if let ('(', Some('*')) = (current, self.peek(0)) {
-            let _ = self.next_char();
-            let mut comment_level = 1;
-            let mut buffer = String::new();
-            while let Some(current) = self.next_char() {
-                // Ignore /* */ inside strings
-                if '\"' == current
-                    && let Some(inner_string) = self.delimited('\"')
-                {
-                    buffer.push('\"');
-                    buffer.push_str(&inner_string);
-                    buffer.push('\"');
-                    continue;
-                }
-                if let ('(', Some('*')) = (current, self.peek(0)) {
-                    comment_level += 1;
-                } else if let ('*', Some(')')) = (current, self.peek(0)) {
-                    comment_level -= 1;
-                }
-                if comment_level == 0 {
-                    let _ = self.next_char();
-                    break;
-                }
-                buffer.push(current);
+            let content = String::from_utf8_lossy(&buffer).to_string();
+            if let Some(content) = content.strip_prefix(DOC_COMMENT_START) {
+                iter.push(TokenKind::DocComment(content.to_string()), start);
+            } else {
+                iter.push(TokenKind::BlockComment(content), start);
             }
-            position.width = buffer.chars().count();
-            return t(BigComment(buffer), position);
+            continue;
         }
-        // Parse single line comments
-        if let ('-', Some('-')) = (current, self.peek(0)) {
-            let _ = self.next_char();
-            let mut buffer = String::new();
-            while let Some(c) = self.next_char() {
-                if c == '\n' {
-                    break;
-                }
-                buffer.push(c);
+        // Parse single line comment
+        if let ('-', Some('-')) = (current, iter.peek()) {
+            iter.next();
+            let mut buffer: Vec<u8> = vec![];
+            while let Some(c) = iter.next()
+                && c != '\n'
+            {
+                write!(buffer, "{c}").unwrap();
             }
-            position.width = buffer.chars().count();
-            return t(SmallComment(buffer), position);
+            let content = String::from_utf8_lossy(&buffer).to_string();
+            if let Some(content) = content.strip_prefix(DOC_COMMENT_START) {
+                iter.push(TokenKind::DocComment(content.to_string()), start);
+            } else {
+                iter.push(TokenKind::LineComment(content), start);
+            }
+            continue;
         }
-        let next = self.peek(0);
-        let next_next = self.peek(1);
-        // Match single character tokens
+        let next_char = iter.peek();
+        // Parse single character tokens
         {
-            let not_next = move |c| Some(c) != next;
+            use TokenKind::*;
+            let not_next = move |c| Some(c) != next_char;
             let kind = match current {
                 '(' => LeftParen,
                 ')' => RightParen,
@@ -358,36 +313,30 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
                 ':' if not_next(':') => Colon,
                 ';' => Semicolon,
                 '|' if not_next('>') => Pipe,
-                '&' => Ampersand,
-                '^' => Carrot,
-                '#' => Hash,
-                '~' => Tilda,
                 '.' if not_next('.') => Dot,
                 '+' if not_next('.') => Plus,
                 '-' if not_next('.') && not_next('>') && not_next('-') => Minus,
                 '*' if not_next('.') => Star,
                 '/' if not_next('.') => Slash,
                 '%' => Percent,
-                '@' => At,
-                '!' if not_next('=') => Bang,
-                '?' if not_next('=') => Question,
                 '=' if not_next('=') && not_next('>') => Equal,
                 '<' if not_next('=') && not_next('<') => Less,
                 '>' if not_next('=') && not_next('>') => Greater,
-                _ => Idk,
+                _ => Error,
             };
-            if kind != Idk {
-                position.width = 1;
-                return t(kind, position);
-            };
+            if kind != Error {
+                iter.push(kind, start);
+                continue;
+            }
         }
-        // Match two character tokens
-        if let Some(next) = next {
-            let not_next_next = move |c| Some(c) != next_next;
-            let kind = match (current, next) {
+        // Parse two character tokens
+        let next_next_char = iter.peek_nth(1);
+        if let Some(next_char) = next_char {
+            use TokenKind::*;
+            let not_next_next = move |c| Some(c) != next_next_char;
+            let kind = match (current, next_char) {
                 ('.', '.') if not_next_next('=') => DotDot,
                 ('=', '=') => DoubleEqual,
-                ('?', '=') => QuestionEqual,
                 ('!', '=') => BangEqual,
                 ('<', '=') => LessEqual,
                 ('>', '=') => GreaterEqual,
@@ -401,248 +350,307 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
                 ('-', '.') => MinusDot,
                 ('*', '.') => StarDot,
                 ('/', '.') => SlashDot,
-                _ => Idk,
+                _ => Error,
             };
-            if kind != Idk {
-                let _ = self.next();
-                position.width = 2;
-                return t(kind, position);
+            if kind != Error {
+                iter.next();
+                iter.push(kind, start);
+                continue;
             }
         }
-        // Match three character tokens
-        if let (Some(next), Some(next_next)) = (next, next_next) {
-            let kind = match (current, next, next_next) {
-                ('.', '.', '=') => DotDotEqual,
-                _ => Idk,
-            };
-            if kind != Idk {
-                let _ = self.next();
-                let _ = self.next();
-                position.width = 3;
-                return t(kind, position);
-            }
-        }
-        let mut buffer = String::new();
-        // Match character
+        // Parse glyph literal
         if current == '\'' {
-            let buffer = self
-                .delimited('\'')
-                .lint(TokenLint::MissingDelimeter)
-                .context("'")
-                .span(position)?;
-            position.width = buffer.chars().count() + 2;
-            let baked = bake_string(&buffer, position)?;
-            if baked.len() != 1 {
-                return Err(lint(TokenLint::WrongGlyphSize, position, []));
-            }
-            let kind = GlyphLiteral(
-                baked
-                    .chars()
-                    .next()
-                    .lint(TokenLint::WrongGlyphSize)
-                    .span(position)?,
-            );
-            return t(kind, position);
-        }
-        // Match string
-        if current == '"' {
-            let buffer = self
-                .delimited('\"')
-                .lint(TokenLint::MissingDelimeter)
-                .context("\"")
-                .span(position)?;
-            position.width = buffer.chars().count() + 2;
-            let kind = StringLiteral(bake_string(&buffer, position)?);
-            return t(kind, position);
-        }
-        buffer.push(current);
-        // Match number
-        if current.is_ascii_digit() {
-            // Only one dot per number
-            let mut encountered_dot = false;
-            while let Some(c) = self.peek(0) {
-                if c == '.' {
-                    if encountered_dot {
-                        break;
+            if let Some(glyph) = parse_delimited(&mut iter, '\'') {
+                if let Some(baked) = bake_string(start, logger, &glyph) {
+                    let chars = baked.chars().collect::<Vec<_>>();
+                    if chars.len() != 1 {
+                        error!(
+                            logger,
+                            iter.span(start),
+                            "A glyph must contain a single unicode character"
+                        );
+                        iter.push(TokenKind::Error, start);
+                    } else {
+                        iter.push(TokenKind::GlyphLiteral(chars[0]), start);
                     }
-                    let Some(next) = self.peek(1) else { break };
-                    if !next.is_ascii_digit() {
-                        break;
-                    }
-                    encountered_dot = true;
-                } else if !(['_', 'x', 'X', 'o', 'O', 'b', 'B'].contains(&c)
-                    || c.is_ascii_hexdigit())
-                {
-                    break;
+                } else {
+                    // Error reported during baking
+                    iter.push(TokenKind::Error, start);
                 }
-                buffer.push(c);
-                let _ = self.next_char();
-            }
-            buffer = buffer.to_lowercase();
-            position.width += buffer.chars().count();
-            // Determine base
-            let (buffer, base) = if let Some(buffer) = buffer.strip_prefix("0b") {
-                (buffer.to_string(), Base::Binary)
-            } else if let Some(buffer) = buffer.strip_prefix("0o") {
-                (buffer.to_string(), Base::Octal)
-            } else if let Some(buffer) = buffer.strip_prefix("0x") {
-                (buffer.to_string(), Base::Hex)
             } else {
-                (buffer, Base::Decimal)
+                error!(logger, iter.span(start), "Missing trailing single quote");
+                iter.push(TokenKind::Error, start);
+            }
+            continue;
+        }
+
+        // Parse string literal
+        if current == '"' {
+            if let Some(string) = parse_delimited(&mut iter, '"') {
+                if let Some(baked) = bake_string(start, logger, &string) {
+                    iter.push(TokenKind::StringLiteral(baked), start);
+                } else {
+                    // Error reported during baking
+                    iter.push(TokenKind::Error, start);
+                }
+            } else {
+                error!(logger, iter.span(start), "Missing trailing double quote");
+                iter.push(TokenKind::Error, start);
+            }
+            continue;
+        }
+
+        // Parse number
+        if current.is_ascii_digit() {
+            let mut buffer: Vec<u8> = vec![];
+            // Parse base prefix
+            let base = if let Some(next_char) = next_char
+                && current == '0'
+                && ['x', 'X', 'd', 'D', 'o', 'O', 'b', 'B'].contains(&next_char)
+            {
+                iter.next();
+                match next_char.to_ascii_lowercase() {
+                    'x' => Base::Hex,
+                    'd' => Base::Decimal,
+                    'o' => Base::Octal,
+                    'b' => Base::Binary,
+                    _ => unreachable!(),
+                }
+            } else {
+                write!(buffer, "{current}").unwrap();
+                Base::Decimal
             };
-            // Determine integer or float
-            if base == Base::Decimal && (encountered_dot || buffer.contains("e")) {
-                return t(RealLiteral(buffer), position);
-            } else {
-                return t(IntegerLiteral(buffer, base), position);
+            let is_digit = |c: char| {
+                c == '_'
+                    || match base {
+                        Base::Binary => c == '0' || c == '1',
+                        Base::Octal => '0' <= c && c <= '7',
+                        Base::Decimal => c.is_ascii_digit(),
+                        Base::Hex => c.is_ascii_hexdigit(),
+                    }
+            };
+            // Parse whole part
+            while iter.peek().is_some_and(is_digit)
+                && let Some(current) = iter.next()
+            {
+                write!(buffer, "{current}").unwrap();
             }
+            //No decimal or 'e', so integer literal
+            if iter.peek().is_none_or(char::is_whitespace) {
+                let str = String::from_utf8_lossy(&buffer)
+                    .to_string()
+                    .replace("_", "")
+                    .to_ascii_lowercase();
+                let str = str.strip_prefix("0d").map(|s| s.to_string()).unwrap_or(str);
+                iter.push(TokenKind::IntegerLiteral(str, base), start);
+                continue;
+            }
+            // Parse decimal part
+            if iter.peek().is_some_and(|c| c == '.') {
+                iter.next();
+                write!(buffer, ".").unwrap();
+                while iter.peek().is_some_and(is_digit) {
+                    write!(buffer, "{}", iter.next().unwrap()).unwrap();
+                }
+            }
+            // Parse exponent part
+            if iter.peek().is_some_and(|c| c == 'e') {
+                iter.next();
+                write!(buffer, "e").unwrap();
+                while iter.peek().is_some_and(is_digit) {
+                    write!(buffer, "{}", iter.next().unwrap()).unwrap();
+                }
+            }
+            // Finished parsing real
+            if iter.peek().is_none_or(char::is_whitespace) {
+                if base == Base::Decimal {
+                    let str = String::from_utf8_lossy(&buffer)
+                        .to_string()
+                        .replace("_", "")
+                        .to_ascii_lowercase();
+                    let str = str.strip_prefix("0d").map(|s| s.to_string()).unwrap_or(str);
+                    iter.push(TokenKind::RealLiteral(str), start);
+                } else {
+                    error!(logger, iter.span(start), "Real numbers must be in base-10");
+                    iter.push(TokenKind::Error, start);
+                }
+                continue;
+            }
+            // Found erroneous character
+            error!(
+                logger,
+                iter.span(start),
+                "Found an unexpected character while parsing this {base} number"
+            );
+            iter.push(TokenKind::Error, start);
+            continue;
         }
-        // Match keyword or identifier
-        if !(!current.is_ascii_punctuation() && current.is_alphanumeric() || current == '_') {
-            position.width = 1;
-            return t(TokenKind::Idk, position);
+        let is_ident = |c: char| (!c.is_ascii_punctuation() || c == '_') && !c.is_whitespace();
+        if !is_ident(current) {
+            error!(logger, iter.span(start), "Unexpected symbol");
+            iter.push(TokenKind::Error, start);
+            continue;
         }
-        while let Some(c) = self.peek(0) {
-            if !c.is_ascii_punctuation() && c.is_alphanumeric() || c == '_' {
-                let _ = self.next_char();
-            } else {
+        // Parse identifier or keyowrd
+        let mut buffer: Vec<u8> = vec![];
+        write!(buffer, "{current}").unwrap();
+        while let Some(next) = iter.peek()
+            && is_ident(next)
+        {
+            iter.next();
+            write!(buffer, "{next}").unwrap();
+        }
+        let str = String::from_utf8_lossy(&buffer).to_string();
+        use TokenKind::*;
+        let token = match str.as_str() {
+            "let" => Let,
+            "do" => Do,
+            "in" => In,
+            "module" => Module,
+            "import" => Import,
+            "use" => Use,
+            "of" => Of,
+            "end" => End,
+            "match" => Match,
+            "with" => With,
+            "if" => If,
+            "then" => Then,
+            "else" => Else,
+            "and" => And,
+            "or" => Or,
+            "xor" => Xor,
+            "not" => Not,
+            "true" => True,
+            "false" => False,
+            "fn" => Fn,
+            "type" => Type,
+            _ => Identifier(str),
+        };
+        iter.push(token, start);
+    }
+    iter.tokens
+}
+
+fn parse_delimited(
+    iter: &mut Tokenizer<impl Iterator<Item = char>>,
+    terminator: char,
+) -> Option<String> {
+    let mut buffer = String::new();
+    let mut escape = false;
+    loop {
+        let c = match iter.next() {
+            Some(c) if c == terminator && !escape => {
                 break;
             }
-            buffer.push(c);
-        }
-        position.width = buffer.chars().count();
-        // Match keywords
-        {
-            let kind = match buffer.as_str() {
-                "let" => Let,
-                "do" => Do,
-                "in" => In,
-                "module" => Module,
-                "import" => Import,
-                "use" => Use,
-                "of" => Of,
-                "end" => End,
-                "match" => Match,
-                "with" => With,
-                "if" => If,
-                "then" => Then,
-                "else" => Else,
-                "and" => And,
-                "or" => Or,
-                "xor" => Xor,
-                "not" => Not,
-                "true" => True,
-                "false" => False,
-                "fn" => Fn,
-                "type" => Type,
-                _ => Identifier(buffer),
-            };
-            t(kind, position)
-        }
+            Some(c) => {
+                if c == '\\' {
+                    escape = !escape;
+                } else {
+                    escape = false;
+                }
+                c
+            }
+            None => return None,
+        };
+        buffer.push(c)
     }
+    Some(buffer)
 }
 
-impl<I: Iterator<Item = char>> Iterator for Tokenizer<I> {
-    type Item = Result<Token>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            use TokenKind::*;
-            if self.ended {
-                return None;
-            }
-            match self._next() {
-                Ok(Spanned {
-                    inner: SmallComment(_) | BigComment(_) | Whitespace(_),
-                    ..
-                }) => continue,
-                Ok(s) => return Some(Ok(s)),
-                Err(e) => return Some(Err(e)),
-            }
-        }
-    }
-}
-
-fn bake_string(s: &str, mut span: Span) -> Result<String> {
+fn bake_string(mut start: usize, logger: &mut Logger, s: &str) -> Option<String> {
+    let collect_hex_bytes = |arr: &[Option<char>]| {
+        arr.into_iter()
+            .flatten()
+            .map(|c| c.to_ascii_lowercase())
+            .flat_map(|c| {
+                if c.is_ascii_digit() {
+                    Some(c as u32 - '0' as u32)
+                } else if ('a'..='f').contains(&c) {
+                    Some(c as u32 - 'a' as u32 + 10)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    };
     let mut baked = String::with_capacity(s.len());
     let mut iter = s.chars();
-    while let Some(c) = iter.next() {
-        if c == '\\' {
-            let (escape, length) = parse_single_escape(&mut iter, span)?;
-            span.start += length + 1;
-            baked.push(escape);
+    while let Some(next) = iter.next() {
+        start += 1;
+        baked.push(if next == '\\' {
+            let Some(next) = iter.next() else {
+                error!(
+                    logger,
+                    Span {
+                        start: start - 1,
+                        width: 2
+                    },
+                    "Expecting an escape sequence here"
+                );
+                return None;
+            };
+            start += 1;
+            match next {
+                'n' => '\n',
+                'r' => '\r',
+                't' => '\t',
+                'b' => '\x08',
+                '\\' => '\\',
+                '0' => '\0',
+                '"' => '"',
+                '\'' => '\'',
+                'x' => {
+                    let bytes: Vec<_> = collect_hex_bytes(&[iter.next(), iter.next()]);
+                    if bytes.len() != 2 {
+                        error!(
+                            logger,
+                            Span {
+                                start: start - 1,
+                                width: 4
+                            },
+                            "The \\xXX escape sequence requires 2 hex digits"
+                        );
+                        return None;
+                    }
+                    start += 2;
+                    unsafe { char::from_u32_unchecked(bytes[0] << 8 | bytes[1]) }
+                }
+                'w' => {
+                    let bytes =
+                        collect_hex_bytes(&[iter.next(), iter.next(), iter.next(), iter.next()]);
+                    if bytes.len() != 4 {
+                        error!(
+                            logger,
+                            Span {
+                                start: start - 1,
+                                width: 6
+                            },
+                            "The \\wXXXX escape sequence requires 4 hex digits"
+                        );
+                        return None;
+                    }
+                    start += 4;
+                    unsafe {
+                        char::from_u32_unchecked(
+                            bytes[0] << 24 | bytes[1] << 16 | bytes[2] << 8 | bytes[3],
+                        )
+                    }
+                }
+                c => {
+                    error!(
+                        logger,
+                        Span {
+                            start: start - 1,
+                            width: 2
+                        },
+                        "Invalid escape sequence \"\\{c}\" "
+                    );
+                    return None;
+                }
+            }
         } else {
-            span.start += c.len_utf8();
-            baked.push(c);
-        }
+            next
+        })
     }
-    Ok(baked)
-}
-
-fn parse_single_escape(
-    iter: &mut impl Iterator<Item = char>,
-    mut span: Span,
-) -> Result<(char, usize)> {
-    span.start += 1;
-    span.width = 2;
-    Ok(match iter.next() {
-        Some('n') => ('\n', 1),                           // New line
-        Some('r') => ('\r', 1),                           // Carriage return
-        Some('t') => ('\t', 1),                           // Tab
-        Some('b') => ('\x08', 1),                         // Backspace
-        Some('\\') => ('\\', 1),                          // Backslash
-        Some('0') => ('\0', 1),                           // Null
-        Some('"') => ('\"', 1),                           // Double quote
-        Some('\'') => ('\'', 1),                          // Single quote
-        Some('x') => (parse_byte_escape(iter, span)?, 2), // Byte escape
-        Some('w') => (parse_wide_escape(iter, span)?, 4), // Wide escape
-        _ => {
-            return Err(lint(TokenLint::UnrecognizedEscape, span, []));
-        }
-    })
-}
-
-fn hex_digit(c: char) -> Option<u32> {
-    if c.is_ascii_digit() {
-        Some(c as u32 - '0' as u32)
-    } else if ('a'..='f').contains(&c) {
-        Some(c as u32 - 'a' as u32 + 10)
-    } else {
-        None
-    }
-}
-
-fn parse_byte_escape(iter: &mut impl Iterator<Item = char>, span: Span) -> Result<char> {
-    let lint = lint(TokenLint::UnrecognizedEscape, span, []);
-    let (b1, b2) = match (iter.next(), iter.next()) {
-        (Some(b1), Some(b2)) => (b1.to_ascii_lowercase(), b2.to_ascii_lowercase()),
-        _ => {
-            return Err(lint);
-        }
-    };
-    let byte = match (hex_digit(b1), hex_digit(b2)) {
-        (Some(b1), Some(b2)) => b1 << 8 | b2,
-        _ => return Err(lint),
-    };
-    char::from_u32(byte).ok_or(lint)
-}
-
-fn parse_wide_escape(iter: &mut impl Iterator<Item = char>, span: Span) -> Result<char> {
-    let lint = lint(TokenLint::UnrecognizedEscape, span, []);
-    let (b1, b2, b3, b4) = match (iter.next(), iter.next(), iter.next(), iter.next()) {
-        (Some(b1), Some(b2), Some(b3), Some(b4)) => (
-            b1.to_ascii_lowercase(),
-            b2.to_ascii_lowercase(),
-            b3.to_ascii_lowercase(),
-            b4.to_ascii_lowercase(),
-        ),
-        _ => {
-            return Err(lint);
-        }
-    };
-    let byte = match (hex_digit(b1), hex_digit(b2), hex_digit(b3), hex_digit(b4)) {
-        (Some(b1), Some(b2), Some(b3), Some(b4)) => b1 << 24 | b2 << 16 | b3 << 8 | b4,
-        _ => return Err(lint),
-    };
-    char::from_u32(byte).ok_or(lint)
+    Some(baked)
 }
