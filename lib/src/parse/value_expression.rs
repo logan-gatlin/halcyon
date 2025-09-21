@@ -138,7 +138,7 @@ fn primary(logger: &mut Logger, p: it!()) -> PResult<ValueExpression> {
             }
         }
         Let => e::Let {
-            assignee: todo!(),
+            assignee: parse_pattern(logger, p)?,
             value: {
                 p.eat(Equal)?;
                 Box::new(parse_value_expression(logger, p, 0)?)
@@ -198,11 +198,11 @@ fn primary(logger: &mut Logger, p: it!()) -> PResult<ValueExpression> {
         Match => {
             let scrutinee = parse_value_expression(logger, p, 0)?.into();
             p.eat(With)?;
-            p.eat(Pipe); // Intentionally ignore error
+            let _ = p.eat(Pipe); // Intentionally ignore error
             let mut predicates = vec![];
             let mut branches = vec![];
             loop {
-                predicates.push(todo!());
+                predicates.push(parse_pattern(logger, p)?);
                 p.eat(FatArrow)?;
                 branches.push(parse_value_expression(logger, p, 0)?);
                 if p.eat(Pipe).is_err() {
