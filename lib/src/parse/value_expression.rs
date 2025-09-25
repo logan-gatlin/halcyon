@@ -66,7 +66,7 @@ pub enum ValueExpressionKind {
         lhs: Box<ValueExpression>,
         rhs: String,
     },
-    ModuleField(Vec<String>),
+    ModulePath(Vec<String>),
 }
 
 #[derive(Debug, Clone, sx::SXRepr)]
@@ -103,7 +103,7 @@ fn primary(logger: &mut Logger, p: it!()) -> PResult<ValueExpression> {
                         span += p.last_span;
                     }
                 }
-                e::ModuleField(path)
+                e::ModulePath(path)
             // Identifier
             } else {
                 e::Identifier(name)
@@ -267,8 +267,9 @@ pub fn parse_value_expression(
 ) -> PResult<ValueExpression> {
     use ValueExpressionKind as e;
     let unary_ops = [Minus, MinusDot, Not];
+    let mut span = iter.last_span;
     let mut current = if let Ok(id) = iter.eat_one_of(unary_ops.clone()) {
-        let span = iter.last_span;
+        span = iter.last_span;
         let op = UnaryOp::try_from(&unary_ops[id]).unwrap();
         let operand = parse_value_expression(logger, iter, op.precedence())?;
         let op = if let (UnaryOp::Minus, e::Literal(Literal::Real(_))) = (op, &*operand) {
@@ -284,11 +285,12 @@ pub fn parse_value_expression(
             span,
         }
     } else {
-        primary(logger, iter)?
+        let p = primary(logger, iter)?;
+        span = p.span;
+        p
     };
     // Precedence climbing loop
     while let Ok(next) = iter.peek() {
-        let span = iter.last_span;
         // Binary operator
         if let Ok(op) = BinaryOp::try_from(&*next) {
             let new_precedence = op.precedence();

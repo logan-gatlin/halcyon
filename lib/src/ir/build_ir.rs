@@ -268,7 +268,7 @@ pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> Result<IrN
         Array(items) => {
             let mut current = value_expr(
                 ns,
-                ModuleField(vec!["array".into(), "empty".into()]).with_span(span),
+                ModulePath(vec!["array".into(), "empty".into()]).with_span(span),
             )?;
             for item in items {
                 match item {
@@ -278,7 +278,7 @@ pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> Result<IrN
                             callee: ir::Call {
                                 callee: value_expr(
                                     ns,
-                                    ModuleField(vec!["array".into(), "concatenate".into()])
+                                    ModulePath(vec!["array".into(), "concatenate".into()])
                                         .with_span(span),
                                 )?
                                 .into(),
@@ -300,7 +300,7 @@ pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> Result<IrN
                             callee: value_expr(
                                 ns,
                                 FunctionCall {
-                                    callee: ModuleField(vec!["array".into(), "push".into()])
+                                    callee: ModulePath(vec!["array".into(), "push".into()])
                                         .with_span(span)
                                         .into(),
                                     argument: item.into(),
@@ -326,7 +326,7 @@ pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> Result<IrN
             of: rec!(lhs),
             index: rhs,
         },
-        ModuleField(items) => {
+        ModulePath(items) => {
             let path = Path::from(items);
             let t = ns.get_imported_value_type(&path).span(span)?;
             ir::ImportedSymbol(path, t)
