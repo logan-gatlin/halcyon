@@ -1,4 +1,4 @@
-macro_rules! it {
+macro_rules! p {
     () => {
         &mut Parser<impl Iterator<Item = Token>>
     }
@@ -23,13 +23,13 @@ pub type Expression<K> = Spanned<K>;
 
 type PResult<T> = Result<T, Spanned<String>>;
 
-struct Parser<I: Iterator<Item = Token>> {
+pub struct Parser<I: Iterator<Item = Token>> {
     iter: MultiPeek<I>,
     last_span: Span,
 }
 
 impl<I: Iterator<Item = Token>> Parser<I> {
-    fn new(iter: I) -> Self {
+    pub fn new(iter: I) -> Self {
         Self {
             iter: multipeek(iter),
             last_span: Span { start: 0, width: 0 },
@@ -81,6 +81,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
         let items = items.into_iter().collect::<Vec<_>>();
         for (id, item) in items.iter().enumerate() {
             if self.iter.peek().is_some_and(|t| &t.inner == item) {
+                self.skip();
                 return Ok(id);
             }
         }
@@ -108,5 +109,18 @@ impl<I: Iterator<Item = Token>> Parser<I> {
 }
 
 pub fn parse(logger: &mut Logger, iter: impl IntoIterator<Item = Token>) -> Vec<ParsedModule> {
-    todo!()
+    let mut p = Parser {
+        iter: multipeek(iter.into_iter().filter(|t| {
+            !matches!(
+                t.inner,
+                TokenKind::LineComment(_) | TokenKind::BlockComment(_)
+            )
+        })),
+        last_span: Span::default(),
+    };
+    let mut modules = vec![];
+    while p.peek().is_ok() {
+        modules.push(parse_module(logger, &mut p));
+    }
+    modules
 }

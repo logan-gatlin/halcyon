@@ -1,48 +1,52 @@
+use std::num::{IntErrorKind, ParseIntError};
+
 use super::*;
-use crate::{lint::*, parse::*};
+use crate::{Logger, lint::*, parse::*};
+
+pub type IResult<T> = std::result::Result<T, Spanned<String>>;
 
 pub fn build_ir(
+    logger: &mut Logger,
     module: ParsedModule,
     context: &HashMap<Path, ModuleInterface>,
-) -> Result<IrModule> {
+) -> IrModule {
     let module_name = Path::from((*module.name).clone());
     let mut ns = ModuleNameSpace::new(module_name.clone());
     for interface in context.values() {
-        ns.import_interface(interface).span(module.span)?;
+        ns.import_interface(interface).unwrap();
     }
     let mut items = vec![];
     for item in module.contents.clone() {
-        module_expr(&mut ns, item, &mut items)?;
+        module_expr(&mut ns, item, &mut items).unwrap();
     }
-    Ok(IrModule { module_name, items })
+    IrModule { module_name, items }
 }
 
 fn module_expr(
     ns: &mut ModuleNameSpace,
-    e: ModuleExpression,
+    e: ModuleStatement,
     items: &mut Vec<ModuleItem>,
-) -> Result<()> {
+) -> IResult<()> {
     match e.inner {
-        ModuleExpressionKind::Error => {}
-        ModuleExpressionKind::Let { assignee, value } => {
+        ModuleStatementKind::Let { assignee, value } => {
             let mut assignee = pattern_expr(ns, assignee, true)?;
             let value = value_expr(ns, *value)?;
             assignee.visit(|(p, _)| ns.finalize_value(p));
             items.push(ModuleItem::Let(assignee, Box::new(value)));
         }
-        ModuleExpressionKind::Do(expr) => {
+        ModuleStatementKind::Do(expr) => {
             let assignee = PatternKind::Hole.with_span(expr.span).with_type(Type::Any);
             let value = value_expr(ns, *expr)?.into();
             items.push(ModuleItem::Let(assignee, value));
         }
-        ModuleExpressionKind::Type {
+        ModuleStatementKind::Type {
             assignee,
             assignee_span,
             value,
         } => {
             type_def(ns, assignee, assignee_span, *value, items, 0)?;
         }
-        ModuleExpressionKind::Import {
+        ModuleStatementKind::Import {
             name,
             type_,
             major,
@@ -57,16 +61,27 @@ fn module_expr(
                 minor,
             });
         }
+        ModuleStatementKind::DocComment(_) => {}
     }
     Ok(())
 }
 
-fn lit(literal: Literal) -> Result<ConstValue> {
-    fn int(value: &str, base: u32) -> Result<i64> {
-        i64::from_str_radix(value, base).lint(TokenLint::InvalidInteger)
+fn lit(literal: Literal) -> std::result::Result<ConstValue, String> {
+    fn int(value: &str, base: u32) -> std::result::Result<i64, String> {
+        match i64::from_str_radix(value, base).map_err(|e| e.kind().clone()) {
+            Ok(i) => Ok(i),
+            Err(IntErrorKind::PosOverflow | IntErrorKind::NegOverflow) => {
+                Err("Integer literal is too large to represent in 64-bits".to_string())
+            }
+            Err(IntErrorKind::InvalidDigit) => Err("Invalid integer literal".to_string()),
+            _ => unreachable!(),
+        }
     }
-    fn real(value: &str) -> Result<f64> {
-        value.parse().lint(TokenLint::InvalidReal)
+    fn real(value: &str) -> std::result::Result<f64, String> {
+        match value.parse::<f64>() {
+            Ok(r) => Ok(r),
+            Err(_) => Err("Invalid real literal".to_string()),
+        }
     }
 
     Ok(match literal {
@@ -84,7 +99,7 @@ fn curry(
     mut arguments: impl Iterator<Item = (Spanned<String>, Option<TypeExpression>)>,
     body: Box<ValueExpression>,
     span: Span,
-) -> Result<Box<IrNode>> {
+) -> IResult<Box<IrNode>> {
     Ok(Box::new(
         match arguments.next() {
             Some((argument, type_)) => {
@@ -111,7 +126,10 @@ fn curry(
         .with_type(Type::Any),
     ))
 }
-pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> Result<IrNode> {
+
+const IRREFUTABLE_LET: &str = "The pattern for a `let` expression must be irrefutable";
+
+pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> IResult<IrNode> {
     use IrKind as ir;
     use ValueExpressionKind::*;
     let span = expr.span;
@@ -128,7 +146,7 @@ pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> Result<IrN
         } => {
             let mut assignee = pattern_expr(ns, assignee, false)?;
             if !assignee.is_irrefutable() {
-                return Err(lint(TypeLint::NonExhaustive, span, []));
+                return Err(IRREFUTABLE_LET.to_string().with_span(span));
             }
             let value = rec!(value);
             assignee.visit(|(p, _)| {
@@ -340,7 +358,7 @@ fn pattern_expr(
     ns: &mut ModuleNameSpace,
     pattern: PatternExpression,
     global: bool,
-) -> Result<Pattern> {
+) -> IResult<Pattern> {
     use PatternExpressionKind::*;
     let span = pattern.span;
     Ok(match pattern.inner {

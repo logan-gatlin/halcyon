@@ -20,8 +20,92 @@ pub enum TypeDefinitionKind {
     Expression(TypeExpression),
 }
 
-pub fn parse_type_definition(logger: &mut Logger, p: it!()) -> PResult<TypeDefinition> {
-    todo!()
+pub fn parse_type_definition(logger: &mut Logger, p: p!()) -> PResult<TypeDefinition> {
+    let next = p.peek()?;
+    let span = next.span;
+    Ok(match next.inner {
+        Fn => {
+            p.skip();
+            let mut arguments = vec![];
+            loop {
+                if p.eat(FatArrow).is_ok() {
+                    break;
+                }
+                arguments.push(p.eat_ident()?);
+            }
+            let body = Box::new(parse_type_definition(logger, p)?);
+            TypeDefinitionKind::TypeFunction { arguments, body }
+        }
+        LeftBrace => {
+            p.skip();
+            let mut lhs = vec![];
+            let mut rhs = vec![];
+            loop {
+                if let Ok(ident) = p.eat_ident() {
+                    lhs.push(ident);
+                    p.eat(Colon)?;
+                    rhs.push(parse_type_expression(logger, p, 0)?);
+                    if p.eat(Comma).is_err() {
+                        p.eat(RightBrace)?;
+                        break;
+                    }
+                } else {
+                    p.eat(RightBrace)?;
+                    break;
+                }
+            }
+            TypeDefinitionKind::Structure { lhs, rhs }
+        }
+        Pipe => {
+            p.skip();
+            let mut variant_names = vec![];
+            let mut variant_types = vec![];
+            loop {
+                if p.eat(Pipe).is_err() {
+                    break;
+                }
+                variant_names.push(p.eat_ident()?);
+                variant_types.push(if p.eat(Of).is_ok() {
+                    Some(parse_type_expression(logger, p, 0)?)
+                } else {
+                    None
+                });
+            }
+            TypeDefinitionKind::Sum {
+                variant_names,
+                variant_types,
+            }
+        }
+        Identifier(name)
+            if p.peek_nth(1)
+                .is_ok_and(|t| t.inner == Of || t.inner == Pipe) =>
+        {
+            p.skip();
+            let mut variant_names = vec![name];
+            let mut variant_types = vec![if p.eat(Of).is_ok() {
+                Some(parse_type_expression(logger, p, 0)?)
+            } else {
+                None
+            }];
+            loop {
+                if p.eat(Pipe).is_err() {
+                    break;
+                }
+                variant_names.push(p.eat_ident()?);
+                variant_types.push(if p.eat(Of).is_ok() {
+                    Some(parse_type_expression(logger, p, 0)?)
+                } else {
+                    None
+                });
+            }
+            TypeDefinitionKind::Sum {
+                variant_names,
+                variant_types,
+            }
+        }
+        _ => TypeDefinitionKind::Expression(parse_type_expression(logger, p, 0)?),
+    }
+    .with_span(span + p.last_span))
 }
 
 #[derive(Debug, Clone, sx::SXRepr)]
@@ -35,7 +119,7 @@ pub enum TypeExpressionKind {
     Unit,
 }
 
-fn primary(logger: &mut Logger, p: it!()) -> PResult<TypeExpression> {
+fn primary(logger: &mut Logger, p: p!()) -> PResult<TypeExpression> {
     use TypeExpressionKind as e;
     let next = p.next()?;
     let mut span = next.span;
@@ -96,9 +180,9 @@ fn primary(logger: &mut Logger, p: it!()) -> PResult<TypeExpression> {
     .with_span(span + p.last_span))
 }
 
-fn parse_type_expression(
+pub fn parse_type_expression(
     logger: &mut Logger,
-    p: it!(),
+    p: p!(),
     precedence: Precedence,
 ) -> PResult<TypeExpression> {
     let mut current = primary(logger, p)?;

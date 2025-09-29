@@ -31,7 +31,7 @@ pub enum ParsedArrayPattern {
 pub type PatternExpression = Expression<PatternExpressionKind>;
 use PatternExpressionKind as e;
 
-fn primary(logger: &mut Logger, p: it!()) -> PResult<PatternExpression> {
+fn primary(logger: &mut Logger, p: p!()) -> PResult<PatternExpression> {
     use PatternExpressionKind as e;
     let next = p.next()?;
     let span = next.span;
@@ -154,7 +154,7 @@ fn primary(logger: &mut Logger, p: it!()) -> PResult<PatternExpression> {
     .with_span(span + p.last_span))
 }
 
-pub fn parse_pattern(logger: &mut Logger, p: it!()) -> PResult<PatternExpression> {
+pub fn parse_pattern(logger: &mut Logger, p: p!()) -> PResult<PatternExpression> {
     use PatternExpressionKind as e;
     let primary = primary(logger, p)?;
     let span = primary.span;

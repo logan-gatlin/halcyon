@@ -77,7 +77,7 @@ pub enum ArrayInner {
 
 pub type ValueExpression = Expression<ValueExpressionKind>;
 
-fn primary(logger: &mut Logger, p: it!()) -> PResult<ValueExpression> {
+fn primary(logger: &mut Logger, p: p!()) -> PResult<ValueExpression> {
     use ValueExpressionKind as e;
     let next = p.next()?;
     let mut span = next.span;
@@ -119,7 +119,8 @@ fn primary(logger: &mut Logger, p: it!()) -> PResult<ValueExpression> {
                     parameters.push(ident.with_span(p.last_span));
                     p.eat(Colon)?;
                     // parse type
-                    todo!();
+                    let type_ = parse_type_expression(logger, p, 0)?;
+                    types.push(Some(type_));
                 } else if let Ok(ident) = p.eat_ident() {
                     parameters.push(ident.with_span(p.last_span));
                     types.push(None);
@@ -262,12 +263,12 @@ fn primary(logger: &mut Logger, p: it!()) -> PResult<ValueExpression> {
 
 pub fn parse_value_expression(
     logger: &mut Logger,
-    iter: it!(),
+    iter: p!(),
     precedence: Precedence,
 ) -> PResult<ValueExpression> {
     use ValueExpressionKind as e;
     let unary_ops = [Minus, MinusDot, Not];
-    let mut span = iter.last_span;
+    let span;
     let mut current = if let Ok(id) = iter.eat_one_of(unary_ops.clone()) {
         span = iter.last_span;
         let op = UnaryOp::try_from(&unary_ops[id]).unwrap();
