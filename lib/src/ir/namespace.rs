@@ -1,6 +1,16 @@
 use std::collections::HashSet;
 
+use crate::{LResult, err};
+
 use super::*;
+
+fn undefined_name(name: impl std::fmt::Display) -> Log {
+    err(format!("The symbol {name} is not defined"))
+}
+
+fn redefined_name(name: impl std::fmt::Display) -> Log {
+    err(format!("The symbol {name} is defined more than once"))
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct NameInfo {
@@ -37,7 +47,7 @@ impl ModuleNameSpace {
         }
     }
 
-    pub fn import_interface(&mut self, interface: &ModuleInterface) -> Result<()> {
+    pub fn import_interface(&mut self, interface: &ModuleInterface) -> LResult<()> {
         for (path, type_) in interface.values.clone() {
             self.imported_value_types.insert(path, type_);
         }
@@ -50,7 +60,7 @@ impl ModuleNameSpace {
         Ok(())
     }
     // Values
-    pub fn new_global_value(&mut self, name: &str) -> Result<Path> {
+    pub fn new_global_value(&mut self, name: &str) -> LResult<Path> {
         let name = name.to_string();
         let path = self.module_name.child(&name);
         if self
@@ -59,7 +69,7 @@ impl ModuleNameSpace {
             .is_some()
             || self.imported_value_types.contains_key(&path)
         {
-            return Err(lint_nospan(NameLint::NameRedefinition)).context(name);
+            return Err(err(format!("The name {name} is defined multiple times")));
         }
         self.local_value_info.insert(
             path.clone(),
@@ -91,12 +101,11 @@ impl ModuleNameSpace {
         path
     }
 
-    pub fn get_value(&mut self, name: &str) -> Result<Path> {
+    pub fn get_value(&mut self, name: &str) -> LResult<Path> {
         let path = self
             .value_lookup
             .get(name)
-            .ok_or(lint_nospan(NameLint::UndefinedName))
-            .context(name)?
+            .ok_or(undefined_name(name))?
             .clone();
         if let Some(NameInfo {
             depth,
@@ -107,7 +116,7 @@ impl ModuleNameSpace {
         {
             let current_depth = self.capture_list.len();
             if !is_finalized && current_depth <= depth {
-                return Err(lint_nospan(NameLint::CyclicalDefinition)).context(name);
+                return Err(err(format!("The definition of {name} is cyclical")));
             }
 
             for capture in depth..current_depth {
@@ -156,46 +165,44 @@ impl ModuleNameSpace {
     }
 
     // Constructors
-    pub fn new_constructor(&mut self, name: &str, constructor: Constructor) -> Result<Path> {
+    pub fn new_constructor(&mut self, name: &str, constructor: Constructor) -> LResult<Path> {
         let path = self.module_name.child(name);
         if self
             .constructor_lookup
             .insert(name.to_string(), path.clone())
             .is_some()
         {
-            return Err(lint_nospan(NameLint::NameRedefinition)).context(name);
+            return Err(redefined_name(name));
         }
         self.constructors_available
             .insert(path.clone(), constructor);
         Ok(path)
     }
 
-    pub fn get_constructor(&self, name: &str) -> Result<Constructor> {
+    pub fn get_constructor(&self, name: &str) -> LResult<Constructor> {
         let path = self
             .constructor_lookup
             .get(name)
-            .ok_or(lint_nospan(NameLint::UndefinedName))
-            .context(name)?;
+            .ok_or(undefined_name(name))?;
         Ok(self.constructors_available.get(path).unwrap().clone())
     }
 
-    pub fn get_constructor_exact(&self, path: &Path) -> Result<Constructor> {
+    pub fn get_constructor_exact(&self, path: &Path) -> LResult<Constructor> {
         self.constructors_available
             .get(path)
-            .ok_or(lint_nospan(NameLint::UndefinedName))
-            .context(path)
+            .ok_or(undefined_name(path))
             .cloned()
     }
 
     // Types
-    pub fn new_global_type(&mut self, name: &str) -> Result<Path> {
+    pub fn new_global_type(&mut self, name: &str) -> LResult<Path> {
         let path = self.module_name.child(name);
         if self
             .type_lookup
             .insert(name.to_string(), path.clone())
             .is_some()
         {
-            return Err(lint_nospan(NameLint::NameRedefinition)).context(name);
+            return Err(redefined_name(name));
         }
         self.types_available.insert(path.clone());
         Ok(path)
@@ -212,46 +219,40 @@ impl ModuleNameSpace {
         self.local_types.insert(path, type_);
     }
 
-    pub fn get_type(&self, name: &str) -> Result<Type> {
-        let path = self
-            .type_lookup
-            .get(name)
-            .ok_or(lint_nospan(NameLint::UndefinedName))
-            .context(name)?;
+    pub fn get_type(&self, name: &str) -> LResult<Type> {
+        let path = self.type_lookup.get(name).ok_or(undefined_name(name))?;
         match self.local_types.get(path).cloned() {
             Some(t) => Ok(t),
             None => {
                 let at = Universe::get().get_named_type(path);
-                at.clone().instantiate(&[])?;
+                at.clone().instantiate(&[]).map_err(|e| todo!())?;
                 Ok(Type::Instantiation(path.clone(), vec![]))
             }
         }
     }
 
-    pub fn get_type_exact(&self, path: &Path) -> Result<Type> {
-        self.types_available
-            .get(path)
-            .ok_or(lint_nospan(NameLint::UndefinedName))
-            .context(path)?;
+    pub fn get_type_exact(&self, path: &Path) -> LResult<Type> {
+        self.types_available.get(path).ok_or(undefined_name(path))?;
         match self.local_types.get(path).cloned() {
             Some(t) => Ok(t),
-            None => Universe::get().get_named_type(path).instantiate(&[]),
+            None => Universe::get()
+                .get_named_type(path)
+                .instantiate(&[])
+                .map_err(|e| todo!()),
         }
     }
 
-    pub fn get_type_path(&self, name: &str) -> Result<Path> {
+    pub fn get_type_path(&self, name: &str) -> LResult<Path> {
         self.type_lookup
             .get(name)
-            .ok_or(lint_nospan(NameLint::UndefinedName))
-            .context(name)
+            .ok_or(undefined_name(name))
             .cloned()
     }
 
-    pub fn get_type_path_exact(&self, path: &Path) -> Result<Path> {
+    pub fn get_type_path_exact(&self, path: &Path) -> LResult<Path> {
         self.types_available
             .get(path)
-            .ok_or(lint_nospan(NameLint::UndefinedName))
-            .context(path)
+            .ok_or(undefined_name(path))
             .cloned()
     }
 

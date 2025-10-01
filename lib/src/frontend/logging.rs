@@ -20,7 +20,7 @@ pub struct Log {
     pub help: Option<String>,
 }
 
-pub fn error(message: impl Into<String>) -> Log {
+pub fn err(message: impl Into<String>) -> Log {
     Log {
         severity: Severity::Error,
         span: None,
@@ -30,7 +30,7 @@ pub fn error(message: impl Into<String>) -> Log {
 }
 
 impl Log {
-    pub fn span(mut self, span: Span) -> Self {
+    pub const fn span(mut self, span: Span) -> Self {
         self.span = Some(span);
         self
     }

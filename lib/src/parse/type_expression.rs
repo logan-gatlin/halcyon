@@ -20,7 +20,7 @@ pub enum TypeDefinitionKind {
     Expression(TypeExpression),
 }
 
-pub fn parse_type_definition(logger: &mut Logger, p: p!()) -> PResult<TypeDefinition> {
+pub fn parse_type_definition(logger: &mut Logger, p: p!()) -> LResult<TypeDefinition> {
     let next = p.peek()?;
     let span = next.span;
     Ok(match next.inner {
@@ -119,7 +119,7 @@ pub enum TypeExpressionKind {
     Unit,
 }
 
-fn primary(logger: &mut Logger, p: p!()) -> PResult<TypeExpression> {
+fn primary(logger: &mut Logger, p: p!()) -> LResult<TypeExpression> {
     use TypeExpressionKind as e;
     let next = p.next()?;
     let mut span = next.span;
@@ -184,7 +184,7 @@ pub fn parse_type_expression(
     logger: &mut Logger,
     p: p!(),
     precedence: Precedence,
-) -> PResult<TypeExpression> {
+) -> LResult<TypeExpression> {
     let mut current = primary(logger, p)?;
     let span = current.span;
     while let Ok(next) = p.peek() {

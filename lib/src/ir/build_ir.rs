@@ -1,9 +1,7 @@
-use std::num::{IntErrorKind, ParseIntError};
+use std::num::IntErrorKind;
 
 use super::*;
-use crate::{Logger, lint::*, parse::*};
-
-pub type IResult<T> = std::result::Result<T, Spanned<String>>;
+use crate::{LResult, Logger, err, lint::*, parse::*};
 
 pub fn build_ir(
     logger: &mut Logger,
@@ -17,17 +15,22 @@ pub fn build_ir(
     }
     let mut items = vec![];
     for item in module.contents.clone() {
-        module_expr(&mut ns, item, &mut items).unwrap();
+        match module_expr(&mut ns, item, &mut items) {
+            Ok(_) => {}
+            Err(e) => {
+                logger.log(e);
+            }
+        };
     }
     IrModule { module_name, items }
 }
 
 fn module_expr(
     ns: &mut ModuleNameSpace,
-    e: ModuleStatement,
+    expr: ModuleStatement,
     items: &mut Vec<ModuleItem>,
-) -> IResult<()> {
-    match e.inner {
+) -> LResult<()> {
+    match expr.inner {
         ModuleStatementKind::Let { assignee, value } => {
             let mut assignee = pattern_expr(ns, assignee, true)?;
             let value = value_expr(ns, *value)?;
@@ -52,8 +55,9 @@ fn module_expr(
             major,
             minor,
         } => {
-            let type_ = ForeignFunctionType::try_from(type_expr(ns, *type_)?).span(e.span)?;
-            let path = ns.new_global_value(&name).span(e.span)?;
+            let type_ = ForeignFunctionType::try_from(type_expr(ns, *type_)?)
+                .map_err(|e| e.span(expr.span))?;
+            let path = ns.new_global_value(&name).map_err(|e| e.span(expr.span))?;
             items.push(ModuleItem::Import {
                 path,
                 type_,
@@ -66,21 +70,21 @@ fn module_expr(
     Ok(())
 }
 
-fn lit(literal: Literal) -> std::result::Result<ConstValue, String> {
-    fn int(value: &str, base: u32) -> std::result::Result<i64, String> {
+fn lit(literal: Literal) -> LResult<ConstValue> {
+    fn int(value: &str, base: u32) -> LResult<i64> {
         match i64::from_str_radix(value, base).map_err(|e| e.kind().clone()) {
             Ok(i) => Ok(i),
             Err(IntErrorKind::PosOverflow | IntErrorKind::NegOverflow) => {
-                Err("Integer literal is too large to represent in 64-bits".to_string())
+                Err(err("Integer literal is too large to represent in 64-bits"))
             }
-            Err(IntErrorKind::InvalidDigit) => Err("Invalid integer literal".to_string()),
+            Err(IntErrorKind::InvalidDigit) => Err(err("Invalid integer literal")),
             _ => unreachable!(),
         }
     }
-    fn real(value: &str) -> std::result::Result<f64, String> {
+    fn real(value: &str) -> LResult<f64> {
         match value.parse::<f64>() {
             Ok(r) => Ok(r),
-            Err(_) => Err("Invalid real literal".to_string()),
+            Err(_) => Err(err("Invalid real literal")),
         }
     }
 
@@ -99,7 +103,7 @@ fn curry(
     mut arguments: impl Iterator<Item = (Spanned<String>, Option<TypeExpression>)>,
     body: Box<ValueExpression>,
     span: Span,
-) -> IResult<Box<IrNode>> {
+) -> LResult<Box<IrNode>> {
     Ok(Box::new(
         match arguments.next() {
             Some((argument, type_)) => {
@@ -129,7 +133,7 @@ fn curry(
 
 const IRREFUTABLE_LET: &str = "The pattern for a `let` expression must be irrefutable";
 
-pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> IResult<IrNode> {
+pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> LResult<IrNode> {
     use IrKind as ir;
     use ValueExpressionKind::*;
     let span = expr.span;
@@ -146,7 +150,7 @@ pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> IResult<Ir
         } => {
             let mut assignee = pattern_expr(ns, assignee, false)?;
             if !assignee.is_irrefutable() {
-                return Err(IRREFUTABLE_LET.to_string().with_span(span));
+                return Err(err(IRREFUTABLE_LET).span(span));
             }
             let value = rec!(value);
             assignee.visit(|(p, _)| {
@@ -160,8 +164,8 @@ pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> IResult<Ir
                 in_,
             }
         }
-        Literal(literal) => ir::Immediate(lit(literal).span(span)?),
-        Identifier(ident) => ir::Identifier(ns.get_value(&ident).span(span)?),
+        Literal(literal) => ir::Immediate(lit(literal).map_err(|e| e.span(span))?),
+        Identifier(ident) => ir::Identifier(ns.get_value(&ident).map_err(|e| e.span(span))?),
         BinaryOp(op) => ir::ImportedSymbol(op.path(), op.get_type()),
         UnaryOp(op) => ir::ImportedSymbol(op.path(), op.get_type()),
         Binary {
@@ -282,7 +286,6 @@ pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> IResult<Ir
                 .map(|e| value_expr(ns, e))
                 .try_collect()?,
         ),
-        //Array(items) => ir::Array(items.into_iter().map(|i| value_expr(ns, i)).try_collect()?),
         Array(items) => {
             let mut current = value_expr(
                 ns,
@@ -346,7 +349,7 @@ pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> IResult<Ir
         },
         ModulePath(items) => {
             let path = Path::from(items);
-            let t = ns.get_imported_value_type(&path).span(span)?;
+            let t = ns.get_imported_value_type(&path).map_err(|e| todo!())?;
             ir::ImportedSymbol(path, t)
         }
     }
@@ -358,20 +361,18 @@ fn pattern_expr(
     ns: &mut ModuleNameSpace,
     pattern: PatternExpression,
     global: bool,
-) -> IResult<Pattern> {
+) -> LResult<Pattern> {
     use PatternExpressionKind::*;
     let span = pattern.span;
+    let constructor_binding =
+        err("This constructor has an inner value.").help("Try adding `of _` after this");
     Ok(match pattern.inner {
-        Literal(literal) => PatternKind::Literal(lit(literal).span(span)?),
+        Literal(literal) => PatternKind::Literal(lit(literal).map_err(|e| e.span(span))?),
         ModulePath(path) => {
             let path = Path::from(path);
-            let cons = ns.get_constructor_exact(&path).span(span)?;
+            let cons = ns.get_constructor_exact(&path).map_err(|e| e.span(span))?;
             if !matches!(cons.kind, ConstructorKind::Unitary(_)) {
-                return Err(lint(
-                    NameLint::MissingConstructorBinding,
-                    span,
-                    [format!("{path}")],
-                ));
+                return Err(constructor_binding);
             }
             PatternKind::Constructor(
                 cons,
@@ -397,10 +398,10 @@ fn pattern_expr(
                     .into(),
             ),
             // Non-unitary constructor
-            Ok(_) => return Err(lint(NameLint::MissingConstructorBinding, span, [id])),
+            Ok(_) => return Err(constructor_binding),
             // Regular identifier
             _ => PatternKind::Name(if global {
-                ns.new_global_value(&id).span(span)?
+                ns.new_global_value(&id).map_err(|e| e.span(span))?
             } else {
                 ns.new_local_value(&id, false)
             }),
@@ -418,7 +419,7 @@ fn pattern_expr(
             } else {
                 ns.get_constructor_exact(&Path::from(items))
             }
-            .span(span)?;
+            .map_err(|e| e.span(span))?;
             PatternKind::Constructor(cons, Box::new(pattern_expr(ns, *expression, global)?))
         }
         TypeHint(pat, type_) => {

@@ -77,7 +77,7 @@ pub enum ArrayInner {
 
 pub type ValueExpression = Expression<ValueExpressionKind>;
 
-fn primary(logger: &mut Logger, p: p!()) -> PResult<ValueExpression> {
+fn primary(logger: &mut Logger, p: p!()) -> LResult<ValueExpression> {
     use ValueExpressionKind as e;
     let next = p.next()?;
     let mut span = next.span;
@@ -256,7 +256,7 @@ fn primary(logger: &mut Logger, p: p!()) -> PResult<ValueExpression> {
                 return Ok(inner);
             }
         }
-        _ => return Err("Expected expression here".to_string().with_span(span)),
+        _ => return Err(err("Expected expression here").span(span)),
     }
     .with_span(span + p.last_span))
 }
@@ -265,7 +265,7 @@ pub fn parse_value_expression(
     logger: &mut Logger,
     iter: p!(),
     precedence: Precedence,
-) -> PResult<ValueExpression> {
+) -> LResult<ValueExpression> {
     use ValueExpressionKind as e;
     let unary_ops = [Minus, MinusDot, Not];
     let span;

@@ -9,8 +9,9 @@ mod pattern;
 use std::{collections::HashMap, rc::Rc};
 
 use crate::{
-    Visit,
+    Log, Visit,
     compile::{ForeignFunctionType, FunctionEncoder},
+    err,
     lint::*,
     optimize,
     semantic::*,

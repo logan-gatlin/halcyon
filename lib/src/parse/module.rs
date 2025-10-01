@@ -38,7 +38,7 @@ pub fn parse_module(logger: &mut Logger, p: p!()) -> ParsedModule {
             match $e {
                 Ok(v) => v,
                 Err(e) => {
-                    error!(logger, e.span, "{}", e.inner);
+                    logger.log(e);
                     // Error recovery
                     loop {
                         match p.peek().map(|t| t.inner) {
@@ -63,13 +63,11 @@ pub fn parse_module(logger: &mut Logger, p: p!()) -> ParsedModule {
     let name = p
         .eat_ident()
         .unwrap_or_else(|e| {
-            error!(logger, e.span, "{}", e.inner);
+            logger.log(e);
             "".to_string()
         })
         .with_span(p.last_span);
-    p.eat(Equal).unwrap_or_else(|e| {
-        error!(logger, e.span, "{}", e.inner);
-    });
+    p.eat(Equal).unwrap_or_else(|e| logger.log(e));
     let mut contents = vec![];
     loop {
         let next = if let Ok(next) = p.next() {

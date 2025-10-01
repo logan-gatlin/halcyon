@@ -1,6 +1,6 @@
 use wasm_encoder::{EntityType, ImportSection, MemoryType};
 
-use crate::lint::*;
+use crate::{LResult, Log, err, lint::*};
 
 use super::*;
 
@@ -71,20 +71,20 @@ impl Into<Type> for ForeignFunctionType {
 }
 
 impl TryFrom<Type> for ForeignFunctionType {
-    type Error = Lint;
+    type Error = Log;
 
-    fn try_from(value: Type) -> Result<Self> {
+    fn try_from(value: Type) -> LResult<Self> {
         let Type::Function(a, b) = value else {
-            return Err(lint_nospan(TypeLint::InvalidImportType));
+            return Err(err("Invalid import type"));
         };
-        fn validate(t: Type) -> Result<usize> {
+        fn validate(t: Type) -> LResult<usize> {
             match t {
                 Type::Unit => Ok(0),
                 Type::Integer => Ok(1),
                 Type::Product(v) if v.len() != 1 && v.iter().all(|t| t == &Type::Integer) => {
                     Ok(v.len())
                 }
-                _ => Err(lint_nospan(TypeLint::InvalidImportType)),
+                _ => Err(err("Invalid import type")),
             }
         }
         Ok(ForeignFunctionType {

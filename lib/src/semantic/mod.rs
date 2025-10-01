@@ -10,7 +10,7 @@ mod infer;
 mod types;
 use std::collections::{HashMap, HashSet};
 
-use crate::{Visit, lint::*};
+use crate::{Logger, Visit, lint::*};
 pub use constraint::*;
 pub use infer::*;
 use sx::SXRepr;
@@ -159,7 +159,7 @@ pub fn normalize_type_variables(t: &mut impl Visit<Type>) {
     });
 }
 
-pub fn type_solve(mut module: IrModule) -> Result<(IrModule, ModuleInterface)> {
+pub fn type_solve(logger: &mut Logger, mut module: IrModule) -> (IrModule, ModuleInterface) {
     let mut interface = ModuleInterface::default();
     let mut env = Environment::default();
     let free = HashSet::default();
@@ -173,7 +173,7 @@ pub fn type_solve(mut module: IrModule) -> Result<(IrModule, ModuleInterface)> {
                 let mut pattern = pattern.infer(&mut new_env, &mut new_free);
                 let mut node = node.infer(&mut new_env, &mut new_free);
                 new_env.type_constraint(pattern.type_.clone(), node.type_.clone(), pattern.span);
-                let solution = new_env.solve_constraints()?;
+                let solution = new_env.solve_constraints(logger)?;
                 unify_all(&mut pattern, &solution);
                 unify_all(&mut node, &solution);
                 pattern.visit(|(path, type_)| {
@@ -216,5 +216,5 @@ pub fn type_solve(mut module: IrModule) -> Result<(IrModule, ModuleInterface)> {
             }
         })
         .try_collect()?;
-    Ok((module, interface))
+    (module, interface)
 }

@@ -1,3 +1,5 @@
+use crate::Logger;
+
 use super::*;
 
 #[derive(Debug, Clone, PartialEq, Eq, sx::SXRepr)]
@@ -45,7 +47,7 @@ pub fn unify_all(t: &mut impl Visit<Type>, solution: &[Solution]) {
 }
 
 impl Environment {
-    pub fn solve_constraints(self) -> Result<Vec<Solution>> {
+    pub fn solve_constraints(self, logger: &mut Logger) -> Result<Vec<Solution>> {
         let mut constraints = self.constraints;
         let mut struct_constraints = self.struct_constraints;
         let mut solution: Vec<Solution> = vec![];

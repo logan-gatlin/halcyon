@@ -3,7 +3,7 @@
 
 macro_rules! error {
     ($logger:ident, $span:expr, $($arg:tt)*) => {
-        $logger.log(crate::frontend::error(format!($($arg)*)).span($span))
+        $logger.log(crate::frontend::err(format!($($arg)*)).span($span))
     };
 }
 
@@ -60,10 +60,9 @@ pub fn compile_single(
     let tokens = tokenize(input.chars(), &mut logger);
     let parsed_modules = parse(&mut logger, tokens);
     for module in parsed_modules {
-        /*
         let module_path = module.name.inner.clone().into();
-        let ir = build_ir(module, &interfaces).handle(&linter)?;
-        let (mut typed_ir, interface) = type_solve(ir).handle(&linter)?;
+        let ir = build_ir(&mut logger, module, &interfaces);
+        let (mut typed_ir, interface) = type_solve(&mut logger, ir);
         match interfaces.get_mut(&module_path) {
             Some(old) => {
                 old.merge(interface);
@@ -73,9 +72,8 @@ pub fn compile_single(
             }
         };
         optimize_ir(&mut typed_ir);
-        //println!("Typed IR:\n{}", typed_ir.clone().sx());
+        println!("Typed IR:\n{}", typed_ir.clone().sx());
         encoder.encode(typed_ir);
-        */
     }
     Ok(())
 }

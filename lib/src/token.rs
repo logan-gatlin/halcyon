@@ -1,7 +1,7 @@
 use std::io::Write;
 
 use crate::Logger;
-use crate::error;
+use crate::err;
 use crate::lint::*;
 use multipeek::{MultiPeek, multipeek};
 
