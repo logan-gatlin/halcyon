@@ -1,6 +1,6 @@
 use sx::SXRepr;
 
-use crate::{TypeLint, Visit, ir::Path, lint::*, semantic::freshen_type_variables};
+use crate::{LResult, Log, Visit, err, ir::Path, semantic::freshen_type_variables};
 
 pub type TypeVariable = usize;
 
@@ -90,6 +90,12 @@ pub enum Type {
     Instantiation(Path, Vec<Type>),
 }
 
+pub fn partial_instantiation_error(expects: usize, received: usize) -> Log {
+    err(format!(
+        "This type has {expects} parameters, but {received} parameters were provided. Partial instantiation is not allowed."
+    ))
+}
+
 #[derive(Debug, Clone)]
 pub struct AbstractType {
     pub arity: usize,
@@ -97,11 +103,9 @@ pub struct AbstractType {
 }
 
 impl AbstractType {
-    pub fn instantiate(mut self, parameters: &[Type]) -> Result<Type> {
+    pub fn instantiate(mut self, parameters: &[Type]) -> LResult<Type> {
         if parameters.len() != self.arity {
-            return Err(lint_nospan(TypeLint::PartialInstantiation))
-                .context(format!("{}", self.arity))
-                .context(format!("{}", parameters.len()));
+            return Err(partial_instantiation_error(self.arity, parameters.len()));
         }
         self.base.visit(|t: &mut Type| {
             if let Type::Variable(tv) = t {
@@ -111,7 +115,7 @@ impl AbstractType {
         Ok(self.base)
     }
 
-    pub fn instantiate_with(self, mut f: impl FnMut() -> TypeVariable) -> Result<Type> {
+    pub fn instantiate_with(self, mut f: impl FnMut() -> TypeVariable) -> LResult<Type> {
         let parameters = vec![Type::Variable(f()); self.arity];
         self.instantiate(&parameters)
     }

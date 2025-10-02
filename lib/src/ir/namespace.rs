@@ -132,11 +132,10 @@ impl ModuleNameSpace {
         self.local_value_info.get_mut(path).unwrap().is_finalized = true;
     }
 
-    pub fn get_imported_value_type(&self, path: &Path) -> Result<Type> {
+    pub fn get_imported_value_type(&self, path: &Path) -> LResult<Type> {
         self.imported_value_types
             .get(path)
-            .ok_or(lint_nospan(NameLint::UndefinedName))
-            .context(path)
+            .ok_or_else(|| undefined_name(path))
             .cloned()
     }
 
@@ -225,7 +224,7 @@ impl ModuleNameSpace {
             Some(t) => Ok(t),
             None => {
                 let at = Universe::get().get_named_type(path);
-                at.clone().instantiate(&[]).map_err(|e| todo!())?;
+                at.clone().instantiate(&[])?;
                 Ok(Type::Instantiation(path.clone(), vec![]))
             }
         }
@@ -235,10 +234,7 @@ impl ModuleNameSpace {
         self.types_available.get(path).ok_or(undefined_name(path))?;
         match self.local_types.get(path).cloned() {
             Some(t) => Ok(t),
-            None => Universe::get()
-                .get_named_type(path)
-                .instantiate(&[])
-                .map_err(|e| todo!()),
+            None => Universe::get().get_named_type(path).instantiate(&[]),
         }
     }
 

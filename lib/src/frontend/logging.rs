@@ -1,7 +1,5 @@
 use crate::Span;
 
-use super::*;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Severity {
     Debug = 0,
@@ -43,16 +41,12 @@ impl Log {
 
 #[derive(Debug, Clone)]
 pub struct Logger {
-    source_name: String,
     logs: Vec<Log>,
 }
 
 impl Logger {
-    pub fn new(source_name: impl Into<String>) -> Self {
-        Self {
-            source_name: source_name.into(),
-            logs: vec![],
-        }
+    pub fn new() -> Self {
+        Self { logs: vec![] }
     }
 
     /// Append a log message

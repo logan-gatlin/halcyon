@@ -22,18 +22,11 @@ use TokenKind::*;
 pub type Expression<K> = Spanned<K>;
 
 pub struct Parser<I: Iterator<Item = Token>> {
-    iter: MultiPeek<I>,
-    last_span: Span,
+    pub iter: MultiPeek<I>,
+    pub last_span: Span,
 }
 
 impl<I: Iterator<Item = Token>> Parser<I> {
-    pub fn new(iter: I) -> Self {
-        Self {
-            iter: multipeek(iter),
-            last_span: Span { start: 0, width: 0 },
-        }
-    }
-
     fn peek(&mut self) -> LResult<Token> {
         self.iter
             .peek()
@@ -90,6 +83,20 @@ impl<I: Iterator<Item = Token>> Parser<I> {
         .span(self.last_span));
     }
 
+    fn eat_path(&mut self) -> LResult<Vec<String>> {
+        let mut path = vec![];
+        loop {
+            path.push(self.eat_ident()?);
+            if self.eat(DoubleColon).is_err() {
+                break;
+            }
+        }
+        if path.is_empty() {
+            return Err(err("Expected identifier after this").span(self.last_span));
+        }
+        Ok(path)
+    }
+
     fn eat_ident(&mut self) -> LResult<String> {
         if let Some(next) = self.iter.peek().cloned()
             && let Identifier(name) = next.inner
@@ -97,7 +104,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
             self.skip();
             Ok(name)
         } else {
-            Err(err(format!("Expected identifier after this")).span(self.last_span))
+            Err(err("Expected identifier after this").span(self.last_span))
         }
     }
 }

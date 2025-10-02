@@ -1,7 +1,7 @@
 /*!
     The semantic module infers and checks types. To do this, we use a variation
     of the Hindley Milner system. The `infer` module gives the program temporary
-    type 'variables', and generates a set of constraints for those variables.
+    type variables, and generates a set of constraints for those variables.
     The `constraint` module solves those constraints, and generates a solution.
     A solution is a mapping from type variables to concrete types.
 */
@@ -10,7 +10,7 @@ mod infer;
 mod types;
 use std::collections::{HashMap, HashSet};
 
-use crate::{Logger, Visit, lint::*};
+use crate::{Logger, Span, Visit};
 pub use constraint::*;
 pub use infer::*;
 use sx::SXRepr;
@@ -173,7 +173,7 @@ pub fn type_solve(logger: &mut Logger, mut module: IrModule) -> (IrModule, Modul
                 let mut pattern = pattern.infer(&mut new_env, &mut new_free);
                 let mut node = node.infer(&mut new_env, &mut new_free);
                 new_env.type_constraint(pattern.type_.clone(), node.type_.clone(), pattern.span);
-                let solution = new_env.solve_constraints(logger)?;
+                let solution = new_env.solve_constraints(logger);
                 unify_all(&mut pattern, &solution);
                 unify_all(&mut node, &solution);
                 pattern.visit(|(path, type_)| {
@@ -181,11 +181,11 @@ pub fn type_solve(logger: &mut Logger, mut module: IrModule) -> (IrModule, Modul
                     interface.values.insert(path.clone(), type_.clone());
                 });
                 //normalize_type_variables(&mut node);
-                Ok(ModuleItem::Let(pattern, node))
+                ModuleItem::Let(pattern, node)
             }
             ModuleItem::Type(path) => {
                 interface.types.insert(path.clone());
-                Ok(ModuleItem::Type(path))
+                ModuleItem::Type(path)
             }
             ModuleItem::Constructor(path, constructor) => {
                 let type_ = match constructor.kind.clone() {
@@ -197,7 +197,7 @@ pub fn type_solve(logger: &mut Logger, mut module: IrModule) -> (IrModule, Modul
                 interface
                     .constructors
                     .insert(path.clone(), constructor.clone());
-                Ok(ModuleItem::Constructor(path, constructor))
+                ModuleItem::Constructor(path, constructor)
             }
             ModuleItem::Import {
                 path,
@@ -207,14 +207,14 @@ pub fn type_solve(logger: &mut Logger, mut module: IrModule) -> (IrModule, Modul
             } => {
                 env.define(path.clone(), type_.clone().into());
                 interface.values.insert(path.clone(), type_.clone().into());
-                Ok(ModuleItem::Import {
+                ModuleItem::Import {
                     path,
                     type_,
                     major,
                     minor,
-                })
+                }
             }
         })
-        .try_collect()?;
+        .collect();
     (module, interface)
 }

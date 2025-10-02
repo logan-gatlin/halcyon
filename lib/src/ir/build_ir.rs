@@ -1,7 +1,7 @@
 use std::num::IntErrorKind;
 
 use super::*;
-use crate::{LResult, Logger, err, lint::*, parse::*};
+use crate::{LResult, Logger, Span, Spanned, WithSpan, err, parse::*};
 
 pub fn build_ir(
     logger: &mut Logger,
@@ -200,28 +200,27 @@ pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> LResult<Ir
             opt: Default::default(),
         },
         FunctionShorthand {
-            parameters,
-            types,
             predicates,
             branches,
         } => {
             const SHORTHAND_NAME: &str = "~";
-            let body = FunctionDef {
-                parameters: vec![SHORTHAND_NAME.to_string().with_span(expr.span)],
-                types: vec![None],
-                body: Match {
-                    scrutinee: Identifier(SHORTHAND_NAME.into())
-                        .with_span(expr.span)
-                        .into(),
-                    predicates,
-                    branches,
+            let body = Box::new(
+                FunctionDef {
+                    parameters: vec![SHORTHAND_NAME.to_string().with_span(expr.span)],
+                    types: vec![None],
+                    body: Match {
+                        scrutinee: Identifier(SHORTHAND_NAME.into())
+                            .with_span(expr.span)
+                            .into(),
+                        predicates,
+                        branches,
+                    }
+                    .with_span(expr.span)
+                    .into(),
                 }
-                .with_span(expr.span)
-                .into(),
-            }
-            .with_span(expr.span)
-            .into();
-            return Ok(*curry(ns, parameters.into_iter().zip(types), body, span)?);
+                .with_span(expr.span),
+            );
+            return Ok(*rec!(body));
         }
         FunctionDef {
             parameters: arguments,
@@ -349,7 +348,9 @@ pub fn value_expr(ns: &mut ModuleNameSpace, expr: ValueExpression) -> LResult<Ir
         },
         ModulePath(items) => {
             let path = Path::from(items);
-            let t = ns.get_imported_value_type(&path).map_err(|e| todo!())?;
+            let t = ns
+                .get_imported_value_type(&path)
+                .map_err(|e| e.span(span))?;
             ir::ImportedSymbol(path, t)
         }
     }
@@ -412,7 +413,40 @@ fn pattern_expr(
                 .map(|e| pattern_expr(ns, e, global))
                 .try_collect()?,
         ),
-        Array(kind) => todo!(),
+        Array(kind) => PatternKind::Array(match *kind {
+            ParsedArrayPattern::Exact(p) => ArrayPattern::Exact(
+                p.into_iter()
+                    .map(|p| pattern_expr(ns, p, global))
+                    .try_collect()?,
+            ),
+            ParsedArrayPattern::Leading { head, tail } => ArrayPattern::Leading {
+                head: head
+                    .into_iter()
+                    .map(|p| pattern_expr(ns, p, global))
+                    .try_collect()?,
+                tail: tail.map(|n| ns.new_local_value(&n, false)),
+            },
+            ParsedArrayPattern::Trailing { head, tail } => ArrayPattern::Trailing {
+                head: head.map(|n| ns.new_local_value(&n, false)),
+                tail: tail
+                    .into_iter()
+                    .map(|p| pattern_expr(ns, p, global))
+                    .try_collect()?,
+            },
+            ParsedArrayPattern::LeadingAndTrailing { head, middle, tail } => {
+                ArrayPattern::LeadingAndTrailing {
+                    head: head
+                        .into_iter()
+                        .map(|p| pattern_expr(ns, p, global))
+                        .try_collect()?,
+                    middle: middle.map(|n| ns.new_local_value(&n, false)),
+                    tail: tail
+                        .into_iter()
+                        .map(|p| pattern_expr(ns, p, global))
+                        .try_collect()?,
+                }
+            }
+        }),
         Constructor(items, expression) => {
             let cons = if items.len() == 1 {
                 ns.get_constructor(&items[0])

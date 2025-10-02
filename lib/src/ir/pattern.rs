@@ -26,6 +26,7 @@ pub enum ArrayPattern {
     },
     LeadingAndTrailing {
         head: Vec<Pattern>,
+        middle: Option<Path>,
         tail: Vec<Pattern>,
     },
 }
@@ -80,7 +81,7 @@ impl Visit<Pattern> for ArrayPattern {
             ArrayPattern::Exact(array_patterns) => array_patterns._visit(f),
             ArrayPattern::Leading { head, .. } => head._visit(f),
             ArrayPattern::Trailing { tail, .. } => tail._visit(f),
-            ArrayPattern::LeadingAndTrailing { head, tail } => {
+            ArrayPattern::LeadingAndTrailing { head, tail, .. } => {
                 head._visit(f);
                 tail._visit(f);
             }

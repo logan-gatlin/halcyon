@@ -175,7 +175,7 @@ fn primary(logger: &mut Logger, p: p!()) -> LResult<TypeExpression> {
             p.eat(RightSquare)?;
             TypeExpressionKind::Array(inner.into())
         }
-        _ => todo!(),
+        _ => return Err(err("Expected type expression here").span(span)),
     }
     .with_span(span + p.last_span))
 }

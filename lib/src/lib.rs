@@ -10,7 +10,6 @@ macro_rules! error {
 mod compile;
 mod frontend;
 mod ir;
-mod lint;
 mod map;
 mod operator;
 mod optimize;
@@ -22,16 +21,11 @@ mod test;
 mod token;
 pub use frontend::*;
 use ir::*;
-use lint::render::Linter;
-pub use lint::*;
 pub use map::*;
 use optimize::*;
 use parse::*;
 use semantic::*;
-use std::{
-    collections::HashMap,
-    sync::{Mutex, OnceLock},
-};
+use std::collections::HashMap;
 pub use sx::SXRepr;
 use token::*;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -42,24 +36,16 @@ use crate::{
     std_hc::compile_std,
 };
 
-pub fn compiler_print(s: String) {
-    let m = OUTPUT.get_or_init(|| Mutex::new("".into()));
-    m.lock().unwrap().push_str(&s);
-    m.lock().unwrap().push('\n');
-}
-
-pub static OUTPUT: OnceLock<Mutex<String>> = OnceLock::new();
-
 pub fn compile_single(
     input: &str,
     encoder: &mut ModuleEncoder,
     interfaces: &mut HashMap<Path, ModuleInterface>,
-) -> std::result::Result<(), String> {
-    let mut logger = Logger::new("source");
-    let linter = Linter::new(input.to_string());
+) -> Logger {
+    let mut logger = Logger::new();
     let tokens = tokenize(input.chars(), &mut logger);
     let parsed_modules = parse(&mut logger, tokens);
     for module in parsed_modules {
+        //println!("{}", module.clone().sx());
         let module_path = module.name.inner.clone().into();
         let ir = build_ir(&mut logger, module, &interfaces);
         let (mut typed_ir, interface) = type_solve(&mut logger, ir);
@@ -72,23 +58,25 @@ pub fn compile_single(
             }
         };
         optimize_ir(&mut typed_ir);
-        println!("Typed IR:\n{}", typed_ir.clone().sx());
+        //println!("Typed IR:\n{}", typed_ir.clone().sx());
         encoder.encode(typed_ir);
     }
-    Ok(())
+    logger
 }
 
 #[wasm_bindgen]
 pub fn compile(input: &str) -> std::result::Result<Vec<u8>, String> {
-    OUTPUT
-        .get_or_init(|| Mutex::new("".to_string()))
-        .lock()
-        .unwrap()
-        .clear();
     let mut encoder = ModuleEncoder::new();
     let mut interfaces = HashMap::new();
-    //compile_std(&mut encoder, &mut interfaces)?;
-    compile_single(input, &mut encoder, &mut interfaces)?;
+    let mut logs = vec![];
+    logs.extend_from_slice(&compile_std(&mut encoder, &mut interfaces).into_logs());
+    logs.extend_from_slice(&compile_single(input, &mut encoder, &mut interfaces).into_logs());
+    for log in &logs {
+        println!("{:?} :: {}", log.span.unwrap(), log.message);
+    }
+    if logs.len() != 0 {
+        panic!();
+    }
     let wasm = encoder.finish();
     let _wat = wasmprinter::print_bytes(&wasm).unwrap();
     wasmparser::validate(&wasm)

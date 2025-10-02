@@ -1,4 +1,4 @@
-use crate::{WithSpan, operator::BinaryOp, optimize::CallOptimization};
+use crate::{operator::BinaryOp, optimize::CallOptimization};
 
 use super::*;
 
@@ -313,9 +313,9 @@ impl Encode<IrNode> for FunctionEncoder<'_> {
             } => {
                 assignee.visit(|(path, type_)| {
                     if let Type::Function(..) = type_ {
-                        self.module_encoder.new_global(path, type_);
+                        self.module_encoder.new_global(path, &type_);
                     } else {
-                        self.new_local(path, type_);
+                        self.new_local(path, &type_);
                     }
                 });
                 self.encode(value)

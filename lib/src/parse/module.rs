@@ -33,6 +33,17 @@ pub struct InnerParsedModule {
 pub type ParsedModule = Spanned<InnerParsedModule>;
 
 pub fn parse_module(logger: &mut Logger, p: p!()) -> ParsedModule {
+    macro_rules! recover {
+        () => {
+            loop {
+                match p.peek().map(|t| t.inner) {
+                    Ok(Let | Type | Do | Import | End | Module | DocComment(_)) => break,
+                    _ => {}
+                }
+                p.skip();
+            }
+        };
+    }
     macro_rules! try_ {
         ($e:expr) => {
             match $e {
@@ -40,25 +51,26 @@ pub fn parse_module(logger: &mut Logger, p: p!()) -> ParsedModule {
                 Err(e) => {
                     logger.log(e);
                     // Error recovery
-                    loop {
-                        match p.peek().map(|t| t.inner) {
-                            Ok(Let | Type | Do | Import | DocComment(_)) | Err(_) => break,
-                            _ => {}
-                        }
-                        p.skip();
-                    }
+                    recover!();
                     continue;
                 }
             }
         };
     }
     use ModuleStatementKind as m;
-    p.eat(Module).unwrap_or_else(|_| {
-        error!(
-            logger,
-            p.last_span, "Expected `module` here. Statements are not allowed outside of a module"
-        );
-    });
+    loop {
+        match p.eat(Module) {
+            Ok(_) => break,
+            Err(_) => {
+                error!(
+                    logger,
+                    p.last_span,
+                    "Expected `module` here. Statements are not allowed outside of a module"
+                );
+                recover!()
+            }
+        }
+    }
     let span = p.last_span;
     let name = p
         .eat_ident()
@@ -128,6 +140,7 @@ pub fn parse_module(logger: &mut Logger, p: p!()) -> ParsedModule {
             }
             _ => {
                 error!(logger, p.last_span, "Expected a module statement here");
+                recover!();
             }
         }
     }

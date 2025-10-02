@@ -35,10 +35,8 @@ pub enum ValueExpressionKind {
         types: Vec<Option<TypeExpression>>,
         body: Box<ValueExpression>,
     },
-    /// fn ... with | ...
+    /// fn | ...
     FunctionShorthand {
-        parameters: Vec<Spanned<String>>,
-        types: Vec<Option<TypeExpression>>,
         predicates: Vec<PatternExpression>,
         branches: Vec<ValueExpression>,
     },
@@ -109,6 +107,22 @@ fn primary(logger: &mut Logger, p: p!()) -> LResult<ValueExpression> {
                 e::Identifier(name)
             }
         }
+        Fn if p.eat(Pipe).is_ok() => {
+            let mut predicates = vec![];
+            let mut branches = vec![];
+            loop {
+                predicates.push(parse_pattern(logger, p)?);
+                p.eat(FatArrow)?;
+                branches.push(parse_value_expression(logger, p, 0)?);
+                if p.eat(Pipe).is_err() {
+                    break;
+                }
+            }
+            e::FunctionShorthand {
+                predicates,
+                branches,
+            }
+        }
         Fn => {
             let mut parameters = vec![];
             let mut types = vec![];
@@ -121,6 +135,7 @@ fn primary(logger: &mut Logger, p: p!()) -> LResult<ValueExpression> {
                     // parse type
                     let type_ = parse_type_expression(logger, p, 0)?;
                     types.push(Some(type_));
+                    p.eat(RightParen)?;
                 } else if let Ok(ident) = p.eat_ident() {
                     parameters.push(ident.with_span(p.last_span));
                     types.push(None);
@@ -218,7 +233,7 @@ fn primary(logger: &mut Logger, p: p!()) -> LResult<ValueExpression> {
         }
         LeftParen
             if let Ok(Ok(op)) = p.peek().map(|o| BinaryOp::try_from(&o.inner))
-                && p.peek_nth(0).is_ok_and(|t| *t == RightParen) =>
+                && p.peek_nth(1).is_ok_and(|t| *t == RightParen) =>
         {
             p.skip();
             p.skip();
@@ -226,7 +241,7 @@ fn primary(logger: &mut Logger, p: p!()) -> LResult<ValueExpression> {
         }
         LeftParen
             if p.peek().is_ok_and(|t| t.inner == Not)
-                && p.peek_nth(0).is_ok_and(|t| *t == RightParen) =>
+                && p.peek_nth(1).is_ok_and(|t| *t == RightParen) =>
         {
             p.skip();
             p.skip();

@@ -1,4 +1,4 @@
-use crate::Logger;
+use crate::{Logger, Span};
 
 use super::*;
 
@@ -47,10 +47,11 @@ pub fn unify_all(t: &mut impl Visit<Type>, solution: &[Solution]) {
 }
 
 impl Environment {
-    pub fn solve_constraints(self, logger: &mut Logger) -> Result<Vec<Solution>> {
+    pub fn solve_constraints(self, logger: &mut Logger) -> Vec<Solution> {
         let mut constraints = self.constraints;
         let mut struct_constraints = self.struct_constraints;
         let mut solution: Vec<Solution> = vec![];
+        let mut type_errors = vec![];
         // Solve type constraints
         while let Some(TypeConstraint(a, b, span)) = constraints.pop() {
             match (a, b) {
@@ -121,96 +122,28 @@ impl Environment {
                     }
                 }
                 (Type::Instantiation(path, types), t2) | (t2, Type::Instantiation(path, types)) => {
-                    let t1 = Universe::get()
+                    match Universe::get()
                         .get_named_type(&path)
                         .instantiate(&types)
-                        .span(span)?;
-                    constraints.push(TypeConstraint(t1, t2, span));
+                        .map_err(|e| e.span(span))
+                    {
+                        Ok(t1) => {
+                            constraints.push(TypeConstraint(t1, t2, span));
+                        }
+                        Err(e) => logger.log(e),
+                    }
                 }
                 (t1, t2) => {
-                    return Err(lint_nospan(TypeLint::TypeMismatch))
-                        .context(format!("{t1}"))
-                        .context(format!("{t2}"))
-                        .span(span);
+                    type_errors.push((t1, t2, span));
                 }
             }
+        }
+        for (mut t1, mut t2, span) in type_errors {
+            unify_all(&mut t1, &solution);
+            unify_all(&mut t2, &solution);
+            error!(logger, span, "Type mismatch: {t1} ≠ {t2}");
         }
         // Solve struct constraints
-        let mut map: HashMap<Type, (HashSet<(String, Type)>, Span)> = HashMap::new();
-        for StructConstraint {
-            of_t,
-            field_t,
-            name,
-            span,
-        } in struct_constraints
-        {
-            if let Some((set, _)) = map.get_mut(&of_t) {
-                set.insert((name, field_t));
-            } else {
-                let mut set = HashSet::new();
-                set.insert((name, field_t));
-                map.insert(of_t, (set, span));
-            }
-        }
-        // TODO this does not really work with polymorphic structs
-        for (type_, (fieldset, span)) in map {
-            println!("FIELDS: {type_} . {fieldset:#?}");
-            let not_exist = lint(TypeLint::NonExistantField, span, [format!("{type_}")]);
-            match &type_ {
-                Type::Variable(tv) => {
-                    let e = lint(
-                        TypeLint::NoStructWithFields,
-                        span,
-                        [fieldset
-                            .clone()
-                            .into_iter()
-                            .map(|(field, _)| field)
-                            .collect::<Vec<_>>()
-                            .join(", ")],
-                    );
-                    let possibilities = Universe::get().find_struct_with_names(
-                        &fieldset.clone().into_iter().map(|(name, _)| name).collect(),
-                    );
-                    if possibilities.len() != 1 {
-                        return Err(e);
-                    }
-                    let mut current_tv = self.current_tv;
-                    let struct_t = possibilities
-                        .first()
-                        .unwrap()
-                        .clone()
-                        .instantiate_with(|| {
-                            current_tv += 1;
-                            current_tv
-                        })
-                        .span(span)?;
-                    solution.push(Solution(*tv, struct_t.clone()));
-                    for (name, type_) in fieldset {
-                        let field_t = struct_t.field_type(&name).unwrap();
-                        if let Type::Variable(tv) = type_ {
-                            solution.push(Solution(tv, field_t))
-                        } else if type_ != field_t {
-                            return Err(lint(
-                                TypeLint::TypeMismatch,
-                                span,
-                                [format!("{type_}"), format!("{field_t}")],
-                            ));
-                        }
-                    }
-                }
-                Type::Struct { member_names, .. } => {
-                    for (name, _type_) in fieldset {
-                        if !member_names.contains(&name) {
-                            return Err(not_exist).context(name.clone());
-                        }
-                    }
-                }
-                _ if let Some((name, _type_)) = fieldset.iter().next() => {
-                    return Err(not_exist).context(name.clone());
-                }
-                _ => unreachable!("Struct constraint with no fields"),
-            }
-        }
-        Ok(solution)
+        solution
     }
 }

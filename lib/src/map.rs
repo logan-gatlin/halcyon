@@ -14,6 +14,16 @@ where
     }
 }
 
+impl<T, U> Visit<U> for (T, T)
+where
+    T: Visit<U>,
+{
+    fn _visit(&mut self, f: &mut impl FnMut(&mut U)) {
+        (&mut self.0)._visit(f);
+        (&mut self.1)._visit(f);
+    }
+}
+
 impl<T, U> Visit<U> for Option<T>
 where
     T: Visit<U>,

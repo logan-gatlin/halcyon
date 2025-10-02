@@ -1,5 +1,5 @@
 use super::*;
-use crate::{LResult, lint::*, parse::*};
+use crate::{LResult, Span, Spanned, WithSpan, parse::*};
 
 pub fn type_def(
     ns: &mut ModuleNameSpace,
@@ -35,7 +35,9 @@ pub fn type_def(
             variant_names,
             variant_types,
         } => {
-            let path = ns.new_global_type(&assignee).map_err(|e| todo!())?;
+            let path = ns
+                .new_global_type(&assignee)
+                .map_err(|e| e.span(assignee_span))?;
             // HACK: Create an arbitrary type here with N type parameters.
             // This causes the type scheme to have the correct kindedness
             Universe::get().new_named_type(
@@ -107,11 +109,10 @@ pub fn type_expr(ns: &ModuleNameSpace, type_: TypeExpression) -> LResult<Type> {
             let callee = reduce_call(ns, type_, &mut parameters)?;
             let abstract_type = Universe::get().get_named_type(&callee);
             if abstract_type.arity != parameters.len() {
-                return Err(err(format!(
-                    "This type has {} parameters, but {} parameters were provided. Partial instantiation is not allowed.",
+                return Err(partial_instantiation_error(
                     abstract_type.arity,
-                    parameters.len()
-                )));
+                    parameters.len(),
+                ));
             }
             let parameters = parameters
                 .into_iter()

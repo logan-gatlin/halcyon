@@ -84,13 +84,13 @@ impl Infer for Pattern {
                         }
                         ArrayPattern::Trailing { head, tail }
                     }
-                    ArrayPattern::LeadingAndTrailing { head, tail } => {
+                    ArrayPattern::LeadingAndTrailing { head, middle, tail } => {
                         let head = head.infer(env, free);
                         let tail = tail.infer(env, free);
                         for p in head.iter().chain(&tail) {
                             env.type_constraint(Type::Variable(tv), p.type_.clone(), p.span);
                         }
-                        ArrayPattern::LeadingAndTrailing { head, tail }
+                        ArrayPattern::LeadingAndTrailing { head, middle, tail }
                     }
                 };
                 self.type_ = Type::Array(Type::Variable(tv).into());

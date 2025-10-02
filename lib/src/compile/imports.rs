@@ -1,6 +1,6 @@
 use wasm_encoder::{EntityType, ImportSection, MemoryType};
 
-use crate::{LResult, Log, err, lint::*};
+use crate::{LResult, Log, err};
 
 use super::*;
 

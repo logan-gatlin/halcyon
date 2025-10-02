@@ -8,13 +8,13 @@ module string =
 
   import unsafe_print : (std::integer, std::integer) -> () = sys::print_string
   let print = fn s =>
-    string::unsafe_store s 0;
-    unsafe_print (0, (string::length s))
+    string::unsafe_store s 0 ;
+    unsafe_print (0 , (string::length s))
 end
 
 module std =
   let panic = fn (_ : ()) => wasm::unreachable ()
-  let assert = fn with
+  let assert = fn
     | true => ()
     | false => panic ()
 
@@ -37,7 +37,7 @@ end
 
 module integer =
   let abs = fn i => if i < 0 then -i else i
-  let pow = fn base with
+  let pow = fn base num => match num with
     | 0 => 1
     | 1 => base
     | n =>
@@ -81,11 +81,11 @@ module opt =
 end
 
 module result =
-  let map = fn operation with
+  let map = fn operation r => match r with
     | result::Ok of o => (operation >> result::Ok) o
     | r => r
 
-  let map_err = fn operation with
+  let map_err = fn operation r => match r with
     | result::Error of e => (operation >> result::Error) e
     | r => r
 
@@ -95,7 +95,7 @@ module result =
   
   let is_err = is_ok >> (not)
   
-  let unwrap_ok = fn with 
+  let unwrap_ok = fn 
     | result::Ok of val => val
     | _ => std::panic ()
 
@@ -107,7 +107,7 @@ module result =
     | result::Ok of _ => res
     | _ => a
   
-  let expect = fn msg with 
+  let expect = fn msg val => match val with 
     | result::Ok of val => val
     | result::Error of _ => std::println msg; std::panic ()
   
@@ -123,7 +123,7 @@ module result =
     | result::Ok of val => result::Ok (op val)
     | result::Error of _ => a 
 
-  let ok_or_none = fn with
+  let ok_or_none = fn
     | result::Ok of val => opt::Some val
     | _ => opt::None
 end
@@ -165,7 +165,7 @@ end
 *)
 module format =
   let integer = (
-    let digit_to_string = fn with
+    let digit_to_string = fn
       | 0 => "0"
       | 1 => "1"
       | 2 => "2"
@@ -177,7 +177,7 @@ module format =
       | 8 => "8"
       | 9 => "9"
       | _ => "?" in
-    let f = fn with
+    let f = fn
       | 0 => ""
       | x => if x < 0 then
         x
@@ -188,9 +188,7 @@ module format =
         (x % 10)
           |> digit_to_string
           |> string::concatenate (f (x / 10)) in
-    fn with
-      | 0 => "0"
-      | n => f n
+    fn | 0 => "0" | n => f n
   )
 
   let real = fn r => 
@@ -208,7 +206,7 @@ module format =
       |> string::concatenate "."
     )
 
-    let boolean = fn with
+    let boolean = fn
       | true => "true"
       | false => "false"
 

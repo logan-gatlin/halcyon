@@ -29,7 +29,6 @@ pub enum ParsedArrayPattern {
 }
 
 pub type PatternExpression = Expression<PatternExpressionKind>;
-use PatternExpressionKind as e;
 
 fn primary(logger: &mut Logger, p: p!()) -> LResult<PatternExpression> {
     use PatternExpressionKind as e;
@@ -159,7 +158,8 @@ pub fn parse_pattern(logger: &mut Logger, p: p!()) -> LResult<PatternExpression>
     let primary = primary(logger, p)?;
     let span = primary.span;
     Ok(if p.eat(Colon).is_ok() {
-        e::TypeHint(primary.into(), todo!()).with_span(span + p.last_span)
+        let type_ = parse_type_expression(logger, p, 0)?;
+        e::TypeHint(primary.into(), type_.into()).with_span(span + p.last_span)
     } else {
         primary
     })

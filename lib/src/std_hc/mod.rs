@@ -16,7 +16,7 @@ use wasm_encoder::Instruction;
 pub const STD_MODULE_NAME: &str = "std";
 
 use crate::{
-    WithSpan,
+    Logger, WithSpan,
     compile::*,
     compile_single,
     ir::{IrKind, Path},
@@ -28,7 +28,7 @@ use crate::{
 pub fn compile_std(
     enc: &mut ModuleEncoder,
     interfaces: &mut HashMap<Path, ModuleInterface>,
-) -> std::result::Result<(), String> {
+) -> Logger {
     let (
         mut std_interface,
         mut string_interface,
@@ -53,8 +53,8 @@ pub fn compile_std(
     ]);
     let id = init_fn.finish_mainfn();
     enc.init_functions.push(id);
-    compile_single(include_str!("./stdlib.hc"), enc, interfaces)?;
-    Ok(())
+    //compile_single(include_str!("./stdlib.hc"), enc, interfaces)
+    Logger::new()
 }
 
 pub fn one_param(

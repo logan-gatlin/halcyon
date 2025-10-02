@@ -1,8 +1,6 @@
 use std::io::Write;
 
-use crate::Logger;
-use crate::err;
-use crate::lint::*;
+use crate::{Logger, Span, Spanned, WithSpan};
 use multipeek::{MultiPeek, multipeek};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, sx::SXRepr)]
@@ -436,7 +434,10 @@ pub fn tokenize(input: impl IntoIterator<Item = char>, logger: &mut Logger) -> V
                 write!(buffer, "{current}").unwrap();
             }
             //No decimal or 'e', so integer literal
-            if iter.peek().is_none_or(char::is_whitespace) {
+            if iter
+                .peek()
+                .is_none_or(|c| c.is_whitespace() || (c.is_ascii_punctuation() && c != '.'))
+            {
                 let str = String::from_utf8_lossy(&buffer)
                     .to_string()
                     .replace("_", "")
@@ -462,7 +463,10 @@ pub fn tokenize(input: impl IntoIterator<Item = char>, logger: &mut Logger) -> V
                 }
             }
             // Finished parsing real
-            if iter.peek().is_none_or(char::is_whitespace) {
+            if iter
+                .peek()
+                .is_none_or(|c| c.is_whitespace() || c.is_ascii_punctuation())
+            {
                 if base == Base::Decimal {
                     let str = String::from_utf8_lossy(&buffer)
                         .to_string()
