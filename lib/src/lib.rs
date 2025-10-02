@@ -45,7 +45,6 @@ pub fn compile_single(
     let tokens = tokenize(input.chars(), &mut logger);
     let parsed_modules = parse(&mut logger, tokens);
     for module in parsed_modules {
-        //println!("{}", module.clone().sx());
         let module_path = module.name.inner.clone().into();
         let ir = build_ir(&mut logger, module, &interfaces);
         let (mut typed_ir, interface) = type_solve(&mut logger, ir);

@@ -11,5 +11,5 @@ module FizzBuzz =
         std::println (to_str from);
         fizzbuzz (from + 1) to
       else ()
-  let () = fizzbuzz 1 30
+  do fizzbuzz 1 30
 end

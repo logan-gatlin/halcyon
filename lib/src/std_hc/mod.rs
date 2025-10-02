@@ -53,8 +53,7 @@ pub fn compile_std(
     ]);
     let id = init_fn.finish_mainfn();
     enc.init_functions.push(id);
-    //compile_single(include_str!("./stdlib.hc"), enc, interfaces)
-    Logger::new()
+    compile_single(include_str!("./stdlib.hc"), enc, interfaces)
 }
 
 pub fn one_param(

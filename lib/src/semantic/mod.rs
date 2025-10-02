@@ -98,7 +98,7 @@ impl Environment {
     }
 
     pub fn get_type(&mut self, path: &Path, free: &FreeVariableSet) -> Type {
-        let mut type_ = self.map.get(path).unwrap().clone();
+        let mut type_ = self.map.get(path).cloned().unwrap_or(Type::Any);
         let mut type_map = HashMap::new();
         type_.visit(|type_var: &mut TypeVariable| {
             if !free.contains(type_var) {

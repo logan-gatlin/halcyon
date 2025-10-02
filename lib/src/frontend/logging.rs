@@ -71,4 +71,10 @@ impl Logger {
             .filter(|l| l.severity >= filter)
             .collect()
     }
+
+    pub(crate) fn print_current(&self) {
+        for log in &self.logs {
+            println!("{}", log.message);
+        }
+    }
 }
