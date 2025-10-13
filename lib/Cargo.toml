@@ -9,9 +9,9 @@ punycode = "0.4"
 wasm-bindgen = "0.2"
 multipeek = "0.1"
 toml = {version = "0.9", default-features = false, features = ["parse", "serde"]}
+indexmap = "2.11"
 wasmparser = {version = "0.235"}
 wasmprinter = "0.235"
-#sx = {git = "https://git.lgatlin.dev/logan/sx.git"}
 sx = {path = "../sx/sx/"}
 
 [dev-dependencies]

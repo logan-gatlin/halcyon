@@ -1,3 +1,4 @@
+use indexmap::IndexMap;
 use sx::SXRepr;
 
 use crate::{LResult, Log, Visit, err, ir::Path, semantic::freshen_type_variables};
@@ -72,8 +73,7 @@ pub enum Type {
     /// Record type
     Struct {
         name: Path,
-        member_names: Vec<String>,
-        member_types: Vec<Type>,
+        fields: IndexMap<String, Type>,
     },
     /// Array type
     Array(Box<Type>),
@@ -163,25 +163,7 @@ impl Universe {
     }
 
     pub fn find_struct_with_names(&self, names: &HashSet<String>) -> Vec<AbstractType> {
-        self.name_map
-            .values()
-            .filter_map(|at| {
-                if let Type::Struct {
-                    ref member_names, ..
-                } = at.base
-                {
-                    let member_names = HashSet::from_iter(member_names.clone());
-                    if &member_names == names {
-                        Some(at)
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            })
-            .cloned()
-            .collect::<Vec<_>>()
+        todo!()
     }
 
     #[allow(unused)]
@@ -213,23 +195,7 @@ impl Type {
     }
 
     pub fn field_type(&self, name: &str) -> Option<Type> {
-        if let Type::Struct {
-            member_names,
-            member_types,
-            ..
-        } = self
-            && let Some(id) = member_names.iter().position(|n| n == name)
-        {
-            Some(member_types[id].clone())
-        } else if let Type::Instantiation(path, types) = self {
-            Universe::get()
-                .get_named_type(path)
-                .instantiate(types)
-                .unwrap()
-                .field_type(name)
-        } else {
-            None
-        }
+        todo!()
     }
 
     pub fn contains_type_variable(&self, tv: TypeVariable) -> bool {
@@ -244,11 +210,8 @@ impl Type {
             | Type::Glyph => false,
             Type::Variable(t) => *t == tv,
             Type::Array(t) => t.contains_type_variable(tv),
-            Type::Struct {
-                member_types: items,
-                ..
-            }
-            | Type::Product(items) => items.iter().any(|t| t.contains_type_variable(tv)),
+            Type::Struct { fields, .. } => fields.values().any(|t| t.contains_type_variable(tv)),
+            Type::Product(items) => items.iter().any(|t| t.contains_type_variable(tv)),
             Type::Function(a, b) => a.contains_type_variable(tv) || b.contains_type_variable(tv),
             Type::Instantiation(_, items) => items.iter().any(|t| t.contains_type_variable(tv)),
         }
@@ -274,11 +237,8 @@ impl Visit<Type> for Type {
                 variant_types: items,
                 ..
             }
-            | Type::Product(items)
-            | Type::Struct {
-                member_types: items,
-                ..
-            } => items._visit(f),
+            | Type::Product(items) => items._visit(f),
+            Type::Struct { fields, .. } => fields.values_mut().for_each(|v| v._visit(f)),
             Type::Function(a, b) => {
                 a._visit(f);
                 b._visit(f);

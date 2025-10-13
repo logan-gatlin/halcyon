@@ -101,16 +101,14 @@ impl Environment {
                 (
                     Type::Struct {
                         name: name1,
-                        member_types: mt1,
-                        ..
+                        fields: f1,
                     },
                     Type::Struct {
                         name: name2,
-                        member_types: mt2,
-                        ..
+                        fields: f2,
                     },
                 ) if name1 == name2 => {
-                    for (t1, t2) in mt1.into_iter().zip(mt2) {
+                    for (t1, t2) in f1.into_values().zip(f2.into_values()) {
                         constraints.push(TypeConstraint(t1, t2, span));
                     }
                 }

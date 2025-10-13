@@ -20,6 +20,7 @@ mod std_hc;
 mod test;
 mod token;
 pub use frontend::*;
+use indexmap::IndexMap;
 use ir::*;
 pub use map::*;
 use optimize::*;

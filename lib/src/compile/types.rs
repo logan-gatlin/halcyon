@@ -29,11 +29,10 @@ impl Type {
             Type::String => Array(I8.into()),
             Type::Glyph => I32,
             Type::Variable(_) => AnyRef,
-            Type::Struct {
-                member_types: items,
-                ..
+            Type::Struct { fields, .. } => {
+                Struct(fields.into_values().map(|t| t.reduce()).collect())
             }
-            | Type::Product(items) => Struct(items.into_iter().map(|t| t.reduce()).collect()),
+            Type::Product(items) => Struct(items.into_iter().map(|t| t.reduce()).collect()),
             Type::Sum { .. } => Sum,
             Type::Function(_, _) => Struct(vec![Function, Array(AnyRef.into())]),
             Type::Array(t) => Array(t.reduce().into()),

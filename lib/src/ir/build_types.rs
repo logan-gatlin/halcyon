@@ -1,3 +1,5 @@
+use indexmap::IndexMap;
+
 use super::*;
 use crate::{LResult, Span, Spanned, WithSpan, parse::*};
 
@@ -19,14 +21,18 @@ pub fn type_def(
             ns.end_type_scopes(arguments.len());
         }
         Structure { lhs, rhs } => {
-            let member_types = rhs.into_iter().map(|t| type_expr(ns, t)).try_collect()?;
+            let member_types: Vec<Type> =
+                rhs.into_iter().map(|t| type_expr(ns, t)).try_collect()?;
             let path = ns
                 .new_global_type(&assignee)
                 .map_err(|e| e.span(assignee_span))?;
+            let mut map = IndexMap::new();
+            for (name, type_) in lhs.into_iter().zip(member_types) {
+                map.insert(name, type_);
+            }
             let type_ = Type::Struct {
                 name: path.clone(),
-                member_names: lhs,
-                member_types,
+                fields: map,
             };
             Universe::get().new_named_type(path.clone(), type_);
             items.push(ModuleItem::Type(path));
