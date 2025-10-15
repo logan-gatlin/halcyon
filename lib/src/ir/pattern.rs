@@ -41,6 +41,9 @@ impl Pattern {
                 match ap {
                     ArrayPattern::Leading { tail, .. } => count += tail.is_some() as usize,
                     ArrayPattern::Trailing { head, .. } => count += head.is_some() as usize,
+                    ArrayPattern::LeadingAndTrailing { middle, .. } => {
+                        count += middle.is_some() as usize
+                    }
                     _ => {}
                 }
             }
@@ -107,36 +110,36 @@ impl Visit<Type> for Pattern {
 
 impl Visit<(Path, Type)> for Pattern {
     fn _visit(&mut self, f: &mut impl FnMut(&mut (Path, Type))) {
-        self.visit(|p: &mut Pattern| {
-            if let PatternKind::Name(path) = &mut *p.inner {
+        self.visit(|p: &mut Pattern| match &mut p.inner.inner {
+            PatternKind::Name(path) => {
                 let mut tup = (path.clone(), p.type_.clone());
                 f(&mut tup);
                 *path = tup.0;
                 p.type_ = tup.1;
-            } else if let PatternKind::Array(ap) = &mut *p.inner {
-                let Type::Array(inner_type) = p.type_.clone() else {
-                    panic!()
-                };
-                match ap {
-                    ArrayPattern::Leading {
-                        tail: Some(tail), ..
-                    } => {
-                        let mut tup = (tail.clone(), *inner_type);
-                        f(&mut tup);
-                        *tail = tup.0;
-                        p.type_ = Type::Array(tup.1.into());
-                    }
-                    ArrayPattern::Trailing {
-                        head: Some(head), ..
-                    } => {
-                        let mut tup = (head.clone(), *inner_type);
-                        f(&mut tup);
-                        *head = tup.0;
-                        p.type_ = Type::Array(tup.1.into());
-                    }
-                    _ => {}
-                }
             }
+            PatternKind::Array(ArrayPattern::Leading {
+                tail: Some(tail), ..
+            }) => {
+                let mut tup = (tail.clone(), p.type_.clone());
+                f(&mut tup);
+                *tail = tup.0;
+            }
+            PatternKind::Array(ArrayPattern::Trailing {
+                head: Some(head), ..
+            }) => {
+                let mut tup = (head.clone(), p.type_.clone());
+                f(&mut tup);
+                *head = tup.0;
+            }
+            PatternKind::Array(ArrayPattern::LeadingAndTrailing {
+                middle: Some(middle),
+                ..
+            }) => {
+                let mut tup = (middle.clone(), p.type_.clone());
+                f(&mut tup);
+                *middle = tup.0;
+            }
+            _ => {}
         })
     }
 }

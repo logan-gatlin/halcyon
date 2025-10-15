@@ -170,7 +170,7 @@ fn primary(logger: &mut Logger, p: p!()) -> LResult<ValueExpression> {
             loop {
                 if let Ok(ident) = p.eat_ident() {
                     lhs.push(ident);
-                    p.eat(Colon)?;
+                    p.eat(Equal)?;
                     rhs.push(parse_value_expression(logger, p, 0)?);
                     if p.eat(Comma).is_err() {
                         p.eat(RightBrace)?;

@@ -70,13 +70,13 @@ impl Infer for Pattern {
                             env.type_constraint(Type::Variable(tv), p.type_.clone(), p.span);
                         }
                         if let Some(tail) = &tail {
-                            env.define(tail.clone(), Type::Variable(tv));
+                            env.define(tail.clone(), Type::Array(Type::Variable(tv).into()));
                         }
                         ArrayPattern::Leading { head, tail }
                     }
                     ArrayPattern::Trailing { head, tail } => {
                         if let Some(head) = &head {
-                            env.define(head.clone(), Type::Variable(tv));
+                            env.define(head.clone(), Type::Array(Type::Variable(tv).into()));
                         }
                         let tail = tail.infer(env, free);
                         for p in &tail {
@@ -86,6 +86,9 @@ impl Infer for Pattern {
                     }
                     ArrayPattern::LeadingAndTrailing { head, middle, tail } => {
                         let head = head.infer(env, free);
+                        if let Some(middle) = &middle {
+                            env.define(middle.clone(), Type::Array(Type::Variable(tv).into()));
+                        }
                         let tail = tail.infer(env, free);
                         for p in head.iter().chain(&tail) {
                             env.type_constraint(Type::Variable(tv), p.type_.clone(), p.span);

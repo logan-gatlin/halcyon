@@ -144,6 +144,10 @@ fn primary(logger: &mut Logger, p: p!()) -> LResult<PatternExpression> {
                             p::LeadingAndTrailing { head, middle, tail }
                         }
                     }
+                };
+                if p.eat(Comma).is_err() {
+                    p.eat(RightSquare)?;
+                    break;
                 }
             }
             e::Array(current.into())

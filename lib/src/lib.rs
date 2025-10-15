@@ -20,7 +20,6 @@ mod std_hc;
 mod test;
 mod token;
 pub use frontend::*;
-use indexmap::IndexMap;
 use ir::*;
 pub use map::*;
 use optimize::*;
@@ -49,6 +48,7 @@ pub fn compile_single(
         let module_path = module.name.inner.clone().into();
         let ir = build_ir(&mut logger, module, &interfaces);
         let (mut typed_ir, interface) = type_solve(&mut logger, ir);
+        println!("{}", typed_ir.clone().sx());
         match interfaces.get_mut(&module_path) {
             Some(old) => {
                 old.merge(interface);
@@ -58,8 +58,9 @@ pub fn compile_single(
             }
         };
         optimize_ir(&mut typed_ir);
-        //println!("Typed IR:\n{}", typed_ir.clone().sx());
-        encoder.encode(typed_ir);
+        if logger.is_ok() {
+            encoder.encode(typed_ir);
+        }
     }
     logger
 }

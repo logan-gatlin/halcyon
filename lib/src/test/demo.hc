@@ -1,3 +1,3 @@
 module test =
-  let a = 4
+  type test = { a : std::integer }
 end
