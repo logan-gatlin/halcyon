@@ -1,5 +1,5 @@
 use super::*;
-use crate::ir::{IrKind, ModuleItem};
+use crate::ir2::{IrKind, ModuleItem};
 
 /// Tail call (aka return call) is an optimization that allows recursive function
 /// calls without growing the stack. It can be applied to function calls that may

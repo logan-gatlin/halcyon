@@ -1,5 +1,5 @@
 use super::*;
-#[derive(Debug, Clone, sx::SXRepr)]
+#[derive(Debug, Clone)]
 pub enum PatternExpressionKind {
     Literal(super::Literal),
     Identifier(String),
@@ -10,7 +10,7 @@ pub enum PatternExpressionKind {
     TypeHint(Box<PatternExpression>, Box<TypeExpression>),
 }
 
-#[derive(Debug, Clone, sx::SXRepr)]
+#[derive(Debug, Clone)]
 pub enum ParsedArrayPattern {
     Exact(Vec<PatternExpression>),
     Leading {
@@ -81,7 +81,7 @@ fn primary(logger: &mut Logger, p: p!()) -> LResult<PatternExpression> {
             }
             if is_tuple {
                 e::Tuple(inner)
-            } else if inner.len() > 0 {
+            } else if !inner.is_empty() {
                 return Ok(inner[0].clone());
             } else {
                 e::Literal(Literal::Unit)

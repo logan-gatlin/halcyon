@@ -1,5 +1,5 @@
 use crate::std_hc::STD_MODULE_NAME;
-use crate::{ir::Path, semantic::Type, token::*};
+use crate::{ir2::Path, semantic::Type, token::*};
 
 pub type Precedence = usize;
 
@@ -25,7 +25,7 @@ macro_rules! op {
       }
 
       pub fn path(&self) -> Path {
-          Path::from(STD_MODULE_NAME).child(format!("{self}"))
+          Path::new(STD_MODULE_NAME, format!("{self}"))
       }
     }
 
@@ -45,12 +45,6 @@ macro_rules! op {
           _ => Err(()),
         }
       }
-    }
-
-    impl sx::SXRepr for $name {
-        fn sx(self) -> sx::SX {
-            sx::SX::Atom(format!("{}{self}", $prefix))
-        }
     }
   }
 }
@@ -88,7 +82,7 @@ op! {
 }
 
 op! {
-  UnaryOp; "unary_";
+  UnaryOp; "unary ";
   Minus, 15, LEFT_ASSOC;
   MinusDot, 15, LEFT_ASSOC;
   Not, 15, LEFT_ASSOC;

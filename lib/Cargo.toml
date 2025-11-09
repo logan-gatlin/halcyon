@@ -12,10 +12,14 @@ toml = {version = "0.9", default-features = false, features = ["parse", "serde"]
 indexmap = "2.11"
 wasmparser = {version = "0.235"}
 wasmprinter = "0.235"
-sx = {path = "../sx/sx/"}
+colored = "3"
+codespan-reporting = "0.13"
+indoc = "2"
+unicode_names2 = "2"
 
 [dev-dependencies]
 wasmtime = {version = "34.0", features = ["runtime", "cranelift", "gc", "gc-drc"]}
+color-eyre = "0.6"
 
 [profile.release]
 strip = true

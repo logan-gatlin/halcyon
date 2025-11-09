@@ -5,45 +5,15 @@
     The `constraint` module solves those constraints, and generates a solution.
     A solution is a mapping from type variables to concrete types.
 */
-mod constraint;
-mod infer;
+//mod constraint;
+//mod infer;
 mod types;
 use std::collections::{HashMap, HashSet};
 
-use crate::{Logger, Span, Visit};
-pub use constraint::*;
-pub use infer::*;
-use sx::SXRepr;
+use crate::Visit;
+//pub use constraint::*;
+//pub use infer::*;
 pub use types::*;
-
-use crate::ir::*;
-
-/// The set of exports provided for a module
-#[derive(Debug, Clone, Default, sx::SXRepr)]
-pub struct ModuleInterface {
-    /// Type definitions, i.e. `type t = ...`
-    pub types: HashSet<Path>,
-    /// Value definitions, i.e. `let foo = ...`
-    pub values: HashMap<Path, Type>,
-    /// Constructors, i.e. `type enum = Foo | Bar | Baz`
-    pub constructors: HashMap<Path, Constructor>,
-}
-
-impl ModuleInterface {
-    /// Add every definition in `other` to `self`. In the case of conflicts,
-    /// keeps the value in `other`.
-    pub fn merge(&mut self, other: Self) {
-        for type_ in other.types {
-            self.types.insert(type_);
-        }
-        for (path, value) in other.values {
-            self.values.insert(path, value);
-        }
-        for (path, cons) in other.constructors {
-            self.constructors.insert(path, cons);
-        }
-    }
-}
 
 /// The set of type variables that are free in the current environment.
 /// The difference between free and non-free variables is that free variables
@@ -51,6 +21,7 @@ impl ModuleInterface {
 /// they may refer to a different type every time they are used.
 pub type FreeVariableSet = HashSet<TypeVariable>;
 
+/*
 /// The type environmnet contains all of the state needed for type inference.
 /// Once an item has been fully type inferred, the environment passes its
 /// constraints to the solver.
@@ -119,6 +90,7 @@ impl Environment {
         println!("CONSTRAINTS:\n{}", self.constraints.clone().sx());
     }
 }
+*/
 
 pub fn freshen_type_variables(
     type_: &mut impl Visit<Type>,
@@ -127,15 +99,15 @@ pub fn freshen_type_variables(
 ) {
     let mut type_map = HashMap::new();
     type_.visit(|type_| {
-        if let Type::Variable(type_var) = type_ {
-            if !free.contains(type_var) {
-                if let Some(replace) = type_map.get(type_var) {
-                    *type_var = *replace;
-                } else {
-                    let replace = new_tv();
-                    type_map.insert(*type_var, replace);
-                    *type_var = replace;
-                }
+        if let Type::Variable(type_var) = type_
+            && !free.contains(type_var)
+        {
+            if let Some(replace) = type_map.get(type_var) {
+                *type_var = *replace;
+            } else {
+                let replace = new_tv();
+                type_map.insert(*type_var, replace);
+                *type_var = replace;
             }
         }
     });
@@ -158,6 +130,7 @@ pub fn normalize_type_variables(t: &mut impl Visit<Type>) {
         }
     });
 }
+/*
 
 pub fn type_solve(logger: &mut Logger, mut module: IrModule) -> (IrModule, ModuleInterface) {
     let mut interface = ModuleInterface::default();
@@ -218,3 +191,4 @@ pub fn type_solve(logger: &mut Logger, mut module: IrModule) -> (IrModule, Modul
         .collect();
     (module, interface)
 }
+*/

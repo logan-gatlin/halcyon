@@ -1,6 +1,6 @@
 use std::ops::{Add, AddAssign};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Hash, sx::SXRepr)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Hash)]
 pub struct Span {
     pub start: usize,
     pub width: usize,
@@ -42,6 +42,15 @@ impl<T> std::ops::Deref for Spanned<T> {
     }
 }
 
+impl<T> std::fmt::Display for Spanned<T>
+where
+    T: std::fmt::Display,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.inner)
+    }
+}
+
 impl<T> std::ops::DerefMut for Spanned<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
@@ -58,15 +67,6 @@ pub trait WithSpan: Sized {
 impl<T> WithSpan for T {
     fn with_span(self, span: Span) -> Spanned<Self> {
         Spanned { inner: self, span }
-    }
-}
-
-impl<T> sx::SXRepr for Spanned<T>
-where
-    T: sx::SXRepr,
-{
-    fn sx(self) -> sx::SX {
-        self.inner.sx()
     }
 }
 

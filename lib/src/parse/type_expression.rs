@@ -3,7 +3,7 @@ use super::*;
 pub type TypeDefinition = Expression<TypeDefinitionKind>;
 pub type TypeExpression = Expression<TypeExpressionKind>;
 
-#[derive(Debug, Clone, sx::SXRepr)]
+#[derive(Debug, Clone)]
 pub enum TypeDefinitionKind {
     TypeFunction {
         arguments: Vec<String>,
@@ -108,7 +108,7 @@ pub fn parse_type_definition(logger: &mut Logger, p: p!()) -> LResult<TypeDefini
     .with_span(span + p.last_span))
 }
 
-#[derive(Debug, Clone, sx::SXRepr)]
+#[derive(Debug, Clone)]
 pub enum TypeExpressionKind {
     Function(Box<TypeExpression>, Box<TypeExpression>),
     Call(Box<TypeExpression>, Box<TypeExpression>),

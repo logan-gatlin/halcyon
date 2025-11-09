@@ -4,8 +4,6 @@ use crate::ir::ConstValue;
 
 use super::*;
 
-pub const WASM_MODULE_NAME: &str = "wasm";
-
 #[allow(unused)]
 pub fn compile_wasm(enc: &mut FunctionEncoder, interface: &mut ModuleInterface) {
     let integer_type = enc.module_encoder.type_id(&Type::Integer);

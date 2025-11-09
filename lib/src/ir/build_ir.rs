@@ -37,11 +37,13 @@ fn module_expr(
             assignee.visit(|(p, _)| ns.finalize_value(p));
             items.push(ModuleItem::Let(assignee, Box::new(value)));
         }
+        /*
         ModuleStatementKind::Do(expr) => {
             let assignee = PatternKind::Hole.with_span(expr.span).with_type(Type::Any);
             let value = value_expr(ns, *expr)?.into();
             items.push(ModuleItem::Let(assignee, value));
         }
+        */
         ModuleStatementKind::Type {
             assignee,
             assignee_span,
@@ -49,6 +51,7 @@ fn module_expr(
         } => {
             type_def(ns, assignee, assignee_span, *value, items, 0)?;
         }
+        /*
         ModuleStatementKind::Import {
             name,
             type_,
@@ -65,6 +68,7 @@ fn module_expr(
                 minor,
             });
         }
+        */
         ModuleStatementKind::DocComment(_) => {}
     }
     Ok(())

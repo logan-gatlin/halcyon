@@ -20,10 +20,10 @@ impl std::fmt::Display for ConstValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ConstValue::Unit => write!(f, "()"),
-            ConstValue::String { .. } => write!(f, "<string>"),
+            ConstValue::String(s) => write!(f, "\"{s}\""),
             ConstValue::Integer(val) => write!(f, "{val}"),
             ConstValue::Real(val) => write!(f, "{val}"),
-            ConstValue::Glyph(val) => write!(f, "{val}"),
+            ConstValue::Glyph(val) => write!(f, "'{val}'"),
             ConstValue::Boolean(val) => write!(f, "{val}"),
         }
     }

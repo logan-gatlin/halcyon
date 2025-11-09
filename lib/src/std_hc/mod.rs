@@ -1,3 +1,4 @@
+/*
 mod array;
 mod builtin;
 mod numbers;
@@ -13,18 +14,19 @@ pub use builtin::*;
 use std::collections::HashMap;
 use wasm_encoder::Instruction;
 
-pub const STD_MODULE_NAME: &str = "std";
 
 use crate::{
     Logger, WithSpan,
-    compile::*,
-    compile_single,
-    ir::{IrKind, Path},
+    ir2::{IrKind, Path},
     operator::{BinaryOp, UnaryOp},
     semantic::*,
     std_hc::numbers::compile_numbers,
 };
+*/
 
+pub const STD_MODULE_NAME: &str = "std";
+
+/*
 pub fn compile_std(
     enc: &mut ModuleEncoder,
     interfaces: &mut HashMap<Path, ModuleInterface>,
@@ -53,7 +55,8 @@ pub fn compile_std(
     ]);
     let id = init_fn.finish_mainfn();
     enc.init_functions.push(id);
-    compile_single(include_str!("./stdlib.hc"), enc, interfaces)
+    //compile_single(include_str!("./stdlib.hc"), enc, interfaces)
+    todo!()
 }
 
 pub fn one_param(
@@ -117,3 +120,4 @@ fn const_struct(enc: &mut FunctionEncoder, path: Path, type_: Type, value: Instr
     enc.module_encoder.new_global(&path, &type_);
     enc.encode([value, StructNew(type_id)]).set_symbol(&path);
 }
+*/

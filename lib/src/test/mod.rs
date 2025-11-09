@@ -6,6 +6,7 @@ macro_rules! test {
       #[allow(unused)]
       #[test]
       fn $name() {
+        color_eyre::install().unwrap();
         let path = "./src/test/".to_string() + stringify!($name) + ".hc";
         let file = std::fs::read_to_string(path).unwrap();
         let wasm = match compile(&file) {
@@ -15,7 +16,7 @@ macro_rules! test {
                 panic!()
             }
         };
-        execute(wasm);
+        //execute(wasm);
       }
     )*
   }

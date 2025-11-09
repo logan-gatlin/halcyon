@@ -16,35 +16,28 @@ pub use value_expression::*;
 
 use multipeek::{MultiPeek, multipeek};
 
-use crate::{LResult, Logger, Span, Spanned, WithSpan, err, operator::*, token::*};
+use crate::{LoggerT, Span, Spanned, WithSpan, operator::*, token::*};
 use TokenKind::*;
 
 pub type Expression<K> = Spanned<K>;
 
-pub struct Parser<I: Iterator<Item = Token>> {
+pub struct Parser<'a, I: Iterator<Item = Token>> {
+    pub logger: &'a mut LoggerT,
     pub iter: MultiPeek<I>,
     pub last_span: Span,
 }
 
-impl<I: Iterator<Item = Token>> Parser<I> {
-    fn peek(&mut self) -> LResult<Token> {
-        self.iter
-            .peek()
-            .cloned()
-            .ok_or_else(|| err("Unexpected end of input").span(self.last_span))
+impl<'a, I: Iterator<Item = Token>> Parser<I> {
+    fn peek(&mut self) -> Option<Token> {
+        self.iter.peek().cloned()
     }
 
-    fn peek_nth(&mut self, n: usize) -> LResult<Token> {
-        self.iter
-            .peek_nth(n)
-            .cloned()
-            .ok_or_else(|| err("Unexpected end of input").span(self.last_span))
+    fn peek_nth(&mut self, n: usize) -> Option<Token> {
+        self.iter.peek_nth(n).cloned()
     }
 
-    fn next(&mut self) -> LResult<Token> {
-        self.iter
-            .next()
-            .ok_or_else(|| err("Unexpected end of input").span(self.last_span))
+    fn next(&mut self) -> Option<Token> {
+        self.iter.next()
     }
 
     fn skip(&mut self) {
@@ -53,14 +46,15 @@ impl<I: Iterator<Item = Token>> Parser<I> {
         }
     }
 
-    fn eat(&mut self, tk: TokenKind) -> LResult<()> {
+    fn eat(&mut self, tk: TokenKind) -> bool {
         if let Some(next) = self.iter.peek()
             && next.inner == tk
         {
             self.skip();
-            Ok(())
+            true
         } else {
-            Err(err(format!("Expected {tk} after this")).span(self.last_span))
+            self.logger.error("")
+            false
         }
     }
 
@@ -72,7 +66,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
                 return Ok(id);
             }
         }
-        return Err(err(format!(
+        Err(err(format!(
             "Expected one of these: {}",
             items
                 .iter()
@@ -80,7 +74,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
                 .collect::<Vec<_>>()
                 .join(",")
         ))
-        .span(self.last_span));
+        .span(self.last_span))
     }
 
     fn eat_path(&mut self) -> LResult<Vec<String>> {

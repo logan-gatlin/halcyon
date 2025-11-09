@@ -1,6 +1,10 @@
+use std::collections::HashMap;
+
+use indexmap::IndexMap;
+
 use super::*;
 
-#[derive(Debug, Clone, sx::SXRepr)]
+#[derive(Debug, Clone)]
 pub enum Literal {
     Unit,
     Integer(String, Base),
@@ -10,7 +14,7 @@ pub enum Literal {
     Boolean(bool),
 }
 
-#[derive(Debug, Clone, sx::SXRepr)]
+#[derive(Debug, Clone)]
 pub enum ValueExpressionKind {
     Let {
         assignee: PatternExpression,
@@ -56,10 +60,7 @@ pub enum ValueExpressionKind {
     },
     Tuple(Vec<ValueExpression>),
     Array(Vec<ArrayInner>),
-    StructureLiteral {
-        lhs: Vec<String>,
-        rhs: Vec<ValueExpression>,
-    },
+    StructureLiteral(IndexMap<Spanned<String>, ValueExpression>),
     Field {
         lhs: Box<ValueExpression>,
         rhs: String,
@@ -67,7 +68,7 @@ pub enum ValueExpressionKind {
     ModulePath(Vec<String>),
 }
 
-#[derive(Debug, Clone, sx::SXRepr)]
+#[derive(Debug, Clone)]
 pub enum ArrayInner {
     Splat(ValueExpression),
     Single(ValueExpression),
@@ -165,13 +166,17 @@ fn primary(logger: &mut Logger, p: p!()) -> LResult<ValueExpression> {
             },
         },
         LeftBrace => {
-            let mut rhs = vec![];
-            let mut lhs = vec![];
+            let mut span_map = HashMap::new();
+            let mut map = IndexMap::new();
             loop {
                 if let Ok(ident) = p.eat_ident() {
-                    lhs.push(ident);
+                    let key = ident.with_span(p.last_span);
+                    if span_map.insert(key.inner.clone(), key.span).is_some() {
+                        logger.log(err(format!("A structure may not contain two fields with the same name. There is a previously defined field called `{}`",key.inner )));   
+                    }
                     p.eat(Equal)?;
-                    rhs.push(parse_value_expression(logger, p, 0)?);
+                    let value = parse_value_expression(logger, p, 0)?;
+                    map.insert(key, value);
                     if p.eat(Comma).is_err() {
                         p.eat(RightBrace)?;
                         break;
@@ -181,7 +186,7 @@ fn primary(logger: &mut Logger, p: p!()) -> LResult<ValueExpression> {
                     break;
                 }
             }
-            e::StructureLiteral { lhs, rhs }
+            e::StructureLiteral(map)
         }
         LeftSquare => {
             let mut items = vec![];

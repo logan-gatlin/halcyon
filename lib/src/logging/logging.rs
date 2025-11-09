@@ -39,7 +39,7 @@ impl Log {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Logger {
     logs: Vec<Log>,
 }
@@ -70,11 +70,5 @@ impl Logger {
             .into_iter()
             .filter(|l| l.severity >= filter)
             .collect()
-    }
-
-    pub(crate) fn print_current(&self) {
-        for log in &self.logs {
-            println!("{}", log.message);
-        }
     }
 }

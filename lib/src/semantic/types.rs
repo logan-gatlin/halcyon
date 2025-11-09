@@ -1,7 +1,6 @@
 use indexmap::IndexMap;
-use sx::SXRepr;
 
-use crate::{LResult, Log, Visit, err, ir::Path, semantic::freshen_type_variables};
+use crate::{LResult, Log, Visit, err, ir2::Path, semantic::freshen_type_variables};
 
 pub type TypeVariable = usize;
 
@@ -14,15 +13,6 @@ use std::{
 pub struct Typed<T> {
     pub inner: T,
     pub type_: Type,
-}
-
-impl<T> sx::SXRepr for Typed<T>
-where
-    T: sx::SXRepr,
-{
-    fn sx(self) -> sx::SX {
-        sx::SX::Field("type".into(), self.type_.sx().into()).push(self.inner.sx())
-    }
 }
 
 impl<T> std::ops::Deref for Typed<T> {
@@ -52,9 +42,10 @@ impl<T> WithType for T {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum Type {
     /// Indeterminate type
+    #[default]
     Any,
     /// The empty type ()
     Unit,
@@ -165,20 +156,6 @@ impl Universe {
     pub fn find_struct_with_names(&self, names: &HashSet<String>) -> Vec<AbstractType> {
         todo!()
     }
-
-    #[allow(unused)]
-    pub fn print() {
-        println!(
-            "{}",
-            Self::get()
-                .name_map
-                .clone()
-                .into_iter()
-                .map(|(k, v)| (k, v.base))
-                .collect::<Vec<_>>()
-                .sx()
-        );
-    }
 }
 
 impl Type {
@@ -255,12 +232,6 @@ impl Visit<TypeVariable> for Type {
                 f(tv);
             }
         })
-    }
-}
-
-impl Default for Type {
-    fn default() -> Self {
-        Self::Any
     }
 }
 
@@ -391,11 +362,5 @@ impl std::fmt::Display for Type {
                 )
             }
         }
-    }
-}
-
-impl sx::SXRepr for Type {
-    fn sx(self) -> sx::SX {
-        sx::SX::Atom(format!("{self}"))
     }
 }

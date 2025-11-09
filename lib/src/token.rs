@@ -1,9 +1,9 @@
-use std::io::Write;
+use std::{io::Write, str::pattern::Pattern};
 
-use crate::{Logger, Span, Spanned, WithSpan};
+use crate::{LoggerT, Span, Spanned, WithSpan};
 use multipeek::{MultiPeek, multipeek};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, sx::SXRepr)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Base {
     Binary = 2,
     Octal = 8,
@@ -196,15 +196,15 @@ impl std::fmt::Display for TokenKind {
 
 impl TokenKind {
     pub fn is_literal(&self) -> bool {
-        match self {
+        matches!(
+            self,
             Self::GlyphLiteral(_)
-            | Self::RealLiteral(_)
-            | Self::IntegerLiteral(..)
-            | Self::StringLiteral(_)
-            | Self::True
-            | Self::False => true,
-            _ => false,
-        }
+                | Self::RealLiteral(_)
+                | Self::IntegerLiteral(..)
+                | Self::StringLiteral(_)
+                | Self::True
+                | Self::False
+        )
     }
 }
 
@@ -218,8 +218,11 @@ struct Tokenizer<I: Iterator<Item = char>> {
 
 impl<I: Iterator<Item = char>> Tokenizer<I> {
     fn next(&mut self) -> Option<char> {
-        self.position += 1;
-        self.iter.next()
+        let next = self.iter.next();
+        if let Some(next) = next {
+            self.position += next.len_utf8();
+        }
+        next
     }
     fn peek(&mut self) -> Option<char> {
         self.iter.peek().cloned()
@@ -233,13 +236,13 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
     }
     fn span(&self, start: usize) -> Span {
         Span {
-            start: start,
+            start,
             width: self.position - start,
         }
     }
 }
 
-pub fn tokenize(input: impl IntoIterator<Item = char>, logger: &mut Logger) -> Vec<Token> {
+pub fn tokenize(input: impl IntoIterator<Item = char>, logger: &mut LoggerT) -> Vec<Token> {
     let mut iter = Tokenizer {
         iter: multipeek(input),
         tokens: vec![],
@@ -362,21 +365,26 @@ pub fn tokenize(input: impl IntoIterator<Item = char>, logger: &mut Logger) -> V
                 if let Some(baked) = bake_string(start, logger, &glyph) {
                     let chars = baked.chars().collect::<Vec<_>>();
                     if chars.len() != 1 {
-                        error!(
-                            logger,
-                            iter.span(start),
-                            "A glyph must contain a single unicode character"
-                        );
-                        iter.push(TokenKind::Error, start);
+                        logger
+                            .error("Glyphs may only contain a single unicode character")
+                            .primary(
+                                format!("This string consists of {} characters", chars.len()),
+                                iter.span(start),
+                            )
+                            .done();
+                        iter.push(TokenKind::GlyphLiteral('?'), start);
                     } else {
                         iter.push(TokenKind::GlyphLiteral(chars[0]), start);
                     }
                 } else {
                     // Error reported during baking
-                    iter.push(TokenKind::Error, start);
+                    iter.push(TokenKind::StringLiteral("".into()), start);
                 }
             } else {
-                error!(logger, iter.span(start), "Missing trailing single quote");
+                logger
+                    .error("Missing closing single quote (\')")
+                    .primary("Opening \' here is not closed", Span { start, width: 1 })
+                    .done();
                 iter.push(TokenKind::Error, start);
             }
             continue;
@@ -392,7 +400,10 @@ pub fn tokenize(input: impl IntoIterator<Item = char>, logger: &mut Logger) -> V
                     iter.push(TokenKind::Error, start);
                 }
             } else {
-                error!(logger, iter.span(start), "Missing trailing double quote");
+                logger
+                    .error("Missing closing double quote (\")")
+                    .primary("Opening \" here is not closed", Span { start, width: 1 })
+                    .done();
                 iter.push(TokenKind::Error, start);
             }
             continue;
@@ -422,7 +433,7 @@ pub fn tokenize(input: impl IntoIterator<Item = char>, logger: &mut Logger) -> V
                 c == '_'
                     || match base {
                         Base::Binary => c == '0' || c == '1',
-                        Base::Octal => '0' <= c && c <= '7',
+                        Base::Octal => ('0'..='7').contains(&c),
                         Base::Decimal => c.is_ascii_digit(),
                         Base::Hex => c.is_ascii_hexdigit(),
                     }
@@ -475,23 +486,45 @@ pub fn tokenize(input: impl IntoIterator<Item = char>, logger: &mut Logger) -> V
                     let str = str.strip_prefix("0d").map(|s| s.to_string()).unwrap_or(str);
                     iter.push(TokenKind::RealLiteral(str), start);
                 } else {
-                    error!(logger, iter.span(start), "Real numbers must be in base-10");
-                    iter.push(TokenKind::Error, start);
+                    logger
+                        .error("Real numbers must be written in decimal (base 10).")
+                        .primary(
+                            format!(
+                                "This token was parsed as a {base} real, which is not allowed."
+                            ),
+                            iter.span(start),
+                        )
+                        .done();
+                    iter.push(TokenKind::RealLiteral("1.0".into()), start);
                 }
                 continue;
             }
             // Found erroneous character
-            error!(
-                logger,
-                iter.span(start),
-                "Found an unexpected character while parsing this {base} number"
+            let next_char = iter.peek().unwrap();
+            logger.error("Illegal character in number.").primary(
+                format!("The character {next_char} is not valid inside of a number."),
+                Span {
+                    start: iter.position + 1,
+                    width: 1,
+                },
             );
             iter.push(TokenKind::Error, start);
             continue;
         }
         let is_ident = |c: char| (!c.is_ascii_punctuation() || c == '_') && !c.is_whitespace();
         if !is_ident(current) {
-            error!(logger, iter.span(start), "Unexpected symbol");
+            logger
+                .error("Unexpected character")
+                .primary(
+                    format!(
+                        "The character '{current}' ({}) is not a part of any token in the language",
+                        unicode_names2::name(current)
+                            .map(|n| n.to_string())
+                            .unwrap_or("invalid UTF-8".to_string())
+                    ),
+                    Span { start, width: 1 },
+                )
+                .done();
             iter.push(TokenKind::Error, start);
             continue;
         }
@@ -563,7 +596,7 @@ fn parse_delimited(
 
 fn bake_string(mut start: usize, logger: &mut Logger, s: &str) -> Option<String> {
     let collect_hex_bytes = |arr: &[Option<char>]| {
-        arr.into_iter()
+        arr.iter()
             .flatten()
             .map(|c| c.to_ascii_lowercase())
             .flat_map(|c| {
@@ -580,7 +613,7 @@ fn bake_string(mut start: usize, logger: &mut Logger, s: &str) -> Option<String>
     let mut baked = String::with_capacity(s.len());
     let mut iter = s.chars();
     while let Some(next) = iter.next() {
-        start += 1;
+        start += next.len_utf8();
         baked.push(if next == '\\' {
             let Some(next) = iter.next() else {
                 error!(
@@ -593,7 +626,7 @@ fn bake_string(mut start: usize, logger: &mut Logger, s: &str) -> Option<String>
                 );
                 return None;
             };
-            start += 1;
+            start += next.len_utf8();
             match next {
                 'n' => '\n',
                 'r' => '\r',
@@ -604,6 +637,14 @@ fn bake_string(mut start: usize, logger: &mut Logger, s: &str) -> Option<String>
                 '"' => '"',
                 '\'' => '\'',
                 'x' => {
+                    let chars = [iter.next(), iter.next()];
+                    let length = chars.iter().fold(0, |acc, x| {
+                        if let Some(x) = x {
+                            acc + x.len_utf8()
+                        } else {
+                            acc
+                        }
+                    });
                     let bytes: Vec<_> = collect_hex_bytes(&[iter.next(), iter.next()]);
                     if bytes.len() != 2 {
                         error!(
@@ -616,7 +657,7 @@ fn bake_string(mut start: usize, logger: &mut Logger, s: &str) -> Option<String>
                         );
                         return None;
                     }
-                    start += 2;
+                    start += length;
                     unsafe { char::from_u32_unchecked(bytes[0] << 8 | bytes[1]) }
                 }
                 'w' => {
