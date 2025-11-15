@@ -1,6 +1,6 @@
 use std::num::IntErrorKind;
 
-use crate::{LResult, Log, Logger, WithSpan, err, parse::*};
+use crate::{LResult, Log, LoggerT, WithSpan, err, parse::*};
 
 use super::*;
 
@@ -15,7 +15,7 @@ struct TermInfo {
 pub struct Builder<'a> {
     name_map: CanonicalMap,
     module_name: String,
-    logger: &'a mut Logger,
+    logger: &'a mut LoggerT,
     symbols: SymbolTable,
     constructors: Vec<Constructor>,
     type_definitions: Vec<Typed<Spanned<Path>>>,

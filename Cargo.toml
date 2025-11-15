@@ -1,3 +1,35 @@
-[workspace]
-resolver = "3"
-members = ["lib", "sx/sx", "sx/sx-derive"]
+[package]
+name = "halcyon-lib"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+wasm-encoder = "0.233"
+punycode = "0.4"
+wasm-bindgen = "0.2"
+multipeek = "0.1"
+toml = {version = "0.9", default-features = false, features = ["parse", "serde"]}
+indexmap = "2.11"
+wasmparser = {version = "0.235"}
+wasmprinter = "0.235"
+colored = "3"
+codespan-reporting = "0.13"
+indoc = "2"
+unicode_names2 = "2"
+
+[dev-dependencies]
+wasmtime = { version = "34.0", features = ["runtime", "cranelift", "gc", "gc-drc"] }
+color-eyre = "0.6"
+
+[profile.release]
+strip = true
+opt-level = "z"
+lto = true
+codegen-units = 1
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["--enable-bulk-memory", "-O2"]
+

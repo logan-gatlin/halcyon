@@ -1,4 +1,4 @@
-use std::{io::Write, str::pattern::Pattern};
+use std::io::Write;
 
 use crate::{LoggerT, Span, Spanned, WithSpan};
 use multipeek::{MultiPeek, multipeek};
@@ -594,7 +594,7 @@ fn parse_delimited(
     Some(buffer)
 }
 
-fn bake_string(mut start: usize, logger: &mut Logger, s: &str) -> Option<String> {
+fn bake_string(mut start: usize, logger: &mut LoggerT, s: &str) -> Option<String> {
     let collect_hex_bytes = |arr: &[Option<char>]| {
         arr.iter()
             .flatten()
@@ -616,14 +616,16 @@ fn bake_string(mut start: usize, logger: &mut Logger, s: &str) -> Option<String>
         start += next.len_utf8();
         baked.push(if next == '\\' {
             let Some(next) = iter.next() else {
-                error!(
-                    logger,
-                    Span {
-                        start: start - 1,
-                        width: 2
-                    },
-                    "Expecting an escape sequence here"
-                );
+                logger
+                    .error("Unknown escape sequence")
+                    .primary(
+                        "This sequence starts with a \\, but is not a recognized escape sequence.",
+                        Span {
+                            start: start - 1,
+                            width: 2,
+                        },
+                    )
+                    .done();
                 return None;
             };
             start += next.len_utf8();
@@ -647,14 +649,11 @@ fn bake_string(mut start: usize, logger: &mut Logger, s: &str) -> Option<String>
                     });
                     let bytes: Vec<_> = collect_hex_bytes(&[iter.next(), iter.next()]);
                     if bytes.len() != 2 {
-                        error!(
-                            logger,
-                            Span {
+                        logger.error("Unknown escape sequence")
+                            .primary("This sequence starts with \\x, but is not followed by two hexadecimal digits.", Span {
                                 start: start - 1,
                                 width: 4
-                            },
-                            "The \\xXX escape sequence requires 2 hex digits"
-                        );
+                            }).done();
                         return None;
                     }
                     start += length;
