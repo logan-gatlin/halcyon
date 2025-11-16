@@ -663,14 +663,11 @@ fn bake_string(mut start: usize, logger: &mut LoggerT, s: &str) -> Option<String
                     let bytes =
                         collect_hex_bytes(&[iter.next(), iter.next(), iter.next(), iter.next()]);
                     if bytes.len() != 4 {
-                        error!(
-                            logger,
-                            Span {
+                        logger.error("Unknown escape sequence")
+                            .primary("This sequence starts with \\w, but is not followed by 4 hex digits.", Span {
                                 start: start - 1,
                                 width: 6
-                            },
-                            "The \\wXXXX escape sequence requires 4 hex digits"
-                        );
+                            }).done();
                         return None;
                     }
                     start += 4;
@@ -681,14 +678,12 @@ fn bake_string(mut start: usize, logger: &mut LoggerT, s: &str) -> Option<String
                     }
                 }
                 c => {
-                    error!(
-                        logger,
-                        Span {
+                    logger.error("Unknown escape sequence").primary(
+                        format!("The \\{c} sequence here is not recognized."), Span {
                             start: start - 1,
                             width: 2
-                        },
-                        "Invalid escape sequence \"\\{c}\" "
-                    );
+                        }
+                    ).done();
                     return None;
                 }
             }

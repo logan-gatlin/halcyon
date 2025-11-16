@@ -14,6 +14,8 @@ pub use pattern::*;
 pub use type_expression::*;
 pub use value_expression::*;
 
+const ERR_MSG: &str = "Syntax error";
+
 use multipeek::{MultiPeek, multipeek};
 
 use crate::{LoggerT, Span, Spanned, WithSpan, operator::*, token::*};
@@ -27,7 +29,7 @@ pub struct Parser<'a, I: Iterator<Item = Token>> {
     pub last_span: Span,
 }
 
-impl<'a, I: Iterator<Item = Token>> Parser<I> {
+impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
     fn peek(&mut self) -> Option<Token> {
         self.iter.peek().cloned()
     }
@@ -46,64 +48,58 @@ impl<'a, I: Iterator<Item = Token>> Parser<I> {
         }
     }
 
-    fn eat(&mut self, tk: TokenKind) -> bool {
-        if let Some(next) = self.iter.peek()
+    fn eat(&mut self, tk: TokenKind) -> Option<Token> {
+        if let Some(next) = self.iter.peek().cloned()
             && next.inner == tk
         {
             self.skip();
-            true
+            Some(next)
         } else {
-            self.logger.error("")
-            false
+            None
         }
     }
 
-    fn eat_one_of(&mut self, items: impl IntoIterator<Item = TokenKind>) -> LResult<usize> {
+    fn eat_one_of(&mut self, items: impl IntoIterator<Item = TokenKind>) -> Option<usize> {
         let items = items.into_iter().collect::<Vec<_>>();
         for (id, item) in items.iter().enumerate() {
             if self.iter.peek().is_some_and(|t| &t.inner == item) {
                 self.skip();
-                return Ok(id);
+                return Some(id);
             }
         }
-        Err(err(format!(
-            "Expected one of these: {}",
-            items
-                .iter()
-                .map(|t| format!("{t}"))
-                .collect::<Vec<_>>()
-                .join(",")
-        ))
-        .span(self.last_span))
+        None
     }
 
-    fn eat_path(&mut self) -> LResult<Vec<String>> {
-        let mut path = vec![];
-        loop {
-            path.push(self.eat_ident()?);
-            if self.eat(DoubleColon).is_err() {
-                break;
-            }
-        }
-        if path.is_empty() {
-            return Err(err("Expected identifier after this").span(self.last_span));
-        }
-        Ok(path)
+    fn eat_path(&mut self) -> Option<[String; 2]> {
+        let first = self.eat_ident()?;
+        self.eat(DoubleColon)?;
+        let second = self.eat_ident()?;
+        Some([first, second])
     }
 
-    fn eat_ident(&mut self) -> LResult<String> {
+    fn eat_ident(&mut self) -> Option<String> {
         if let Some(next) = self.iter.peek().cloned()
             && let Identifier(name) = next.inner
         {
             self.skip();
-            Ok(name)
+            Some(name)
         } else {
-            Err(err("Expected identifier after this").span(self.last_span))
+            None
         }
+    }
+
+    fn error(&mut self) -> crate::LogBuilder<'_, usize> {
+        self.logger.error(ERR_MSG)
+    }
+
+    fn error_expected(&mut self, token: TokenKind) -> crate::LogBuilder<'_, usize> {
+        self.logger
+            .error(ERR_MSG)
+            .primary(format!("Expected `{token}` here"), self.last_span)
     }
 }
 
-pub fn parse(logger: &mut Logger, iter: impl IntoIterator<Item = Token>) -> Vec<ParsedModule> {
+pub fn parse(logger: &mut LoggerT, iter: impl IntoIterator<Item = Token>) -> Vec<ParsedModule> {
     let mut p = Parser {
         iter: multipeek(iter.into_iter().filter(|t| {
             !matches!(
@@ -112,9 +108,10 @@ pub fn parse(logger: &mut Logger, iter: impl IntoIterator<Item = Token>) -> Vec<
             )
         })),
         last_span: Span::default(),
+        logger,
     };
     let mut modules = vec![];
-    while p.peek().is_ok() {
+    while p.peek().is_some() {
         modules.push(parse_module(logger, &mut p));
     }
     modules

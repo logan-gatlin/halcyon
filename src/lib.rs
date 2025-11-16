@@ -1,6 +1,4 @@
-#![allow(clippy::clone_on_copy, clippy::from_over_into)]
 #![feature(iterator_try_collect, if_let_guard)]
-
 pub mod ir2;
 pub mod logging;
 pub mod map;
