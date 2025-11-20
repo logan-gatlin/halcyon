@@ -1,7 +1,15 @@
 use std::io::Write;
 
-use crate::{LoggerT, Span, Spanned, WithSpan};
-use multipeek::{MultiPeek, multipeek};
+use crate::{
+    LoggerT,
+    Span,
+    Spanned,
+    WithSpan,
+};
+use multipeek::{
+    MultiPeek,
+    multipeek,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Base {
@@ -23,7 +31,10 @@ impl Base {
 }
 
 impl std::fmt::Display for Base {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
         match self {
             Base::Binary => write!(f, "binary"),
             Base::Octal => write!(f, "octal"),
@@ -110,16 +121,43 @@ pub enum TokenKind {
     Error,
 }
 
+impl TokenKind {
+    pub fn category(&self) -> TokenCategory {
+        use TokenCategory::*;
+        use TokenKind::*;
+        match self {
+            LeftParen | LeftBrace | LeftSquare => BeginGrouping,
+            RightParen | RightBrace | RightSquare => EndGrouping,
+            Dot | DotDot | DoubleColon | Comma => Delimeter,
+            Colon | Arrow | Semicolon | Plus | PlusDot | Minus | MinusDot | Slash | SlashDot
+            | Star | StarDot | Percent | Apply | ComposeLeft | ComposeRight | BangEqual | Equal
+            | DoubleEqual | Greater | GreaterEqual | Less | LessEqual => Operator,
+            Identifier(_) | StringLiteral(_) | GlyphLiteral(_) | IntegerLiteral(..)
+            | RealLiteral(_) => Literal,
+            Module | Import | Use | End | Match | With | Let | Type | Do | Of | In | If | Then
+            | Else | And | Or | Xor | Not | True | False | Fn | Pipe | FatArrow => Keyword,
+            LineComment(_) | BlockComment(_) | DocComment(_) | Error => Extra,
+        }
+    }
+}
+
 impl PartialEq for TokenKind {
-    fn eq(&self, other: &Self) -> bool {
+    fn eq(
+        &self,
+        other: &Self,
+    ) -> bool {
         std::mem::discriminant(self) == std::mem::discriminant(other)
     }
 }
 
-impl Eq for TokenKind {}
+impl Eq for TokenKind {
+}
 
 impl std::fmt::Display for TokenKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
         use TokenKind::*;
         write!(
             f,
@@ -208,6 +246,28 @@ impl TokenKind {
     }
 }
 
+/// Broader categories of tokens.
+/// See `crate::token::TokenKind`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TokenCategory {
+    /// Language semantic tokens, not necessarily a word.
+    /// Anything that is used by the parser to change parsing contexts is a keyword.
+    Keyword,
+    /// All symbols that are re-interpreted as a function, in addition to some type specific operators.
+    Operator,
+    /// Tokens that begin a grouping
+    BeginGrouping,
+    /// Tokens that end a grouping
+    EndGrouping,
+    /// Tokens that break up or modify other expressions without grouping them.
+    Delimeter,
+    /// Tokens that contain a literal value.
+    /// Identifiers are included in this category.
+    Literal,
+    /// Tokens that do not factor into parsing
+    Extra,
+}
+
 pub type Token = Spanned<TokenKind>;
 
 struct Tokenizer<I: Iterator<Item = char>> {
@@ -227,14 +287,23 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
     fn peek(&mut self) -> Option<char> {
         self.iter.peek().cloned()
     }
-    fn peek_nth(&mut self, n: usize) -> Option<char> {
+    fn peek_nth(
+        &mut self,
+        n: usize,
+    ) -> Option<char> {
         self.iter.peek_nth(n).cloned()
     }
-
-    fn push(&mut self, token: TokenKind, start: usize) {
+    fn push(
+        &mut self,
+        token: TokenKind,
+        start: usize,
+    ) {
         self.tokens.push(token.with_span(self.span(start)))
     }
-    fn span(&self, start: usize) -> Span {
+    fn span(
+        &self,
+        start: usize,
+    ) -> Span {
         Span {
             start,
             width: self.position - start,
@@ -242,7 +311,10 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
     }
 }
 
-pub fn tokenize(input: impl IntoIterator<Item = char>, logger: &mut LoggerT) -> Vec<Token> {
+pub fn tokenize(
+    input: impl IntoIterator<Item = char>,
+    logger: &mut LoggerT,
+) -> Vec<Token> {
     let mut iter = Tokenizer {
         iter: multipeek(input),
         tokens: vec![],
@@ -594,7 +666,11 @@ fn parse_delimited(
     Some(buffer)
 }
 
-fn bake_string(mut start: usize, logger: &mut LoggerT, s: &str) -> Option<String> {
+fn bake_string(
+    mut start: usize,
+    logger: &mut LoggerT,
+    s: &str,
+) -> Option<String> {
     let collect_hex_bytes = |arr: &[Option<char>]| {
         arr.iter()
             .flatten()

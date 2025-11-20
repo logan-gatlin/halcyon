@@ -1,12 +1,23 @@
 use indexmap::IndexMap;
 
-use crate::{LResult, Log, Visit, err, ir2::Path, semantic::freshen_type_variables};
+use crate::ir2::Path;
+use crate::semantic::freshen_type_variables;
+use crate::{
+    LResult,
+    Log,
+    Visit,
+    err,
+};
 
 pub type TypeVariable = usize;
 
-use std::{
-    collections::{HashMap, HashSet},
-    sync::{Mutex, OnceLock},
+use std::collections::{
+    HashMap,
+    HashSet,
+};
+use std::sync::{
+    Mutex,
+    OnceLock,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
@@ -30,11 +41,17 @@ impl<T> std::ops::DerefMut for Typed<T> {
 }
 
 pub trait WithType: Sized {
-    fn with_type(self, t: Type) -> Typed<Self>;
+    fn with_type(
+        self,
+        t: Type,
+    ) -> Typed<Self>;
 }
 
 impl<T> WithType for T {
-    fn with_type(self, t: Type) -> Typed<T> {
+    fn with_type(
+        self,
+        t: Type,
+    ) -> Typed<T> {
         Typed {
             inner: self,
             type_: t,
@@ -81,7 +98,10 @@ pub enum Type {
     Instantiation(Path, Vec<Type>),
 }
 
-pub fn partial_instantiation_error(expects: usize, received: usize) -> Log {
+pub fn partial_instantiation_error(
+    expects: usize,
+    received: usize,
+) -> Log {
     err(format!(
         "This type has {expects} parameters, but {received} parameters were provided. Partial instantiation is not allowed."
     ))
@@ -94,7 +114,10 @@ pub struct AbstractType {
 }
 
 impl AbstractType {
-    pub fn instantiate(mut self, parameters: &[Type]) -> LResult<Type> {
+    pub fn instantiate(
+        mut self,
+        parameters: &[Type],
+    ) -> LResult<Type> {
         if parameters.len() != self.arity {
             return Err(partial_instantiation_error(self.arity, parameters.len()));
         }
@@ -106,7 +129,10 @@ impl AbstractType {
         Ok(self.base)
     }
 
-    pub fn instantiate_with(self, mut f: impl FnMut() -> TypeVariable) -> LResult<Type> {
+    pub fn instantiate_with(
+        self,
+        mut f: impl FnMut() -> TypeVariable,
+    ) -> LResult<Type> {
         let parameters = vec![Type::Variable(f()); self.arity];
         self.instantiate(&parameters)
     }
@@ -131,7 +157,11 @@ impl Universe {
             .unwrap()
     }
 
-    pub fn new_named_type(&mut self, path: Path, mut t: Type) {
+    pub fn new_named_type(
+        &mut self,
+        path: Path,
+        mut t: Type,
+    ) {
         let mut type_variables = HashSet::new();
         t.visit(|tv: &mut TypeVariable| {
             type_variables.insert(*tv);
@@ -146,20 +176,29 @@ impl Universe {
             .insert(path.clone(), AbstractType { arity, base: t });
     }
 
-    pub fn get_named_type(&self, path: &Path) -> AbstractType {
+    pub fn get_named_type(
+        &self,
+        path: &Path,
+    ) -> AbstractType {
         self.name_map
             .get(path)
             .unwrap_or_else(|| panic!("No named type exists: {path}"))
             .clone()
     }
 
-    pub fn find_struct_with_names(&self, names: &HashSet<String>) -> Vec<AbstractType> {
+    pub fn find_struct_with_names(
+        &self,
+        names: &HashSet<String>,
+    ) -> Vec<AbstractType> {
         todo!()
     }
 }
 
 impl Type {
-    pub fn curry(params: &[Type], returns: Type) -> Type {
+    pub fn curry(
+        params: &[Type],
+        returns: Type,
+    ) -> Type {
         match params {
             [] => returns,
             [p] => Type::func(p.clone(), returns),
@@ -167,15 +206,24 @@ impl Type {
         }
     }
 
-    pub fn func(parameter: Type, returns: Type) -> Type {
+    pub fn func(
+        parameter: Type,
+        returns: Type,
+    ) -> Type {
         Type::Function(parameter.into(), returns.into())
     }
 
-    pub fn field_type(&self, name: &str) -> Option<Type> {
+    pub fn field_type(
+        &self,
+        name: &str,
+    ) -> Option<Type> {
         todo!()
     }
 
-    pub fn contains_type_variable(&self, tv: TypeVariable) -> bool {
+    pub fn contains_type_variable(
+        &self,
+        tv: TypeVariable,
+    ) -> bool {
         match self {
             Type::Any
             | Type::Sum { .. }
@@ -196,7 +244,10 @@ impl Type {
 }
 
 impl Visit<Type> for Type {
-    fn _visit(&mut self, f: &mut impl FnMut(&mut Type)) {
+    fn _visit(
+        &mut self,
+        f: &mut impl FnMut(&mut Type),
+    ) {
         match self {
             Type::Any
             | Type::Unit
@@ -226,7 +277,10 @@ impl Visit<Type> for Type {
 }
 
 impl Visit<TypeVariable> for Type {
-    fn _visit(&mut self, f: &mut impl FnMut(&mut TypeVariable)) {
+    fn _visit(
+        &mut self,
+        f: &mut impl FnMut(&mut TypeVariable),
+    ) {
         self._visit(&mut |t: &mut Type| {
             if let Type::Variable(tv) = t {
                 f(tv);
@@ -236,7 +290,10 @@ impl Visit<TypeVariable> for Type {
 }
 
 impl PartialOrd for Type {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(
+        &self,
+        other: &Self,
+    ) -> Option<std::cmp::Ordering> {
         use Type::*;
         use std::cmp::Ordering::*;
         Some(match (self, other) {
@@ -251,7 +308,10 @@ impl PartialOrd for Type {
 }
 
 impl PartialEq for Type {
-    fn eq(&self, other: &Self) -> bool {
+    fn eq(
+        &self,
+        other: &Self,
+    ) -> bool {
         use Type as t;
         match (self, other) {
             (t::Any, t::Any) => {
@@ -276,10 +336,14 @@ impl PartialEq for Type {
     }
 }
 
-impl Eq for Type {}
+impl Eq for Type {
+}
 
 impl std::hash::Hash for Type {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+    fn hash<H: std::hash::Hasher>(
+        &self,
+        state: &mut H,
+    ) {
         match self {
             Type::Sum { name, .. } | Type::Struct { name, .. } => {
                 name.hash(state);
@@ -323,7 +387,10 @@ impl std::hash::Hash for Type {
 }
 
 impl std::fmt::Display for Type {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
         match self {
             Type::Any => write!(f, "any"),
             Type::Unit => write!(f, "unit"),
@@ -338,15 +405,17 @@ impl std::fmt::Display for Type {
             }
             Type::Function(a, b) => write!(f, "({a} -> {b})"),
             Type::Variable(id) => write!(f, "'{id}"),
-            Type::Product(items) => write!(
-                f,
-                "({})",
-                items
-                    .iter()
-                    .map(|i| format!("{}", i))
-                    .collect::<Vec<_>>()
-                    .join(" * ")
-            ),
+            Type::Product(items) => {
+                write!(
+                    f,
+                    "({})",
+                    items
+                        .iter()
+                        .map(|i| format!("{}", i))
+                        .collect::<Vec<_>>()
+                        .join(" * ")
+                )
+            }
             Type::Instantiation(name, types) if types.is_empty() => {
                 write!(f, "{name}")
             }

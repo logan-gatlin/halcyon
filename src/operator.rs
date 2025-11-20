@@ -1,5 +1,7 @@
+use crate::ir2::Path;
+use crate::semantic::Type;
 use crate::std_hc::STD_MODULE_NAME;
-use crate::{ir2::Path, semantic::Type, token::*};
+use crate::token::*;
 
 pub type Precedence = usize;
 
@@ -149,37 +151,47 @@ impl BinaryOp {
         use BinaryOp::*;
         use Type as t;
         match self {
-            Semicolon => t::func(
-                Type::Variable(0),
-                Type::func(Type::Variable(1), Type::Variable(1)),
-            ),
-            Apply => t::func(
-                Type::Variable(0),
-                Type::func(
-                    Type::func(Type::Variable(0), Type::Variable(1)),
-                    Type::Variable(1),
-                ),
-            ),
-            ComposeRight => t::curry(
-                &[
-                    t::func(t::Variable(0), t::Variable(1)),
-                    t::func(t::Variable(1), t::Variable(2)),
-                    t::Variable(0),
-                ],
-                t::Variable(2),
-            ),
-            ComposeLeft => t::curry(
-                &[
-                    t::func(t::Variable(1), t::Variable(2)),
-                    t::func(t::Variable(0), t::Variable(1)),
-                    t::Variable(0),
-                ],
-                t::Variable(2),
-            ),
-            op => Type::curry(
-                &[op.parameter_type(), op.parameter_type()],
-                op.return_type(),
-            ),
+            Semicolon => {
+                t::func(
+                    Type::Variable(0),
+                    Type::func(Type::Variable(1), Type::Variable(1)),
+                )
+            }
+            Apply => {
+                t::func(
+                    Type::Variable(0),
+                    Type::func(
+                        Type::func(Type::Variable(0), Type::Variable(1)),
+                        Type::Variable(1),
+                    ),
+                )
+            }
+            ComposeRight => {
+                t::curry(
+                    &[
+                        t::func(t::Variable(0), t::Variable(1)),
+                        t::func(t::Variable(1), t::Variable(2)),
+                        t::Variable(0),
+                    ],
+                    t::Variable(2),
+                )
+            }
+            ComposeLeft => {
+                t::curry(
+                    &[
+                        t::func(t::Variable(1), t::Variable(2)),
+                        t::func(t::Variable(0), t::Variable(1)),
+                        t::Variable(0),
+                    ],
+                    t::Variable(2),
+                )
+            }
+            op => {
+                Type::curry(
+                    &[op.parameter_type(), op.parameter_type()],
+                    op.return_type(),
+                )
+            }
         }
     }
 }

@@ -1,6 +1,13 @@
 use std::num::IntErrorKind;
 
-use crate::{LResult, Log, LoggerT, WithSpan, err, parse::*};
+use crate::parse::*;
+use crate::{
+    LResult,
+    Log,
+    LoggerT,
+    WithSpan,
+    err,
+};
 
 use super::*;
 
@@ -30,23 +37,30 @@ Patterns in let expressions must be exhaustive.")
 }
 
 fn lit(literal: Literal) -> LResult<ConstValue> {
-    fn int(value: &str, base: u32) -> LResult<i64> {
+    fn int(
+        value: &str,
+        base: u32,
+    ) -> LResult<i64> {
         match i64::from_str_radix(value, base).map_err(|e| e.kind().clone()) {
             Ok(i) => Ok(i),
             Err(IntErrorKind::PosOverflow | IntErrorKind::NegOverflow) => {
                 Err(err("This integer caused an overflow. \
 An integer must be a value between (-2^63) and (2^63 - 1)."))
             }
-            Err(IntErrorKind::InvalidDigit) => Err(err("This number is assumed to be an integer,\
-but contains symbols which are not allowed in an integer.")),
+            Err(IntErrorKind::InvalidDigit) => {
+                Err(err("This number is assumed to be an integer,\
+but contains symbols which are not allowed in an integer."))
+            }
             _ => unreachable!(),
         }
     }
     fn real(value: &str) -> LResult<f64> {
         match value.parse::<f64>() {
             Ok(r) => Ok(r),
-            Err(_) => Err(err("This number is assumed to be a real, \
-but contains symbols which are not allowed in a real number.")),
+            Err(_) => {
+                Err(err("This number is assumed to be a real, \
+but contains symbols which are not allowed in a real number."))
+            }
         }
     }
 
@@ -61,7 +75,10 @@ but contains symbols which are not allowed in a real number.")),
 }
 
 impl<'a> Builder<'a> {
-    fn capture_term(&mut self, path: Path) {
+    fn capture_term(
+        &mut self,
+        path: Path,
+    ) {
         if let Some(c) = self.captures.last_mut() {
             c.push(path);
         }
@@ -87,7 +104,11 @@ impl<'a> Builder<'a> {
         Ok(path)
     }
 
-    fn query_name(&mut self, name: String, namespace: NameSpace) -> LResult<Path> {
+    fn query_name(
+        &mut self,
+        name: String,
+        namespace: NameSpace,
+    ) -> LResult<Path> {
         let path = self.name_map.get(name.clone(), namespace)?.clone();
         if namespace == NameSpace::Term {
             let Some(TermInfo {
@@ -115,7 +136,10 @@ except from within a recursive function."
         Ok(path)
     }
 
-    pub fn build_ir(logger: &'a mut Logger, module: ParsedModule) -> IrModule {
+    pub fn build_ir(
+        logger: &'a mut Logger,
+        module: ParsedModule,
+    ) -> IrModule {
         use ModuleStatementKind::*;
         let module_name = module.inner.name.inner.clone();
         let mut this = Self {
@@ -155,84 +179,108 @@ except from within a recursive function."
         }
     }
 
-    fn pattern(&mut self, pat: PatternExpression, is_global: bool) -> LResult<Pattern> {
+    fn pattern(
+        &mut self,
+        pat: PatternExpression,
+        is_global: bool,
+    ) -> LResult<Pattern> {
         use PatternExpressionKind::*;
         let span = pat.span;
         Ok(match pat.inner {
             Literal(literal) => PatternKind::Immediate(lit(literal)?),
             Identifier(name) if name == "_" => PatternKind::Hole,
-            Identifier(name) => PatternKind::Identifier(
-                self.define_name(name, NameSpace::Term, is_global)
-                    .map_err(|e| e.span(span))?,
-            ),
+            Identifier(name) => {
+                PatternKind::Identifier(
+                    self.define_name(name, NameSpace::Term, is_global)
+                        .map_err(|e| e.span(span))?,
+                )
+            }
             ModulePath(_) => todo!(),
-            Tuple(pats) => PatternKind::Tuple(
-                pats.into_iter()
-                    .map(|p| self.pattern(p, is_global))
-                    .try_collect()?,
-            ),
-            Array(array_pat) => PatternKind::Array(match *array_pat {
-                ParsedArrayPattern::Exact(items) => ArrayPattern::Exact(
-                    items
-                        .into_iter()
+            Tuple(pats) => {
+                PatternKind::Tuple(
+                    pats.into_iter()
                         .map(|p| self.pattern(p, is_global))
                         .try_collect()?,
-                ),
-                ParsedArrayPattern::Leading { head, tail } => ArrayPattern::Leading {
-                    head: head
-                        .into_iter()
-                        .map(|p| self.pattern(p, is_global))
-                        .try_collect()?,
-                    tail: if let Some(tail) = tail {
-                        Some(self.name_map.define(tail, NameSpace::Term, is_global)?)
-                    } else {
-                        None
-                    },
-                },
-                ParsedArrayPattern::Trailing { head, tail } => ArrayPattern::Trailing {
-                    head: if let Some(head) = head {
-                        Some(self.name_map.define(head, NameSpace::Term, is_global)?)
-                    } else {
-                        None
-                    },
-                    tail: tail
-                        .into_iter()
-                        .map(|p| self.pattern(p, is_global))
-                        .try_collect()?,
-                },
-                ParsedArrayPattern::LeadingAndTrailing { head, middle, tail } => {
-                    ArrayPattern::LeadingAndTrailing {
-                        head: head
-                            .into_iter()
-                            .map(|p| self.pattern(p, is_global))
-                            .try_collect()?,
-                        middle: if let Some(middle) = middle {
-                            Some(self.name_map.define(middle, NameSpace::Term, is_global)?)
-                        } else {
-                            None
-                        },
-                        tail: tail
-                            .into_iter()
-                            .map(|p| self.pattern(p, is_global))
-                            .try_collect()?,
+                )
+            }
+            Array(array_pat) => {
+                PatternKind::Array(match *array_pat {
+                    ParsedArrayPattern::Exact(items) => {
+                        ArrayPattern::Exact(
+                            items
+                                .into_iter()
+                                .map(|p| self.pattern(p, is_global))
+                                .try_collect()?,
+                        )
                     }
-                }
-            }),
+                    ParsedArrayPattern::Leading { head, tail } => {
+                        ArrayPattern::Leading {
+                            head: head
+                                .into_iter()
+                                .map(|p| self.pattern(p, is_global))
+                                .try_collect()?,
+                            tail: if let Some(tail) = tail {
+                                Some(self.name_map.define(tail, NameSpace::Term, is_global)?)
+                            } else {
+                                None
+                            },
+                        }
+                    }
+                    ParsedArrayPattern::Trailing { head, tail } => {
+                        ArrayPattern::Trailing {
+                            head: if let Some(head) = head {
+                                Some(self.name_map.define(head, NameSpace::Term, is_global)?)
+                            } else {
+                                None
+                            },
+                            tail: tail
+                                .into_iter()
+                                .map(|p| self.pattern(p, is_global))
+                                .try_collect()?,
+                        }
+                    }
+                    ParsedArrayPattern::LeadingAndTrailing { head, middle, tail } => {
+                        ArrayPattern::LeadingAndTrailing {
+                            head: head
+                                .into_iter()
+                                .map(|p| self.pattern(p, is_global))
+                                .try_collect()?,
+                            middle: if let Some(middle) = middle {
+                                Some(self.name_map.define(middle, NameSpace::Term, is_global)?)
+                            } else {
+                                None
+                            },
+                            tail: tail
+                                .into_iter()
+                                .map(|p| self.pattern(p, is_global))
+                                .try_collect()?,
+                        }
+                    }
+                })
+            }
             Constructor(..) => todo!(),
-            TypeHint(pat, type_) => PatternKind::TypeHint(
-                self.pattern(*pat, is_global)?.into(),
-                self.type_expr(*type_)?,
-            ),
+            TypeHint(pat, type_) => {
+                PatternKind::TypeHint(
+                    self.pattern(*pat, is_global)?.into(),
+                    self.type_expr(*type_)?,
+                )
+            }
         }
         .with_span(span)
         .with_type(Type::Any))
     }
 
-    fn type_expr(&mut self, _expr: TypeExpression) -> LResult<Type> {
+    fn type_expr(
+        &mut self,
+        _expr: TypeExpression,
+    ) -> LResult<Type> {
         todo!()
     }
 
-    fn expr(&mut self, expr: ValueExpression) -> LResult<IrNode> {
+    fn expr(
+        &mut self,
+        expr: ValueExpression,
+    ) -> LResult<IrNode> {
         let span = expr.span;
         let unreachable = |span| -> Box<_> {
             IrKind::Call {
@@ -276,48 +324,56 @@ except from within a recursive function."
                 self.capture_term(path.clone());
                 IrKind::Identifier(path)
             }
-            Binary { op, left, right } => IrKind::Call {
-                callee: IrKind::Call {
+            Binary { op, left, right } => {
+                IrKind::Call {
+                    callee: IrKind::Call {
+                        callee: IrKind::Identifier(op.path())
+                            .with_span(span)
+                            .with_type(Type::Any)
+                            .into(),
+                        argument: self.expr(*left)?.into(),
+                    }
+                    .with_span(span)
+                    .with_type(Type::Any)
+                    .into(),
+                    argument: self.expr(*right)?.into(),
+                }
+            }
+            BinaryOp(binary_op) => IrKind::Identifier(binary_op.path()),
+            Unary { op, child } => {
+                IrKind::Call {
                     callee: IrKind::Identifier(op.path())
                         .with_span(span)
                         .with_type(Type::Any)
                         .into(),
-                    argument: self.expr(*left)?.into(),
+                    argument: self.expr(*child)?.into(),
                 }
-                .with_span(span)
-                .with_type(Type::Any)
-                .into(),
-                argument: self.expr(*right)?.into(),
-            },
-            BinaryOp(binary_op) => IrKind::Identifier(binary_op.path()),
-            Unary { op, child } => IrKind::Call {
-                callee: IrKind::Identifier(op.path())
-                    .with_span(span)
-                    .with_type(Type::Any)
-                    .into(),
-                argument: self.expr(*child)?.into(),
-            },
+            }
             UnaryOp(unary_op) => IrKind::Identifier(unary_op.path()),
             FunctionDef { .. } => todo!(),
             FunctionShorthand { .. } => {
                 todo!()
             }
-            FunctionCall { callee, argument } => IrKind::Call {
-                callee: self.expr(*callee)?.into(),
-                argument: self.expr(*argument)?.into(),
-            },
+            FunctionCall { callee, argument } => {
+                IrKind::Call {
+                    callee: self.expr(*callee)?.into(),
+                    argument: self.expr(*argument)?.into(),
+                }
+            }
             If {
                 predicate,
                 then,
                 else_,
-            } => IrKind::Let {
-                assignee: PatternKind::Immediate(ConstValue::Boolean(true))
-                    .with_span(span)
-                    .with_type(Type::Any),
-                value: self.expr(*predicate)?.into(),
-                then: self.expr(*then)?.into(),
-                else_: self.expr(*else_)?.into(),
-            },
+            } => {
+                IrKind::Let {
+                    assignee: PatternKind::Immediate(ConstValue::Boolean(true))
+                        .with_span(span)
+                        .with_type(Type::Any),
+                    value: self.expr(*predicate)?.into(),
+                    then: self.expr(*then)?.into(),
+                    else_: self.expr(*else_)?.into(),
+                }
+            }
             Match {
                 scrutinee,
                 predicates,
@@ -408,30 +464,36 @@ except from within a recursive function."
             StructureLiteral(_) => {
                 todo!()
             }
-            Field { lhs, rhs } => IrKind::Field {
-                of: self.expr(*lhs)?.into(),
-                index: rhs,
-            },
-            ModulePath(items) => match items.as_slice() {
-                [a, b] => {
-                    let path = Path::new(a, b);
-                    if self.symbols.terms.contains_key(&path) {
-                        IrKind::Identifier(path)
-                    } else {
-                        return Err(err(format!("There is no symbol {path} in scope.")).span(span));
-                    }
+            Field { lhs, rhs } => {
+                IrKind::Field {
+                    of: self.expr(*lhs)?.into(),
+                    index: rhs,
                 }
-                s => {
-                    let len = s.len();
-                    let s = s.join("::");
-                    return Err(err(format!(
-                        "There is no symbol {s} in scope. \
+            }
+            ModulePath(items) => {
+                match items.as_slice() {
+                    [a, b] => {
+                        let path = Path::new(a, b);
+                        if self.symbols.terms.contains_key(&path) {
+                            IrKind::Identifier(path)
+                        } else {
+                            return Err(
+                                err(format!("There is no symbol {path} in scope.")).span(span)
+                            );
+                        }
+                    }
+                    s => {
+                        let len = s.len();
+                        let s = s.join("::");
+                        return Err(err(format!(
+                            "There is no symbol {s} in scope. \
 Modules cannot be nested, so all paths should consist of two parts: `a::b`. \
 This path has {len} parts, which is not possible."
-                    ))
-                    .span(span));
+                        ))
+                        .span(span));
+                    }
                 }
-            },
+            }
         }
         .with_span(span)
         .with_type(Type::Any))

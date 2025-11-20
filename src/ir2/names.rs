@@ -1,9 +1,14 @@
-use std::{
-    collections::{HashMap, HashSet},
-    str::FromStr,
+use std::collections::{
+    HashMap,
+    HashSet,
 };
+use std::str::FromStr;
 
-use crate::{LResult, Log, err};
+use crate::{
+    LResult,
+    Log,
+    err,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct Path {
@@ -19,7 +24,10 @@ pub enum NameSpace {
 }
 
 impl std::fmt::Display for NameSpace {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
         write!(
             f,
             "{}",
@@ -44,14 +52,20 @@ pub struct CanonicalMap {
 impl Path {
     const DELIMETER: &str = "::";
 
-    pub fn new(major: impl Into<String>, minor: impl Into<String>) -> Self {
+    pub fn new(
+        major: impl Into<String>,
+        minor: impl Into<String>,
+    ) -> Self {
         Self {
             major: major.into(),
             minor: minor.into(),
         }
     }
 
-    pub fn is_in_module(&self, module: &str) -> bool {
+    pub fn is_in_module(
+        &self,
+        module: &str,
+    ) -> bool {
         self.major == module
     }
 }
@@ -64,13 +78,21 @@ impl CanonicalMap {
         }
     }
 
-    pub fn get(&self, name: String, namespace: NameSpace) -> LResult<&Path> {
+    pub fn get(
+        &self,
+        name: String,
+        namespace: NameSpace,
+    ) -> LResult<&Path> {
         self.map
             .get(&(name.clone(), namespace))
             .ok_or_else(|| err(format!("There is no {namespace} {name} in this module. A {namespace} must be defined before it is used.")))
     }
 
-    pub fn define_global(&mut self, name: String, namespace: NameSpace) -> LResult<Path> {
+    pub fn define_global(
+        &mut self,
+        name: String,
+        namespace: NameSpace,
+    ) -> LResult<Path> {
         let path = Path::new(self.module_name.clone(), name.clone());
         if !self.globals.insert((namespace, path.clone())) {
             return Err(err(format!(
@@ -81,7 +103,11 @@ impl CanonicalMap {
         Ok(path)
     }
 
-    pub fn define_local(&mut self, name: String, namespace: NameSpace) -> Path {
+    pub fn define_local(
+        &mut self,
+        name: String,
+        namespace: NameSpace,
+    ) -> Path {
         let salt = self.salt;
         self.salt += 1;
         let path = Path::new(self.module_name.clone(), format!("{name}#{salt}"));
@@ -90,7 +116,12 @@ impl CanonicalMap {
         path
     }
 
-    pub fn define(&mut self, name: String, namespace: NameSpace, is_global: bool) -> LResult<Path> {
+    pub fn define(
+        &mut self,
+        name: String,
+        namespace: NameSpace,
+        is_global: bool,
+    ) -> LResult<Path> {
         if is_global {
             self.define_global(name, namespace)
         } else {
@@ -98,7 +129,10 @@ impl CanonicalMap {
         }
     }
 
-    pub fn end_local_scopes(&mut self, n: usize) {
+    pub fn end_local_scopes(
+        &mut self,
+        n: usize,
+    ) {
         for _ in 0..n {
             let (key, val) = self.history.pop().unwrap();
             match val {
@@ -110,7 +144,10 @@ impl CanonicalMap {
 }
 
 impl std::fmt::Display for Path {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
         write!(f, "{}::{}", self.major, self.minor)
     }
 }

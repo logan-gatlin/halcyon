@@ -39,22 +39,34 @@ where
     }
 
     #[must_use]
-    pub fn bug(&mut self, message: impl Into<String>) -> LogBuilder<FileId> {
+    pub fn bug(
+        &mut self,
+        message: impl Into<String>,
+    ) -> LogBuilder<FileId> {
         self.diagnostic(Severity::Warning, message)
     }
 
     #[must_use]
-    pub fn error(&mut self, message: impl Into<String>) -> LogBuilder<FileId> {
+    pub fn error(
+        &mut self,
+        message: impl Into<String>,
+    ) -> LogBuilder<FileId> {
         self.diagnostic(Severity::Error, message)
     }
 
     #[must_use]
-    pub fn warning(&mut self, message: impl Into<String>) -> LogBuilder<FileId> {
+    pub fn warning(
+        &mut self,
+        message: impl Into<String>,
+    ) -> LogBuilder<FileId> {
         self.diagnostic(Severity::Warning, message)
     }
 
     #[must_use]
-    pub fn help(&mut self, message: impl Into<String>) -> LogBuilder<FileId> {
+    pub fn help(
+        &mut self,
+        message: impl Into<String>,
+    ) -> LogBuilder<FileId> {
         self.diagnostic(Severity::Help, message)
     }
 
@@ -86,7 +98,12 @@ where
     FileId: Clone,
 {
     #[must_use]
-    pub fn label(mut self, style: LabelStyle, message: impl Into<String>, span: Span) -> Self {
+    pub fn label(
+        mut self,
+        style: LabelStyle,
+        message: impl Into<String>,
+        span: Span,
+    ) -> Self {
         let span = span.start..(span.start + span.width);
         self.labels.push(Label {
             style,
@@ -98,17 +115,28 @@ where
     }
 
     #[must_use]
-    pub fn primary(self, message: impl Into<String>, span: Span) -> Self {
+    pub fn primary(
+        self,
+        message: impl Into<String>,
+        span: Span,
+    ) -> Self {
         self.label(LabelStyle::Primary, message, span)
     }
 
     #[must_use]
-    pub fn secondary(self, message: impl Into<String>, span: Span) -> Self {
+    pub fn secondary(
+        self,
+        message: impl Into<String>,
+        span: Span,
+    ) -> Self {
         self.label(LabelStyle::Secondary, message, span)
     }
 
     #[must_use]
-    pub fn note(mut self, message: impl Into<String>) -> Self {
+    pub fn note(
+        mut self,
+        message: impl Into<String>,
+    ) -> Self {
         self.notes.push(message.into());
         self
     }

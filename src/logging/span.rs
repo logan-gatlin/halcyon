@@ -1,4 +1,7 @@
-use std::ops::{Add, AddAssign};
+use std::ops::{
+    Add,
+    AddAssign,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Hash)]
 pub struct Span {
@@ -9,7 +12,10 @@ pub struct Span {
 impl Add<Span> for Span {
     type Output = Span;
 
-    fn add(self, rhs: Span) -> Self::Output {
+    fn add(
+        self,
+        rhs: Span,
+    ) -> Self::Output {
         let (min, max) = if self.start < rhs.start {
             (self, rhs)
         } else {
@@ -23,7 +29,10 @@ impl Add<Span> for Span {
 }
 
 impl AddAssign for Span {
-    fn add_assign(&mut self, rhs: Self) {
+    fn add_assign(
+        &mut self,
+        rhs: Self,
+    ) {
         *self = *self + rhs;
     }
 }
@@ -46,7 +55,10 @@ impl<T> std::fmt::Display for Spanned<T>
 where
     T: std::fmt::Display,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
         write!(f, "{}", self.inner)
     }
 }
@@ -58,14 +70,20 @@ impl<T> std::ops::DerefMut for Spanned<T> {
 }
 
 pub trait WithSpan: Sized {
-    fn with_span(self, span: Span) -> Spanned<Self>;
+    fn with_span(
+        self,
+        span: Span,
+    ) -> Spanned<Self>;
     fn with_default_span(self) -> Spanned<Self> {
         self.with_span(Span { start: 0, width: 0 })
     }
 }
 
 impl<T> WithSpan for T {
-    fn with_span(self, span: Span) -> Spanned<Self> {
+    fn with_span(
+        self,
+        span: Span,
+    ) -> Spanned<Self> {
         Spanned { inner: self, span }
     }
 }

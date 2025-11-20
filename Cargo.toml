@@ -1,7 +1,17 @@
 [package]
 name = "halcyon-lib"
 version = "0.1.0"
+authors = ["Logan Gatlin <logan@gatlintc.com>"]
 edition = "2024"
+# rust-version = ""
+description = "Compiler backend for the Halcyon programming language"
+readme = "./README.md"
+homepage = "https://halcyon-lang.dev"
+repository = "https://github.com/logan-gatlin/halcyon"
+license = "MIT"
+license-file = "./license"
+keywords = ["compiler", "functional programming", "wasm"]
+categories = ["wasm", "compilers"]
 
 [dependencies]
 wasm-encoder = "0.233"

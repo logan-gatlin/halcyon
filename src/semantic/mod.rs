@@ -8,7 +8,10 @@
 //mod constraint;
 //mod infer;
 mod types;
-use std::collections::{HashMap, HashSet};
+use std::collections::{
+    HashMap,
+    HashSet,
+};
 
 use crate::Visit;
 //pub use constraint::*;

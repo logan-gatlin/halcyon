@@ -31,56 +31,61 @@ impl PrettyPrint for Pattern {
         match &self.inner.inner {
             Hole => format!("_ {type_}"),
             Identifier(path) => format!("{} {type_}", path.minor),
-            Tuple(items) => format!(
-                "(\n{},\n) {type_}",
-                items
-                    .iter()
-                    .map(Pattern::pretty)
-                    .map(left_pad)
-                    .collect::<Vec<_>>()
-                    .join(",\n")
-            ),
-            Array(array_pattern) => format!(
-                "[\n{},\n] {type_}",
-                match array_pattern {
-                    ArrayPattern::Exact(items) => items
+            Tuple(items) => {
+                format!(
+                    "(\n{},\n) {type_}",
+                    items
                         .iter()
                         .map(Pattern::pretty)
                         .map(left_pad)
                         .collect::<Vec<_>>()
-                        .join(",\n"),
-                    ArrayPattern::Leading { head, tail } => head
-                        .iter()
-                        .map(Pattern::pretty)
-                        .chain(
-                            tail.clone()
+                        .join(",\n")
+                )
+            }
+            Array(array_pattern) => {
+                format!(
+                    "[\n{},\n] {type_}",
+                    match array_pattern {
+                        ArrayPattern::Exact(items) =>
+                            items
+                                .iter()
+                                .map(Pattern::pretty)
+                                .map(left_pad)
+                                .collect::<Vec<_>>()
+                                .join(",\n"),
+                        ArrayPattern::Leading { head, tail } =>
+                            head.iter()
+                                .map(Pattern::pretty)
+                                .chain(
+                                    tail.clone()
+                                        .map(|p| format!("..{}::{}", p.major.yellow(), p.minor))
+                                )
+                                .map(left_pad)
+                                .collect::<Vec<_>>()
+                                .join(",\n"),
+                        ArrayPattern::Trailing { head, tail } =>
+                            head.clone()
                                 .map(|p| format!("..{}::{}", p.major.yellow(), p.minor))
-                        )
-                        .map(left_pad)
-                        .collect::<Vec<_>>()
-                        .join(",\n"),
-                    ArrayPattern::Trailing { head, tail } => head
-                        .clone()
-                        .map(|p| format!("..{}::{}", p.major.yellow(), p.minor))
-                        .into_iter()
-                        .chain(tail.iter().map(Pattern::pretty))
-                        .map(left_pad)
-                        .collect::<Vec<_>>()
-                        .join(",\n"),
-                    ArrayPattern::LeadingAndTrailing { head, middle, tail } => head
-                        .iter()
-                        .map(Pattern::pretty)
-                        .chain(middle.clone().map(|p| format!(
-                            "..{}::{}",
-                            p.major.yellow(),
-                            p.minor
-                        )))
-                        .chain(tail.iter().map(Pattern::pretty))
-                        .map(left_pad)
-                        .collect::<Vec<_>>()
-                        .join(",\n"),
-                }
-            ),
+                                .into_iter()
+                                .chain(tail.iter().map(Pattern::pretty))
+                                .map(left_pad)
+                                .collect::<Vec<_>>()
+                                .join(",\n"),
+                        ArrayPattern::LeadingAndTrailing { head, middle, tail } =>
+                            head.iter()
+                                .map(Pattern::pretty)
+                                .chain(
+                                    middle
+                                        .clone()
+                                        .map(|p| format!("..{}::{}", p.major.yellow(), p.minor))
+                                )
+                                .chain(tail.iter().map(Pattern::pretty))
+                                .map(left_pad)
+                                .collect::<Vec<_>>()
+                                .join(",\n"),
+                    }
+                )
+            }
             Constructor(_, pat) => format!("constructor {}", pat.pretty()),
             Immediate(const_value) => {
                 let const_value = format!("{const_value}").magenta().to_string();
@@ -165,11 +170,13 @@ impl PrettyPrint for IrNode {
                     type_ = self.type_.pretty()
                 )
             }
-            Identifier(path) => format!(
-                "{path} {type_}",
-                path = path.pretty(),
-                type_ = self.type_.pretty()
-            ),
+            Identifier(path) => {
+                format!(
+                    "{path} {type_}",
+                    path = path.pretty(),
+                    type_ = self.type_.pretty()
+                )
+            }
             Tuple(items) => format!("(\n{},\n)", items.pretty()),
             Struct(_) => todo!(),
             Field { of, index } => format!("{of}.{index}", of = of.pretty()),
@@ -201,11 +208,13 @@ impl PrettyPrint for IrNode {
                     argument = left_pad(argument.pretty()),
                 )
             }
-            Semicolon(left, right) => format!(
-                "{left};\n{right}",
-                left = left.pretty(),
-                right = right.pretty()
-            ),
+            Semicolon(left, right) => {
+                format!(
+                    "{left};\n{right}",
+                    left = left.pretty(),
+                    right = right.pretty()
+                )
+            }
         }
     }
 }

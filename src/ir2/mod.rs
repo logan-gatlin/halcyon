@@ -8,10 +8,19 @@ pub use pattern::*;
 
 use std::collections::HashMap;
 
-use crate::{Logger, Spanned, Visit, parse::ParsedModule, semantic::*};
+use crate::parse::ParsedModule;
+use crate::semantic::*;
+use crate::{
+    Logger,
+    Spanned,
+    Visit,
+};
 pub use pretty_print::*;
 
-pub fn build_ir(logger: &mut Logger, module: ParsedModule) -> IrModule {
+pub fn build_ir(
+    logger: &mut Logger,
+    module: ParsedModule,
+) -> IrModule {
     build_ir::Builder::build_ir(logger, module)
 }
 
@@ -78,7 +87,10 @@ pub enum ConstValue {
 }
 
 impl std::fmt::Display for ConstValue {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
         match self {
             ConstValue::Unit => write!(f, "()"),
             ConstValue::String(s) => write!(f, "\"{s}\""),

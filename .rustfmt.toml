@@ -1,0 +1,9 @@
+unstable_features = true
+condense_wildcard_suffixes = true
+empty_item_single_line = false
+fn_params_layout = "Vertical"
+force_multiline_blocks = true
+format_generated_files = false
+hex_literal_case = "Upper"
+imports_layout = "Vertical"
+imports_granularity = "Module"

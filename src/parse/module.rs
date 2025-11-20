@@ -1,6 +1,6 @@
 use super::*;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ModuleStatementKind {
     DocComment(String),
     Let {
@@ -16,7 +16,7 @@ pub enum ModuleStatementKind {
 pub type ModuleStatement = Expression<ModuleStatementKind>;
 
 #[allow(dead_code)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InnerParsedModule {
     pub name: Spanned<String>,
     pub contents: Vec<ModuleStatement>,
@@ -24,107 +24,75 @@ pub struct InnerParsedModule {
 
 pub type ParsedModule = Spanned<InnerParsedModule>;
 
-impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
-    pub fn parse_module(&mut self) -> ParsedModule {
-        macro_rules! recover {
-            () => {
-                loop {
-                    match self.peek().map(|t| t.inner) {
-                        Some(Let | Type | Do | Import | End | Module | DocComment(_)) => break,
-                        _ => {}
-                    }
-                    self.skip();
-                }
-            };
-        }
-        macro_rules! try_ {
-            ($e:expr) => {
-                match $e {
-                    Some(v) => v,
-                    None => {
-                        recover!();
-                        continue;
-                    }
-                }
-            };
+const RECOVERY: RecoveryBehavior = UntilNextStatement;
 
-            ($e:expr, $note:expr) => {
-                match $e {
-                    Some(v) => v,
-                    None => {
-                        self.logger
-                            .error(ERR_MSG)
-                            .primary($note, self.last_span)
-                            .done();
-                        // Error recovery
-                        recover!();
-                        continue;
-                    }
-                }
-            };
-        }
-        use ModuleStatementKind as m;
-        loop {
-            if self.eat(Module).is_some() {
-                break;
-            } else {
-                self.error_expected(Module)
-                    .note("Expressions are only allowed inside of modules.")
+impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
+    pub fn parse_module_statement(&mut self) -> Result<ModuleStatement> {
+        use TokenKind::*;
+        let next = self.next_or_err().ok_or(NoRecovery)?;
+        let span = next.span;
+        Ok(match next.inner {
+            Module => {
+                self.error()
+                    .primary("Expected `end` here.", span)
+                    .note("Nested modules are not allowed.")
                     .done();
-                recover!()
+                return Err(RECOVERY);
             }
-        }
+            End => {
+                unreachable!(
+                    "The `end` token should be handled outside of `parse_module_statement`, because it marks the end of a module"
+                );
+            }
+            DocComment(comment) => {
+                ModuleStatementKind::DocComment(comment)
+            }
+            Let => {
+                let assignee = self.parse_pattern()?.into();
+                self.eat_or_err(&TokenKind::Equal).ok_or(RECOVERY)?;
+                let value = self.parse_value_expression(0)?.into();
+                ModuleStatementKind::Let {
+                    assignee,
+                    value,
+                }
+            }
+            Type => {
+                let assignee = self.eat_ident_or_err().ok_or(RECOVERY)?;
+                self.eat_or_err(&TokenKind::Equal).ok_or(RECOVERY)?;
+                let value = self.parse_type_definition()?.into();
+                ModuleStatementKind::Type {
+                    assignee,
+                    value,
+                }
+            }
+            _ => {
+                self.error().primary("Expected `end` here", span);
+                return Err(RECOVERY);
+            },
+        }.with_span(span + self.last_span))
+    }
+    pub fn parse_module(&mut self) -> Option<ParsedModule> {
+        if self.eat_or_err(&Module).is_none() {
+            self.recover(UntilKind(TokenKind::Module));
+            return None;
+        };
         let span = self.last_span;
-        let name = self
-            .eat_ident()
-            .unwrap_or_else(|| {
-                self.error_expected(Identifier("identifier".to_string()))
-                    .done();
-                "_".to_string()
-            })
-            .with_span(self.last_span);
-        p.eat(Equal).unwrap_or_else(|e| logger.log(e));
-        let mut contents = vec![];
-        loop {
-            let next = if let Ok(next) = p.next() {
-                next
-            } else {
-                error!(logger, p.last_span, "Expected `end` after this");
-                break;
-            };
-            match next.inner {
-                End => break,
-                DocComment(s) => {
-                    let s = s.trim().to_string();
-                    contents.push(m::DocComment(s).with_span(p.last_span))
-                }
-                Let => {
-                    let assignee = try_! {parse_pattern(logger, p), ""};
-                    let span = assignee.span;
-                    try_! {p.eat(Equal), ""};
-                    let value = Box::new(try_!(parse_value_expression(logger, p, 0)));
-                    contents.push(m::Let { assignee, value }.with_span(span + p.last_span));
-                }
-                Type => {
-                    let assignee = try_!(p.eat_ident()).with_span(p.last_span);
-                    try_!(p.eat(Equal));
-                    contents.push(
-                        m::Type {
-                            assignee,
-                            value: Box::new(try_!(parse_type_definition(logger, p))),
-                        }
-                        .with_span(span + p.last_span),
-                    )
-                }
-                _ => {
-                    error!(
-                        logger,
-                        p.last_span, "Expected a statement beginning with `let` or `type` here"
-                    );
-                    recover!();
-                }
+        let name = match self.eat_ident_or_err() {
+            Some(name) => name,
+            None => {
+                self.recover(UntilKind(TokenKind::End));
+                return None;
             }
+        };
+        let _ = self.eat_or_err(&Equal);
+        let mut contents = vec![];
+        while self.peek().is_some_and(|t| t.inner != End) {
+            match self.parse_module_statement() {
+                Ok(s) => contents.push(s),
+                Err(recovery) => self.recover(recovery),
+            };
         }
-        InnerParsedModule { name, contents }.with_span(span + p.last_span)
+        let _ = self.eat_or_err(&End);
+        Some(InnerParsedModule { name, contents }.with_span(span + self.last_span))
     }
 }

@@ -28,7 +28,10 @@ pub struct Constructor {
 }
 
 impl Visit<Type> for Constructor {
-    fn _visit(&mut self, f: &mut impl FnMut(&mut Type)) {
+    fn _visit(
+        &mut self,
+        f: &mut impl FnMut(&mut Type),
+    ) {
         match &mut self.kind {
             ConstructorKind::Unitary(t) => {
                 t._visit(f);
@@ -108,7 +111,10 @@ impl Pattern {
 }
 
 impl Visit<Pattern> for Pattern {
-    fn _visit(&mut self, f: &mut impl FnMut(&mut Pattern)) {
+    fn _visit(
+        &mut self,
+        f: &mut impl FnMut(&mut Pattern),
+    ) {
         match &mut *self.inner {
             PatternKind::Hole | PatternKind::Identifier(_) | PatternKind::Immediate(_) => {}
             PatternKind::Array(pat) => pat._visit(f),
@@ -123,7 +129,10 @@ impl Visit<Pattern> for Pattern {
 }
 
 impl Visit<Pattern> for ArrayPattern {
-    fn _visit(&mut self, f: &mut impl FnMut(&mut Pattern)) {
+    fn _visit(
+        &mut self,
+        f: &mut impl FnMut(&mut Pattern),
+    ) {
         match self {
             ArrayPattern::Exact(array_patterns) => array_patterns._visit(f),
             ArrayPattern::Leading { head, .. } => head._visit(f),
@@ -137,7 +146,10 @@ impl Visit<Pattern> for ArrayPattern {
 }
 
 impl Visit<Type> for Pattern {
-    fn _visit(&mut self, f: &mut impl FnMut(&mut Type)) {
+    fn _visit(
+        &mut self,
+        f: &mut impl FnMut(&mut Type),
+    ) {
         self.visit(|p: &mut Pattern| {
             match &mut p.inner.inner {
                 PatternKind::Constructor(c, _) => c._visit(f),
@@ -153,37 +165,42 @@ impl Visit<Type> for Pattern {
 }
 
 impl Visit<(Path, Type)> for Pattern {
-    fn _visit(&mut self, f: &mut impl FnMut(&mut (Path, Type))) {
-        self.visit(|p: &mut Pattern| match &mut p.inner.inner {
-            PatternKind::Identifier(path) => {
-                let mut tup = (path.clone(), p.type_.clone());
-                f(&mut tup);
-                *path = tup.0;
-                p.type_ = tup.1;
+    fn _visit(
+        &mut self,
+        f: &mut impl FnMut(&mut (Path, Type)),
+    ) {
+        self.visit(|p: &mut Pattern| {
+            match &mut p.inner.inner {
+                PatternKind::Identifier(path) => {
+                    let mut tup = (path.clone(), p.type_.clone());
+                    f(&mut tup);
+                    *path = tup.0;
+                    p.type_ = tup.1;
+                }
+                PatternKind::Array(ArrayPattern::Leading {
+                    tail: Some(tail), ..
+                }) => {
+                    let mut tup = (tail.clone(), p.type_.clone());
+                    f(&mut tup);
+                    *tail = tup.0;
+                }
+                PatternKind::Array(ArrayPattern::Trailing {
+                    head: Some(head), ..
+                }) => {
+                    let mut tup = (head.clone(), p.type_.clone());
+                    f(&mut tup);
+                    *head = tup.0;
+                }
+                PatternKind::Array(ArrayPattern::LeadingAndTrailing {
+                    middle: Some(middle),
+                    ..
+                }) => {
+                    let mut tup = (middle.clone(), p.type_.clone());
+                    f(&mut tup);
+                    *middle = tup.0;
+                }
+                _ => {}
             }
-            PatternKind::Array(ArrayPattern::Leading {
-                tail: Some(tail), ..
-            }) => {
-                let mut tup = (tail.clone(), p.type_.clone());
-                f(&mut tup);
-                *tail = tup.0;
-            }
-            PatternKind::Array(ArrayPattern::Trailing {
-                head: Some(head), ..
-            }) => {
-                let mut tup = (head.clone(), p.type_.clone());
-                f(&mut tup);
-                *head = tup.0;
-            }
-            PatternKind::Array(ArrayPattern::LeadingAndTrailing {
-                middle: Some(middle),
-                ..
-            }) => {
-                let mut tup = (middle.clone(), p.type_.clone());
-                f(&mut tup);
-                *middle = tup.0;
-            }
-            _ => {}
         })
     }
 }

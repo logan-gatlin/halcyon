@@ -1,9 +1,3 @@
-macro_rules! p {
-    () => {
-        &mut Parser<impl Iterator<Item = Token>>
-    }
-}
-
 mod module;
 mod pattern;
 mod type_expression;
@@ -16,50 +10,117 @@ pub use value_expression::*;
 
 const ERR_MSG: &str = "Syntax error";
 
-use multipeek::{MultiPeek, multipeek};
+use multipeek::{
+    MultiPeek,
+    multipeek,
+};
 
-use crate::{LoggerT, Span, Spanned, WithSpan, operator::*, token::*};
+use crate::operator::*;
+use crate::token::*;
+use crate::{
+    LoggerT,
+    Span,
+    Spanned,
+    WithSpan,
+};
+pub use RecoveryBehavior::*;
 use TokenKind::*;
 
 pub type Expression<K> = Spanned<K>;
 
+/// How to recover from a parsing error
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RecoveryBehavior {
+    /// No recovery necessary
+    NoRecovery,
+    /// Skip until this exact token is next
+    UntilKind(TokenKind),
+    /// Skip until this category of token is next
+    UntilCategory(TokenCategory),
+    /// Until the beginning of the next module statement
+    UntilNextStatement,
+}
+
+type Result<T> = std::result::Result<T, RecoveryBehavior>;
+
 pub struct Parser<'a, I: Iterator<Item = Token>> {
-    pub logger: &'a mut LoggerT,
-    pub iter: MultiPeek<I>,
-    pub last_span: Span,
+    logger: &'a mut LoggerT,
+    iter: MultiPeek<I>,
+    last_span: Span,
 }
 
 impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
-    fn peek(&mut self) -> Option<Token> {
+    pub fn new(
+        logger: &'a mut LoggerT,
+        iter: impl IntoIterator<IntoIter = I>,
+    ) -> Self {
+        Self {
+            logger,
+            iter: multipeek(iter.into_iter()),
+            last_span: Span { start: 0, width: 0 },
+        }
+    }
+    pub fn peek(&mut self) -> Option<Token> {
         self.iter.peek().cloned()
     }
-
-    fn peek_nth(&mut self, n: usize) -> Option<Token> {
+    pub fn peek_or_err(&mut self) -> Option<Token> {
+        let res = self.peek();
+        if res.is_none() {
+            let span = self.last_span;
+            self.error().primary("Unexpected end of source code", span);
+        }
+        res
+    }
+    pub fn peek_nth(
+        &mut self,
+        n: usize,
+    ) -> Option<Token> {
         self.iter.peek_nth(n).cloned()
     }
-
-    fn next(&mut self) -> Option<Token> {
+    pub fn next(&mut self) -> Option<Token> {
         self.iter.next()
     }
-
-    fn skip(&mut self) {
+    pub fn next_or_err(&mut self) -> Option<Token> {
+        let res = self.next();
+        if res.is_none() {
+            let span = self.last_span;
+            self.error().primary("Unexpected end of source code", span);
+        }
+        res
+    }
+    pub fn skip(&mut self) {
         if let Some(next) = self.iter.next() {
             self.last_span = next.span;
         }
     }
-
-    fn eat(&mut self, tk: TokenKind) -> Option<Token> {
-        if let Some(next) = self.iter.peek().cloned()
-            && next.inner == tk
+    pub fn eat(
+        &mut self,
+        tk: &TokenKind,
+    ) -> Option<Token> {
+        if let Some(next) = self.iter.peek()
+            && &next.inner == tk
         {
+            let next = next.clone();
             self.skip();
             Some(next)
         } else {
             None
         }
     }
-
-    fn eat_one_of(&mut self, items: impl IntoIterator<Item = TokenKind>) -> Option<usize> {
+    pub fn eat_or_err(
+        &mut self,
+        tk: &TokenKind,
+    ) -> Option<Token> {
+        let res = self.eat(&tk);
+        if res.is_none() {
+            self.error_expected(tk);
+        }
+        res
+    }
+    pub fn eat_one_of(
+        &mut self,
+        items: impl IntoIterator<Item = TokenKind>,
+    ) -> Option<usize> {
         let items = items.into_iter().collect::<Vec<_>>();
         for (id, item) in items.iter().enumerate() {
             if self.iter.peek().is_some_and(|t| &t.inner == item) {
@@ -69,37 +130,83 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
         }
         None
     }
-
-    fn eat_path(&mut self) -> Option<[String; 2]> {
+    pub fn eat_path(&mut self) -> Option<[Spanned<String>; 2]> {
         let first = self.eat_ident()?;
-        self.eat(DoubleColon)?;
+        self.eat(&DoubleColon)?;
         let second = self.eat_ident()?;
         Some([first, second])
     }
-
-    fn eat_ident(&mut self) -> Option<String> {
+    pub fn eat_path_or_err(&mut self) -> Option<[Spanned<String>; 2]> {
+        let res = self.eat_path();
+        if res.is_none() {
+            let span = self.last_span;
+            self.error().primary("Expected a path here", span).done();
+        }
+        res
+    }
+    pub fn eat_ident(&mut self) -> Option<Spanned<String>> {
         if let Some(next) = self.iter.peek().cloned()
             && let Identifier(name) = next.inner
         {
+            let span = next.span;
             self.skip();
-            Some(name)
+            Some(name.with_span(span))
         } else {
             None
         }
     }
-
-    fn error(&mut self) -> crate::LogBuilder<'_, usize> {
+    pub fn eat_ident_or_err(&mut self) -> Option<Spanned<String>> {
+        let res = self.eat_ident();
+        if res.is_none() {
+            self.error_expected(&TokenKind::Identifier("identifier".to_string()));
+        }
+        res
+    }
+    pub fn error(&mut self) -> crate::LogBuilder<'_, usize> {
         self.logger.error(ERR_MSG)
     }
-
-    fn error_expected(&mut self, token: TokenKind) -> crate::LogBuilder<'_, usize> {
+    pub fn error_expected(
+        &mut self,
+        token: &TokenKind,
+    ) -> crate::LogBuilder<'_, usize> {
         self.logger
             .error(ERR_MSG)
             .primary(format!("Expected `{token}` here"), self.last_span)
     }
+    pub fn recover(
+        &mut self,
+        bh: RecoveryBehavior,
+    ) {
+        match bh {
+            RecoveryBehavior::NoRecovery => (),
+            RecoveryBehavior::UntilKind(token_kind) => {
+                while self.peek().is_some_and(|t| t.inner != token_kind) {
+                    self.skip()
+                }
+            }
+            RecoveryBehavior::UntilCategory(category) => {
+                while self.peek().is_some_and(|t| t.inner.category() != category) {
+                    self.skip()
+                }
+            }
+            RecoveryBehavior::UntilNextStatement => {
+                while self.peek().is_some_and(|t| {
+                    match &t.inner {
+                        Let | Type | Do | Module | End | Import => true,
+                        _ => false,
+                    }
+                }) {
+                    self.skip();
+                }
+            }
+        }
+    }
 }
 
-pub fn parse(logger: &mut LoggerT, iter: impl IntoIterator<Item = Token>) -> Vec<ParsedModule> {
+pub fn parse(
+    logger: &mut LoggerT,
+    iter: impl IntoIterator<Item = Token>,
+) -> Vec<ParsedModule> {
     let mut p = Parser {
         iter: multipeek(iter.into_iter().filter(|t| {
             !matches!(
@@ -112,7 +219,9 @@ pub fn parse(logger: &mut LoggerT, iter: impl IntoIterator<Item = Token>) -> Vec
     };
     let mut modules = vec![];
     while p.peek().is_some() {
-        modules.push(parse_module(logger, &mut p));
+        if let Some(module) = p.parse_module() {
+            modules.push(module);
+        }
     }
     modules
 }

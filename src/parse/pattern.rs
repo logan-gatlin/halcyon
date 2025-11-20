@@ -1,170 +1,124 @@
 use super::*;
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PatternExpressionKind {
     Literal(super::Literal),
     Identifier(String),
-    ModulePath(Vec<String>),
+    ModulePath(String, String),
     Tuple(Vec<PatternExpression>),
-    Array(Box<ParsedArrayPattern>),
-    Constructor(Vec<String>, Box<PatternExpression>),
+    Array(Vec<ParsedArrayPattern>),
+    Constructor((String, Option<String>), Box<PatternExpression>),
     TypeHint(Box<PatternExpression>, Box<TypeExpression>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParsedArrayPattern {
-    Exact(Vec<PatternExpression>),
-    Leading {
-        head: Vec<PatternExpression>,
-        tail: Option<String>,
-    },
-    Trailing {
-        head: Option<String>,
-        tail: Vec<PatternExpression>,
-    },
-    LeadingAndTrailing {
-        head: Vec<PatternExpression>,
-        middle: Option<String>,
-        tail: Vec<PatternExpression>,
-    },
+    Pattern(PatternExpression),
+    ExpansionAssign(Spanned<String>),
+    Expansion,
 }
 
 pub type PatternExpression = Expression<PatternExpressionKind>;
 
-fn primary(logger: &mut Logger, p: p!()) -> LResult<PatternExpression> {
-    use PatternExpressionKind as e;
-    let next = p.next()?;
-    let span = next.span;
-    Ok(match next.inner {
-        StringLiteral(s) => e::Literal(Literal::String(s)),
-        GlyphLiteral(g) => e::Literal(Literal::Glyph(g)),
-        IntegerLiteral(i, b) => e::Literal(Literal::Integer(i, b)),
-        RealLiteral(r) => e::Literal(Literal::Real(r)),
-        True => e::Literal(Literal::Boolean(true)),
-        False => e::Literal(Literal::Boolean(false)),
-        Identifier(name) => {
-            let mut path = vec![name];
-            if p.eat(DoubleColon).is_ok() {
+impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
+    fn pattern_primary(&mut self) -> Result<PatternExpression> {
+        use PatternExpressionKind as e;
+        let next = self.next_or_err().ok_or(UntilNextStatement)?;
+        let span = next.span;
+        Ok(match next.inner {
+            StringLiteral(s) => e::Literal(Literal::String(s)),
+            GlyphLiteral(g) => e::Literal(Literal::Glyph(g)),
+            IntegerLiteral(i, b) => e::Literal(Literal::Integer(i, b)),
+            RealLiteral(r) => e::Literal(Literal::Real(r)),
+            True => e::Literal(Literal::Boolean(true)),
+            False => e::Literal(Literal::Boolean(false)),
+            Identifier(name) => {
+                let name1 = name;
+                let name2 = if self.eat(&DoubleColon).is_some()
+                    && let Some(name2) = self.eat_ident_or_err()
+                {
+                    Some(name2.inner)
+                } else {
+                    None
+                };
+                // Constructor
+                if self.eat(&Of).is_some() {
+                    let inner = self.parse_pattern()?;
+                    e::Constructor((name1, name2), inner.into())
+                }
+                // Path
+                else if let Some(name2) = name2 {
+                    e::ModulePath(name1, name2)
+                } else {
+                    e::Identifier(name1)
+                }
+            }
+            LeftParen => {
+                let mut inner = vec![];
+                let mut is_tuple = false;
                 loop {
-                    let s = p.eat_ident()?;
-                    path.push(s);
-                    if p.eat(DoubleColon).is_err() {
+                    if self.eat(&RightParen).is_some() {
+                        break;
+                    }
+                    inner.push(self.parse_pattern()?);
+                    if self.eat(&Comma).is_some() {
+                        is_tuple = true;
+                    } else {
+                        self.eat_or_err(&RightParen)
+                            .ok_or(UntilCategory(TokenCategory::EndGrouping))?;
                         break;
                     }
                 }
-            }
-            // Constructor
-            if p.eat(Of).is_ok() {
-                let inner = parse_pattern(logger, p)?;
-                e::Constructor(path, inner.into())
-            }
-            // Path
-            else if path.len() > 1 {
-                e::ModulePath(path)
-            } else {
-                e::Identifier(path[0].clone())
-            }
-        }
-        LeftParen => {
-            let mut inner = vec![];
-            let mut is_tuple = false;
-            loop {
-                if p.eat(RightParen).is_ok() {
-                    break;
-                }
-                inner.push(parse_pattern(logger, p)?);
-                if p.eat(Comma).is_ok() {
-                    is_tuple = true;
+                if is_tuple {
+                    e::Tuple(inner)
+                } else if !inner.is_empty() {
+                    return Ok(inner[0].clone());
                 } else {
-                    p.eat(RightParen)?;
-                    break;
+                    e::Literal(Literal::Unit)
                 }
             }
-            if is_tuple {
-                e::Tuple(inner)
-            } else if !inner.is_empty() {
-                return Ok(inner[0].clone());
-            } else {
-                e::Literal(Literal::Unit)
+            LeftSquare => {
+                let mut patterns = vec![];
+                loop {
+                    if self.eat(&RightSquare).is_some() {
+                        break;
+                    }
+                    if self.peek().is_some_and(|t| t.inner == DotDot) {
+                        self.skip();
+                        if let Some(ident) = self.eat_ident() {
+                            patterns.push(ParsedArrayPattern::ExpansionAssign(ident));
+                        } else {
+                            patterns.push(ParsedArrayPattern::Expansion);
+                        }
+                    } else {
+                        patterns.push(ParsedArrayPattern::Pattern(self.parse_pattern()?));
+                    }
+                    if self.eat(&Comma).is_none() {
+                        self.eat_or_err(&RightSquare)
+                            .ok_or(UntilCategory(TokenCategory::EndGrouping))?;
+                        break;
+                    }
+                }
+                e::Array(patterns)
+            }
+            _ => {
+                self.error()
+                    .primary("Expected a pattern here.", span)
+                    .done();
+                return Err(UntilNextStatement);
             }
         }
-        LeftSquare => {
-            use ParsedArrayPattern as p;
-            let mut current = ParsedArrayPattern::Exact(vec![]);
-            loop {
-                if p.eat(RightSquare).is_ok() {
-                    break;
-                }
-                let is_glob = p.eat(DotDot).is_ok();
-                let glob_ident = if is_glob { p.eat_ident().ok() } else { None };
-                current = match current {
-                    p::Exact(mut head) => {
-                        if is_glob && head.is_empty() {
-                            p::Trailing {
-                                head: glob_ident,
-                                tail: vec![],
-                            }
-                        } else if is_glob {
-                            p::Leading {
-                                head,
-                                tail: glob_ident,
-                            }
-                        } else {
-                            head.push(parse_pattern(logger, p)?);
-                            p::Exact(head)
-                        }
-                    }
-                    p::Leading { head, tail } => {
-                        if is_glob {
-                            panic!()
-                        } else {
-                            p::LeadingAndTrailing {
-                                head,
-                                middle: tail,
-                                tail: vec![parse_pattern(logger, p)?],
-                            }
-                        }
-                    }
-                    p::Trailing { head, mut tail } => {
-                        if is_glob {
-                            panic!()
-                        } else {
-                            tail.push(parse_pattern(logger, p)?);
-                            p::Trailing { head, tail }
-                        }
-                    }
-                    p::LeadingAndTrailing {
-                        head,
-                        middle,
-                        mut tail,
-                    } => {
-                        if is_glob {
-                            panic!()
-                        } else {
-                            tail.push(parse_pattern(logger, p)?);
-                            p::LeadingAndTrailing { head, middle, tail }
-                        }
-                    }
-                };
-                if p.eat(Comma).is_err() {
-                    p.eat(RightSquare)?;
-                    break;
-                }
-            }
-            e::Array(current.into())
-        }
-        _ => return Err(err("Expected pattern here").span(span)),
+        .with_span(span + self.last_span))
     }
-    .with_span(span + p.last_span))
-}
 
-pub fn parse_pattern(logger: &mut Logger, p: p!()) -> LResult<PatternExpression> {
-    use PatternExpressionKind as e;
-    let primary = primary(logger, p)?;
-    let span = primary.span;
-    Ok(if p.eat(Colon).is_ok() {
-        let type_ = parse_type_expression(logger, p, 0)?;
-        e::TypeHint(primary.into(), type_.into()).with_span(span + p.last_span)
-    } else {
-        primary
-    })
+    pub fn parse_pattern(&mut self) -> Result<PatternExpression> {
+        use PatternExpressionKind as e;
+        let primary = self.pattern_primary()?;
+        let span = primary.span;
+        if self.eat(&Colon).is_some() {
+            let type_ = self.parse_type_expression(0)?;
+            Ok(e::TypeHint(primary.into(), type_.into()).with_span(span + self.last_span))
+        } else {
+            Ok(primary)
+        }
+    }
 }
