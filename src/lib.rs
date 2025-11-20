@@ -27,10 +27,9 @@
 // Debug tools set to warn to help find and remove before deploying
 #![warn(clippy::print_stdout, clippy::print_stderr, clippy::todo)]
 #![feature(iterator_try_collect, if_let_guard)]
-pub mod ir2;
+pub mod ir;
 pub mod logging;
 pub mod map;
-pub mod module_data;
 pub mod operator;
 pub mod parse;
 pub mod semantic;
@@ -45,7 +44,7 @@ pub use map::*;
 use parse::*;
 use token::*;
 
-use crate::ir2::PrettyPrint;
+use crate::ir::PrettyPrint;
 
 pub fn compile(input: &str) -> (Vec<u8>, LoggerT) {
     let mut logger = LoggerT::new(0);
@@ -53,7 +52,7 @@ pub fn compile(input: &str) -> (Vec<u8>, LoggerT) {
     let parse_trees = parse(&mut logger, tokens);
 
     for p in parse_trees {
-        let ir_module = ir2::build_ir(&mut logger, p);
+        let ir_module = ir::build_ir(&mut logger, p);
         println!("{}", ir_module.pretty());
     }
     if !logger.is_ok() {

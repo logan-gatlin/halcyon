@@ -1,4 +1,4 @@
-use crate::ir2::Path;
+use crate::ir::Path;
 use crate::semantic::Type;
 use crate::std_hc::STD_MODULE_NAME;
 use crate::token::*;

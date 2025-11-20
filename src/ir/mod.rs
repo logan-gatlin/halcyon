@@ -1,48 +1,58 @@
 mod build_ir;
-mod build_types;
-pub mod constant;
-pub mod constructor;
-mod namespace;
-mod path;
+mod names;
 mod pattern;
-
-use std::{collections::HashMap, rc::Rc};
-
-use crate::{
-    Log, Spanned, Visit,
-    compile::{ForeignFunctionType, FunctionEncoder},
-    err, optimize,
-    semantic::*,
-};
-
-pub use build_ir::*;
-use build_types::*;
-pub use constant::*;
-pub use constructor::*;
-pub use namespace::*;
-pub use path::*;
+mod pretty_print;
+use indexmap::IndexMap;
+pub use names::*;
 pub use pattern::*;
 
-#[derive(Debug, Clone, sx::SXRepr)]
+use std::collections::HashMap;
+
+use crate::parse::ParsedModule;
+use crate::semantic::*;
+use crate::{
+    Logger,
+    Spanned,
+    Visit,
+};
+pub use pretty_print::*;
+
+pub fn build_ir(
+    logger: &mut Logger,
+    module: ParsedModule,
+) -> IrModule {
+    build_ir::Builder::build_ir(logger, module)
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct SymbolTable {
+    pub terms: HashMap<Path, Type>,
+    pub types: HashMap<Path, AbstractType>,
+    pub constructors: HashMap<Path, Constructor>,
+}
+
+#[derive(Debug, Clone)]
 pub enum IrKind {
     Let {
+        /// The pattern to compare against
         assignee: Pattern,
+        /// The value which is compared with the value
         value: Box<IrNode>,
-        in_: Box<IrNode>,
+        /// The branch which is taken if the pattern binding succeeds
+        then: Box<IrNode>,
+        /// The branch which is taken if the pattern binding fails
+        else_: Box<IrNode>,
     },
     Immediate(ConstValue),
     Identifier(Path),
     Tuple(Vec<IrNode>),
-    Struct {
-        field_names: Vec<String>,
-        field_values: Vec<IrNode>,
-    },
+    Struct(IndexMap<String, IrNode>),
     Field {
         of: Box<IrNode>,
         index: String,
     },
     Function {
-        parameter_name: Option<Spanned<Path>>,
+        parameter_name: Spanned<Path>,
         parameter_type: Option<Type>,
         captures: Vec<Path>,
         capture_types: Vec<Type>,
@@ -51,153 +61,56 @@ pub enum IrKind {
     Call {
         callee: Box<IrNode>,
         argument: Box<IrNode>,
-        opt: optimize::CallOptimization,
     },
-    If {
-        predicate: Box<IrNode>,
-        then: Box<IrNode>,
-        else_: Box<IrNode>,
-    },
-    Match {
-        scrutinee: Box<IrNode>,
-        predicates: Vec<Pattern>,
-        branches: Vec<IrNode>,
-    },
+    // The `;` operator is singled out because of the opportunity for tail call optimization
     Semicolon(Box<IrNode>, Box<IrNode>),
-    AsmLiteral(AsmLiteral),
-    ImportedSymbol(Path, Type),
-}
-
-#[derive(Clone)]
-pub struct AsmLiteral(pub Rc<dyn Fn(&mut FunctionEncoder)>);
-
-impl std::fmt::Debug for AsmLiteral {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "AsmLiteral")
-    }
-}
-
-impl sx::SXRepr for AsmLiteral {
-    fn sx(self) -> sx::SX {
-        sx::SX::Nil
-    }
 }
 
 pub type IrNode = Typed<Spanned<IrKind>>;
 
-#[derive(Debug, Clone, sx::SXRepr)]
-pub enum ModuleItem {
-    Let(Pattern, Box<IrNode>),
-    Type(Path),
-    Constructor(Path, Constructor),
-    Import {
-        path: Path,
-        type_: ForeignFunctionType,
-        major: String,
-        minor: String,
-    },
-}
-
-#[derive(Debug, Clone, sx::SXRepr)]
+#[derive(Debug, Clone)]
 pub struct IrModule {
-    pub module_name: Path,
-    pub items: Vec<ModuleItem>,
+    pub module_name: String,
+    pub constructors: Vec<Constructor>,
+    pub type_definitions: Vec<Typed<Spanned<Path>>>,
+    pub let_definitions: Vec<(Pattern, IrNode)>,
 }
 
-impl Visit<IrNode> for IrNode {
-    fn _visit(&mut self, f: &mut impl FnMut(&mut IrNode)) {
-        use IrKind::*;
-        match &mut *self.inner {
-            Let { value, in_, .. } => {
-                value._visit(f);
-                in_._visit(f);
-            }
-            Semicolon(a, b) => {
-                a._visit(f);
-                b._visit(f);
-            }
-            Field { of, .. } => of._visit(f),
-            Call {
-                callee, argument, ..
-            } => {
-                callee._visit(f);
-                argument._visit(f);
-            }
-            Function { body, .. } => {
-                body._visit(f);
-            }
-            If {
-                predicate,
-                then,
-                else_,
-            } => {
-                predicate._visit(f);
-                then._visit(f);
-                else_._visit(f);
-            }
-            Match {
-                scrutinee,
-                branches,
-                ..
-            } => {
-                scrutinee._visit(f);
-                branches._visit(f);
-            }
-            Tuple(items)
-            | Struct {
-                field_values: items,
-                ..
-            } => items._visit(f),
-            Immediate(_) => {}
-            Identifier(_) => {}
-            AsmLiteral(_) => {}
-            ImportedSymbol(_, _) => {}
-        }
-        f(self);
-    }
+#[derive(Clone, Debug, PartialEq)]
+pub enum ConstValue {
+    Unit,
+    Integer(i64),
+    Real(f64),
+    Boolean(bool),
+    String(String),
+    Glyph(char),
 }
 
-impl Visit<Type> for IrNode {
-    fn _visit(&mut self, mut f: &mut impl FnMut(&mut Type)) {
-        self._visit(&mut |n: &mut IrNode| {
-            n.type_.visit(&mut f);
-            match &mut ***n {
-                IrKind::Let { assignee, .. } => assignee._visit(f),
-                IrKind::Function {
-                    parameter_type,
-                    capture_types,
-                    ..
-                } => {
-                    parameter_type._visit(f);
-                    capture_types._visit(f);
-                }
-                IrKind::Match { predicates, .. } => predicates._visit(f),
-                IrKind::ImportedSymbol(_, t) => t._visit(f),
-                _ => {}
-            }
-        })
-    }
-}
-
-impl Visit<Type> for ModuleItem {
-    fn _visit(&mut self, f: &mut impl FnMut(&mut Type)) {
+impl std::fmt::Display for ConstValue {
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
         match self {
-            ModuleItem::Let(pattern, node) => {
-                pattern._visit(f);
-                node._visit(f);
-            }
-            ModuleItem::Type(_) => {}
-            ModuleItem::Constructor(_, cons) => cons._visit(f),
-            ModuleItem::Import { type_, .. } => {
-                let mut type_: Type = type_.clone().into();
-                type_._visit(f);
-            }
+            ConstValue::Unit => write!(f, "()"),
+            ConstValue::String(s) => write!(f, "\"{s}\""),
+            ConstValue::Integer(val) => write!(f, "{val}"),
+            ConstValue::Real(val) => write!(f, "{val}"),
+            ConstValue::Glyph(val) => write!(f, "'{val}'"),
+            ConstValue::Boolean(val) => write!(f, "{val}"),
         }
     }
 }
 
-impl Visit<Type> for IrModule {
-    fn _visit(&mut self, f: &mut impl FnMut(&mut Type)) {
-        self.items._visit(f);
+impl ConstValue {
+    pub fn type_of(&self) -> Type {
+        match self {
+            ConstValue::Unit => Type::Unit,
+            ConstValue::Integer(_) => Type::Integer,
+            ConstValue::Real(_) => Type::Real,
+            ConstValue::Boolean(_) => Type::Boolean,
+            ConstValue::String(_) => Type::String,
+            ConstValue::Glyph(_) => Type::Glyph,
+        }
     }
 }
