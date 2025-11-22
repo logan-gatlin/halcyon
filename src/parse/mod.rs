@@ -18,9 +18,10 @@ use multipeek::{
 use crate::operator::*;
 use crate::token::*;
 use crate::{
-    LoggerT,
+    Logger,
     Span,
     Spanned,
+    WithContext,
     WithSpan,
 };
 pub use RecoveryBehavior::*;
@@ -44,14 +45,14 @@ pub enum RecoveryBehavior {
 type Result<T> = std::result::Result<T, RecoveryBehavior>;
 
 pub struct Parser<'a, I: Iterator<Item = Token>> {
-    logger: &'a mut LoggerT,
+    logger: &'a mut Logger,
     iter: MultiPeek<I>,
     last_span: Span,
 }
 
 impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
     pub fn new(
-        logger: &'a mut LoggerT,
+        logger: &'a mut Logger,
         iter: impl IntoIterator<IntoIter = I>,
     ) -> Self {
         Self {
@@ -162,13 +163,13 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
         }
         res
     }
-    pub fn error(&mut self) -> crate::LogBuilder<'_, usize> {
+    pub fn error(&mut self) -> crate::LogBuilder<'_> {
         self.logger.error(ERR_MSG)
     }
     pub fn error_expected(
         &mut self,
         token: &TokenKind,
-    ) -> crate::LogBuilder<'_, usize> {
+    ) -> crate::LogBuilder<'_> {
         self.logger
             .error(ERR_MSG)
             .primary(format!("Expected `{token}` here"), self.last_span)
@@ -204,7 +205,7 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
 }
 
 pub fn parse(
-    logger: &mut LoggerT,
+    logger: &mut Logger,
     iter: impl IntoIterator<Item = Token>,
 ) -> Vec<ParsedModule> {
     let mut p = Parser {

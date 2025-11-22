@@ -1,13 +1,7 @@
+use super::*;
 use std::collections::{
     HashMap,
     HashSet,
-};
-use std::str::FromStr;
-
-use crate::{
-    LResult,
-    Log,
-    err,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
@@ -40,8 +34,9 @@ impl std::fmt::Display for NameSpace {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct CanonicalMap {
+    logger: Logger,
     module_name: String,
     map: HashMap<(String, NameSpace), Path>,
     globals: HashSet<(NameSpace, Path)>,
@@ -71,41 +66,52 @@ impl Path {
 }
 
 impl CanonicalMap {
-    pub fn new(module_name: String) -> Self {
+    pub fn new(
+        module_name: String,
+        logger: Logger,
+    ) -> Self {
         Self {
             module_name,
-            ..Default::default()
+            logger,
+            map: HashMap::new(),
+            globals: HashSet::new(),
+            history: vec![],
+            salt: 0,
         }
     }
-
     pub fn get(
-        &self,
-        name: String,
+        &mut self,
+        Spanned { inner: name, span }: Spanned<String>,
         namespace: NameSpace,
-    ) -> LResult<&Path> {
+    ) -> Option<&Path> {
         self.map
             .get(&(name.clone(), namespace))
-            .ok_or_else(|| err(format!("There is no {namespace} {name} in this module. A {namespace} must be defined before it is used.")))
+            .ok_or_else(|| self.logger.error(format!("Unknown {namespace} {name}")))
+            .primary("Used here", span)
+            .note(format!("A {namespace} must be defined before it is used"))
+            .done()
     }
-
     pub fn define_global(
         &mut self,
-        name: String,
+        Spanned { inner: name, span }: Spanned<String>,
         namespace: NameSpace,
-    ) -> LResult<Path> {
+    ) -> Option<Path> {
         let path = Path::new(self.module_name.clone(), name.clone());
         if !self.globals.insert((namespace, path.clone())) {
-            return Err(err(format!(
-                "There is already a {namespace} called {name}. Once a {namespace} is defined, it cannot be changed."
-            )));
+            self.logger
+                .error(format!("Multiple definitions of {namespace} {name}"))
+                .primary("Definition here", span)
+                .note("Global definitions must be unique")
+                .done();
+            None
+        } else {
+            self.map.insert((name, namespace), path.clone());
+            Some(path)
         }
-        self.map.insert((name, namespace), path.clone());
-        Ok(path)
     }
-
     pub fn define_local(
         &mut self,
-        name: String,
+        Spanned { inner: name, .. }: Spanned<String>,
         namespace: NameSpace,
     ) -> Path {
         let salt = self.salt;
@@ -115,20 +121,18 @@ impl CanonicalMap {
         self.history.push(((name, namespace), old));
         path
     }
-
     pub fn define(
         &mut self,
-        name: String,
+        name: Spanned<String>,
         namespace: NameSpace,
         is_global: bool,
-    ) -> LResult<Path> {
+    ) -> Option<Path> {
         if is_global {
             self.define_global(name, namespace)
         } else {
-            Ok(self.define_local(name, namespace))
+            Some(self.define_local(name, namespace))
         }
     }
-
     pub fn end_local_scopes(
         &mut self,
         n: usize,
@@ -149,21 +153,6 @@ impl std::fmt::Display for Path {
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
         write!(f, "{}::{}", self.major, self.minor)
-    }
-}
-
-impl FromStr for Path {
-    type Err = Log;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut it = s.split(Self::DELIMETER);
-        let (Some(first), Some(last), None) = (it.next(), it.next(), it.next()) else {
-            return Err(err(format!("The string `{s}` is not a valid path")));
-        };
-        Ok(Self {
-            major: first.into(),
-            minor: last.into(),
-        })
     }
 }
 

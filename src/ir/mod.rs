@@ -11,11 +11,16 @@ use std::collections::HashMap;
 use crate::parse::ParsedModule;
 use crate::semantic::*;
 use crate::{
+    FileId,
+    LogBuilder,
     Logger,
     Spanned,
     Visit,
+    WithContext,
 };
 pub use pretty_print::*;
+
+type Result<'a, T> = std::result::Result<T, LogBuilder<'a>>;
 
 pub fn build_ir(
     logger: &mut Logger,
