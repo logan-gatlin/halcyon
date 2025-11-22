@@ -249,45 +249,48 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
                     branches,
                 }
             }
-            LeftParen
-                if let Some(Ok(op)) = self.peek().map(|o| BinaryOp::try_from(&o.inner))
-                    && self.peek_nth(1).is_some_and(|t| *t == RightParen) =>
-            {
-                self.skip();
-                self.skip();
-                e::BinaryOp(op)
-            }
-            LeftParen
-                if self.peek().is_some_and(|t| t.inner == Not)
-                    && self.peek_nth(1).is_some_and(|t| *t == RightParen) =>
-            {
-                self.skip();
-                self.skip();
-                e::UnaryOp(UnaryOp::Not)
-            }
             LeftParen => {
-                let mut inner = vec![];
-                let mut is_tuple = false;
-                loop {
-                    if self.eat(&RightParen).is_some() {
-                        break;
-                    }
-                    inner.push(self.parse_value_expression(0)?);
-                    if self.eat(&Comma).is_some() {
-                        is_tuple = true;
-                    } else {
-                        self.eat_or_err(&RightParen)
-                            .ok_or(UntilCategory(TokenCategory::EndGrouping))?;
-                        break;
-                    }
+                // Binary op
+                if let Some(Ok(op)) = self.peek().map(|o| BinaryOp::try_from(&o.inner))
+                    && self.peek_nth(1).is_some_and(|t| *t == RightParen)
+                {
+                    self.skip();
+                    self.skip();
+                    e::BinaryOp(op)
                 }
-                if is_tuple {
-                    e::Tuple(inner)
-                } else {
-                    span += self.last_span;
-                    let mut inner = inner[0].clone();
-                    inner.span = span;
-                    return Ok(inner);
+                // Unary op
+                else if self.peek().is_some_and(|t| t.inner == Not)
+                    && self.peek_nth(1).is_some_and(|t| *t == RightParen)
+                {
+                    self.skip();
+                    self.skip();
+                    e::UnaryOp(UnaryOp::Not)
+                }
+                // Tuple or parenthesis
+                else {
+                    let mut inner = vec![];
+                    let mut is_tuple = false;
+                    loop {
+                        if self.eat(&RightParen).is_some() {
+                            break;
+                        }
+                        inner.push(self.parse_value_expression(0)?);
+                        if self.eat(&Comma).is_some() {
+                            is_tuple = true;
+                        } else {
+                            self.eat_or_err(&RightParen)
+                                .ok_or(UntilCategory(TokenCategory::EndGrouping))?;
+                            break;
+                        }
+                    }
+                    if is_tuple {
+                        e::Tuple(inner)
+                    } else {
+                        span += self.last_span;
+                        let mut inner = inner[0].clone();
+                        inner.span = span;
+                        return Ok(inner);
+                    }
                 }
             }
             _ => {

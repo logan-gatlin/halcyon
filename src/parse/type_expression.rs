@@ -85,7 +85,7 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
                 TypeExpressionKind::Array(inner.into())
             }
             _ => {
-                self.error().primary("Expected a type here", span);
+                self.error().primary("Expected a type here", span).done();
                 return Err(UntilNextStatement);
             }
         }

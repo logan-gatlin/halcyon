@@ -1,9 +1,10 @@
+use std::num::IntErrorKind;
+
 use crate::parse::*;
 use crate::{
     Logger,
     WithSpan,
 };
-use indoc::indoc;
 
 use super::*;
 
@@ -35,6 +36,15 @@ impl<'a> Builder<'a> {
         if let Some(c) = self.captures.last_mut() {
             c.push(path);
         }
+    }
+    fn refutable_let_err(
+        &mut self,
+        span: Span,
+    ) {
+        self.logger
+            .error("Pattern is not exhaustive")
+            .primary("This `let` binding must cover all possible cases", span)
+            .done();
     }
     fn define_name(
         &mut self,
@@ -96,8 +106,8 @@ impl<'a> Builder<'a> {
         use ModuleStatementKind::*;
         let module_name = module.inner.name.inner.clone();
         let mut this = Self {
-            logger,
             name_map: CanonicalMap::new(module_name.clone(), logger.spawn_new()),
+            logger,
             module_name,
             symbols: Default::default(),
             constructors: Default::default(),
@@ -111,25 +121,74 @@ impl<'a> Builder<'a> {
                 DocComment(_) => {}
                 Let { assignee, value } => {
                     let assignee = this.pattern(assignee, true);
-                    let value = this.expr(*value);
-                    match (assignee, value) {
-                        (Ok(assignee), Ok(value)) => this.let_definitions.push((assignee, value)),
-                        (Err(e1), Err(e2)) => {
-                            this.logger.log(e1);
-                            this.logger.log(e2);
-                        }
-                        (Err(e), _) | (_, Err(e)) => this.logger.log(e),
+                    let value = if assignee.is_some() {
+                        this.expr(*value)
+                    } else {
+                        None
+                    };
+                    if let (Some(assignee), Some(value)) = (assignee, value) {
+                        this.let_definitions.push((assignee, value));
                     }
                 }
                 Type { .. } => todo!(),
             }
         }
+        this.logger.merge_with(this.name_map.logger);
         IrModule {
             module_name: this.module_name,
             constructors: this.constructors,
             type_definitions: this.type_definitions,
             let_definitions: this.let_definitions,
         }
+    }
+    fn literal(
+        &mut self,
+        Spanned {
+            inner: literal,
+            span,
+        }: Spanned<Literal>,
+    ) -> Option<ConstValue> {
+        Some(match literal {
+            Literal::Unit => ConstValue::Unit,
+            Literal::Integer(i, base) => {
+                ConstValue::Integer(
+                    match i64::from_str_radix(&i, base as u32).map_err(|e| e.kind().clone()) {
+                        Ok(i) => i,
+                        Err(IntErrorKind::PosOverflow | IntErrorKind::NegOverflow) => {
+                            self.logger
+                                .error("Integer too large to represent")
+                                .primary("This integer literal cannot be interpreted", span)
+                                .note("Integers must fit into 64 bits")
+                                .done();
+                            return None;
+                        }
+                        Err(e) => {
+                            self.logger
+                                .bug("Bad integer was tokenized")
+                                .primary(format!("This integer produced the error: {e:?}"), span)
+                                .done();
+                            return None;
+                        }
+                    },
+                )
+            }
+            Literal::Real(r) => {
+                ConstValue::Real(match r.parse() {
+                    Ok(r) => r,
+                    Err(_) => {
+                        self.logger
+                            .error("Failed to parse real number")
+                            .primary("This real literal cannot be interpreted", span)
+                            .note("The number may not be representable in 64 bits")
+                            .done();
+                        return None;
+                    }
+                })
+            }
+            Literal::String(s) => ConstValue::String(s),
+            Literal::Glyph(g) => ConstValue::Glyph(g),
+            Literal::Boolean(b) => ConstValue::Boolean(b),
+        })
     }
     fn pattern(
         &mut self,
@@ -140,7 +199,7 @@ impl<'a> Builder<'a> {
         let span = pat.span;
         Some(
             match pat.inner {
-                Literal(literal) => PatternKind::Immediate(lit(literal)?),
+                Literal(literal) => PatternKind::Immediate(self.literal(literal.with_span(span))?),
                 Identifier(name) if name == "_" => PatternKind::Hole,
                 Identifier(name) => {
                     PatternKind::Identifier(self.define_name(
@@ -157,7 +216,7 @@ impl<'a> Builder<'a> {
                             .collect::<Option<_>>()?,
                     )
                 }
-                Array(array_pat) => {
+                Array(..) => {
                     todo!()
                 }
                 Constructor(..) => todo!(),
@@ -208,7 +267,8 @@ impl<'a> Builder<'a> {
                 } => {
                     let assignee = self.pattern(assignee, false)?;
                     if let Some(span) = assignee.find_refutable_pattern() {
-                        return Err(refutable_let_err().span(span));
+                        self.refutable_let_err(span);
+                        return None;
                     }
                     let value = self.expr(*value)?.into();
                     let in_ = self.expr(*in_)?.into();
@@ -220,9 +280,11 @@ impl<'a> Builder<'a> {
                         else_: unreachable(span),
                     }
                 }
-                Literal(literal) => IrKind::Immediate(lit(literal).map_err(|e| e.span(span))?),
+                Literal(literal) => IrKind::Immediate(self.literal(literal.with_span(span))?),
                 Identifier(name) => {
-                    let path = self.query_name(name, NameSpace::Term)?.clone();
+                    let path = self
+                        .query_name(name.with_span(span), NameSpace::Term)?
+                        .clone();
                     self.capture_term(path.clone());
                     IrKind::Identifier(path)
                 }
@@ -282,9 +344,10 @@ impl<'a> Builder<'a> {
                     branches,
                 } => {
                     let scrutinee = self.expr(*scrutinee)?;
-                    let scrutinee_path = self
-                        .name_map
-                        .define_local("@scrutinee".to_string(), NameSpace::Term);
+                    let scrutinee_path = self.name_map.define_local(
+                        "@scrutinee".to_string().with_span(scrutinee.span),
+                        NameSpace::Term,
+                    );
                     let mut current = unreachable(span);
                     for (predicate, branch) in predicates.into_iter().zip(branches).rev() {
                         let assignee = self.pattern(predicate, false)?;
@@ -317,7 +380,12 @@ impl<'a> Builder<'a> {
                     }
                 }
                 Tuple(items) => {
-                    IrKind::Tuple(items.into_iter().map(|i| self.expr(i)).try_collect()?)
+                    IrKind::Tuple(
+                        items
+                            .into_iter()
+                            .map(|i| self.expr(i))
+                            .collect::<Option<_>>()?,
+                    )
                 }
                 Array(array_elems) => {
                     let mut current = IrKind::Identifier(Path::new("array", "empty"))
@@ -366,7 +434,7 @@ impl<'a> Builder<'a> {
                             }
                         }
                     }
-                    return Ok(current);
+                    return Some(current);
                 }
                 StructureLiteral(_) => {
                     todo!()
@@ -377,29 +445,8 @@ impl<'a> Builder<'a> {
                         index: rhs,
                     }
                 }
-                ModulePath(items) => {
-                    match items.as_slice() {
-                        [a, b] => {
-                            let path = Path::new(a, b);
-                            if self.symbols.terms.contains_key(&path) {
-                                IrKind::Identifier(path)
-                            } else {
-                                return Err(
-                                    err(format!("There is no symbol {path} in scope.")).span(span)
-                                );
-                            }
-                        }
-                        s => {
-                            let len = s.len();
-                            let s = s.join("::");
-                            return Err(err(format!(
-                                "There is no symbol {s} in scope. \
-Modules cannot be nested, so all paths should consist of two parts: `a::b`. \
-This path has {len} parts, which is not possible."
-                            ))
-                            .span(span));
-                        }
-                    }
+                ModulePath(..) => {
+                    todo!()
                 }
             }
             .with_span(span)

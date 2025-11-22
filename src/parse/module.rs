@@ -66,7 +66,7 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
                 }
             }
             _ => {
-                self.error().primary("Expected `end` here", span);
+                self.error().primary("Expected `end` here", span).done();
                 return Err(RECOVERY);
             },
         }.with_span(span + self.last_span))

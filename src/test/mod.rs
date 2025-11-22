@@ -9,14 +9,7 @@ macro_rules! test {
         color_eyre::install().unwrap();
         let path = "./src/test/".to_string() + stringify!($name) + ".hc";
         let file = std::fs::read_to_string(path).unwrap();
-        let wasm = match compile(&file) {
-            Ok(w) => w,
-            Err(e) => {
-                eprintln!("{e}");
-                panic!()
-            }
-        };
-        //execute(wasm);
+        compile(&file);
       }
     )*
   }

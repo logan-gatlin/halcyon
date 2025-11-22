@@ -1,9 +1,10 @@
 use std::io::Write;
 
 use crate::{
-    LoggerT,
+    Logger,
     Span,
     Spanned,
+    WithContext,
     WithSpan,
 };
 use multipeek::{
@@ -313,7 +314,7 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
 
 pub fn tokenize(
     input: impl IntoIterator<Item = char>,
-    logger: &mut LoggerT,
+    logger: &mut Logger,
 ) -> Vec<Token> {
     let mut iter = Tokenizer {
         iter: multipeek(input),
@@ -573,13 +574,16 @@ pub fn tokenize(
             }
             // Found erroneous character
             let next_char = iter.peek().unwrap();
-            logger.error("Illegal character in number.").primary(
-                format!("The character {next_char} is not valid inside of a number."),
-                Span {
-                    start: iter.position + 1,
-                    width: 1,
-                },
-            );
+            logger
+                .error("Illegal character in number.")
+                .primary(
+                    format!("The character {next_char} is not valid inside of a number."),
+                    Span {
+                        start: iter.position + 1,
+                        width: 1,
+                    },
+                )
+                .done();
             iter.push(TokenKind::Error, start);
             continue;
         }
@@ -668,7 +672,7 @@ fn parse_delimited(
 
 fn bake_string(
     mut start: usize,
-    logger: &mut LoggerT,
+    logger: &mut Logger,
     s: &str,
 ) -> Option<String> {
     let collect_hex_bytes = |arr: &[Option<char>]| {

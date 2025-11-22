@@ -7,19 +7,19 @@ use codespan_reporting::diagnostic::{
 
 pub trait WithContext: Sized {
     type DoneT;
-    #[must_use]
+    #[must_use = "Log should be submitted using the `.done()` method"]
     fn label(
         self,
         style: LabelStyle,
         message: impl Into<String>,
         span: Span,
     ) -> Self;
-    #[must_use]
+    #[must_use = "Log should be submitted using the `.done()` method"]
     fn note(
         self,
         message: impl Into<String>,
     ) -> Self;
-    #[must_use]
+    #[must_use = "Log should be submitted using the `.done()` method"]
     fn primary(
         self,
         message: impl Into<String>,
@@ -27,7 +27,7 @@ pub trait WithContext: Sized {
     ) -> Self {
         self.label(LabelStyle::Primary, message, span)
     }
-    #[must_use]
+    #[must_use = "Log should be submitted using the `.done()` method"]
     fn secondary(
         self,
         message: impl Into<String>,

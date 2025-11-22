@@ -39,7 +39,7 @@ impl Logger {
         &mut self,
         severity: Severity,
         message: impl Into<String>,
-    ) -> LogBuilder {
+    ) -> LogBuilder<'_> {
         LogBuilder {
             logger: self,
             severity,
@@ -52,28 +52,28 @@ impl Logger {
     pub fn bug(
         &mut self,
         message: impl Into<String>,
-    ) -> LogBuilder {
+    ) -> LogBuilder<'_> {
         self.diagnostic(Severity::Warning, message)
     }
     #[must_use]
     pub fn error(
-        &mut self,
+        &'_ mut self,
         message: impl Into<String>,
-    ) -> LogBuilder {
+    ) -> LogBuilder<'_> {
         self.diagnostic(Severity::Error, message)
     }
     #[must_use]
     pub fn warning(
         &mut self,
         message: impl Into<String>,
-    ) -> LogBuilder {
+    ) -> LogBuilder<'_> {
         self.diagnostic(Severity::Warning, message)
     }
     #[must_use]
     pub fn help(
         &mut self,
         message: impl Into<String>,
-    ) -> LogBuilder {
+    ) -> LogBuilder<'_> {
         self.diagnostic(Severity::Help, message)
     }
     pub fn is_ok(&self) -> bool {

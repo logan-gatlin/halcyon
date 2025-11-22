@@ -68,7 +68,9 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
         let res = self.peek();
         if res.is_none() {
             let span = self.last_span;
-            self.error().primary("Unexpected end of source code", span);
+            self.error()
+                .primary("Unexpected end of source code", span)
+                .done();
         }
         res
     }
@@ -85,7 +87,9 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
         let res = self.next();
         if res.is_none() {
             let span = self.last_span;
-            self.error().primary("Unexpected end of source code", span);
+            self.error()
+                .primary("Unexpected end of source code", span)
+                .done();
         }
         res
     }

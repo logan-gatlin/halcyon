@@ -1,13 +1,8 @@
 use indexmap::IndexMap;
 
-use crate::ir2::Path;
+use crate::Visit;
+use crate::ir::Path;
 use crate::semantic::freshen_type_variables;
-use crate::{
-    LResult,
-    Log,
-    Visit,
-    err,
-};
 
 pub type TypeVariable = usize;
 
@@ -98,44 +93,10 @@ pub enum Type {
     Instantiation(Path, Vec<Type>),
 }
 
-pub fn partial_instantiation_error(
-    expects: usize,
-    received: usize,
-) -> Log {
-    err(format!(
-        "This type has {expects} parameters, but {received} parameters were provided. Partial instantiation is not allowed."
-    ))
-}
-
 #[derive(Debug, Clone)]
 pub struct AbstractType {
     pub arity: usize,
     base: Type,
-}
-
-impl AbstractType {
-    pub fn instantiate(
-        mut self,
-        parameters: &[Type],
-    ) -> LResult<Type> {
-        if parameters.len() != self.arity {
-            return Err(partial_instantiation_error(self.arity, parameters.len()));
-        }
-        self.base.visit(|t: &mut Type| {
-            if let Type::Variable(tv) = t {
-                *t = parameters[*tv].clone()
-            }
-        });
-        Ok(self.base)
-    }
-
-    pub fn instantiate_with(
-        self,
-        mut f: impl FnMut() -> TypeVariable,
-    ) -> LResult<Type> {
-        let parameters = vec![Type::Variable(f()); self.arity];
-        self.instantiate(&parameters)
-    }
 }
 
 static UNIVERSE: OnceLock<Mutex<Universe>> = OnceLock::new();
