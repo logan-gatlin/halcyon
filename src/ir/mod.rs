@@ -1,16 +1,20 @@
 mod build_ir;
+mod build_types;
 mod names;
 mod pattern;
 mod pretty_print;
+mod symbol_table;
 use indexmap::IndexMap;
 pub use names::*;
 pub use pattern::*;
+pub use symbol_table::*;
 
 use std::collections::HashMap;
 
 use crate::parse::ParsedModule;
 use crate::semantic::*;
 use crate::{
+    LogBuilder,
     Logger,
     Span,
     Spanned,
@@ -19,18 +23,14 @@ use crate::{
 };
 pub use pretty_print::*;
 
+type Result<'a, T> = std::result::Result<T, LogBuilder<'a>>;
+
 pub fn build_ir(
     logger: &mut Logger,
+    symbols: &mut SymbolTable,
     module: ParsedModule,
 ) -> IrModule {
-    build_ir::Builder::build_ir(logger, module)
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct SymbolTable {
-    pub terms: HashMap<Path, Type>,
-    pub types: HashMap<Path, AbstractType>,
-    pub constructors: HashMap<Path, Constructor>,
+    build_ir::Builder::build_ir(logger, symbols, module)
 }
 
 #[derive(Debug, Clone)]
@@ -38,6 +38,8 @@ pub enum IrKind {
     Let {
         /// The pattern to compare against
         assignee: Pattern,
+        /// Whether this is a module-level let
+        is_global: bool,
         /// The value which is compared with the value
         value: Box<IrNode>,
         /// The branch which is taken if the pattern binding succeeds
@@ -73,9 +75,7 @@ pub type IrNode = Typed<Spanned<IrKind>>;
 #[derive(Debug, Clone)]
 pub struct IrModule {
     pub module_name: String,
-    pub constructors: Vec<Constructor>,
-    pub type_definitions: Vec<Typed<Spanned<Path>>>,
-    pub let_definitions: Vec<(Pattern, IrNode)>,
+    pub code: Vec<IrNode>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

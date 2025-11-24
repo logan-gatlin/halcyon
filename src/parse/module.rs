@@ -29,7 +29,7 @@ const RECOVERY: RecoveryBehavior = UntilNextStatement;
 impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
     pub fn parse_module_statement(&mut self) -> Result<ModuleStatement> {
         use TokenKind::*;
-        let next = self.next_or_err().ok_or(NoRecovery)?;
+        let next = self.next_token_or_err().ok_or(NoRecovery)?;
         let span = next.span;
         Ok(match next.inner {
             Module => {
@@ -48,7 +48,7 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
                 ModuleStatementKind::DocComment(comment)
             }
             Let => {
-                let assignee = self.parse_pattern()?.into();
+                let assignee = self.parse_pattern()?;
                 self.eat_or_err(&TokenKind::Equal).ok_or(RECOVERY)?;
                 let value = self.parse_value_expression(0)?.into();
                 ModuleStatementKind::Let {

@@ -1,19 +1,11 @@
+use std::collections::HashMap;
+
 use indexmap::IndexMap;
 
 use crate::Visit;
 use crate::ir::Path;
-use crate::semantic::freshen_type_variables;
 
 pub type TypeVariable = usize;
-
-use std::collections::{
-    HashMap,
-    HashSet,
-};
-use std::sync::{
-    Mutex,
-    OnceLock,
-};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct Typed<T> {
@@ -93,69 +85,22 @@ pub enum Type {
     Instantiation(Path, Vec<Type>),
 }
 
-#[derive(Debug, Clone)]
-pub struct AbstractType {
-    pub arity: usize,
-    base: Type,
-}
-
-static UNIVERSE: OnceLock<Mutex<Universe>> = OnceLock::new();
-
-#[derive(Debug, Clone, Default)]
-pub struct Universe {
-    name_map: HashMap<Path, AbstractType>,
-}
-
-impl Universe {
-    fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn get() -> std::sync::MutexGuard<'static, Self> {
-        UNIVERSE
-            .get_or_init(|| Mutex::new(Universe::new()))
-            .lock()
-            .unwrap()
-    }
-
-    pub fn new_named_type(
-        &mut self,
-        path: Path,
-        mut t: Type,
-    ) {
-        let mut type_variables = HashSet::new();
-        t.visit(|tv: &mut TypeVariable| {
-            type_variables.insert(*tv);
-        });
-        let mut arity = 0;
-        freshen_type_variables(&mut t, &HashSet::new(), || {
-            let old = arity;
-            arity += 1;
-            old
-        });
-        self.name_map
-            .insert(path.clone(), AbstractType { arity, base: t });
-    }
-
-    pub fn get_named_type(
-        &self,
-        path: &Path,
-    ) -> AbstractType {
-        self.name_map
-            .get(path)
-            .unwrap_or_else(|| panic!("No named type exists: {path}"))
-            .clone()
-    }
-
-    pub fn find_struct_with_names(
-        &self,
-        names: &HashSet<String>,
-    ) -> Vec<AbstractType> {
-        todo!()
-    }
-}
-
 impl Type {
+    pub fn freshen_type_variables(
+        &mut self,
+        mut fresh_type_variable: impl FnMut() -> usize,
+    ) {
+        let mut map = HashMap::new();
+        self.visit(|t: &mut usize| {
+            if let Some(tv) = map.get(t) {
+                *t = *tv;
+            } else {
+                let tv = fresh_type_variable();
+                map.insert(*t, tv);
+                *t = fresh_type_variable();
+            }
+        });
+    }
     pub fn curry(
         params: &[Type],
         returns: Type,
@@ -166,21 +111,18 @@ impl Type {
             [.., p] => Type::curry(&params[0..params.len() - 1], Type::func(p.clone(), returns)),
         }
     }
-
     pub fn func(
         parameter: Type,
         returns: Type,
     ) -> Type {
         Type::Function(parameter.into(), returns.into())
     }
-
     pub fn field_type(
         &self,
         name: &str,
     ) -> Option<Type> {
         todo!()
     }
-
     pub fn contains_type_variable(
         &self,
         tv: TypeVariable,
@@ -276,7 +218,7 @@ impl PartialEq for Type {
         use Type as t;
         match (self, other) {
             (t::Any, t::Any) => {
-                panic!("Tried to compare ambiguous types")
+                unreachable!("Tried to compare ambiguous types")
             }
             (t::Unit, t::Unit)
             | (t::Integer, t::Integer)

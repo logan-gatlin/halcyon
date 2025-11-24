@@ -49,7 +49,7 @@ impl<'a> WithContext for super::LogBuilder<'a> {
         let span = span.start..(span.start + span.width);
         self.labels.push(Label {
             style,
-            file_id: self.logger.id.clone(),
+            file_id: self.logger.id,
             range: span,
             message: message.into(),
         });

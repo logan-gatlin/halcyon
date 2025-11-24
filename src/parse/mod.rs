@@ -56,9 +56,9 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
         iter: impl IntoIterator<IntoIter = I>,
     ) -> Self {
         Self {
+            last_span: logger.new_span(0, 0),
             logger,
-            iter: multipeek(iter.into_iter()),
-            last_span: Span { start: 0, width: 0 },
+            iter: multipeek(iter),
         }
     }
     pub fn peek(&mut self) -> Option<Token> {
@@ -80,11 +80,15 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
     ) -> Option<Token> {
         self.iter.peek_nth(n).cloned()
     }
-    pub fn next(&mut self) -> Option<Token> {
-        self.iter.next()
+    pub fn next_token(&mut self) -> Option<Token> {
+        let next = self.iter.next();
+        if let Some(Spanned { span, .. }) = next {
+            self.last_span = span;
+        }
+        next
     }
-    pub fn next_or_err(&mut self) -> Option<Token> {
-        let res = self.next();
+    pub fn next_token_or_err(&mut self) -> Option<Token> {
+        let res = self.next_token();
         if res.is_none() {
             let span = self.last_span;
             self.error()
@@ -116,7 +120,7 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
         &mut self,
         tk: &TokenKind,
     ) -> Option<Token> {
-        let res = self.eat(&tk);
+        let res = self.eat(tk);
         if res.is_none() {
             self.error_expected(tk);
         }
@@ -195,12 +199,10 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
                 }
             }
             RecoveryBehavior::UntilNextStatement => {
-                while self.peek().is_some_and(|t| {
-                    match &t.inner {
-                        Let | Type | Do | Module | End | Import => true,
-                        _ => false,
-                    }
-                }) {
+                while self
+                    .peek()
+                    .is_some_and(|t| matches!(&t.inner, Let | Type | Do | Module | End | Import))
+                {
                     self.skip();
                 }
             }

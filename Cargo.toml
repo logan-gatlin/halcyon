@@ -23,7 +23,7 @@ indexmap = "2.11"
 wasmparser = {version = "0.235"}
 wasmprinter = "0.235"
 colored = "3"
-codespan-reporting = "0.13"
+codespan-reporting = { version = "0.13", features = ["termcolor"] }
 indoc = "2"
 unicode_names2 = "2"
 

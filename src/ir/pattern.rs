@@ -1,4 +1,8 @@
-use crate::Span;
+use crate::parse::*;
+use crate::{
+    Span,
+    WithSpan,
+};
 
 use super::*;
 
@@ -9,7 +13,12 @@ pub enum PatternKind {
     Hole,
     Identifier(Path),
     Tuple(Vec<Pattern>),
-    Array(ArrayPattern),
+    Array {
+        starting: Vec<Pattern>,
+        glob: Option<Path>,
+        ending: Vec<Pattern>,
+        is_exact: bool,
+    },
     Constructor(Constructor, Box<Pattern>),
     Immediate(ConstValue),
     TypeHint(Box<Pattern>, Type),
@@ -68,15 +77,8 @@ impl Pattern {
         self.clone().visit(|p: &mut Pattern| {
             if let PatternKind::Identifier(_) = *p.inner {
                 count += 1
-            } else if let PatternKind::Array(ap) = &*p.inner {
-                match ap {
-                    ArrayPattern::Leading { tail, .. } => count += tail.is_some() as usize,
-                    ArrayPattern::Trailing { head, .. } => count += head.is_some() as usize,
-                    ArrayPattern::LeadingAndTrailing { middle, .. } => {
-                        count += middle.is_some() as usize
-                    }
-                    _ => {}
-                }
+            } else if let PatternKind::Array { glob, .. } = &*p.inner {
+                count += glob.is_some() as usize
             }
         });
         count
@@ -86,7 +88,7 @@ impl Pattern {
         match &self.inner.inner {
             PatternKind::Hole | PatternKind::Identifier(_) => None,
             PatternKind::Tuple(pats) => pats.iter().find_map(Pattern::find_refutable_pattern),
-            PatternKind::Array(..) | PatternKind::Constructor(..) => Some(self.span),
+            PatternKind::Array { .. } | PatternKind::Constructor(..) => Some(self.span),
             PatternKind::Immediate(const_value) => {
                 if const_value == &ConstValue::Unit {
                     None
@@ -102,7 +104,7 @@ impl Pattern {
         match &self.inner.inner {
             PatternKind::Hole | PatternKind::Identifier(_) => false,
             PatternKind::Tuple(pats) => pats.iter().any(|p| p.is_refutable()),
-            PatternKind::Array(..) => true,
+            PatternKind::Array { .. } => true,
             PatternKind::Constructor(..) => true,
             PatternKind::Immediate(const_value) => const_value != &ConstValue::Unit,
             PatternKind::TypeHint(pat, _) => pat.is_refutable(),
@@ -117,7 +119,12 @@ impl Visit<Pattern> for Pattern {
     ) {
         match &mut *self.inner {
             PatternKind::Hole | PatternKind::Identifier(_) | PatternKind::Immediate(_) => {}
-            PatternKind::Array(pat) => pat._visit(f),
+            PatternKind::Array {
+                starting, ending, ..
+            } => {
+                starting._visit(f);
+                ending._visit(f);
+            }
             PatternKind::Tuple(items) => items._visit(f),
             PatternKind::Constructor(_, items) => items._visit(f),
             PatternKind::TypeHint(pat, _) => {
@@ -141,7 +148,7 @@ impl Visit<Pattern> for ArrayPattern {
                 head._visit(f);
                 tail._visit(f);
             }
-        }
+        };
     }
 }
 
@@ -164,6 +171,24 @@ impl Visit<Type> for Pattern {
     }
 }
 
+impl Visit<Path> for Pattern {
+    fn _visit(
+        &mut self,
+        f: &mut impl FnMut(&mut Path),
+    ) {
+        self.visit(|p: &mut Pattern| {
+            if let PatternKind::Identifier(id) = &mut p.inner.inner {
+                f(id)
+            } else if let PatternKind::Array {
+                glob: Some(glob), ..
+            } = &mut p.inner.inner
+            {
+                f(glob)
+            }
+        });
+    }
+}
+
 impl Visit<(Path, Type)> for Pattern {
     fn _visit(
         &mut self,
@@ -177,30 +202,126 @@ impl Visit<(Path, Type)> for Pattern {
                     *path = tup.0;
                     p.type_ = tup.1;
                 }
-                PatternKind::Array(ArrayPattern::Leading {
-                    tail: Some(tail), ..
-                }) => {
-                    let mut tup = (tail.clone(), p.type_.clone());
+                PatternKind::Array {
+                    glob: Some(glob), ..
+                } => {
+                    let mut tup = (glob.clone(), p.type_.clone());
                     f(&mut tup);
-                    *tail = tup.0;
-                }
-                PatternKind::Array(ArrayPattern::Trailing {
-                    head: Some(head), ..
-                }) => {
-                    let mut tup = (head.clone(), p.type_.clone());
-                    f(&mut tup);
-                    *head = tup.0;
-                }
-                PatternKind::Array(ArrayPattern::LeadingAndTrailing {
-                    middle: Some(middle),
-                    ..
-                }) => {
-                    let mut tup = (middle.clone(), p.type_.clone());
-                    f(&mut tup);
-                    *middle = tup.0;
+                    *glob = tup.0;
+                    p.type_ = tup.1;
                 }
                 _ => {}
             }
         })
+    }
+}
+
+impl<'a> super::build_ir::Builder<'a> {
+    pub fn pattern(
+        &mut self,
+        pat: PatternExpression,
+        is_global: bool,
+    ) -> Option<Pattern> {
+        use PatternExpressionKind::*;
+        let span = pat.span;
+        Some(
+            match pat.inner {
+                Literal(literal) => PatternKind::Immediate(self.literal(literal.with_span(span))?),
+                Identifier(name) if name == "_" => PatternKind::Hole,
+                Identifier(name) => {
+                    PatternKind::Identifier(self.define_name(
+                        name.with_span(span),
+                        NameSpace::Term,
+                        is_global,
+                    )?)
+                }
+                Tuple(pats) => {
+                    PatternKind::Tuple(
+                        pats.into_iter()
+                            .map(|p| self.pattern(p, is_global))
+                            .collect::<Option<_>>()?,
+                    )
+                }
+                Array(pats) => {
+                    let mut starting = vec![];
+                    let mut glob = None;
+                    let mut ending = vec![];
+                    let mut is_exact = true;
+                    let glob_err = |this: &mut Self, span| {
+                        this.logger
+                            .error("Multiple glob patterns in an array are ambiguous")
+                            .primary("This glob is not allowed", span)
+                            .done();
+                    };
+                    for p in pats {
+                        match p {
+                            ParsedArrayPattern::Pattern(pat) => {
+                                let pat = self.pattern(pat, is_global)?;
+                                if glob.is_none() && is_exact {
+                                    starting.push(pat);
+                                } else {
+                                    ending.push(pat)
+                                }
+                            }
+                            ParsedArrayPattern::ExpansionAssign(id) => {
+                                if !is_exact || glob.is_some() {
+                                    glob_err(self, id.span);
+                                } else {
+                                    glob = Some(self.define_name(id, NameSpace::Term, is_global)?)
+                                }
+                                is_exact = false;
+                            }
+                            ParsedArrayPattern::Expansion(span) => {
+                                if !is_exact || glob.is_some() {
+                                    glob_err(self, span);
+                                }
+                                is_exact = false;
+                            }
+                        }
+                    }
+                    PatternKind::Array {
+                        starting,
+                        glob,
+                        ending,
+                        is_exact,
+                    }
+                }
+                Constructor((a, b), pat) => {
+                    let path = if let Some(b) = b {
+                        let path = Path::new(a, b);
+                        self.query_path(&path.clone().with_span(span), NameSpace::Constructor)
+                            .done()?;
+                        path
+                    } else {
+                        self.query_name(a.with_span(span), NameSpace::Constructor)
+                            .done()?
+                    };
+                    let cons = self.symbols.get_constructor(&path).clone();
+                    let pat = self.pattern(*pat, is_global)?;
+                    PatternKind::Constructor(cons, pat.into())
+                }
+                ModulePath(a, b) => {
+                    let path = Path::new(a, b);
+                    self.query_path(&path.clone().with_span(span), NameSpace::Constructor)
+                        .done()?;
+                    let cons = self.symbols.get_constructor(&path).clone();
+                    PatternKind::Constructor(
+                        cons,
+                        PatternKind::Immediate(ConstValue::Unit)
+                            .with_span(span)
+                            .with_type(Type::Any)
+                            .into(),
+                    )
+                }
+                TypeHint(pat, type_) => {
+                    PatternKind::TypeHint(
+                        self.pattern(*pat, is_global)?.into(),
+                        self.type_expr(*type_)?,
+                    )
+                }
+            }
+            .with_span(span)
+            .with_type(Type::Any),
+        )
     }
 }

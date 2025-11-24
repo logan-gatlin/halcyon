@@ -42,48 +42,29 @@ impl PrettyPrint for Pattern {
                         .join(",\n")
                 )
             }
-            Array(array_pattern) => {
+            Array {
+                starting,
+                glob,
+                ending,
+                is_exact,
+            } => {
                 format!(
-                    "[\n{},\n] {type_}",
-                    match array_pattern {
-                        ArrayPattern::Exact(items) =>
-                            items
-                                .iter()
-                                .map(Pattern::pretty)
-                                .map(left_pad)
-                                .collect::<Vec<_>>()
-                                .join(",\n"),
-                        ArrayPattern::Leading { head, tail } =>
-                            head.iter()
-                                .map(Pattern::pretty)
-                                .chain(
-                                    tail.clone()
-                                        .map(|p| format!("..{}::{}", p.major.yellow(), p.minor))
-                                )
-                                .map(left_pad)
-                                .collect::<Vec<_>>()
-                                .join(",\n"),
-                        ArrayPattern::Trailing { head, tail } =>
-                            head.clone()
-                                .map(|p| format!("..{}::{}", p.major.yellow(), p.minor))
-                                .into_iter()
-                                .chain(tail.iter().map(Pattern::pretty))
-                                .map(left_pad)
-                                .collect::<Vec<_>>()
-                                .join(",\n"),
-                        ArrayPattern::LeadingAndTrailing { head, middle, tail } =>
-                            head.iter()
-                                .map(Pattern::pretty)
-                                .chain(
-                                    middle
-                                        .clone()
-                                        .map(|p| format!("..{}::{}", p.major.yellow(), p.minor))
-                                )
-                                .chain(tail.iter().map(Pattern::pretty))
-                                .map(left_pad)
-                                .collect::<Vec<_>>()
-                                .join(",\n"),
-                    }
+                    "[\n{},\n]",
+                    starting
+                        .iter()
+                        .map(Pattern::pretty)
+                        .map(left_pad)
+                        .chain(
+                            match (glob, is_exact) {
+                                (_, true) => None,
+                                (Some(id), _) => Some(format!("..{id}")),
+                                (None, _) => Some("..".to_string()),
+                            }
+                            .into_iter(),
+                        )
+                        .chain(ending.iter().map(Pattern::pretty).map(left_pad))
+                        .collect::<Vec<_>>()
+                        .join(",\n")
                 )
             }
             Constructor(_, pat) => format!("constructor {}", pat.pretty()),
@@ -100,15 +81,11 @@ impl PrettyPrint for Pattern {
 
 impl PrettyPrint for IrModule {
     fn pretty(&self) -> String {
-        let let_ = "let".red();
         let equal = "=".green();
         let let_definitions = left_pad(
-            self.let_definitions
+            self.code
                 .iter()
-                .map(|(pat, expr)| {
-                    let expr = left_pad(expr.pretty());
-                    format!("{let_} {} {equal}\n{expr}", pat.pretty())
-                })
+                .map(|expr| left_pad(expr.pretty()))
                 .collect::<Vec<_>>()
                 .join("\n"),
         );
@@ -149,13 +126,14 @@ impl PrettyPrint for IrNode {
                 value,
                 then,
                 else_,
+                is_global: _,
             } => {
                 format!(
-                    "{let_} {assignee} {equal} {value}\n{in_} {type_}\n{then}\n{else_kw} {else_}",
-                    let_ = "let".red(),
+                    "{let_kw} {assignee} {equal} {value}\n{in_kw} {type_}\n{then}\n{else_kw} {else_}",
+                    let_kw = "let".red(),
                     equal = "=".green(),
                     value = value.pretty(),
-                    in_ = "in".red(),
+                    in_kw = "in".red(),
                     type_ = self.type_.pretty(),
                     then = left_pad(then.pretty()),
                     assignee = assignee.pretty(),
@@ -178,7 +156,16 @@ impl PrettyPrint for IrNode {
                 )
             }
             Tuple(items) => format!("(\n{},\n)", items.pretty()),
-            Struct(_) => todo!(),
+            Struct(map) => {
+                format!(
+                    "{{\n{},\n}}",
+                    map.iter()
+                        .map(|(key, val)| format!("{key} = {}", val.pretty()))
+                        .map(left_pad)
+                        .collect::<Vec<_>>()
+                        .join(",\n")
+                )
+            }
             Field { of, index } => format!("{of}.{index}", of = of.pretty()),
             Function {
                 parameter_name,
@@ -187,13 +174,14 @@ impl PrettyPrint for IrNode {
                 capture_types: _,
                 body,
             } => {
+                let fn_kw = "fn".red();
                 let parameter_type = if let Some(parameter_type) = parameter_type {
                     format!(": {parameter_type}")
                 } else {
                     "".to_string()
                 };
                 format!(
-                    "fn (: {type_}) {parameter_name}{parameter_type}\n{captures} =>\n{body}",
+                    "{fn_kw} (: {type_}) {parameter_name}{parameter_type}\n{captures} =>\n{body}",
                     captures = left_pad(format!("[{}]", captures.pretty().replace("\n", " "))),
                     body = left_pad(body.pretty()),
                     type_ = self.type_.pretty()

@@ -271,13 +271,14 @@ pub enum TokenCategory {
 
 pub type Token = Spanned<TokenKind>;
 
-struct Tokenizer<I: Iterator<Item = char>> {
+struct Tokenizer<'a, I: Iterator<Item = char>> {
     iter: MultiPeek<I>,
     tokens: Vec<Token>,
     position: usize,
+    logger: &'a mut Logger,
 }
 
-impl<I: Iterator<Item = char>> Tokenizer<I> {
+impl<'a, I: Iterator<Item = char>> Tokenizer<'a, I> {
     fn next(&mut self) -> Option<char> {
         let next = self.iter.next();
         if let Some(next) = next {
@@ -305,10 +306,7 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
         &self,
         start: usize,
     ) -> Span {
-        Span {
-            start,
-            width: self.position - start,
-        }
+        self.logger.new_span(start, self.position - start)
     }
 }
 
@@ -320,6 +318,7 @@ pub fn tokenize(
         iter: multipeek(input),
         tokens: vec![],
         position: 0,
+        logger,
     };
     while let Some(current) = iter.next() {
         let start = iter.position - 1;
@@ -329,7 +328,9 @@ pub fn tokenize(
         }
         const DOC_COMMENT_START: &str = ">";
         // Parse multiline comment
-        if let ('(', Some('*')) = (current, iter.peek()) {
+        if let ('(', Some('*')) = (current, iter.peek())
+            && iter.peek_nth(1) != Some(')')
+        {
             iter.next();
             let mut depth = 1;
             let mut buffer: Vec<u8> = vec![];
@@ -344,7 +345,7 @@ pub fn tokenize(
                     iter.next();
                     break;
                 }
-                write!(buffer, "{current}").unwrap();
+                let _ = write!(buffer, "{current}");
             }
             let content = String::from_utf8_lossy(&buffer).to_string();
             if let Some(content) = content.strip_prefix(DOC_COMMENT_START) {
@@ -361,7 +362,7 @@ pub fn tokenize(
             while let Some(c) = iter.next()
                 && c != '\n'
             {
-                write!(buffer, "{c}").unwrap();
+                let _ = write!(buffer, "{c}");
             }
             let content = String::from_utf8_lossy(&buffer).to_string();
             if let Some(content) = content.strip_prefix(DOC_COMMENT_START) {
@@ -435,14 +436,15 @@ pub fn tokenize(
         // Parse glyph literal
         if current == '\'' {
             if let Some(glyph) = parse_delimited(&mut iter, '\'') {
-                if let Some(baked) = bake_string(start, logger, &glyph) {
+                if let Some(baked) = bake_string(start, iter.logger, &glyph) {
                     let chars = baked.chars().collect::<Vec<_>>();
                     if chars.len() != 1 {
-                        logger
+                        let span = iter.span(start);
+                        iter.logger
                             .error("Glyphs may only contain a single unicode character")
                             .primary(
                                 format!("This string consists of {} characters", chars.len()),
-                                iter.span(start),
+                                span,
                             )
                             .done();
                         iter.push(TokenKind::GlyphLiteral('?'), start);
@@ -454,9 +456,10 @@ pub fn tokenize(
                     iter.push(TokenKind::StringLiteral("".into()), start);
                 }
             } else {
-                logger
+                let span = iter.logger.new_span(start, 1);
+                iter.logger
                     .error("Missing closing single quote (\')")
-                    .primary("Opening \' here is not closed", Span { start, width: 1 })
+                    .primary("Opening \' here is not closed", span)
                     .done();
                 iter.push(TokenKind::Error, start);
             }
@@ -466,16 +469,17 @@ pub fn tokenize(
         // Parse string literal
         if current == '"' {
             if let Some(string) = parse_delimited(&mut iter, '"') {
-                if let Some(baked) = bake_string(start, logger, &string) {
+                if let Some(baked) = bake_string(start, iter.logger, &string) {
                     iter.push(TokenKind::StringLiteral(baked), start);
                 } else {
                     // Error reported during baking
                     iter.push(TokenKind::Error, start);
                 }
             } else {
-                logger
+                let span = iter.logger.new_span(start, 1);
+                iter.logger
                     .error("Missing closing double quote (\")")
-                    .primary("Opening \" here is not closed", Span { start, width: 1 })
+                    .primary("Opening \" here is not closed", span)
                     .done();
                 iter.push(TokenKind::Error, start);
             }
@@ -499,7 +503,7 @@ pub fn tokenize(
                     _ => unreachable!(),
                 }
             } else {
-                write!(buffer, "{current}").unwrap();
+                let _ = write!(buffer, "{current}");
                 Base::Decimal
             };
             let is_digit = |c: char| {
@@ -515,7 +519,7 @@ pub fn tokenize(
             while iter.peek().is_some_and(is_digit)
                 && let Some(current) = iter.next()
             {
-                write!(buffer, "{current}").unwrap();
+                let _ = write!(buffer, "{current}");
             }
             //No decimal or 'e', so integer literal
             if iter
@@ -533,17 +537,23 @@ pub fn tokenize(
             // Parse decimal part
             if iter.peek().is_some_and(|c| c == '.') {
                 iter.next();
-                write!(buffer, ".").unwrap();
-                while iter.peek().is_some_and(is_digit) {
-                    write!(buffer, "{}", iter.next().unwrap()).unwrap();
+                let _ = write!(buffer, ".");
+                while let Some(next) = iter.peek()
+                    && is_digit(next)
+                {
+                    iter.next();
+                    let _ = write!(buffer, "{next}");
                 }
             }
             // Parse exponent part
             if iter.peek().is_some_and(|c| c == 'e') {
                 iter.next();
-                write!(buffer, "e").unwrap();
-                while iter.peek().is_some_and(is_digit) {
-                    write!(buffer, "{}", iter.next().unwrap()).unwrap();
+                let _ = write!(buffer, "e");
+                while let Some(next) = iter.peek()
+                    && is_digit(next)
+                {
+                    iter.next();
+                    let _ = write!(buffer, "{next}");
                 }
             }
             // Finished parsing real
@@ -559,13 +569,14 @@ pub fn tokenize(
                     let str = str.strip_prefix("0d").map(|s| s.to_string()).unwrap_or(str);
                     iter.push(TokenKind::RealLiteral(str), start);
                 } else {
-                    logger
+                    let span = iter.span(start);
+                    iter.logger
                         .error("Real numbers must be written in decimal (base 10).")
                         .primary(
                             format!(
                                 "This token was parsed as a {base} real, which is not allowed."
                             ),
-                            iter.span(start),
+                            span,
                         )
                         .done();
                     iter.push(TokenKind::RealLiteral("1.0".into()), start);
@@ -573,15 +584,13 @@ pub fn tokenize(
                 continue;
             }
             // Found erroneous character
-            let next_char = iter.peek().unwrap();
-            logger
+            let next_char = iter.peek().unwrap_or_else(|| unreachable!());
+            let span = iter.logger.new_span(iter.position + 1, 1);
+            iter.logger
                 .error("Illegal character in number.")
                 .primary(
                     format!("The character {next_char} is not valid inside of a number."),
-                    Span {
-                        start: iter.position + 1,
-                        width: 1,
-                    },
+                    span,
                 )
                 .done();
             iter.push(TokenKind::Error, start);
@@ -589,7 +598,8 @@ pub fn tokenize(
         }
         let is_ident = |c: char| (!c.is_ascii_punctuation() || c == '_') && !c.is_whitespace();
         if !is_ident(current) {
-            logger
+            let span = iter.logger.new_span(start, 1);
+            iter.logger
                 .error("Unexpected character")
                 .primary(
                     format!(
@@ -598,7 +608,7 @@ pub fn tokenize(
                             .map(|n| n.to_string())
                             .unwrap_or("invalid UTF-8".to_string())
                     ),
-                    Span { start, width: 1 },
+                    span,
                 )
                 .done();
             iter.push(TokenKind::Error, start);
@@ -606,12 +616,12 @@ pub fn tokenize(
         }
         // Parse identifier or keyowrd
         let mut buffer: Vec<u8> = vec![];
-        write!(buffer, "{current}").unwrap();
+        let _ = write!(buffer, "{current}");
         while let Some(next) = iter.peek()
             && is_ident(next)
         {
             iter.next();
-            write!(buffer, "{next}").unwrap();
+            let _ = write!(buffer, "{next}");
         }
         let str = String::from_utf8_lossy(&buffer).to_string();
         use TokenKind::*;
@@ -696,14 +706,12 @@ fn bake_string(
         start += next.len_utf8();
         baked.push(if next == '\\' {
             let Some(next) = iter.next() else {
+                let span = logger.new_span(start - 1, 2);
                 logger
                     .error("Unknown escape sequence")
                     .primary(
                         "This sequence starts with a \\, but is not a recognized escape sequence.",
-                        Span {
-                            start: start - 1,
-                            width: 2,
-                        },
+                        span
                     )
                     .done();
                 return None;
@@ -729,11 +737,12 @@ fn bake_string(
                     });
                     let bytes: Vec<_> = collect_hex_bytes(&[iter.next(), iter.next()]);
                     if bytes.len() != 2 {
+                        let span = logger.new_span(start - 1, 4);
                         logger.error("Unknown escape sequence")
-                            .primary("This sequence starts with \\x, but is not followed by two hexadecimal digits.", Span {
-                                start: start - 1,
-                                width: 4
-                            }).done();
+                            .primary(
+                                "This sequence starts with \\x, but is not followed by two hexadecimal digits.",
+                                span
+                            ).done();
                         return None;
                     }
                     start += length;
@@ -743,11 +752,9 @@ fn bake_string(
                     let bytes =
                         collect_hex_bytes(&[iter.next(), iter.next(), iter.next(), iter.next()]);
                     if bytes.len() != 4 {
+                        let span = logger.new_span(start - 1, 6);
                         logger.error("Unknown escape sequence")
-                            .primary("This sequence starts with \\w, but is not followed by 4 hex digits.", Span {
-                                start: start - 1,
-                                width: 6
-                            }).done();
+                            .primary("This sequence starts with \\w, but is not followed by 4 hex digits.", span).done();
                         return None;
                     }
                     start += 4;
@@ -758,11 +765,9 @@ fn bake_string(
                     }
                 }
                 c => {
+                    let span = logger.new_span(start - 1, 2);
                     logger.error("Unknown escape sequence").primary(
-                        format!("The \\{c} sequence here is not recognized."), Span {
-                            start: start - 1,
-                            width: 2
-                        }
+                        format!("The \\{c} sequence here is not recognized."), span
                     ).done();
                     return None;
                 }

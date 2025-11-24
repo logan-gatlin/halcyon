@@ -7,6 +7,7 @@
 */
 //mod constraint;
 //mod infer;
+mod abstract_type;
 mod types;
 use std::collections::{
     HashMap,
@@ -16,6 +17,7 @@ use std::collections::{
 use crate::Visit;
 //pub use constraint::*;
 //pub use infer::*;
+pub use abstract_type::*;
 pub use types::*;
 
 /// The set of type variables that are free in the current environment.

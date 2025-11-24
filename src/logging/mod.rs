@@ -1,6 +1,8 @@
 #![allow(dead_code)]
+mod into_log;
 mod span;
 mod with_context;
+pub use into_log::*;
 pub use span::*;
 pub use with_context::*;
 
@@ -31,7 +33,7 @@ impl Logger {
         &mut self,
         other: Self,
     ) {
-        assert_eq!(self.id, other.id);
+        assert_eq!(self.id, other.id, "Merged loggers with different file IDs");
         self.diagnostics.extend_from_slice(&other.diagnostics);
     }
     #[must_use]
@@ -83,6 +85,17 @@ impl Logger {
     }
     pub fn iter(&self) -> impl Iterator<Item = &Diagnostic<FileId>> {
         self.diagnostics.iter()
+    }
+    pub fn new_span(
+        &self,
+        start: usize,
+        width: usize,
+    ) -> Span {
+        Span {
+            file_id: self.id,
+            start,
+            width,
+        }
     }
 }
 

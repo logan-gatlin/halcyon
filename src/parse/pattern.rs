@@ -14,7 +14,7 @@ pub enum PatternExpressionKind {
 pub enum ParsedArrayPattern {
     Pattern(PatternExpression),
     ExpansionAssign(Spanned<String>),
-    Expansion,
+    Expansion(Span),
 }
 
 pub type PatternExpression = Expression<PatternExpressionKind>;
@@ -22,7 +22,7 @@ pub type PatternExpression = Expression<PatternExpressionKind>;
 impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
     fn pattern_primary(&mut self) -> Result<PatternExpression> {
         use PatternExpressionKind as e;
-        let next = self.next_or_err().ok_or(UntilNextStatement)?;
+        let next = self.next_token_or_err().ok_or(UntilNextStatement)?;
         let span = next.span;
         Ok(match next.inner {
             StringLiteral(s) => e::Literal(Literal::String(s)),
@@ -87,7 +87,7 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
                         if let Some(ident) = self.eat_ident() {
                             patterns.push(ParsedArrayPattern::ExpansionAssign(ident));
                         } else {
-                            patterns.push(ParsedArrayPattern::Expansion);
+                            patterns.push(ParsedArrayPattern::Expansion(self.last_span));
                         }
                     } else {
                         patterns.push(ParsedArrayPattern::Pattern(self.parse_pattern()?));

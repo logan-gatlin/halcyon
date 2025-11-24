@@ -34,7 +34,7 @@ pub enum TypeExpressionKind {
 impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
     fn type_primary(&mut self) -> Result<TypeExpression> {
         use TypeExpressionKind as e;
-        let next = self.next_or_err().ok_or(NoRecovery)?;
+        let next = self.next_token_or_err().ok_or(NoRecovery)?;
         let mut span = next.span;
         Ok(match next.inner {
             // Identifier or path

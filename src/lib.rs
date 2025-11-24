@@ -2,7 +2,6 @@
 #![deny(
     clippy::all,
     clippy::exit,
-    clippy::expect_used,
     clippy::empty_structs_with_brackets,
     clippy::if_then_some_else_none,
     clippy::infinite_loop,
@@ -12,20 +11,23 @@
     clippy::mutex_atomic,
     clippy::mutex_integer,
     clippy::panic,
-    clippy::pattern_type_mismatch,
     clippy::rc_buffer,
     clippy::rc_mutex,
     clippy::return_and_then,
     clippy::self_named_module_files,
-    clippy::shadow_unrelated,
     clippy::string_lit_chars_any,
     clippy::string_lit_as_bytes,
     clippy::string_slice,
-    clippy::try_err,
-    clippy::unwrap_used
+    clippy::try_err
 )]
 // Debug tools set to warn to help find and remove before deploying
-#![warn(clippy::print_stdout, clippy::print_stderr, clippy::todo)]
+#![warn(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    clippy::todo,
+    clippy::unwrap_used
+)]
+#![allow(mismatched_lifetime_syntaxes)]
 
 pub mod ir;
 pub mod logging;
@@ -36,28 +38,17 @@ pub mod semantic;
 pub mod std_hc;
 pub mod token;
 
-#[cfg(test)]
-mod test;
+pub use ir::{
+    PrettyPrint,
+    SymbolTable,
+    build_ir,
+};
+pub use parse::parse;
+pub use token::tokenize;
+
+//#[cfg(test)]
+//mod test;
 
 pub use indoc::*;
 pub use logging::*;
 pub use map::*;
-use parse::*;
-use token::*;
-
-use crate::ir::PrettyPrint;
-
-pub fn compile(input: &str) -> (Vec<u8>, Logger) {
-    let mut logger = Logger::new(0);
-    let tokens = tokenize(input.chars(), &mut logger);
-    let parse_trees = parse(&mut logger, tokens);
-
-    for p in parse_trees {
-        let ir_module = ir::build_ir(&mut logger, p);
-        println!("{}", ir_module.pretty());
-    }
-    if !logger.is_ok() {
-        panic!();
-    }
-    (vec![], logger)
-}

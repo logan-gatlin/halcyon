@@ -5,6 +5,7 @@ use std::ops::{
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Hash)]
 pub struct Span {
+    pub file_id: usize,
     pub start: usize,
     pub width: usize,
 }
@@ -16,12 +17,17 @@ impl Add<Span> for Span {
         self,
         rhs: Span,
     ) -> Self::Output {
+        assert_eq!(
+            self.file_id, rhs.file_id,
+            "Attempted to add spans from different files"
+        );
         let (min, max) = if self.start < rhs.start {
             (self, rhs)
         } else {
             (rhs, self)
         };
         Span {
+            file_id: self.file_id,
             start: min.start,
             width: max.width + (max.start - min.start),
         }
@@ -74,9 +80,6 @@ pub trait WithSpan: Sized {
         self,
         span: Span,
     ) -> Spanned<Self>;
-    fn with_default_span(self) -> Spanned<Self> {
-        self.with_span(Span { start: 0, width: 0 })
-    }
 }
 
 impl<T> WithSpan for T {
@@ -94,4 +97,13 @@ pub fn map_span<T>(span: Span) -> Box<dyn Fn(T) -> Spanned<T>> {
 
 pub fn without_span<T>(inner: Spanned<T>) -> T {
     inner.inner
+}
+
+impl std::fmt::Display for Span {
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        write!(f, "[{}+{}]", self.start, self.width)
+    }
 }

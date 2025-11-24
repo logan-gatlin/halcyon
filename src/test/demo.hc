@@ -1,4 +1,5 @@
 module test =
-  let a = 4
-  let b = c + 1
+  let s = fn
+    | 1 => 1
+    | 2 => 2
 end

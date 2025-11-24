@@ -16,6 +16,7 @@ pub enum Literal {
 pub enum ValueExpressionKind {
     Let {
         assignee: PatternExpression,
+        is_global: bool,
         value: Box<ValueExpression>,
         in_: Box<ValueExpression>,
     },
@@ -77,7 +78,7 @@ pub type ValueExpression = Expression<ValueExpressionKind>;
 impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
     fn primary(&mut self) -> Result<ValueExpression> {
         use ValueExpressionKind as e;
-        let next = self.next_or_err().ok_or(NoRecovery)?;
+        let next = self.next_token_or_err().ok_or(NoRecovery)?;
         let mut span = next.span;
         Ok(match next.inner {
             LeftParen if self.eat(&RightParen).is_some() => e::Literal(Literal::Unit),
@@ -152,6 +153,7 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
             Let => {
                 e::Let {
                     assignee: self.parse_pattern()?,
+                    is_global: false,
                     value: {
                         self.eat_or_err(&Equal).ok_or(UntilNextStatement)?;
                         Box::new(self.parse_value_expression(0)?)
@@ -312,7 +314,7 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
         let span;
         let mut current = if let Some(id) = self.eat_one_of(unary_ops.clone()) {
             span = self.last_span;
-            let op = UnaryOp::try_from(&unary_ops[id]).unwrap();
+            let op = UnaryOp::try_from(&unary_ops[id]).unwrap_or_else(|_| unreachable!());
             let operand = self.parse_value_expression(op.precedence())?;
             let op = if let (UnaryOp::Minus, e::Literal(Literal::Real(_))) = (op, &*operand) {
                 UnaryOp::MinusDot
