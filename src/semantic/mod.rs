@@ -5,20 +5,23 @@
     The `constraint` module solves those constraints, and generates a solution.
     A solution is a mapping from type variables to concrete types.
 */
-//mod constraint;
-//mod infer;
-mod abstract_type;
-mod types;
-use std::collections::{
-    HashMap,
-    HashSet,
-};
 
-use crate::Visit;
-//pub use constraint::*;
-//pub use infer::*;
+mod abstract_type;
+mod constraint;
+mod types;
+use crate::ir::*;
+use crate::{
+    Logger,
+    Visit,
+};
+use std::collections::HashSet;
+
+use crate::Span;
 pub use abstract_type::*;
+pub use constraint::*;
 pub use types::*;
+
+use crate::SymbolTable;
 
 /// The set of type variables that are free in the current environment.
 /// The difference between free and non-free variables is that free variables
@@ -26,174 +29,184 @@ pub use types::*;
 /// they may refer to a different type every time they are used.
 pub type FreeVariableSet = HashSet<TypeVariable>;
 
-/*
-/// The type environmnet contains all of the state needed for type inference.
-/// Once an item has been fully type inferred, the environment passes its
-/// constraints to the solver.
-#[derive(Debug, Clone, Default)]
-pub struct Environment {
-    map: HashMap<Path, Type>,
-    constraints: Vec<TypeConstraint>,
-    struct_constraints: Vec<StructConstraint>,
-    current_tv: TypeVariable,
+struct Environment<'a> {
+    symbols: &'a mut SymbolTable,
+    constraints: &'a mut ConstraintSet,
+    free: FreeVariableSet,
 }
 
-impl Environment {
-    pub fn define(&mut self, path: Path, mut type_: Type) {
-        self.freshen_type_variables(&mut type_, &HashSet::new());
-        self.map.insert(path, type_);
-    }
-
-    pub fn define_unknown(&mut self, path: Path) -> TypeVariable {
-        let tv = self.new_tv();
-        self.map.insert(path, Type::Variable(tv));
-        tv
-    }
-
-    pub fn type_constraint(&mut self, a: Type, b: Type, span: Span) {
-        self.constraints.push(TypeConstraint(a, b, span))
-    }
-
-    pub fn struct_constraint(&mut self, of_t: Type, field_t: Type, name: String, span: Span) {
-        self.struct_constraints.push(StructConstraint {
-            of_t,
-            field_t,
-            name,
-            span,
-        })
-    }
-
-    fn new_tv(&mut self) -> TypeVariable {
-        let tv = self.current_tv;
-        self.current_tv += 1;
-        tv
-    }
-
-    pub fn freshen_type_variables(&mut self, type_: &mut impl Visit<Type>, free: &FreeVariableSet) {
-        freshen_type_variables(type_, &free, || self.new_tv());
-    }
-
-    pub fn get_type(&mut self, path: &Path, free: &FreeVariableSet) -> Type {
-        let mut type_ = self.map.get(path).cloned().unwrap_or_else(|| Type::Any);
-        let mut type_map = HashMap::new();
-        type_.visit(|type_var: &mut TypeVariable| {
-            if !free.contains(type_var) {
-                if let Some(replace) = type_map.get(type_var) {
-                    *type_var = *replace;
-                } else {
-                    let replace = self.new_tv();
-                    type_map.insert(*type_var, replace);
-                    *type_var = replace;
-                }
-            }
-        });
-        type_
-    }
-
-    #[allow(unused)]
-    pub fn print_constraints(&self) {
-        println!("CONSTRAINTS:\n{}", self.constraints.clone().sx());
-    }
-}
-*/
-
-pub fn freshen_type_variables(
-    type_: &mut impl Visit<Type>,
-    free: &HashSet<TypeVariable>,
-    mut new_tv: impl FnMut() -> TypeVariable,
+fn infer_pattern(
+    pat: &mut Pattern,
+    env: &mut Environment,
 ) {
-    let mut type_map = HashMap::new();
-    type_.visit(|type_| {
-        if let Type::Variable(type_var) = type_
-            && !free.contains(type_var)
-        {
-            if let Some(replace) = type_map.get(type_var) {
-                *type_var = *replace;
-            } else {
-                let replace = new_tv();
-                type_map.insert(*type_var, replace);
-                *type_var = replace;
-            }
+    let span = pat.span;
+    let type_ = match &mut pat.inner.inner {
+        PatternKind::Hole => {
+            let fresh_tv = env.symbols.fresh_tv();
+            env.free.insert(fresh_tv);
+            Type::Variable(fresh_tv)
         }
-    });
-}
-
-#[allow(unused)]
-pub fn normalize_type_variables(t: &mut impl Visit<Type>) {
-    let mut count = 0;
-    let mut map = HashMap::new();
-    t.visit(|type_: &mut Type| {
-        if let Type::Variable(type_var) = type_ {
-            if let Some(replace) = map.get(type_var) {
-                *type_var = *replace;
-            } else {
-                let replace = count;
-                count += 1;
-                map.insert(*type_var, replace);
-                *type_var = replace;
-            }
+        PatternKind::Identifier(path) => {
+            let fresh_tv = env.symbols.fresh_tv();
+            env.free.insert(fresh_tv);
+            let type_ = Type::Variable(fresh_tv);
+            env.symbols.terms.insert(path.clone(), type_.clone());
+            type_
         }
-    });
-}
-/*
-
-pub fn type_solve(logger: &mut Logger, mut module: IrModule) -> (IrModule, ModuleInterface) {
-    let mut interface = ModuleInterface::default();
-    let mut env = Environment::default();
-    let free = HashSet::default();
-    module.items = module
-        .items
-        .into_iter()
-        .map(|i| match i {
-            ModuleItem::Let(pattern, node) => {
-                let mut new_env = env.clone();
-                let mut new_free = free.clone();
-                let mut pattern = pattern.infer(&mut new_env, &mut new_free);
-                let mut node = node.infer(&mut new_env, &mut new_free);
-                new_env.type_constraint(pattern.type_.clone(), node.type_.clone(), pattern.span);
-                let solution = new_env.solve_constraints(logger);
-                unify_all(&mut pattern, &solution);
-                unify_all(&mut node, &solution);
-                pattern.visit(|(path, type_)| {
-                    env.map.insert(path.clone(), type_.clone());
-                    interface.values.insert(path.clone(), type_.clone());
+        PatternKind::Tuple(pats) => {
+            let mut types = Vec::with_capacity(pats.len());
+            for p in pats.iter_mut() {
+                infer_pattern(p, env);
+                types.push(p.type_.clone());
+            }
+            Type::Tuple(types)
+        }
+        PatternKind::Array {
+            starting,
+            glob,
+            ending,
+            ..
+        } => {
+            let fresh_tv = env.symbols.fresh_tv();
+            env.free.insert(fresh_tv);
+            let type_ = Type::Variable(fresh_tv);
+            for pat in starting.iter_mut().chain(ending.iter_mut()) {
+                infer_pattern(pat, env);
+                env.constraints.equality.push(EqualityConstraint {
+                    left: pat.type_.clone(),
+                    right: type_.clone(),
+                    span: pat.span,
                 });
-                //normalize_type_variables(&mut node);
-                ModuleItem::Let(pattern, node)
             }
-            ModuleItem::Type(path) => {
-                interface.types.insert(path.clone());
-                ModuleItem::Type(path)
+            if let Some(glob) = glob {
+                env.symbols.terms.insert(glob.clone(), type_.clone());
             }
-            ModuleItem::Constructor(path, constructor) => {
-                let type_ = match constructor.kind.clone() {
-                    ConstructorKind::Unitary(t) => t,
-                    ConstructorKind::Function(a, b) => Type::func(a, b),
-                };
-                env.define(path.clone(), type_.clone());
-                interface.values.insert(path.clone(), type_);
-                interface
-                    .constructors
-                    .insert(path.clone(), constructor.clone());
-                ModuleItem::Constructor(path, constructor)
-            }
-            ModuleItem::Import {
-                path,
-                type_,
-                major,
-                minor,
-            } => {
-                env.define(path.clone(), type_.clone().into());
-                interface.values.insert(path.clone(), type_.clone().into());
-                ModuleItem::Import {
-                    path,
-                    type_,
-                    major,
-                    minor,
-                }
-            }
-        })
-        .collect();
-    (module, interface)
+            type_
+        }
+        PatternKind::Constructor(constructor, typed) => todo!(),
+        PatternKind::Immediate(const_value) => const_value.type_of(),
+        PatternKind::TypeHint(pat, t) => {
+            infer_pattern(pat, env);
+            env.constraints.equality.push(EqualityConstraint {
+                left: pat.type_.clone(),
+                right: t.clone(),
+                span,
+            });
+            t.clone()
+        }
+    };
+    pat.type_ = type_;
 }
-*/
+
+fn infer_ir<'a, 'b, 'c>(
+    ir: &'a mut IrNode,
+    env: &'b mut Environment<'c>,
+) {
+    let span = ir.span;
+    let type_ = match &mut ir.inner.inner {
+        IrKind::Let {
+            assignee,
+            value,
+            then,
+            else_,
+            ..
+        } => {
+            let new_env = &mut Environment {
+                symbols: env.symbols,
+                constraints: env.constraints,
+                free: env.free.clone(),
+            };
+            infer_pattern(assignee, new_env);
+            infer_ir(value, new_env);
+            infer_ir(then, new_env);
+            infer_ir(else_, new_env);
+            env.constraints.equality.extend_from_slice(&[
+                EqualityConstraint {
+                    left: assignee.type_.clone(),
+                    right: value.type_.clone(),
+                    span: assignee.span,
+                },
+                EqualityConstraint {
+                    left: then.type_.clone(),
+                    right: else_.type_.clone(),
+                    span,
+                },
+            ]);
+            then.type_.clone()
+        }
+        IrKind::Immediate(const_value) => const_value.type_of(),
+        IrKind::Identifier(path) => {
+            let mut type_ = env.symbols.get_term(path).clone();
+            type_.visit(|t: &mut Type| {
+                if let Type::Variable(tv) = t
+                    && !env.free.contains(tv)
+                {
+                    *tv = env.symbols.fresh_tv();
+                }
+            });
+            type_
+        }
+        IrKind::Tuple(nodes) => {
+            let mut types = Vec::with_capacity(nodes.len());
+            for n in nodes {
+                infer_ir(n, env);
+                types.push(n.type_.clone());
+            }
+            Type::Tuple(types)
+        }
+        IrKind::Struct(index_map) => todo!(),
+        IrKind::Field { of, index } => todo!(),
+        IrKind::Function {
+            parameter_name,
+            parameter_type,
+            captures,
+            capture_types,
+            body,
+        } => todo!(),
+        IrKind::Call { callee, argument } => {
+            infer_ir(callee, env);
+            infer_ir(argument, env);
+            let return_type = Type::Variable(env.symbols.fresh_tv());
+            let function_type = Type::func(argument.type_.clone(), return_type.clone());
+            env.constraints.equality.push(EqualityConstraint {
+                left: function_type.clone(),
+                right: callee.type_.clone(),
+                span,
+            });
+            return_type
+        }
+        IrKind::Semicolon(a, b) => {
+            infer_ir(a, env);
+            infer_ir(b, env);
+            b.type_.clone()
+        }
+        IrKind::Unreachable => {
+            let tv = env.symbols.fresh_tv();
+            env.free.insert(tv);
+            Type::Variable(tv)
+        }
+    };
+    ir.type_ = type_;
+}
+
+pub fn analyze(
+    module: &mut IrModule,
+    symbols: &mut SymbolTable,
+    logger: &mut Logger,
+) {
+    for ir in module.code.iter_mut() {
+        let mut constraints = ConstraintSet::default();
+        let mut env = Environment {
+            symbols,
+            constraints: &mut constraints,
+            free: HashSet::new(),
+        };
+        infer_ir(ir, &mut env);
+        let (old, new): (Vec<_>, Vec<_>) = solve_constraints(&mut env, logger)
+            .into_iter()
+            .map(|s| (s.old, s.new))
+            .unzip();
+        substitute_type_variables(ir, &old, &new);
+        substitute_type_variables(&mut symbols.terms, &old, &new);
+    }
+}

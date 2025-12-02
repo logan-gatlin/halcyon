@@ -72,8 +72,8 @@ pub enum Type {
     },
     /// Array type
     Array(Box<Type>),
-    /// Tuple
-    Product(Vec<Type>),
+    /// Product type
+    Tuple(Vec<Type>),
     /// Variant
     Sum {
         name: Path,
@@ -85,13 +85,13 @@ pub enum Type {
     Instantiation(Path, Vec<Type>),
 }
 
-impl Type {
-    pub fn freshen_type_variables(
-        &mut self,
-        mut fresh_type_variable: impl FnMut() -> usize,
-    ) {
-        let mut map = HashMap::new();
-        self.visit(|t: &mut usize| {
+pub fn freshen_type_variables<T: Visit<Type>>(
+    t: &mut T,
+    mut fresh_type_variable: impl FnMut() -> usize,
+) {
+    let mut map = HashMap::new();
+    t.visit(|t: &mut Type| {
+        if let Type::Variable(t) = t {
             if let Some(tv) = map.get(t) {
                 *t = *tv;
             } else {
@@ -99,8 +99,25 @@ impl Type {
                 map.insert(*t, tv);
                 *t = fresh_type_variable();
             }
-        });
-    }
+        }
+    })
+}
+
+pub fn substitute_type_variables<T: Visit<Type>>(
+    t: &mut T,
+    to_replace: &[TypeVariable],
+    with_types: &[Type],
+) {
+    t.visit(|t: &mut Type| {
+        if let Type::Variable(tv) = t
+            && let Some(index) = to_replace.iter().position(|var| tv == var)
+        {
+            *t = with_types[index].clone();
+        }
+    });
+}
+
+impl Type {
     pub fn curry(
         params: &[Type],
         returns: Type,
@@ -139,7 +156,7 @@ impl Type {
             Type::Variable(t) => *t == tv,
             Type::Array(t) => t.contains_type_variable(tv),
             Type::Struct { fields, .. } => fields.values().any(|t| t.contains_type_variable(tv)),
-            Type::Product(items) => items.iter().any(|t| t.contains_type_variable(tv)),
+            Type::Tuple(items) => items.iter().any(|t| t.contains_type_variable(tv)),
             Type::Function(a, b) => a.contains_type_variable(tv) || b.contains_type_variable(tv),
             Type::Instantiation(_, items) => items.iter().any(|t| t.contains_type_variable(tv)),
         }
@@ -168,7 +185,7 @@ impl Visit<Type> for Type {
                 variant_types: items,
                 ..
             }
-            | Type::Product(items) => items._visit(f),
+            | Type::Tuple(items) => items._visit(f),
             Type::Struct { fields, .. } => fields.values_mut().for_each(|v| v._visit(f)),
             Type::Function(a, b) => {
                 a._visit(f);
@@ -228,7 +245,7 @@ impl PartialEq for Type {
             | (t::String, t::String) => true,
             (t::Struct { name: name1, .. }, t::Struct { name: name2, .. }) => name1 == name2,
             (t::Function(p1, r1), t::Function(p2, r2)) => p1 == p2 && r1 == r2,
-            (t::Product(t1), t::Product(t2)) => t1 == t2,
+            (t::Tuple(t1), t::Tuple(t2)) => t1 == t2,
             (t::Sum { name: name1, .. }, t::Sum { name: name2, .. }) => name1 == name2,
             (t::Variable(t1), t::Variable(t2)) => t1 == t2,
             (t::Instantiation(name1, types1), t::Instantiation(name2, types2)) => {
@@ -267,7 +284,7 @@ impl std::hash::Hash for Type {
                 "poly".hash(state);
                 id.hash(state);
             }
-            Type::Product(items) => {
+            Type::Tuple(items) => {
                 "tuple".hash(state);
                 for item in items {
                     item.hash(state);
@@ -303,12 +320,39 @@ impl std::fmt::Display for Type {
             Type::String => write!(f, "string"),
             Type::Glyph => write!(f, "glyph"),
             Type::Array(t) => write!(f, "[{t}]"),
+            /*
             Type::Sum { name, .. } | Type::Struct { name, .. } => {
                 write!(f, "{name}")
             }
+            */
+            Type::Struct { name, .. } => {
+                write!(f, "{name}")
+            }
+            Type::Sum {
+                variant_names,
+                variant_types,
+                ..
+            } => {
+                write!(
+                    f,
+                    "{}",
+                    variant_names
+                        .iter()
+                        .zip(variant_types)
+                        .map(|(n, t)| {
+                            if t == &Type::Unit {
+                                n.to_string()
+                            } else {
+                                format!("{n} of {t}")
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" | ")
+                )
+            }
             Type::Function(a, b) => write!(f, "({a} -> {b})"),
             Type::Variable(id) => write!(f, "'{id}"),
-            Type::Product(items) => {
+            Type::Tuple(items) => {
                 write!(
                     f,
                     "({})",
@@ -316,7 +360,7 @@ impl std::fmt::Display for Type {
                         .iter()
                         .map(|i| format!("{}", i))
                         .collect::<Vec<_>>()
-                        .join(" * ")
+                        .join(", ")
                 )
             }
             Type::Instantiation(name, types) if types.is_empty() => {

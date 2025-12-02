@@ -20,6 +20,7 @@ pub struct Builder<'a> {
     pub module_name: String,
     pub logger: &'a mut Logger,
     pub symbols: &'a mut SymbolTable,
+    pub local_types: HashMap<Path, TypeVariable>,
     pub code: Vec<IrNode>,
     pub term_info: HashMap<Path, TermInfo>,
     pub captures: Vec<Vec<Path>>,
@@ -152,10 +153,12 @@ impl<'a> Builder<'a> {
             logger,
             symbols,
             module_name,
+            local_types: Default::default(),
             code: Default::default(),
             captures: Default::default(),
             term_info: Default::default(),
         };
+        let mut types = HashMap::new();
         for item in module.inner.contents {
             match item.inner {
                 DocComment(_) => {}
@@ -176,12 +179,47 @@ impl<'a> Builder<'a> {
                         this.code.push(expr);
                     }
                 }
-                Type { .. } => todo!(),
+                Type { assignee, value } => {
+                    let assignee_span = assignee.span;
+                    let Some(path) = this.define_name(assignee, NameSpace::Type, true) else {
+                        continue;
+                    };
+                    let tv = this.symbols.fresh_tv();
+                    this.symbols.types.insert(
+                        path.clone(),
+                        AbstractType {
+                            variables: [].into(),
+                            base: crate::semantic::Type::Variable(tv),
+                        },
+                    );
+                    let Some(mut at) = this.type_definition(path.clone(), *value) else {
+                        continue;
+                    };
+                    if at.base.contains_type_variable(tv) {
+                        this.logger
+                            .error("Uninhabited type")
+                            .primary(
+                                "It is impossible for a term with this type to exist because it contains itself",
+                                assignee_span,
+                            )
+                            .note("Cyclical structures are only possible using mutation, which is not allowed")
+                            .done();
+                        continue;
+                    }
+                    substitute_type_variables(
+                        &mut at.base,
+                        &[tv],
+                        &[crate::semantic::Type::Instantiation(path.clone(), vec![])],
+                    );
+                    types.insert(path.clone(), at.clone());
+                    this.symbols.types.insert(path, at);
+                }
             }
         }
         this.logger.merge_with(this.name_map.logger);
         IrModule {
             module_name: this.module_name,
+            types,
             code: this.code,
         }
     }
@@ -245,21 +283,6 @@ impl<'a> Builder<'a> {
         expr: ValueExpression,
     ) -> Option<IrNode> {
         let span = expr.span;
-        let unreachable = |span| -> Box<_> {
-            IrKind::Call {
-                callee: IrKind::Identifier(Path::new("std", "panic"))
-                    .with_span(span)
-                    .with_type(Type::Any)
-                    .into(),
-                argument: IrKind::Immediate(ConstValue::Unit)
-                    .with_span(span)
-                    .with_type(Type::Any)
-                    .into(),
-            }
-            .with_span(span)
-            .with_type(Type::Any)
-            .into()
-        };
         use ValueExpressionKind::*;
         Some(
             match expr.inner {
@@ -287,7 +310,10 @@ impl<'a> Builder<'a> {
                         is_global,
                         value,
                         then: in_,
-                        else_: unreachable(span),
+                        else_: IrKind::Unreachable
+                            .with_span(span)
+                            .with_type(Type::Any)
+                            .into(),
                     }
                 }
                 Literal(literal) => IrKind::Immediate(self.literal(literal.with_span(span))?),
@@ -396,7 +422,10 @@ impl<'a> Builder<'a> {
                         "<scrutinee>".to_string().with_span(scrutinee.span),
                         NameSpace::Term,
                     );
-                    let mut current = unreachable(span);
+                    let mut current = IrKind::Unreachable
+                        .with_span(span)
+                        .with_type(Type::Any)
+                        .into();
                     for (predicate, branch) in predicates.into_iter().zip(branches).rev() {
                         let mut assignee = self.pattern(predicate, false)?;
                         assignee.visit(|p| {
@@ -429,7 +458,10 @@ impl<'a> Builder<'a> {
                         is_global: false,
                         value: scrutinee.into(),
                         then: current,
-                        else_: unreachable(span),
+                        else_: IrKind::Unreachable
+                            .with_span(span)
+                            .with_type(Type::Any)
+                            .into(),
                     }
                 }
                 Tuple(items) => {

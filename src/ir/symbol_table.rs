@@ -36,13 +36,17 @@ impl SymbolTable {
         &self,
         path: &Path,
     ) -> &Type {
-        self.terms.get(path).unwrap_or_else(|| unreachable!())
+        self.terms
+            .get(path)
+            .unwrap_or_else(|| unreachable!("Accessed {path}"))
     }
     pub fn get_type(
         &self,
         path: &Path,
     ) -> &AbstractType {
-        self.types.get(path).unwrap_or_else(|| unreachable!())
+        self.types
+            .get(path)
+            .unwrap_or_else(|| unreachable!("Accessed {path}"))
     }
     pub fn get_constructor(
         &self,
@@ -50,6 +54,6 @@ impl SymbolTable {
     ) -> &Constructor {
         self.constructors
             .get(path)
-            .unwrap_or_else(|| unreachable!())
+            .unwrap_or_else(|| unreachable!("Accessed {path}"))
     }
 }

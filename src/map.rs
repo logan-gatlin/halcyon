@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 pub trait Visit<T> {
     fn _visit(
         &mut self,
@@ -57,5 +59,29 @@ where
         f: &mut impl FnMut(&mut U),
     ) {
         self.as_mut()._visit(f)
+    }
+}
+
+impl<K, T, U> Visit<U> for HashMap<K, T>
+where
+    T: Visit<U>,
+{
+    fn _visit(
+        &mut self,
+        f: &mut impl FnMut(&mut U),
+    ) {
+        self.values_mut().for_each(|v| v._visit(f));
+    }
+}
+
+impl<K, T, U> Visit<U> for indexmap::IndexMap<K, T>
+where
+    T: Visit<U>,
+{
+    fn _visit(
+        &mut self,
+        f: &mut impl FnMut(&mut U),
+    ) {
+        self.values_mut().for_each(|v| v._visit(f));
     }
 }

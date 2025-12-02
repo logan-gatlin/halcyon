@@ -13,7 +13,8 @@ pub fn compile(
     let parse_trees = parse(logger, tokens);
 
     for p in parse_trees {
-        let ir_module = build_ir(logger, symbols, p);
+        let mut ir_module = build_ir(logger, symbols, p);
+        semantic::analyze(&mut ir_module, symbols, logger);
         println!("{}\n", ir_module.pretty());
     }
     vec![]

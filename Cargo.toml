@@ -26,6 +26,7 @@ colored = "3"
 codespan-reporting = { version = "0.13", features = ["termcolor"] }
 indoc = "2"
 unicode_names2 = "2"
+derive-new = "0.5"
 
 [dev-dependencies]
 wasmtime = { version = "34.0", features = ["runtime", "cranelift", "gc", "gc-drc"] }

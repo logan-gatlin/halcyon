@@ -39,24 +39,40 @@ impl IntoLog for InstantiationError {
 
 #[derive(Debug, Clone)]
 pub struct AbstractType {
-    pub arity: usize,
+    pub variables: Box<[TypeVariable]>,
     pub base: Type,
 }
 
 impl AbstractType {
     pub fn instantiate(
-        mut self,
+        self,
         types: &[Type],
-        fresh_type_variable: impl FnMut() -> usize,
     ) -> Result<Type, InstantiationError> {
-        if self.arity != types.len() {
+        let expected = self.variables.len();
+        if expected != types.len() {
             Err(InstantiationError {
-                expected: self.arity,
+                expected,
                 provided: types.len(),
             })
         } else {
-            self.base.freshen_type_variables(fresh_type_variable);
-            Ok(self.base)
+            let mut type_ = self.base;
+            substitute_type_variables(&mut type_, &self.variables, types);
+            Ok(type_)
+        }
+    }
+
+    pub fn try_instantiate(
+        &self,
+        types: &[Type],
+    ) -> Result<(), InstantiationError> {
+        let expected = self.variables.len();
+        if expected != types.len() {
+            Err(InstantiationError {
+                expected,
+                provided: types.len(),
+            })
+        } else {
+            Ok(())
         }
     }
 }

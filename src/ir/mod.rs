@@ -68,6 +68,61 @@ pub enum IrKind {
     },
     // The `;` operator is singled out because of the opportunity for tail call optimization
     Semicolon(Box<IrNode>, Box<IrNode>),
+    Unreachable,
+}
+
+impl Visit<IrNode> for IrNode {
+    fn _visit(
+        &mut self,
+        f: &mut impl FnMut(&mut IrNode),
+    ) {
+        match &mut self.inner.inner {
+            IrKind::Let {
+                value, then, else_, ..
+            } => {
+                value._visit(f);
+                then._visit(f);
+                else_._visit(f);
+            }
+            IrKind::Tuple(inner) => inner._visit(f),
+            IrKind::Struct(map) => map._visit(f),
+            IrKind::Field { of, .. } => of._visit(f),
+            IrKind::Function { body, .. } => body._visit(f),
+            IrKind::Call { callee, argument } => {
+                callee._visit(f);
+                argument._visit(f);
+            }
+            IrKind::Semicolon(a, b) => {
+                a._visit(f);
+                b._visit(f);
+            }
+            _ => {}
+        }
+        f(self);
+    }
+}
+
+impl Visit<Type> for IrNode {
+    fn _visit(
+        &mut self,
+        f: &mut impl FnMut(&mut Type),
+    ) {
+        self._visit(&mut |n: &mut IrNode| {
+            match &mut n.inner.inner {
+                IrKind::Let { assignee, .. } => assignee._visit(f),
+                IrKind::Function {
+                    parameter_type,
+                    capture_types,
+                    ..
+                } => {
+                    parameter_type._visit(f);
+                    capture_types._visit(f);
+                }
+                _ => {}
+            }
+            f(&mut n.type_);
+        });
+    }
 }
 
 pub type IrNode = Typed<Spanned<IrKind>>;
@@ -75,6 +130,7 @@ pub type IrNode = Typed<Spanned<IrKind>>;
 #[derive(Debug, Clone)]
 pub struct IrModule {
     pub module_name: String,
+    pub types: HashMap<Path, AbstractType>,
     pub code: Vec<IrNode>,
 }
 

@@ -81,24 +81,41 @@ impl PrettyPrint for Pattern {
 
 impl PrettyPrint for IrModule {
     fn pretty(&self) -> String {
+        let type_kw = "type".red();
         let equal = "=".green();
-        let let_definitions = left_pad(
-            self.code
+        let mut type_definitions = left_pad(
+            self.types
                 .iter()
-                .map(|expr| left_pad(expr.pretty()))
+                .map(|(name, at)| format!("{type_kw} {} {equal} {}", name.minor, at.pretty()))
                 .collect::<Vec<_>>()
                 .join("\n"),
         );
+        let let_definitions = left_pad(
+            self.code
+                .iter()
+                .map(|expr| expr.pretty())
+                .collect::<Vec<_>>()
+                .join("\n"),
+        );
+        if !type_definitions.is_empty() && !let_definitions.is_empty() {
+            type_definitions.push_str("\n\n");
+        }
         let module = "module".red();
         let module_name = self.module_name.yellow();
         let end = "end".red();
-        format!("{module} {module_name} {equal}\n{let_definitions}\n{end}")
+        format!("{module} {module_name} {equal}\n{type_definitions}{let_definitions}\n{end}")
     }
 }
 
 impl PrettyPrint for Type {
     fn pretty(&self) -> String {
         format!("{self}").italic().blue().to_string()
+    }
+}
+
+impl PrettyPrint for AbstractType {
+    fn pretty(&self) -> String {
+        self.base.pretty()
     }
 }
 
@@ -128,17 +145,27 @@ impl PrettyPrint for IrNode {
                 else_,
                 is_global: _,
             } => {
+                let then_expr = if matches!(then.inner.inner, Immediate(ConstValue::Unit)) {
+                    "".to_string()
+                } else {
+                    format!(
+                        "{in_kw} {type_}\n{then}\n",
+                        in_kw = "in".red(),
+                        type_ = self.type_.pretty(),
+                        then = left_pad(then.pretty())
+                    )
+                };
+                let else_expr = if matches!(else_.inner.inner, Unreachable) {
+                    "".to_string()
+                } else {
+                    format!("{} {}", "else".red(), else_.pretty())
+                };
                 format!(
-                    "{let_kw} {assignee} {equal} {value}\n{in_kw} {type_}\n{then}\n{else_kw} {else_}",
+                    "{let_kw} {assignee} {equal} {value}\n{then_expr}{else_expr}",
                     let_kw = "let".red(),
                     equal = "=".green(),
                     value = value.pretty(),
-                    in_kw = "in".red(),
-                    type_ = self.type_.pretty(),
-                    then = left_pad(then.pretty()),
                     assignee = assignee.pretty(),
-                    else_kw = "else".red(),
-                    else_ = else_.pretty(),
                 )
             }
             Immediate(const_value) => {
@@ -155,7 +182,13 @@ impl PrettyPrint for IrNode {
                     type_ = self.type_.pretty()
                 )
             }
-            Tuple(items) => format!("(\n{},\n)", items.pretty()),
+            Tuple(items) => {
+                format!(
+                    "(\n{},\n) {}",
+                    left_pad(items.pretty()),
+                    self.type_.pretty()
+                )
+            }
             Struct(map) => {
                 format!(
                     "{{\n{},\n}}",
@@ -203,6 +236,7 @@ impl PrettyPrint for IrNode {
                     right = right.pretty()
                 )
             }
+            Unreachable => "unreachable".red().to_string(),
         }
     }
 }

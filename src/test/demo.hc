@@ -1,5 +1,4 @@
-module test =
-  let s = fn
-    | 1 => 1
-    | 2 => 2
+module demo =
+  type direction =  Left | Right
+  let d = Left
 end
