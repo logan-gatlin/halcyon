@@ -192,7 +192,7 @@ impl<'a> Builder<'a> {
                             base: crate::semantic::Type::Variable(tv),
                         },
                     );
-                    let Some(mut at) = this.type_definition(path.clone(), *value) else {
+                    let Some(mut at) = this.type_definition(path.clone(), *value, &[]) else {
                         continue;
                     };
                     if at.base.contains_type_variable(tv) {

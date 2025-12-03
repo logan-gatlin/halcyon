@@ -10,6 +10,7 @@ impl<'a> super::build_ir::Builder<'a> {
         &mut self,
         path: Path,
         definition: TypeDefinition,
+        variables: &[usize],
     ) -> Option<AbstractType> {
         let Spanned {
             inner: definition, ..
@@ -27,7 +28,7 @@ impl<'a> super::build_ir::Builder<'a> {
                 if let Some(at) = self.symbols.types.get_mut(&path) {
                     at.variables = variables.clone().into_boxed_slice()
                 };
-                let mut inner_type = self.type_definition(path, *body)?;
+                let mut inner_type = self.type_definition(path, *body, &variables)?;
                 self.name_map.end_local_scopes(argument_count);
                 inner_type.variables = variables.into_boxed_slice();
                 Some(inner_type)
@@ -66,15 +67,35 @@ impl<'a> super::build_ir::Builder<'a> {
                     } else {
                         Type::Unit
                     };
+                    let named_type = Type::Instantiation(
+                        path.clone(),
+                        variables.into_iter().map(|i| Type::Variable(*i)).collect(),
+                    );
                     let term_path = self.define_name(name.clone(), NameSpace::Term, true)?;
                     self.finalize_name(&term_path);
                     self.define_name(name.clone(), NameSpace::Constructor, true)?;
+                    let cons_path = Path::new(self.module_name.clone(), name.inner.clone());
+                    self.symbols.constructors.insert(
+                        cons_path.clone(),
+                        Constructor {
+                            variant_id: id,
+                            kind: if type_ == Type::Unit {
+                                ConstructorKind::Unitary(named_type.clone())
+                            } else {
+                                ConstructorKind::Function(type_.clone(), named_type.clone())
+                            },
+                        },
+                    );
+                    self.symbols.terms.insert(
+                        cons_path,
+                        if type_ == Type::Unit {
+                            named_type
+                        } else {
+                            Type::func(type_.clone(), named_type)
+                        },
+                    );
                     names.push(name.inner);
                     types.push(type_);
-                    let constructor = Constructor {
-                        variant_id: id,
-                        kind: todo!(),
-                    };
                 }
                 Some(AbstractType {
                     variables: [].into(),

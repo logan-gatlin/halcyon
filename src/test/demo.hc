@@ -1,4 +1,6 @@
 module demo =
-  type direction =  Left | Right
-  let d = Left
+  type opt =  Left | Right
+  let _ = match Left with
+  | Left => true
+  | Right => false
 end
