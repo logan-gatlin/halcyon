@@ -1,6 +1,6 @@
+use crate::hc_core::CORE_MODULE_NAME;
 use crate::ir::Path;
 use crate::semantic::Type;
-use crate::std_hc::STD_MODULE_NAME;
 use crate::token::*;
 
 pub type Precedence = usize;
@@ -14,21 +14,25 @@ macro_rules! op {
 
     #[allow(dead_code)]
     impl $name {
-      pub fn precedence(&self) -> Precedence {
-        match self {
-          $(Self::$op => $prec),*
+        pub fn all() -> Vec<Self> {
+            vec![$(Self::$op),*]
         }
-      }
 
-      pub fn assoc(&self) -> bool {
-        match self {
-          $(Self::$op => $assoc),*
+        pub fn precedence(&self) -> Precedence {
+            match self {
+                $(Self::$op => $prec),*
+            }
         }
-      }
 
-      pub fn path(&self) -> Path {
-          Path::new(STD_MODULE_NAME, format!("{self}"))
-      }
+        pub fn assoc(&self) -> bool {
+            match self {
+                $(Self::$op => $assoc),*
+            }
+        }
+
+        pub fn path(&self) -> Path {
+            Path::new(CORE_MODULE_NAME, format!("{self}"))
+        }
     }
 
     impl std::fmt::Display for $name {

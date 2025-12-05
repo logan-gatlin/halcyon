@@ -56,7 +56,13 @@ impl AbstractType {
             })
         } else {
             let mut type_ = self.base;
-            substitute_type_variables(&mut type_, &self.variables, types);
+            let solution = self
+                .variables
+                .into_iter()
+                .zip(types)
+                .map(|(tv, t)| Solution::new(tv, t.clone()))
+                .collect::<Vec<_>>();
+            substitute_type_variables(&mut type_, &solution);
             Ok(type_)
         }
     }

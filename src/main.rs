@@ -2,6 +2,7 @@ extern crate halcyon_lib;
 use codespan_reporting::files::SimpleFiles;
 use codespan_reporting::term;
 use codespan_reporting::term::termcolor::StandardStream;
+use halcyon_lib::hc_core::core_symbol_table;
 use halcyon_lib::*;
 
 pub fn compile(
@@ -28,7 +29,7 @@ fn compile_file_arg() {
     let mut files = SimpleFiles::new();
     let file_id = files.add(path, str.clone());
     let mut logger = Logger::new(file_id);
-    let mut symbols = SymbolTable::new();
+    let mut symbols = core_symbol_table();
     let _bytes = compile(&str, &mut logger, &mut symbols);
     let mut writer =
         StandardStream::stdout(codespan_reporting::term::termcolor::ColorChoice::Always);

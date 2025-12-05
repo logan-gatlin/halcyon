@@ -42,6 +42,17 @@ impl PrettyPrint for Pattern {
                         .join(",\n")
                 )
             }
+            Struct(map) => {
+                format!(
+                    "{{\n{},\n}} {type_}",
+                    left_pad(
+                        map.iter()
+                            .map(|(k, v)| { format!("{k} = {}", v.pretty()) })
+                            .collect::<Vec<_>>()
+                            .join(",\n")
+                    )
+                )
+            }
             Array {
                 starting,
                 glob,

@@ -1,9 +1,7 @@
+use super::*;
 use std::collections::HashMap;
 
 use indexmap::IndexMap;
-
-use crate::Visit;
-use crate::ir::Path;
 
 pub type TypeVariable = usize;
 
@@ -97,22 +95,24 @@ pub fn freshen_type_variables<T: Visit<Type>>(
             } else {
                 let tv = fresh_type_variable();
                 map.insert(*t, tv);
-                *t = fresh_type_variable();
+                *t = tv;
             }
         }
     })
 }
 
+// THIS DOES NOT WORK BECAUSE VISIT IS BOTTOM UP
 pub fn substitute_type_variables<T: Visit<Type>>(
     t: &mut T,
-    to_replace: &[TypeVariable],
-    with_types: &[Type],
+    solution: &[Solution],
 ) {
     t.visit(|t: &mut Type| {
-        if let Type::Variable(tv) = t
-            && let Some(index) = to_replace.iter().position(|var| tv == var)
-        {
-            *t = with_types[index].clone();
+        for Solution { old, new } in solution {
+            if let Type::Variable(tv) = t
+                && *tv == *old
+            {
+                *t = new.clone();
+            }
         }
     });
 }
@@ -134,12 +134,14 @@ impl Type {
     ) -> Type {
         Type::Function(parameter.into(), returns.into())
     }
+    /*
     pub fn field_type(
         &self,
         name: &str,
     ) -> Option<Type> {
         todo!()
     }
+    */
     pub fn contains_type_variable(
         &self,
         tv: TypeVariable,
@@ -168,6 +170,7 @@ impl Visit<Type> for Type {
         &mut self,
         f: &mut impl FnMut(&mut Type),
     ) {
+        f(self);
         match self {
             Type::Any
             | Type::Unit
@@ -192,7 +195,6 @@ impl Visit<Type> for Type {
                 b._visit(f);
             }
         }
-        f(self)
     }
 }
 
@@ -205,24 +207,6 @@ impl Visit<TypeVariable> for Type {
             if let Type::Variable(tv) = t {
                 f(tv);
             }
-        })
-    }
-}
-
-impl PartialOrd for Type {
-    fn partial_cmp(
-        &self,
-        other: &Self,
-    ) -> Option<std::cmp::Ordering> {
-        use Type::*;
-        use std::cmp::Ordering::*;
-        Some(match (self, other) {
-            (Any, _) | (_, Any) => return None,
-            (Variable(_), Variable(_)) => Equal,
-            (Variable(_), _) => Greater,
-            (_, Variable(_)) => Less,
-            (t1, t2) if t1 == t2 => Equal,
-            _ => return None,
         })
     }
 }

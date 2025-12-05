@@ -36,7 +36,6 @@ impl Logger {
         assert_eq!(self.id, other.id, "Merged loggers with different file IDs");
         self.diagnostics.extend_from_slice(&other.diagnostics);
     }
-    #[must_use]
     pub fn diagnostic(
         &mut self,
         severity: Severity,
@@ -50,28 +49,24 @@ impl Logger {
             notes: vec![],
         }
     }
-    #[must_use]
     pub fn bug(
         &mut self,
         message: impl Into<String>,
     ) -> LogBuilder<'_> {
         self.diagnostic(Severity::Warning, message)
     }
-    #[must_use]
     pub fn error(
         &'_ mut self,
         message: impl Into<String>,
     ) -> LogBuilder<'_> {
         self.diagnostic(Severity::Error, message)
     }
-    #[must_use]
     pub fn warning(
         &mut self,
         message: impl Into<String>,
     ) -> LogBuilder<'_> {
         self.diagnostic(Severity::Warning, message)
     }
-    #[must_use]
     pub fn help(
         &mut self,
         message: impl Into<String>,
@@ -108,6 +103,7 @@ pub struct Log {
 }
 
 #[derive(Debug)]
+#[must_use]
 pub struct LogBuilder<'a>
 where
     FileId: Clone,

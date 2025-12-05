@@ -14,7 +14,10 @@ use crate::{
     Logger,
     Visit,
 };
-use std::collections::HashSet;
+use std::collections::{
+    HashMap,
+    HashSet,
+};
 
 use crate::Span;
 pub use abstract_type::*;
@@ -61,6 +64,18 @@ fn infer_pattern(
             }
             Type::Tuple(types)
         }
+        PatternKind::Struct(map) => {
+            let struct_type = Type::Variable(env.symbols.fresh_tv());
+            for (key, val) in map {
+                infer_pattern(val, env);
+                env.constraints.struct_.push(StructConstraint::new(
+                    struct_type.clone(),
+                    key.inner.clone().with_type(val.type_.clone()),
+                    span,
+                ))
+            }
+            struct_type
+        }
         PatternKind::Array {
             starting,
             glob,
@@ -83,7 +98,36 @@ fn infer_pattern(
             }
             type_
         }
-        PatternKind::Constructor(constructor, typed) => todo!(),
+        PatternKind::Constructor(Constructor::SumConstant(_, t), pat) => {
+            freshen_type_variables(t, env.symbols.fresh_tv_source());
+            infer_pattern(pat, env);
+            env.constraints.equality.push(EqualityConstraint::new(
+                t.clone(),
+                pat.type_.clone(),
+                span,
+            ));
+            t.clone()
+        }
+        PatternKind::Constructor(Constructor::SumFunction(_, t1, t2), pat) => {
+            freshen_type_variables(t1, env.symbols.fresh_tv_source());
+            freshen_type_variables(t2, env.symbols.fresh_tv_source());
+            infer_pattern(pat, env);
+            env.constraints.equality.push(EqualityConstraint::new(
+                t1.clone(),
+                pat.type_.clone(),
+                span,
+            ));
+            t2.clone()
+        }
+        PatternKind::Constructor(Constructor::Structure(t), pat) => {
+            infer_pattern(pat, env);
+            env.constraints.equality.push(EqualityConstraint::new(
+                t.clone(),
+                pat.type_.clone(),
+                span,
+            ));
+            t.clone()
+        }
         PatternKind::Immediate(const_value) => const_value.type_of(),
         PatternKind::TypeHint(pat, t) => {
             infer_pattern(pat, env);
@@ -96,6 +140,27 @@ fn infer_pattern(
         }
     };
     pat.type_ = type_;
+}
+
+pub fn freshen_nonfree_type_variables<T: Visit<Type>>(
+    t: &mut T,
+    mut fresh_type_variable: impl FnMut() -> usize,
+    free: &FreeVariableSet,
+) {
+    let mut map = HashMap::new();
+    t.visit(|t: &mut Type| {
+        if let Type::Variable(t) = t
+            && !free.contains(t)
+        {
+            if let Some(tv) = map.get(t) {
+                *t = *tv;
+            } else {
+                let tv = fresh_type_variable();
+                map.insert(*t, tv);
+                *t = tv;
+            }
+        }
+    })
 }
 
 fn infer_ir<'a, 'b, 'c>(
@@ -118,8 +183,8 @@ fn infer_ir<'a, 'b, 'c>(
             };
             infer_pattern(assignee, new_env);
             infer_ir(value, new_env);
-            infer_ir(then, new_env);
-            infer_ir(else_, new_env);
+            infer_ir(then, env);
+            infer_ir(else_, env);
             env.constraints.equality.extend_from_slice(&[
                 EqualityConstraint {
                     left: assignee.type_.clone(),
@@ -137,13 +202,19 @@ fn infer_ir<'a, 'b, 'c>(
         IrKind::Immediate(const_value) => const_value.type_of(),
         IrKind::Identifier(path) => {
             let mut type_ = env.symbols.get_term(path).clone();
-            type_.visit(|t: &mut Type| {
-                if let Type::Variable(tv) = t
-                    && !env.free.contains(tv)
-                {
-                    *tv = env.symbols.fresh_tv();
-                }
-            });
+            let old_free = env.free.clone();
+            freshen_nonfree_type_variables(
+                &mut type_,
+                /*
+                || {
+                    let tv = env.symbols.fresh_tv();
+                    env.free.insert(tv);
+                    tv
+                },
+                */
+                env.symbols.fresh_tv_source(),
+                &old_free,
+            );
             type_
         }
         IrKind::Tuple(nodes) => {
@@ -154,19 +225,81 @@ fn infer_ir<'a, 'b, 'c>(
             }
             Type::Tuple(types)
         }
-        IrKind::Struct(index_map) => todo!(),
-        IrKind::Field { of, index } => todo!(),
+        IrKind::Struct(map) => {
+            let tv = env.symbols.fresh_tv();
+            env.free.insert(tv);
+            let struct_t = Type::Variable(tv);
+            for (name, value) in map {
+                infer_ir(value, env);
+                env.constraints.struct_.push(StructConstraint {
+                    base: struct_t.clone(),
+                    field: name.inner.clone().with_type(value.type_.clone()),
+                    span: name.span + value.span,
+                })
+            }
+            struct_t
+        }
+        IrKind::Field { of, index } => {
+            infer_ir(of, env);
+            let tv = env.symbols.fresh_tv();
+            env.free.insert(tv);
+            let field_t = Type::Variable(tv);
+            env.constraints.struct_.push(StructConstraint::new(
+                of.type_.clone(),
+                index.inner.clone().with_type(field_t.clone()),
+                span,
+            ));
+            field_t
+        }
         IrKind::Function {
             parameter_name,
             parameter_type,
             captures,
             capture_types,
             body,
-        } => todo!(),
+        } => {
+            let new_env = &mut Environment {
+                symbols: env.symbols,
+                constraints: env.constraints,
+                free: env.free.clone(),
+            };
+            let parameter_inferred_type = {
+                let tv = new_env.symbols.fresh_tv();
+                new_env.free.insert(tv);
+                Type::Variable(tv)
+            };
+            new_env.symbols.terms.insert(
+                parameter_name.inner.clone(),
+                parameter_inferred_type.clone(),
+            );
+            if let Some(assert_type) = parameter_type {
+                new_env.constraints.equality.push(EqualityConstraint::new(
+                    assert_type.clone(),
+                    parameter_inferred_type.clone(),
+                    span,
+                ));
+            }
+            *capture_types = captures
+                .iter()
+                .map(|c| {
+                    let mut type_ = new_env.symbols.get_term(c).clone();
+                    freshen_nonfree_type_variables(
+                        &mut type_,
+                        new_env.symbols.fresh_tv_source(),
+                        &new_env.free,
+                    );
+                    type_
+                })
+                .collect();
+            infer_ir(body, new_env);
+            Type::func(parameter_inferred_type, body.type_.clone())
+        }
         IrKind::Call { callee, argument } => {
             infer_ir(callee, env);
             infer_ir(argument, env);
-            let return_type = Type::Variable(env.symbols.fresh_tv());
+            let tv = env.symbols.fresh_tv();
+            env.free.insert(tv);
+            let return_type = Type::Variable(tv);
             let function_type = Type::func(argument.type_.clone(), return_type.clone());
             env.constraints.equality.push(EqualityConstraint {
                 left: function_type.clone(),
@@ -202,11 +335,8 @@ pub fn analyze(
             free: HashSet::new(),
         };
         infer_ir(ir, &mut env);
-        let (old, new): (Vec<_>, Vec<_>) = solve_constraints(&mut env, logger)
-            .into_iter()
-            .map(|s| (s.old, s.new))
-            .unzip();
-        substitute_type_variables(ir, &old, &new);
-        substitute_type_variables(&mut symbols.terms, &old, &new);
+        let solution = solve_constraints(&mut env, logger);
+        substitute_type_variables(ir, &solution);
+        substitute_type_variables(&mut symbols.terms, &solution);
     }
 }

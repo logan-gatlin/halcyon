@@ -19,21 +19,17 @@ pub enum PatternKind {
         ending: Vec<Pattern>,
         is_exact: bool,
     },
+    Struct(IndexMap<Spanned<String>, Pattern>),
     Constructor(Constructor, Box<Pattern>),
     Immediate(ConstValue),
     TypeHint(Box<Pattern>, Type),
 }
 
 #[derive(Debug, Clone)]
-pub enum ConstructorKind {
-    Unitary(Type),
-    Function(Type, Type),
-}
-
-#[derive(Debug, Clone)]
-pub struct Constructor {
-    pub variant_id: usize,
-    pub kind: ConstructorKind,
+pub enum Constructor {
+    SumConstant(usize, Type),
+    SumFunction(usize, Type, Type),
+    Structure(Type),
 }
 
 impl Visit<Type> for Constructor {
@@ -41,14 +37,13 @@ impl Visit<Type> for Constructor {
         &mut self,
         f: &mut impl FnMut(&mut Type),
     ) {
-        match &mut self.kind {
-            ConstructorKind::Unitary(t) => {
-                t._visit(f);
+        match self {
+            Constructor::SumConstant(_, t) => t._visit(f),
+            Constructor::SumFunction(_, t1, t2) => {
+                t1._visit(f);
+                t2._visit(f);
             }
-            ConstructorKind::Function(a, b) => {
-                a._visit(f);
-                b._visit(f);
-            }
+            Constructor::Structure(t) => t._visit(f),
         }
     }
 }
@@ -88,6 +83,10 @@ impl Pattern {
         match &self.inner.inner {
             PatternKind::Hole | PatternKind::Identifier(_) => None,
             PatternKind::Tuple(pats) => pats.iter().find_map(Pattern::find_refutable_pattern),
+            PatternKind::Struct(map) => map.values().find_map(Pattern::find_refutable_pattern),
+            PatternKind::Constructor(Constructor::Structure(_), pat) => {
+                pat.find_refutable_pattern()
+            }
             PatternKind::Array { .. } | PatternKind::Constructor(..) => Some(self.span),
             PatternKind::Immediate(const_value) => {
                 if const_value == &ConstValue::Unit {
@@ -104,7 +103,9 @@ impl Pattern {
         match &self.inner.inner {
             PatternKind::Hole | PatternKind::Identifier(_) => false,
             PatternKind::Tuple(pats) => pats.iter().any(|p| p.is_refutable()),
+            PatternKind::Struct(map) => map.values().any(|p| p.is_refutable()),
             PatternKind::Array { .. } => true,
+            PatternKind::Constructor(Constructor::Structure(_), pat) => pat.is_refutable(),
             PatternKind::Constructor(..) => true,
             PatternKind::Immediate(const_value) => const_value != &ConstValue::Unit,
             PatternKind::TypeHint(pat, _) => pat.is_refutable(),
@@ -126,6 +127,7 @@ impl Visit<Pattern> for Pattern {
                 ending._visit(f);
             }
             PatternKind::Tuple(items) => items._visit(f),
+            PatternKind::Struct(map) => map._visit(f),
             PatternKind::Constructor(_, items) => items._visit(f),
             PatternKind::TypeHint(pat, _) => {
                 pat._visit(f);
@@ -229,16 +231,36 @@ impl<'a> super::build_ir::Builder<'a> {
                 Literal(literal) => PatternKind::Immediate(self.literal(literal.with_span(span))?),
                 Identifier(name) if name == "_" => PatternKind::Hole,
                 Identifier(name) => {
-                    PatternKind::Identifier(self.define_name(
-                        name.with_span(span),
-                        NameSpace::Term,
-                        is_global,
-                    )?)
+                    if let Ok(path) =
+                        self.query_name(name.clone().with_span(span), NameSpace::Constructor)
+                    {
+                        let cons = self.symbols.get_constructor(&path).clone();
+                        PatternKind::Constructor(
+                            cons,
+                            PatternKind::Immediate(ConstValue::Unit)
+                                .with_span(span)
+                                .with_type(Type::Any)
+                                .into(),
+                        )
+                    } else {
+                        PatternKind::Identifier(self.define_name(
+                            name.with_span(span),
+                            NameSpace::Term,
+                            is_global,
+                        )?)
+                    }
                 }
                 Tuple(pats) => {
                     PatternKind::Tuple(
                         pats.into_iter()
                             .map(|p| self.pattern(p, is_global))
+                            .collect::<Option<_>>()?,
+                    )
+                }
+                Structure(map) => {
+                    PatternKind::Struct(
+                        map.into_iter()
+                            .map(|(k, v)| self.pattern(v, is_global).map(|v| (k, v)))
                             .collect::<Option<_>>()?,
                     )
                 }

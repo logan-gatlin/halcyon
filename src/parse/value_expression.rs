@@ -181,11 +181,7 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
                     {
                         let value = self.parse_value_expression(0)?;
                         if let Some(old_span) = span_map.insert(name.inner.clone(), name.span) {
-                            self.error()
-                                .primary("This key is used more than once", old_span)
-                                .secondary("Second use is here", name.span)
-                                .note("Keys in a structure must be unique")
-                                .done();
+                            self.error_dup_struct_field(old_span, name.span);
                         } else {
                             value_map.insert(name, value);
                         }

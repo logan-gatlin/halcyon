@@ -1,3 +1,7 @@
+use std::collections::HashMap;
+
+use indexmap::IndexMap;
+
 use super::*;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PatternExpressionKind {
@@ -6,6 +10,7 @@ pub enum PatternExpressionKind {
     ModulePath(String, String),
     Tuple(Vec<PatternExpression>),
     Array(Vec<ParsedArrayPattern>),
+    Structure(IndexMap<Spanned<String>, PatternExpression>),
     Constructor((String, Option<String>), Box<PatternExpression>),
     TypeHint(Box<PatternExpression>, Box<TypeExpression>),
 }
@@ -100,9 +105,42 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
                 }
                 e::Array(patterns)
             }
-            _ => {
+            LeftBrace => {
+                let mut map = IndexMap::new();
+                let mut span_map = HashMap::new();
+                loop {
+                    const ERR: RecoveryBehavior = UntilCategory(TokenCategory::EndGrouping);
+                    if self.eat(&RightBrace).is_some() {
+                        break;
+                    }
+                    let field = self.eat_ident_or_err().ok_or(ERR)?;
+                    if let Some(old_span) = span_map.get(&field.inner) {
+                        self.error_dup_struct_field(*old_span, field.span);
+                    }
+                    span_map.insert(field.inner.clone(), field.span);
+                    if self.eat(&Comma).is_some()
+                        || matches!(self.peek().map(|t| t.inner), Some(RightBrace))
+                    {
+                        map.insert(
+                            field.clone(),
+                            e::Identifier(field.inner.clone()).with_span(field.span),
+                        );
+                        continue;
+                    }
+                    self.eat_or_err(&Equal).ok_or(ERR)?;
+                    let pat = self.parse_pattern()?;
+                    map.insert(field, pat);
+                    if self.eat(&Comma).is_none() {
+                        self.eat_or_err(&RightBrace).ok_or(ERR)?;
+                        break;
+                    }
+                }
+                e::Structure(map)
+            }
+            t => {
                 self.error()
-                    .primary("Expected a pattern here.", span)
+                    .primary("Expected a pattern here", span)
+                    .note(format!("The token `{t}` is not part of any pattern"))
                     .done();
                 return Err(UntilNextStatement);
             }

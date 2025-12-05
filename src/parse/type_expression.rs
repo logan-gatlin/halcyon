@@ -1,3 +1,7 @@
+use std::collections::HashMap;
+
+use indexmap::IndexMap;
+
 use super::*;
 
 pub type TypeDefinition = Expression<TypeDefinitionKind>;
@@ -9,10 +13,7 @@ pub enum TypeDefinitionKind {
         arguments: Vec<Spanned<String>>,
         body: Box<TypeDefinition>,
     },
-    Structure {
-        lhs: Vec<Spanned<String>>,
-        rhs: Vec<TypeExpression>,
-    },
+    Structure(IndexMap<Spanned<String>, TypeExpression>),
     Sum {
         variant_names: Vec<Spanned<String>>,
         variant_types: Vec<Option<TypeExpression>>,
@@ -27,7 +28,7 @@ pub enum TypeExpressionKind {
     Identifier(String),
     Product(Vec<TypeExpression>),
     ModulePath(String, String),
-    Array(Box<TypeExpression>),
+    Array,
     Unit,
 }
 
@@ -79,10 +80,9 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
                 }
             }
             LeftSquare => {
-                let inner = self.parse_type_expression(0)?;
                 self.eat_or_err(&RightSquare)
                     .ok_or(UntilCategory(TokenCategory::EndGrouping))?;
-                TypeExpressionKind::Array(inner.into())
+                TypeExpressionKind::Array
             }
             _ => {
                 self.error().primary("Expected a type here", span).done();
@@ -103,7 +103,7 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
                     if self.eat(&FatArrow).is_some() {
                         break;
                     } else if self.eat(&Equal).is_some() {
-                        self.error_expected(&FatArrow);
+                        self.error_expected(&FatArrow).done();
                         break;
                     }
                     arguments.push(self.eat_ident_or_err().ok_or(UntilNextStatement)?);
@@ -113,14 +113,19 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
             }
             LeftBrace => {
                 self.skip();
-                let mut lhs = vec![];
-                let mut rhs = vec![];
+                let mut span_map = HashMap::new();
+                let mut map = IndexMap::new();
                 loop {
                     const ERR: RecoveryBehavior = UntilCategory(TokenCategory::EndGrouping);
                     if let Some(ident) = self.eat_ident() {
                         if self.eat_or_err(&Colon).is_some() {
-                            lhs.push(ident);
-                            rhs.push(self.parse_type_expression(0)?);
+                            let type_def = self.parse_type_expression(0)?;
+                            if let Some(old_span) = span_map.get(&ident.inner) {
+                                self.error_dup_struct_field(*old_span, span);
+                            } else {
+                                span_map.insert(ident.inner.clone(), ident.span);
+                                map.insert(ident, type_def);
+                            }
                         } else if self.eat(&Comma).is_some() {
                             continue;
                         } else {
@@ -135,7 +140,7 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
                         break;
                     }
                 }
-                TypeDefinitionKind::Structure { lhs, rhs }
+                TypeDefinitionKind::Structure(map)
             }
             Pipe => {
                 self.skip();

@@ -1,4 +1,5 @@
 use super::*;
+use crate::hc_core::CORE_MODULE_NAME;
 use crate::parse::*;
 use crate::{
     IntoLog,
@@ -13,7 +14,8 @@ impl<'a> super::build_ir::Builder<'a> {
         variables: &[usize],
     ) -> Option<AbstractType> {
         let Spanned {
-            inner: definition, ..
+            inner: definition,
+            span,
         } = definition;
         match definition {
             TypeDefinitionKind::TypeFunction { arguments, body } => {
@@ -33,20 +35,39 @@ impl<'a> super::build_ir::Builder<'a> {
                 inner_type.variables = variables.into_boxed_slice();
                 Some(inner_type)
             }
-            TypeDefinitionKind::Structure { lhs, rhs } => {
+            TypeDefinitionKind::Structure(map) => {
+                let named_type = Type::Instantiation(
+                    path.clone(),
+                    variables.iter().map(|i| Type::Variable(*i)).collect(),
+                );
+                let term_path =
+                    self.define_name(path.minor.clone().with_span(span), NameSpace::Term, true)?;
+                self.finalize_name(&term_path);
+                let cons_path = self.define_name(
+                    path.minor.clone().with_span(span),
+                    NameSpace::Constructor,
+                    true,
+                )?;
+                self.symbols
+                    .constructors
+                    .insert(cons_path, Constructor::Structure(named_type.clone()));
+                self.symbols
+                    .terms
+                    .insert(term_path, Type::func(named_type.clone(), named_type));
                 Some(AbstractType {
                     variables: [].into(),
                     base: Type::Struct {
                         name: path,
-                        fields: lhs
+                        fields: map
                             .into_iter()
-                            .map(|l| l.inner)
-                            .zip(
-                                rhs.into_iter()
-                                    .map(|t| self.type_expr(t))
-                                    .collect::<Option<Vec<_>>>()?,
-                            )
-                            .collect(),
+                            .map(|(key, val)| {
+                                if let Some(val) = self.type_expr(val) {
+                                    Some((key.inner, val))
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect::<Option<_>>()?,
                     },
                 })
             }
@@ -69,21 +90,17 @@ impl<'a> super::build_ir::Builder<'a> {
                     };
                     let named_type = Type::Instantiation(
                         path.clone(),
-                        variables.into_iter().map(|i| Type::Variable(*i)).collect(),
+                        variables.iter().map(|i| Type::Variable(*i)).collect(),
                     );
                     let term_path = self.define_name(name.clone(), NameSpace::Term, true)?;
                     self.finalize_name(&term_path);
-                    self.define_name(name.clone(), NameSpace::Constructor, true)?;
-                    let cons_path = Path::new(self.module_name.clone(), name.inner.clone());
+                    let cons_path = self.define_name(name.clone(), NameSpace::Constructor, true)?;
                     self.symbols.constructors.insert(
                         cons_path.clone(),
-                        Constructor {
-                            variant_id: id,
-                            kind: if type_ == Type::Unit {
-                                ConstructorKind::Unitary(named_type.clone())
-                            } else {
-                                ConstructorKind::Function(type_.clone(), named_type.clone())
-                            },
+                        if type_ == Type::Unit {
+                            Constructor::SumConstant(id, named_type.clone())
+                        } else {
+                            Constructor::SumFunction(id, type_.clone(), named_type.clone())
                         },
                     );
                     self.symbols.terms.insert(
@@ -152,6 +169,7 @@ impl<'a> super::build_ir::Builder<'a> {
                             .done()?;
                         path
                     }
+                    Array => Path::new(CORE_MODULE_NAME, "array"),
                     Call(..) => unreachable!(),
                     _ => {
                         InstantiationError {
@@ -206,7 +224,13 @@ impl<'a> super::build_ir::Builder<'a> {
             Function(a, b) => {
                 Type::Function(self.type_expr(*a)?.into(), self.type_expr(*b)?.into())
             }
-            Array(t) => Type::Array(self.type_expr(*t)?.into()),
+            Array => {
+                self.symbols
+                    .get_type(&Path::new(CORE_MODULE_NAME, "array"))
+                    .clone()
+                    .instantiate(&[])
+                    .into_log(self.logger, span)?
+            }
             Unit => Type::Unit,
         })
     }

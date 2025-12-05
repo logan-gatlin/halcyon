@@ -31,6 +31,20 @@ pub struct Solution {
     pub new: Type,
 }
 
+#[derive(Debug, Clone, derive_new::new)]
+enum TypeError {
+    Mismatch {
+        expected: Type,
+        actual: Type,
+        span: Span,
+    },
+    Struct {
+        type_: Type,
+        field: String,
+        span: Span,
+    },
+}
+
 pub(super) fn solve_constraints(
     env: &mut Environment,
     logger: &mut Logger,
@@ -38,23 +52,44 @@ pub(super) fn solve_constraints(
     let eq_cons = &mut env.constraints.equality;
     let struct_cons = &mut env.constraints.struct_;
     let mut solutions = vec![];
-    while let Some(EqualityConstraint { left, right, span }) = eq_cons.pop() {
+    let mut type_errors = vec![];
+    loop {
+        let (left, right, span) = if let Some(c) = eq_cons.pop() {
+            (c.left, c.right, c.span)
+        } else if let Some(StructConstraint { base, field, span }) = struct_cons.pop() {
+            if let Type::Struct { fields, .. } = &base
+                && let Some(t) = fields.get(&field.inner).cloned()
+            {
+                eq_cons.push(EqualityConstraint::new(t.clone(), field.type_, span));
+            } else if let Type::Instantiation(path, ts) = &base {
+                let t = env
+                    .symbols
+                    .get_type(path)
+                    .clone()
+                    .instantiate(ts)
+                    .unwrap_or_else(|_| unreachable!());
+                struct_cons.push(StructConstraint::new(t, field, span));
+            } else {
+                type_errors.push(TypeError::new_struct(base, field.inner, span));
+            }
+            continue;
+        } else {
+            break;
+        };
         match (left, right) {
             (Type::Variable(t1), Type::Variable(t2)) if t1 != t2 => {
                 let t2 = Type::Variable(t2);
-                let new_solution = Solution::new(t1, t2.clone());
-                let t2 = [t2];
-                substitute_type_variables(eq_cons, &[t1], &t2);
-                substitute_type_variables(struct_cons, &[t1], &t2);
-                solutions.push(new_solution);
+                let new_solution = [Solution::new(t1, t2.clone())];
+                substitute_type_variables(eq_cons, &new_solution);
+                substitute_type_variables(struct_cons, &new_solution);
+                solutions.push(new_solution[0].clone());
             }
             (t1, t2) if t1 == t2 => {}
             (Type::Variable(tv), t) | (t, Type::Variable(tv)) if !t.contains_type_variable(tv) => {
-                let new_solution = Solution::new(tv, t.clone());
-                let t = [t];
-                substitute_type_variables(eq_cons, &[tv], &t);
-                substitute_type_variables(struct_cons, &[tv], &t);
-                solutions.push(new_solution);
+                let new_solution = [Solution::new(tv, t.clone())];
+                substitute_type_variables(eq_cons, &new_solution);
+                substitute_type_variables(struct_cons, &new_solution);
+                solutions.push(new_solution[0].clone());
             }
             (Type::Function(a1, b1), Type::Function(a2, b2)) => {
                 eq_cons.push(EqualityConstraint::new(*a1, *a2, span));
@@ -117,13 +152,37 @@ pub(super) fn solve_constraints(
                 }
             }
             (t1, t2) => {
+                type_errors.push(TypeError::new_mismatch(t1, t2, span));
+            }
+        }
+    }
+    type_errors.reverse();
+    for te in type_errors {
+        match te {
+            TypeError::Mismatch {
+                expected,
+                actual,
+                span,
+            } => {
                 logger
                     .error("Type error")
                     .primary("This expression is not well typed", span)
-                    .note(format!("Impossible constraint: {t1} = {t2}"))
+                    .note(format!("Impossible constraint: {expected} = {actual}"))
                     .done();
             }
-        }
+            TypeError::Struct { type_, field, span } => {
+                let e = logger
+                    .error("Type error")
+                    .primary("This field is incorrect", span)
+                    .note(format!("The type {type_} does not have a field `{field}`"));
+                if matches!(type_, Type::Variable(_)) {
+                    e.note("Try providing a type hint for this expression")
+                } else {
+                    e
+                }
+                .done();
+            }
+        };
     }
     solutions
 }

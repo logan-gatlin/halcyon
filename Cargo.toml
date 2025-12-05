@@ -9,7 +9,6 @@ readme = "./README.md"
 homepage = "https://halcyon-lang.dev"
 repository = "https://github.com/logan-gatlin/halcyon"
 license = "MIT"
-license-file = "./license"
 keywords = ["compiler", "functional programming", "wasm"]
 categories = ["wasm", "compilers"]
 

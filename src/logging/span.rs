@@ -43,10 +43,34 @@ impl AddAssign for Span {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Eq)]
 pub struct Spanned<T> {
     pub inner: T,
     pub span: Span,
+}
+
+impl<T> PartialEq for Spanned<T>
+where
+    T: PartialEq,
+{
+    fn eq(
+        &self,
+        other: &Self,
+    ) -> bool {
+        self.inner == other.inner
+    }
+}
+
+impl<T> std::hash::Hash for Spanned<T>
+where
+    T: std::hash::Hash,
+{
+    fn hash<H: std::hash::Hasher>(
+        &self,
+        state: &mut H,
+    ) {
+        self.inner.hash(state);
+    }
 }
 
 impl<T> std::ops::Deref for Spanned<T> {

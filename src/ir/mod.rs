@@ -50,7 +50,7 @@ pub enum IrKind {
     Immediate(ConstValue),
     Identifier(Path),
     Tuple(Vec<IrNode>),
-    Struct(IndexMap<String, IrNode>),
+    Struct(IndexMap<Spanned<String>, IrNode>),
     Field {
         of: Box<IrNode>,
         index: Spanned<String>,
@@ -120,7 +120,7 @@ impl Visit<Type> for IrNode {
                 }
                 _ => {}
             }
-            f(&mut n.type_);
+            n.type_._visit(f);
         });
     }
 }

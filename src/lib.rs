@@ -29,13 +29,13 @@
 )]
 #![allow(mismatched_lifetime_syntaxes)]
 
+pub mod hc_core;
 pub mod ir;
 pub mod logging;
 pub mod map;
 pub mod operator;
 pub mod parse;
 pub mod semantic;
-pub mod std_hc;
 pub mod token;
 
 pub use ir::{

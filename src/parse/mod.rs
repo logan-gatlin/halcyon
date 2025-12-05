@@ -122,7 +122,7 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
     ) -> Option<Token> {
         let res = self.eat(tk);
         if res.is_none() {
-            self.error_expected(tk);
+            self.error_expected(tk).done();
         }
         res
     }
@@ -167,7 +167,8 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
     pub fn eat_ident_or_err(&mut self) -> Option<Spanned<String>> {
         let res = self.eat_ident();
         if res.is_none() {
-            self.error_expected(&TokenKind::Identifier("identifier".to_string()));
+            self.error_expected(&TokenKind::Identifier("identifier".to_string()))
+                .done();
         }
         res
     }
@@ -181,6 +182,28 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
         self.logger
             .error(ERR_MSG)
             .primary(format!("Expected `{token}` here"), self.last_span)
+    }
+    pub fn error_dup_struct_field(
+        &mut self,
+        old_span: Span,
+        new_span: Span,
+    ) {
+        self.error()
+            .primary("This key is used more than once", old_span)
+            .secondary("Second use is here", new_span)
+            .note("Keys in a structure must be unique")
+            .done();
+    }
+    pub fn error_dup_func_args(
+        &mut self,
+        old_span: Span,
+        new_span: Span,
+    ) {
+        self.error()
+            .primary("This argument is already defined", old_span)
+            .secondary("Second use is here", new_span)
+            .note("Arguments to a function must be unique")
+            .done();
     }
     pub fn recover(
         &mut self,
@@ -201,7 +224,7 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
             RecoveryBehavior::UntilNextStatement => {
                 while self
                     .peek()
-                    .is_some_and(|t| matches!(&t.inner, Let | Type | Do | Module | End | Import))
+                    .is_some_and(|t| !matches!(&t.inner, Let | Type | Do | Module | End | Import))
                 {
                     self.skip();
                 }

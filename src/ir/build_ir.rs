@@ -1,3 +1,4 @@
+use crate::hc_core::CORE_MODULE_NAME;
 use crate::parse::*;
 use crate::{
     IntoLog,
@@ -208,8 +209,10 @@ impl<'a> Builder<'a> {
                     }
                     substitute_type_variables(
                         &mut at.base,
-                        &[tv],
-                        &[crate::semantic::Type::Instantiation(path.clone(), vec![])],
+                        &[Solution {
+                            old: tv,
+                            new: crate::semantic::Type::Instantiation(path.clone(), vec![]),
+                        }],
                     );
                     types.insert(path.clone(), at.clone());
                     this.symbols.types.insert(path, at);
@@ -473,9 +476,10 @@ impl<'a> Builder<'a> {
                     )
                 }
                 Array(array_elems) => {
-                    let mut current = IrKind::Identifier(Path::new("array", "empty"))
-                        .with_span(span)
-                        .with_type(Type::Any);
+                    let mut current =
+                        IrKind::Identifier(Path::new(CORE_MODULE_NAME, "empty_array"))
+                            .with_span(span)
+                            .with_type(Type::Any);
                     for elem in array_elems {
                         match elem {
                             ArrayInner::Splat(concat) => {
@@ -483,18 +487,18 @@ impl<'a> Builder<'a> {
                                 current = IrKind::Call {
                                     callee: IrKind::Call {
                                         callee: IrKind::Identifier(Path::new(
-                                            "array",
-                                            "concatenate",
+                                            CORE_MODULE_NAME,
+                                            "concatenate_arrays",
                                         ))
                                         .with_span(concat_span)
                                         .with_type(Type::Any)
                                         .into(),
-                                        argument: current.into(),
+                                        argument: self.expr(concat)?.into(),
                                     }
                                     .with_span(concat_span)
                                     .with_type(Type::Any)
                                     .into(),
-                                    argument: self.expr(concat)?.into(),
+                                    argument: current.into(),
                                 }
                                 .with_span(concat_span)
                                 .with_type(Type::Any)
@@ -503,16 +507,19 @@ impl<'a> Builder<'a> {
                                 let push_span = push.span;
                                 current = IrKind::Call {
                                     callee: IrKind::Call {
-                                        callee: IrKind::Identifier(Path::new("array", "push"))
-                                            .with_span(push_span)
-                                            .with_type(Type::Any)
-                                            .into(),
-                                        argument: current.into(),
+                                        callee: IrKind::Identifier(Path::new(
+                                            CORE_MODULE_NAME,
+                                            "push_array",
+                                        ))
+                                        .with_span(push_span)
+                                        .with_type(Type::Any)
+                                        .into(),
+                                        argument: self.expr(push)?.into(),
                                     }
                                     .with_span(push_span)
                                     .with_type(Type::Any)
                                     .into(),
-                                    argument: self.expr(push)?.into(),
+                                    argument: current.into(),
                                 }
                                 .with_span(push_span)
                                 .with_type(Type::Any)
@@ -523,7 +530,7 @@ impl<'a> Builder<'a> {
                 }
                 StructureLiteral(map) => {
                     let mut new_map = IndexMap::new();
-                    for (Spanned { inner: key, .. }, value) in map {
+                    for (key, value) in map {
                         let value = self.expr(value)?;
                         new_map.insert(key, value);
                     }
