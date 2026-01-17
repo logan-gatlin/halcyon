@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use indexmap::IndexMap;
 
-pub type TypeVariable = usize;
+pub type TypeVariable = u64;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct Typed<T> {
@@ -85,7 +85,7 @@ pub enum Type {
 
 pub fn freshen_type_variables<T: Visit<Type>>(
     t: &mut T,
-    mut fresh_type_variable: impl FnMut() -> usize,
+    mut fresh_type_variable: impl FnMut() -> TypeVariable,
 ) {
     let mut map = HashMap::new();
     t.visit(|t: &mut Type| {
@@ -304,11 +304,6 @@ impl std::fmt::Display for Type {
             Type::String => write!(f, "string"),
             Type::Glyph => write!(f, "glyph"),
             Type::Array(t) => write!(f, "[{t}]"),
-            /*
-            Type::Sum { name, .. } | Type::Struct { name, .. } => {
-                write!(f, "{name}")
-            }
-            */
             Type::Struct { name, .. } => {
                 write!(f, "{name}")
             }
@@ -319,7 +314,7 @@ impl std::fmt::Display for Type {
             } => {
                 write!(
                     f,
-                    "{}",
+                    "| {}",
                     variant_names
                         .iter()
                         .zip(variant_types)
@@ -327,7 +322,7 @@ impl std::fmt::Display for Type {
                             if t == &Type::Unit {
                                 n.to_string()
                             } else {
-                                format!("{n} of {t}")
+                                format!("{n} {t}")
                             }
                         })
                         .collect::<Vec<_>>()

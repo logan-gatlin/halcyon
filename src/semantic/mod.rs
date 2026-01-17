@@ -144,7 +144,7 @@ fn infer_pattern(
 
 pub fn freshen_nonfree_type_variables<T: Visit<Type>>(
     t: &mut T,
-    mut fresh_type_variable: impl FnMut() -> usize,
+    mut fresh_type_variable: impl FnMut() -> TypeVariable,
     free: &FreeVariableSet,
 ) {
     let mut map = HashMap::new();
@@ -203,18 +203,7 @@ fn infer_ir<'a, 'b, 'c>(
         IrKind::Identifier(path) => {
             let mut type_ = env.symbols.get_term(path).clone();
             let old_free = env.free.clone();
-            freshen_nonfree_type_variables(
-                &mut type_,
-                /*
-                || {
-                    let tv = env.symbols.fresh_tv();
-                    env.free.insert(tv);
-                    tv
-                },
-                */
-                env.symbols.fresh_tv_source(),
-                &old_free,
-            );
+            freshen_nonfree_type_variables(&mut type_, env.symbols.fresh_tv_source(), &old_free);
             type_
         }
         IrKind::Tuple(nodes) => {

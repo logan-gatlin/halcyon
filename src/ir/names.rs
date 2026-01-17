@@ -90,20 +90,20 @@ impl CanonicalMap {
             .note(format!("A {namespace} must be defined before it is used"))
     }
     pub fn get_name(
-        &mut self,
+        &'_ mut self,
         Spanned { inner: name, span }: Spanned<String>,
         namespace: NameSpace,
-    ) -> Result<Path> {
+    ) -> Result<'_, Path> {
         self.map
             .get(&(name.clone(), namespace))
             .cloned()
             .ok_or_else(|| self.unknown_name(namespace, Spanned { inner: name, span }))
     }
     pub fn get_global_name(
-        &mut self,
+        &'_ mut self,
         Spanned { inner: name, span }: &Spanned<String>,
         namespace: NameSpace,
-    ) -> Result<Path> {
+    ) -> Result<'_, Path> {
         let path = Path::new(self.module_name.clone(), name);
         if self.globals.contains(&(namespace, path.clone())) {
             Ok(path)
@@ -116,10 +116,10 @@ impl CanonicalMap {
         }
     }
     pub fn define_global(
-        &mut self,
+        &'_ mut self,
         Spanned { inner: name, span }: Spanned<String>,
         namespace: NameSpace,
-    ) -> Result<Path> {
+    ) -> Result<'_, Path> {
         let path = Path::new(self.module_name.clone(), name.clone());
         if !self.globals.insert((namespace, path.clone())) {
             Err(self
@@ -145,11 +145,11 @@ impl CanonicalMap {
         path
     }
     pub fn define(
-        &mut self,
+        &'_ mut self,
         name: Spanned<String>,
         namespace: NameSpace,
         is_global: bool,
-    ) -> Result<Path> {
+    ) -> Result<'_, Path> {
         if is_global {
             self.define_global(name, namespace)
         } else {

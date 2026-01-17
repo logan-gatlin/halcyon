@@ -143,7 +143,6 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
                 TypeDefinitionKind::Structure(map)
             }
             Pipe => {
-                self.skip();
                 let mut variant_names = vec![];
                 let mut variant_types = vec![];
                 loop {
@@ -151,39 +150,18 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
                         break;
                     }
                     variant_names.push(self.eat_ident_or_err().ok_or(UntilNextStatement)?);
-                    variant_types.push(if self.eat(&Of).is_some() {
-                        Some(self.parse_type_expression(0)?)
+                    // Data in variant
+                    if let Some(next) = self.peek()
+                        && (next.inner.is_literal()
+                            || next.inner == LeftParen
+                            || next.inner == LeftSquare
+                            || next.inner == LeftBrace
+                            || matches!(next.inner, Identifier(_)))
+                    {
+                        variant_types.push(Some(self.parse_type_expression(CALL_PREC)?));
                     } else {
-                        None
-                    });
-                }
-                TypeDefinitionKind::Sum {
-                    variant_names,
-                    variant_types,
-                }
-            }
-            Identifier(name)
-                if self
-                    .peek_nth(1)
-                    .is_some_and(|t| t.inner == Of || t.inner == Pipe) =>
-            {
-                self.skip();
-                let mut variant_names = vec![name.with_span(self.last_span)];
-                let mut variant_types = vec![if self.eat(&Of).is_some() {
-                    Some(self.parse_type_expression(0)?)
-                } else {
-                    None
-                }];
-                loop {
-                    if self.eat(&Pipe).is_none() {
-                        break;
+                        variant_types.push(None);
                     }
-                    variant_names.push(self.eat_ident_or_err().ok_or(UntilNextStatement)?);
-                    variant_types.push(if self.eat(&Of).is_some() {
-                        Some(self.parse_type_expression(0)?)
-                    } else {
-                        None
-                    });
                 }
                 TypeDefinitionKind::Sum {
                     variant_names,

@@ -11,7 +11,7 @@ impl<'a> super::build_ir::Builder<'a> {
         &mut self,
         path: Path,
         definition: TypeDefinition,
-        variables: &[usize],
+        variables: &[TypeVariable],
     ) -> Option<AbstractType> {
         let Spanned {
             inner: definition,

@@ -18,7 +18,8 @@
     clippy::string_lit_chars_any,
     clippy::string_lit_as_bytes,
     clippy::string_slice,
-    clippy::try_err
+    clippy::try_err,
+    mismatched_lifetime_syntaxes
 )]
 // Debug tools set to warn to help find and remove before deploying
 #![warn(
@@ -27,8 +28,8 @@
     clippy::todo,
     clippy::unwrap_used
 )]
-#![allow(mismatched_lifetime_syntaxes)]
 
+pub mod asm;
 pub mod hc_core;
 pub mod ir;
 pub mod logging;

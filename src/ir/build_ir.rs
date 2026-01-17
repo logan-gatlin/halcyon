@@ -71,10 +71,10 @@ impl<'a> Builder<'a> {
         Some(path)
     }
     pub fn query_name(
-        &mut self,
+        &'_ mut self,
         name: Spanned<String>,
         namespace: NameSpace,
-    ) -> Result<Path> {
+    ) -> Result<'_, Path> {
         let path = self.name_map.get_name(name.clone(), namespace)?.clone();
         if namespace == NameSpace::Term {
             let Some(TermInfo {
@@ -104,13 +104,13 @@ impl<'a> Builder<'a> {
         Ok(path)
     }
     pub fn query_path(
-        &mut self,
+        &'_ mut self,
         Spanned {
             inner: Path { major, minor },
             span,
         }: &Spanned<Path>,
         namespace: NameSpace,
-    ) -> Result<()> {
+    ) -> Result<'_, ()> {
         if major == &self.module_name {
             self.name_map
                 .get_global_name(&minor.to_owned().with_span(*span), namespace)
