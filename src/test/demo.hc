@@ -1,6 +1,3 @@
 module demo =
-  type opt =
-    | Some core::integer
-    | None
-  let foo = 1
+  let (a, b) = (1, 2)
 end

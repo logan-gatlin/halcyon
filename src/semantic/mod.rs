@@ -312,7 +312,7 @@ fn infer_ir<'a, 'b, 'c>(
 }
 
 pub fn analyze(
-    module: &mut IrModule,
+    module: &mut Module,
     symbols: &mut SymbolTable,
     logger: &mut Logger,
 ) {

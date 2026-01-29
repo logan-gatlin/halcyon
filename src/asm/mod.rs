@@ -1,17 +1,23 @@
 mod lower;
+pub mod pretty_print;
 mod serialize;
 
-use std::collections::HashMap;
+use indexmap::IndexMap;
 
 use crate::ir::{
     ConstValue,
-    IrModule,
     Path,
 };
 use crate::{
-    SymbolTable,
     semantic,
+    SymbolTable,
 };
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ScopeKind {
+    Local,
+    Global,
+}
 
 #[derive(Debug, Clone)]
 pub enum Type {
@@ -20,9 +26,14 @@ pub enum Type {
     I64,
     F32,
     F64,
-    Struct(Vec<Type>),
+    Struct(Box<[Type]>),
     Array(Box<Type>),
     Function,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum MacroKind {
+    Call,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,6 +48,9 @@ pub enum NumberOperation {
     Sub,
     Mul,
     Div,
+    And,
+    Or,
+    Xor,
 }
 
 #[derive(Debug, Clone)]
@@ -45,9 +59,10 @@ pub enum Instruction {
     Get(Path),
     Const(ConstValue),
     Func(usize),
-    StructNew(Vec<Type>),
-    StructGet(usize),
-    ArrayGet(usize),
+    StructNew(Box<[Type]>),
+    StructGet(Type, usize),
+    ArrayGet,
+    ArrayNewFixed(usize),
     Call,
     Unreachable,
     Drop,
@@ -57,51 +72,55 @@ pub enum Instruction {
     Loop,
     Block(Option<Type>),
     Break(usize),
+    BreakIf(usize),
     I32Op(NumberOperation),
     I64Op(NumberOperation),
     F32Op(NumberOperation),
     F64Op(NumberOperation),
+    Macro(MacroKind),
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct Function {
-    parameters: HashMap<Path, Type>,
-    variables: HashMap<Path, Type>,
+    parameters: IndexMap<Path, Type>,
+    returns: Vec<Type>,
+    variables: IndexMap<Path, Type>,
     ops: Vec<Instruction>,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct Module {
-    imports: HashMap<Path, Type>,
-    globals: HashMap<Path, Type>,
-    functions: Vec<Function>,
-    init_function: usize,
+    pub globals: IndexMap<Path, Type>,
+    pub functions: Vec<Function>,
 }
 
-impl Function {
-    pub fn new(
-        parameter_name: Path,
-        parameter_type: Type,
-    ) -> Self {
-        Self {
-            parameters: {
-                let mut parameters = HashMap::new();
-                parameters.insert(parameter_name, parameter_type);
-                parameters
-            },
-            ..Default::default()
-        }
+impl Type {
+    pub fn function_capture() -> Self {
+        Self::Array(Self::Any.into())
     }
 }
 
+impl Function {
+    pub fn new() -> Self {
+        Default::default()
+    }
+}
+
+pub fn lower_module(
+    ir_module: crate::ir::Module,
+    symbols: &SymbolTable,
+) -> Module {
+    let mut module = Module::default();
+    let mut init_func = module.new_function();
+    for code in ir_module.code {
+        init_func.lower_ir(code, symbols);
+    }
+    module
+}
+
 impl Module {
-    pub fn new_function<'a>(
-        &'a mut self,
-        paramter_name: Path,
-        parameter_type: Type,
-    ) -> Encoder<'a> {
-        self.functions
-            .push(Function::new(paramter_name, parameter_type));
+    fn new_function<'a>(&'a mut self) -> Encoder<'a> {
+        self.functions.push(Function::new());
         Encoder {
             func_index: self.functions.len() - 1,
             module: self,
@@ -120,49 +139,57 @@ impl<'a> Encoder<'a> {
     pub fn push(
         &mut self,
         instr: Instruction,
-    ) -> &mut Self {
+    ) {
         self.module.functions[self.func_index].ops.push(instr);
-        self
     }
     pub fn extend(
         &mut self,
         instrs: impl IntoIterator<Item = Instruction>,
-    ) -> &mut Self {
+    ) {
         self.module.functions[self.func_index].ops.extend(instrs);
-        self
     }
-    pub fn define_symbol(
+    pub fn temporary_name(
         &mut self,
-        symbol: Path,
-        is_global: bool,
+        name: &str,
+    ) -> Path {
+        let temp = Path::new("[temp]", format!("{name}#{}", self.temporary_salt));
+        self.temporary_salt += 1;
+        temp
+    }
+    pub fn new_parameter(
+        &mut self,
+        name: Path,
         type_: Type,
-    ) -> &mut Self {
-        if is_global {
+    ) {
+        self.module.functions[self.func_index]
+            .parameters
+            .insert(name, type_);
+    }
+    pub fn new_register(
+        &mut self,
+        name: Path,
+        scope: ScopeKind,
+        type_: Type,
+    ) {
+        if scope == ScopeKind::Global {
             assert!(
-                self.module.globals.insert(symbol.clone(), type_).is_none(),
-                "Redefinition of global symbol {symbol}"
+                self.module.globals.insert(name.clone(), type_).is_none(),
+                "Redefinition of global symbol {name}"
             );
         } else {
             assert!(
                 self.module.functions[self.func_index]
                     .variables
-                    .insert(symbol.clone(), type_)
+                    .insert(name.clone(), type_)
                     .is_none(),
-                "Redefinition of local symbol {symbol}"
+                "Redefinition of local symbol {name}"
             );
         }
-        self
     }
-
-    pub fn define_temporary(
+    pub fn new_return(
         &mut self,
         type_: Type,
-    ) -> Path {
-        let temp = Path::new("@", self.temporary_salt.to_string());
-        self.module.functions[self.func_index]
-            .variables
-            .insert(temp.clone(), type_);
-        self.temporary_salt += 1;
-        temp
+    ) {
+        self.module.functions[self.func_index].returns.push(type_);
     }
 }

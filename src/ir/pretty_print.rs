@@ -2,7 +2,7 @@ use colored::Colorize;
 
 use super::*;
 
-fn left_pad(input: impl AsRef<str>) -> String {
+pub fn left_pad(input: impl AsRef<str>) -> String {
     input
         .as_ref()
         .lines()
@@ -90,7 +90,7 @@ impl PrettyPrint for Pattern {
     }
 }
 
-impl PrettyPrint for IrModule {
+impl PrettyPrint for Module {
     fn pretty(&self) -> String {
         let type_kw = "type".red();
         let equal = "=".green();

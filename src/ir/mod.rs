@@ -29,7 +29,7 @@ pub fn build_ir(
     logger: &mut Logger,
     symbols: &mut SymbolTable,
     module: ParsedModule,
-) -> IrModule {
+) -> Module {
     build_ir::Builder::build_ir(logger, symbols, module)
 }
 
@@ -128,7 +128,7 @@ impl Visit<Type> for IrNode {
 pub type IrNode = Typed<Spanned<IrKind>>;
 
 #[derive(Debug, Clone)]
-pub struct IrModule {
+pub struct Module {
     pub module_name: String,
     pub types: HashMap<Path, AbstractType>,
     pub code: Vec<IrNode>,

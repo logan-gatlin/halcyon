@@ -1,0 +1,159 @@
+use super::*;
+use crate::ir::{
+    left_pad,
+    PrettyPrint,
+};
+
+use colored::Colorize;
+
+impl PrettyPrint for Module {
+    fn pretty(&self) -> String {
+        self.functions
+            .iter()
+            .enumerate()
+            .map(|(id, f)| {
+                let parameters = if f.parameters.is_empty() {
+                    "".to_string()
+                } else {
+                    format!(
+                        "\n(params\n{}\n)",
+                        left_pad(
+                            f.parameters
+                                .iter()
+                                .map(|(path, type_)| {
+                                    format!("{} [{}]", path.pretty(), type_.pretty())
+                                })
+                                .collect::<Vec<_>>()
+                                .join("\n"),
+                        )
+                    )
+                };
+                let locals = if f.variables.is_empty() {
+                    "".to_string()
+                } else {
+                    format!(
+                        "\n(locals\n{}\n)",
+                        left_pad(
+                            f.variables
+                                .iter()
+                                .map(|(path, type_)| {
+                                    format!("{} [{}]", path.pretty(), type_.pretty())
+                                })
+                                .collect::<Vec<_>>()
+                                .join("\n"),
+                        )
+                    )
+                };
+                format!(
+                    "(fn #{id}{parameters}{locals}\n{ops}\n)",
+                    parameters = left_pad(parameters),
+                    locals = left_pad(locals),
+                    ops = left_pad(
+                        f.ops
+                            .iter()
+                            .map(PrettyPrint::pretty)
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    )
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+}
+
+impl PrettyPrint for Type {
+    fn pretty(&self) -> String {
+        use Type::*;
+        match self {
+            Any | I32 | I64 | F32 | F64 => {
+                format!("{self:?}")
+                    .to_lowercase()
+                    .italic()
+                    .blue()
+                    .to_string()
+            }
+            Struct(items) => {
+                format!(
+                    "{struct} [{items}]",
+                    struct="struct".italic().blue(),
+                    items=items.iter().map(PrettyPrint::pretty).collect::<Vec<_>>().join(", ")
+                )
+            }
+            Array(type_) => {
+                format!(
+                    "{array} [{items}]",
+                    array = "array".italic().blue(),
+                    items = type_.pretty(),
+                )
+            }
+            Function => "function".italic().blue().to_string(),
+        }
+    }
+}
+
+impl PrettyPrint for NumberOperation {
+    fn pretty(&self) -> String {
+        format!("{self:?}").to_lowercase()
+    }
+}
+
+impl PrettyPrint for MacroKind {
+    fn pretty(&self) -> String {
+        format!("{self:?}").red().to_lowercase()
+    }
+}
+
+impl PrettyPrint for Instruction {
+    fn pretty(&self) -> String {
+        use Instruction::*;
+        match self {
+            Set(path) => format!("set {}", path.pretty()),
+            Get(path) => format!("get {}", path.pretty()),
+            Const(const_value) => format!("const {}", const_value.pretty()),
+            Func(id) => format!("func {id}"),
+            StructNew(items) => {
+                format!(
+                    "struct.new [{}]",
+                    items
+                        .iter()
+                        .map(PrettyPrint::pretty)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            }
+            StructGet(type_, index) => format!("struct.get [{}] {index}", type_.pretty()),
+            ArrayGet => "array.get".into(),
+            ArrayNewFixed(size) => format!("array.new_fixed {size}"),
+            Call => "call".into(),
+            Unreachable => "unreachable".into(),
+            Drop => "drop".into(),
+            If(t) => {
+                format!(
+                    "if [{}]",
+                    t.as_ref()
+                        .map(PrettyPrint::pretty)
+                        .unwrap_or_else(String::new)
+                )
+            }
+            Else => "else".into(),
+            End => "end".into(),
+            Loop => "loop".into(),
+            Block(t) => {
+                format!(
+                    "block [{}]",
+                    t.as_ref()
+                        .map(PrettyPrint::pretty)
+                        .unwrap_or_else(String::new)
+                )
+            }
+            Break(level) => format!("break {level}"),
+            BreakIf(level) => format!("break.if {level}"),
+            I32Op(num) => format!("i32.{}", num.pretty()),
+            I64Op(num) => format!("i64.{}", num.pretty()),
+            F32Op(num) => format!("f32.{}", num.pretty()),
+            F64Op(num) => format!("f64.{}", num.pretty()),
+            Macro(m) => m.pretty(),
+        }
+    }
+}

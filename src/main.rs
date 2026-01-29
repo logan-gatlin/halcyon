@@ -17,6 +17,8 @@ pub fn compile(
         let mut ir_module = build_ir(logger, symbols, p);
         semantic::analyze(&mut ir_module, symbols, logger);
         println!("{}\n", ir_module.pretty());
+        let asm_module = asm::lower_module(ir_module, symbols);
+        println!("{}", asm_module.pretty());
     }
     vec![]
 }

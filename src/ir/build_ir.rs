@@ -146,7 +146,7 @@ impl<'a> Builder<'a> {
         logger: &'a mut Logger,
         symbols: &'a mut SymbolTable,
         module: ParsedModule,
-    ) -> IrModule {
+    ) -> Module {
         use ModuleStatementKind::*;
         let module_name = module.inner.name.inner.clone();
         let mut this = Self {
@@ -220,7 +220,7 @@ impl<'a> Builder<'a> {
             }
         }
         this.logger.merge_with(this.name_map.logger);
-        IrModule {
+        Module {
             module_name: this.module_name,
             types,
             code: this.code,
