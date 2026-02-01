@@ -1,3 +1,14 @@
+/*!
+    # Closures
+    Closures are implemented as boxed structs:
+    {
+        captured_args: [any],
+        function: any -> any
+    }
+    This is because WASM does not support type variables, and so types like
+    'a -> 'a are unrepresentable. After a closure is called, it is necessary
+    to cast the result to its appropriate type. This should never fail.
+*/
 mod encode;
 mod lower;
 pub mod pretty_print;
@@ -30,7 +41,10 @@ pub enum Type {
     F64,
     Struct(Box<[Type]>),
     Array(Box<Type>),
-    Function,
+    Function {
+        parameters: Box<[Type]>,
+        results: Box<[Type]>,
+    },
 }
 
 /// Arithmetic and bitwise operations on numbers.
@@ -262,6 +276,24 @@ pub enum Instruction {
     ///
     /// Stack: `[left, right] -> [result]` (for binary operations)
     F64Op(NumberOperation),
+
+    /// Cast a reference to a specific function type.
+    ///
+    /// Stack: `[funcref] -> [(ref null $func_type)]`
+    RefCastFunc {
+        parameters: Box<[Type]>,
+        returns: Box<[Type]>,
+    },
+
+    /// Cast an anyref to a specific struct type.
+    ///
+    /// Stack: `[anyref] -> [(ref null $struct_type)]`
+    RefCastStruct(Box<[Type]>),
+
+    /// Cast an anyref to a specific array type.
+    ///
+    /// Stack: `[anyref] -> [(ref null $array_type)]`
+    RefCastArray(Box<Type>),
 }
 
 #[derive(Debug, Clone, Default)]
@@ -283,6 +315,17 @@ pub struct Module {
 impl Type {
     pub fn function_capture() -> Self {
         Self::Array(Self::Any.into())
+    }
+
+    pub fn closure_function_type() -> Self {
+        Self::Function {
+            parameters: [Self::function_capture(), Self::Any].into(),
+            results: [Self::Any].into(),
+        }
+    }
+
+    pub fn closure_type() -> Self {
+        Self::Struct([Self::function_capture(), Self::closure_function_type()].into())
     }
 }
 

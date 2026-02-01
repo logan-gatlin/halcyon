@@ -9,12 +9,16 @@ use wasm_encoder::{
     ArrayType,
     BlockType,
     ConstExpr,
+    EntityType,
     ExportKind,
     FieldType,
     FuncType,
     GlobalType,
     HeapType,
+    ImportSection,
     Instruction as winstr,
+    NameMap,
+    NameSection,
     RefType,
     StorageType,
     ValType,
@@ -119,7 +123,15 @@ impl TypeSection {
                     heap_type: HeapType::Concrete(self.new_array(inner)),
                 })
             }
-            Type::Function => ValType::Ref(RefType::FUNCREF),
+            Type::Function {
+                parameters,
+                results,
+            } => {
+                ValType::Ref(RefType {
+                    nullable: true,
+                    heap_type: HeapType::Concrete(self.new_function(parameters, results)),
+                })
+            }
         }
     }
 }
@@ -161,8 +173,25 @@ fn default_value(valtype: &ValType) -> ConstExpr {
     }
 }
 
+// WebAssembly section order (enforced):
+// 0  Custom (can appear anywhere)
+// 1  Type
+// 2  Import
+// 3  Function
+// 4  Table
+// 5  Memory
+// 6  Global
+// 7  Export
+// 8  Start
+// 9  Element
+// 10 Code
+// 11 Data
+// 12 DataCount
 pub fn encode(module: Module) -> Vec<u8> {
+    let mut name_section = NameSection::new();
+    let mut global_names = NameMap::new();
     let mut type_section = TypeSection::new();
+    let mut import_section = ImportSection::new();
     let mut function_section = wasm_encoder::FunctionSection::new();
     let mut table_section = wasm_encoder::TableSection::new();
     let mut global_section = wasm_encoder::GlobalSection::new();
@@ -173,8 +202,23 @@ pub fn encode(module: Module) -> Vec<u8> {
     let mut global_namespace = HashMap::new();
     let mut referenced_funcs: BTreeSet<u32> = BTreeSet::new();
 
-    for (id, (name, type_)) in module.globals.iter().enumerate() {
-        let global_id = id as u32;
+    let mut global_id = 0;
+    for (name, type_) in module.imports.iter() {
+        import_section.import(
+            &name.major,
+            &name.minor,
+            EntityType::Global(GlobalType {
+                val_type: type_section.valtype_of(type_),
+                mutable: true,
+                shared: false,
+            }),
+        );
+        global_namespace.insert(name, global_id);
+        global_names.append(global_id, &format!("{name}"));
+        global_id += 1;
+    }
+
+    for (name, type_) in module.globals.iter() {
         let val_type = type_section.valtype_of(type_);
         global_section.global(
             GlobalType {
@@ -186,6 +230,8 @@ pub fn encode(module: Module) -> Vec<u8> {
         );
         export_section.export(&format!("{name}"), ExportKind::Global, global_id);
         global_namespace.insert(name, global_id);
+        global_names.append(global_id, &format!("{name}"));
+        global_id += 1;
     }
 
     for f in &module.functions {
@@ -368,6 +414,21 @@ pub fn encode(module: Module) -> Vec<u8> {
                                 }
                             }
                         }
+                        i::RefCastFunc {
+                            parameters,
+                            returns,
+                        } => {
+                            let func_type_idx = type_section.new_function(parameters, returns);
+                            winstr::RefCastNullable(HeapType::Concrete(func_type_idx))
+                        }
+                        i::RefCastStruct(fields) => {
+                            let struct_type_idx = type_section.new_struct(fields);
+                            winstr::RefCastNullable(HeapType::Concrete(struct_type_idx))
+                        }
+                        i::RefCastArray(inner) => {
+                            let array_type_idx = type_section.new_array(inner);
+                            winstr::RefCastNullable(HeapType::Concrete(array_type_idx))
+                        }
                     }
                 })
                 .fold::<&mut _, _>(&mut function_body, |body, i| body.instruction(&i))
@@ -386,9 +447,13 @@ pub fn encode(module: Module) -> Vec<u8> {
     });
     element_section.declared(wasm_encoder::Elements::Functions(referenced_funcs.into()));
 
+    name_section.globals(&global_names);
+
     let mut module = wasm_encoder::Module::new();
     module
+        .section(&name_section)
         .section(&type_section)
+        .section(&import_section)
         .section(&function_section)
         .section(&table_section)
         .section(&global_section)

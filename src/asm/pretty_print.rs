@@ -181,6 +181,37 @@ impl PrettyPrint for Instruction {
             ArrayCopy { dst_type, src_type } => {
                 format!("array.copy [{}] [{}]", dst_type.pretty(), src_type.pretty())
             }
+            RefCastFunc {
+                parameters,
+                returns,
+            } => {
+                format!(
+                    "ref.cast.func [{}] -> [{}]",
+                    parameters
+                        .iter()
+                        .map(PrettyPrint::pretty)
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    returns
+                        .iter()
+                        .map(PrettyPrint::pretty)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            }
+            RefCastStruct(fields) => {
+                format!(
+                    "ref.cast.struct [{}]",
+                    fields
+                        .iter()
+                        .map(PrettyPrint::pretty)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            }
+            RefCastArray(inner) => {
+                format!("ref.cast.array [{}]", inner.pretty())
+            }
         }
     }
 }

@@ -1,3 +1,3 @@
 module demo =
-  let c = 1
+  let a = if 1 == 1 then () else ()
 end

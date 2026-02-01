@@ -26,7 +26,7 @@ pub fn lower_type(
         Array(t) => Type::Array(lower_type(t, symbols).into()),
         Tuple(items) => Type::Struct(items.iter().map(|i| lower_type(i, symbols)).collect()),
         Sum { .. } => Type::Struct([Type::I32, Type::Any].into()),
-        Function(..) => Type::Struct([Type::Array(Type::Any.into()), Type::Function].into()),
+        Function(..) => Type::closure_type(),
         Instantiation(path, items) => {
             lower_type(
                 &symbols
@@ -59,12 +59,6 @@ impl<'a> Encoder<'a> {
                 self.push(i::Drop);
             }
             p::Identifier(path) => {
-                if path.major != self.module.name {
-                    self.module
-                        .imports
-                        .entry(path.clone())
-                        .or_insert_with(|| type_.clone());
-                }
                 self.push(i::Set(path));
             }
             p::Tuple(items) => {
@@ -215,7 +209,14 @@ impl<'a> Encoder<'a> {
             }
             p::Constructor(constructor, inner) => todo!(),
             p::Immediate(const_value) => {
-                self.extend([i::Const(const_value), i::Get(BinaryOp::DoubleEqual.path())]);
+                let double_equal_path = BinaryOp::DoubleEqual.path();
+                if double_equal_path.major != self.module.name {
+                    self.module
+                        .imports
+                        .entry(double_equal_path.clone())
+                        .or_insert_with(|| lower_type(&BinaryOp::DoubleEqual.get_type(), symbols));
+                }
+                self.extend([i::Const(const_value), i::Get(double_equal_path)]);
                 self.call_closure();
                 self.call_closure();
                 self.extend([
@@ -243,17 +244,26 @@ impl<'a> Encoder<'a> {
                 else_,
                 ..
             } => {
+                let skip_pattern = !assignee.is_refutable() && assignee.introduced_names() == 0;
                 assignee.visit(|(path, type_)| {
                     self.new_register(path.clone(), ScopeKind::Local, lower_type(type_, symbols));
                 });
                 let result_type = lower_type(&ir.type_, symbols);
-                self.extend([i::Block(Some(result_type)), i::Block(None)]);
+                if !skip_pattern {
+                    self.extend([i::Block(Some(result_type)), i::Block(None)]);
+                }
                 self.lower_ir(*value, symbols);
-                self.lower_pattern(assignee, ScopeKind::Local, symbols);
+                if !skip_pattern {
+                    self.lower_pattern(assignee, ScopeKind::Local, symbols);
+                } else {
+                    self.push(i::Drop);
+                }
                 self.lower_ir(*then, symbols);
-                self.extend([i::Break(1), i::End]);
-                self.lower_ir(*else_, symbols);
-                self.push(i::End);
+                if !skip_pattern {
+                    self.extend([i::Break(1), i::End]);
+                    self.lower_ir(*else_, symbols);
+                    self.push(i::End);
+                }
             }
             Immediate(const_value) => {
                 let Type::Struct(inner_types) = lower_type(&const_value.type_of(), symbols) else {
@@ -262,6 +272,14 @@ impl<'a> Encoder<'a> {
                 self.extend([i::Const(const_value), i::StructNew(inner_types)]);
             }
             Identifier(path) => {
+                // If it is an imported symbol, add it to imports
+                if path.major != self.module.name {
+                    let type_ = lower_type(&ir.type_, symbols);
+                    self.module
+                        .imports
+                        .entry(path.clone())
+                        .or_insert_with(|| type_.clone());
+                }
                 self.push(i::Get(path));
             }
             Tuple(items) => {
@@ -359,18 +377,26 @@ impl<'a> Encoder<'a> {
                         length: num_captures,
                     },
                     i::Func(new_func_index),
-                    i::StructNew([Type::function_capture(), Type::Function].into()),
+                    i::StructNew([Type::function_capture(), Type::closure_function_type()].into()),
                 ])
             }
             Call { callee, argument } => {
                 let callee_name = self.temporary_name("callee");
-                let callee_type = lower_type(&callee.type_, symbols);
-                self.new_register(callee_name.clone(), ScopeKind::Local, callee_type);
+                // Use Type::Any because call_closure returns anyref for polymorphism
+                self.new_register(callee_name.clone(), ScopeKind::Local, Type::Any);
                 self.lower_ir(*callee, symbols);
                 self.push(i::Set(callee_name.clone()));
                 self.lower_ir(*argument, symbols);
                 self.push(i::Get(callee_name));
                 self.call_closure();
+                // Cast the anyref result to the expected type
+                let result_type = lower_type(&ir.type_, symbols);
+                match result_type {
+                    Type::Struct(fields) => self.push(i::RefCastStruct(fields)),
+                    Type::Array(inner) => self.push(i::RefCastArray(inner)),
+                    Type::Any => {} // No cast needed
+                    _ => unreachable!(),
+                }
             }
             Semicolon(a, b) => {
                 self.lower_ir(*a, symbols);
@@ -383,34 +409,70 @@ impl<'a> Encoder<'a> {
         }
     }
 
-    /// Expected stack before: [closure, argument]
-    /// Expected stack after: [result]
+    /// [argument, closure] -> [result]
     ///
     /// A closure is a struct with fields {captured_args, funcref}.
-    /// The calling convention expects [argument, captured_args] on the stack.
+    /// The calling convention expects [captures, argument] on the stack before funcref.
     pub fn call_closure(&mut self) {
-        let closure_type = Type::function_capture();
-        let closure_name = self.temporary_name("closure");
-        self.new_register(closure_name.clone(), ScopeKind::Local, closure_type.clone());
-        self.push(i::Set(closure_name.clone()));
+        let closure_struct_type: Box<[Type]> = [
+            Type::function_capture(),
+            Type::Function {
+                parameters: [Type::Array(Type::Any.into()), Type::Any].into(),
+                results: [Type::Any].into(),
+            },
+        ]
+        .into();
 
-        let funcref_name = self.temporary_name("funcref");
-        let funcref_type = Type::Function;
-        self.new_register(funcref_name.clone(), ScopeKind::Local, funcref_type);
+        // Stack before: [argument, closure: anyref]
+        // Cast closure from anyref to the specific closure struct type
+        self.push(i::RefCastStruct(closure_struct_type.clone()));
+        // Stack: [argument, closure: (ref null closure_struct)]
+
+        // Save closure to local
+        let closure_name = self.temporary_name("closure");
+        self.new_register(
+            closure_name.clone(),
+            ScopeKind::Local,
+            Type::Struct(closure_struct_type.clone()),
+        );
+        self.push(i::Set(closure_name.clone()));
+        // Stack: [argument]
+
+        // Save argument to local
+        let argument_name = self.temporary_name("argument");
+        self.new_register(argument_name.clone(), ScopeKind::Local, Type::Any);
+        self.push(i::Set(argument_name.clone()));
+        // Stack: []
+
+        let func_params: Box<[Type]> = [Type::function_capture(), Type::Any].into();
+        let func_returns: Box<[Type]> = [Type::Any].into();
+
+        // Push captures (first param)
         self.extend([
             i::Get(closure_name.clone()),
-            i::StructGet([Type::Any].into(), 1),
-            i::Set(funcref_name.clone()),
+            i::StructGet(closure_struct_type.clone(), 0),
         ]);
+        // Stack: [captures]
 
+        // Push argument (second param)
+        self.push(i::Get(argument_name));
+        // Stack: [captures, argument]
+
+        // Get funcref and cast to the expected type
         self.extend([
             i::Get(closure_name),
-            i::StructGet([Type::Any].into(), 0),
-            i::Get(funcref_name),
-            i::Call {
-                parameters: [Type::Array(Type::Any.into()), Type::Any].into(),
-                returns: [Type::Any].into(),
+            i::StructGet(closure_struct_type, 1),
+            i::RefCastFunc {
+                parameters: func_params.clone(),
+                returns: func_returns.clone(),
             },
         ]);
+        // Stack: [captures, argument, typed_funcref]
+
+        self.push(i::Call {
+            parameters: func_params,
+            returns: func_returns,
+        });
+        // Stack: [result: anyref]
     }
 }
