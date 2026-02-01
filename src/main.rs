@@ -5,6 +5,21 @@ use codespan_reporting::term::termcolor::StandardStream;
 use halcyon_lib::hc_core::core_symbol_table;
 use halcyon_lib::*;
 
+/*
+fn test1<A>(a: A) -> A {
+    a
+}
+
+fn test2<B>(b: &B) -> &B {
+    b
+}
+
+fn _main() {
+    let mut i = 1;
+    let r = test2(test1(&mut i));
+}
+*/
+
 pub fn compile(
     input: &str,
     logger: &mut Logger,
@@ -19,13 +34,19 @@ pub fn compile(
         println!("{}\n", ir_module.pretty());
         let asm_module = asm::lower_module(ir_module, symbols);
         println!("{}", asm_module.pretty());
+        let bin = asm::encode(asm_module);
+        let wat = wasmprinter::print_bytes(bin).unwrap();
+        println!("{wat}");
     }
     vec![]
 }
 
 fn compile_file_arg() {
     let mut args = std::env::args().skip(1);
-    assert_eq!(args.len(), 1, "Expected 1 path argument");
+    if args.len() != 1 {
+        eprintln!("Usage: halcyon <file_path>");
+        std::process::exit(1);
+    }
     let path = args.next().unwrap();
     let str = std::fs::read_to_string(&path).expect("Could not open file");
     let mut files = SimpleFiles::new();

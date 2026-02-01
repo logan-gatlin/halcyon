@@ -1,9 +1,9 @@
+use crate::Visit;
 use crate::ir::{
     IrNode,
     Pattern,
 };
 use crate::operator::BinaryOp;
-use crate::Visit;
 
 use super::*;
 
@@ -40,7 +40,11 @@ pub fn lower_type(
 }
 
 use Instruction as i;
+use indexmap::IndexMap;
 impl<'a> Encoder<'a> {
+    // Preconditions:
+    // * Predicate to be pattern-matched on is top of stack
+    // * A br 0 instruction indicates pattern matching has failed
     pub fn lower_pattern(
         &mut self,
         pat: Pattern,
@@ -58,11 +62,19 @@ impl<'a> Encoder<'a> {
             }
             p::Tuple(items) => {
                 let temporary = self.temporary_name("pattern");
+                let semantic::Type::Tuple(types) = &pat.type_ else {
+                    unreachable!()
+                };
+                let types = types
+                    .iter()
+                    .map(|t| lower_type(t, symbols))
+                    .collect::<Box<_>>();
                 self.new_register(temporary.clone(), scope, type_.clone());
+                self.push(i::Set(temporary.clone()));
                 for (index, item) in items.into_iter().enumerate() {
                     self.extend([
                         i::Get(temporary.clone()),
-                        i::StructGet(type_.clone(), index),
+                        i::StructGet(types.clone(), index),
                     ]);
                     self.lower_pattern(item, scope, symbols);
                 }
@@ -73,15 +85,39 @@ impl<'a> Encoder<'a> {
                 ending,
                 is_exact,
             } => todo!(),
-            p::Struct(index_map) => todo!(),
+            p::Struct(index_map) => {
+                let temporary = self.temporary_name("pattern");
+                self.new_register(temporary.clone(), scope, type_.clone());
+                self.push(i::Set(temporary.clone()));
+                let semantic::Type::Struct {
+                    fields: ordered_fields,
+                    ..
+                } = &pat.type_
+                else {
+                    unreachable!()
+                };
+                let types = ordered_fields
+                    .values()
+                    .map(|t| lower_type(t, symbols))
+                    .collect::<Box<_>>();
+                for (name, pattern) in index_map {
+                    let index = ordered_fields
+                        .get_index_of(&name.inner)
+                        .unwrap_or_else(|| unreachable!());
+                    self.extend([
+                        i::Get(temporary.clone()),
+                        i::StructGet(types.clone(), index),
+                    ]);
+                    self.lower_pattern(pattern, scope, symbols);
+                }
+            }
             p::Constructor(constructor, inner) => todo!(),
             p::Immediate(const_value) => {
+                self.extend([i::Const(const_value), i::Get(BinaryOp::DoubleEqual.path())]);
+                self.call_closure();
+                self.call_closure();
                 self.extend([
-                    i::Const(const_value),
-                    i::Get(BinaryOp::DoubleEqual.path()),
-                    i::Macro(MacroKind::Call),
-                    i::Macro(MacroKind::Call),
-                    i::StructGet(lower_type(&semantic::Type::Boolean, symbols), 0),
+                    i::StructGet([lower_type(&semantic::Type::Boolean, symbols)].into(), 0),
                     i::I32Op(NumberOperation::Xor),
                     i::BreakIf(0),
                 ]);
@@ -134,7 +170,31 @@ impl<'a> Encoder<'a> {
                 });
                 self.push(i::StructNew(types));
             }
-            Struct(index_map) => todo!(),
+            Struct(index_map) => {
+                let semantic::Type::Struct { fields, .. } = &ir.type_ else {
+                    unreachable!()
+                };
+                // Evaluate fields in order and store in temporaries
+                let mut field_temporaries = IndexMap::new();
+                for (field_name, field_ir) in index_map {
+                    let temp_name = self.temporary_name(&field_name.inner);
+                    let temp_type = lower_type(&field_ir.type_, symbols);
+                    self.new_register(temp_name.clone(), ScopeKind::Local, temp_type);
+                    self.lower_ir(field_ir, symbols);
+                    self.push(i::Set(temp_name.clone()));
+                    field_temporaries.insert(field_name.inner, temp_name);
+                }
+                // Re-order fields according to struct type and push onto stack
+                let ordered_types = fields
+                    .keys()
+                    .map(|k| lower_type(&fields[k], symbols))
+                    .collect::<Box<[_]>>();
+                for field_name in fields.keys() {
+                    let temp_name = &field_temporaries[field_name];
+                    self.push(i::Get(temp_name.clone()));
+                }
+                self.push(i::StructNew(ordered_types));
+            }
             Field { of, index } => {
                 let semantic::Type::Struct { fields, .. } = &of.type_ else {
                     unreachable!()
@@ -145,9 +205,11 @@ impl<'a> Encoder<'a> {
                     .unwrap_or_else(|| {
                         unreachable!("Missing fields are caught during typechecking")
                     });
-                let struct_type = lower_type(&of.type_, symbols);
+                let Type::Struct(inner_types) = lower_type(&of.type_, symbols) else {
+                    unreachable!()
+                };
                 self.lower_ir(*of, symbols);
-                self.push(i::StructGet(struct_type, field_index));
+                self.push(i::StructGet(inner_types, field_index));
             }
             Function {
                 parameter_name,
@@ -178,7 +240,7 @@ impl<'a> Encoder<'a> {
                     new_enc.extend([
                         i::Get(capture_array_name.clone()),
                         i::Const(ConstValue::Integer(id as i64)),
-                        i::ArrayGet,
+                        i::ArrayGet(Type::Any),
                         i::Set(capture_name.clone()),
                     ]);
                 }
@@ -188,7 +250,10 @@ impl<'a> Encoder<'a> {
                     self.push(i::Get(capture_name));
                 }
                 self.extend([
-                    i::ArrayNewFixed(num_captures),
+                    i::ArrayNewFixed {
+                        inner_type: Type::Any,
+                        length: num_captures,
+                    },
                     i::Func(new_func_index),
                     i::StructNew([Type::function_capture(), Type::Function].into()),
                 ])
@@ -200,7 +265,8 @@ impl<'a> Encoder<'a> {
                 self.lower_ir(*callee, symbols);
                 self.push(i::Set(callee_name.clone()));
                 self.lower_ir(*argument, symbols);
-                self.extend([i::Get(callee_name), i::Macro(MacroKind::Call)]);
+                self.push(i::Get(callee_name));
+                self.call_closure();
             }
             Semicolon(a, b) => {
                 self.lower_ir(*a, symbols);
@@ -211,5 +277,36 @@ impl<'a> Encoder<'a> {
                 self.push(i::Unreachable);
             }
         }
+    }
+
+    /// Expected stack before: [closure, argument]
+    /// Expected stack after: [result]
+    ///
+    /// A closure is a struct with fields {captured_args, funcref}.
+    /// The calling convention expects [argument, captured_args] on the stack.
+    pub fn call_closure(&mut self) {
+        let closure_type = Type::function_capture();
+        let closure_name = self.temporary_name("closure");
+        self.new_register(closure_name.clone(), ScopeKind::Local, closure_type.clone());
+        self.push(i::Set(closure_name.clone()));
+
+        let funcref_name = self.temporary_name("funcref");
+        let funcref_type = Type::Function;
+        self.new_register(funcref_name.clone(), ScopeKind::Local, funcref_type);
+        self.extend([
+            i::Get(closure_name.clone()),
+            i::StructGet([Type::Any].into(), 1),
+            i::Set(funcref_name.clone()),
+        ]);
+
+        self.extend([
+            i::Get(closure_name),
+            i::StructGet([Type::Any].into(), 0),
+            i::Get(funcref_name),
+            i::Call {
+                parameters: [Type::Array(Type::Any.into()), Type::Any].into(),
+                returns: [Type::Any].into(),
+            },
+        ]);
     }
 }

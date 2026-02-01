@@ -10,7 +10,7 @@ homepage = "https://halcyon-lang.dev"
 repository = "https://github.com/logan-gatlin/halcyon"
 license = "MIT"
 keywords = ["compiler", "functional programming", "wasm"]
-categories = ["wasm", "compilers"]
+categories = ["wasm", "compiler"]
 
 [dependencies]
 wasm-encoder = "0.233"
@@ -26,6 +26,7 @@ codespan-reporting = { version = "0.13", features = ["termcolor"] }
 indoc = "2"
 unicode_names2 = "2"
 derive-new = "0.5"
+paste = "1"
 
 [dev-dependencies]
 wasmtime = { version = "34.0", features = ["runtime", "cranelift", "gc", "gc-drc"] }

@@ -1,6 +1,6 @@
+mod encode;
 mod lower;
 pub mod pretty_print;
-mod serialize;
 
 use indexmap::IndexMap;
 
@@ -9,9 +9,11 @@ use crate::ir::{
     Path,
 };
 use crate::{
-    semantic,
     SymbolTable,
+    semantic,
 };
+
+pub use encode::encode;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ScopeKind {
@@ -19,7 +21,7 @@ pub enum ScopeKind {
     Global,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Type {
     Any,
     I32,
@@ -31,53 +33,212 @@ pub enum Type {
     Function,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum MacroKind {
-    Call,
-}
-
+/// Arithmetic and bitwise operations on numbers.
+///
+/// Stack: `[left, right] -> [result]`
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NumberOperation {
+    /// Equal comparison: returns true if left == right.
+    ///
+    /// Available for: integers and floats
     Eq,
+
+    /// Not-equal comparison: returns true if left != right.
+    ///
+    /// Available for: integers and floats
     Ne,
+
+    /// Greater-than comparison: returns true if left > right.
+    ///
+    /// Available for: integers and floats
     Gt,
+
+    /// Less-than comparison: returns true if left < right.
+    ///
+    /// Available for: integers and floats
     Lt,
+
+    /// Greater-than-or-equal comparison: returns true if left >= right.
+    ///
+    /// Available for: integers and floats
     Ge,
+
+    /// Less-than-or-equal comparison: returns true if left <= right.
+    ///
+    /// Available for: integers and floats
     Le,
+
+    /// Arithmetic addition: left + right.
+    ///
+    /// Available for: integers and floats
     Add,
+
+    /// Arithmetic subtraction: left - right.
+    ///
+    /// Available for: integers and floats
     Sub,
+
+    /// Arithmetic multiplication: left * right.
+    ///
+    /// Available for: integers and floats
     Mul,
+
+    /// Arithmetic division: left / right.
+    ///
+    /// Available for: integers and floats
     Div,
+
+    /// Bitwise AND: left & right.
+    ///
+    /// Available for: integers only
     And,
+
+    /// Bitwise OR: left | right.
+    ///
+    /// Available for: integers only
     Or,
+
+    /// Bitwise XOR: left ^ right.
+    ///
+    /// Available for: integers only
     Xor,
 }
 
+/// High-level WebAssembly instruction abstraction.
+///
+/// Stack notation: `[input] -> [output]` describes the stack effect.
 #[derive(Debug, Clone)]
 pub enum Instruction {
+    /// Store a value from the stack into a local/global variable.
+    ///
+    /// Stack: `[value] -> []`
     Set(Path),
+
+    /// Load a value from a local/global variable onto the stack.
+    ///
+    /// Stack: `[] -> [value]`
     Get(Path),
+
+    /// Push a constant value onto the stack.
+    ///
+    /// Stack: `[] -> [const_value]`
     Const(ConstValue),
+
+    /// Push a function reference onto the stack.
+    ///
+    /// Stack: `[] -> [func_ref]`
     Func(usize),
+
+    /// Create a struct from values on the stack.
+    ///
+    /// Stack: `[field_0, field_1, ..., field_n] -> [struct]`
+    ///
+    /// Pops n values (where n = number of types) and creates a struct with those fields.
     StructNew(Box<[Type]>),
-    StructGet(Type, usize),
-    ArrayGet,
-    ArrayNewFixed(usize),
-    Call,
+
+    /// Extract a field from a struct.
+    ///
+    /// Stack: `[struct] -> [field_value]`
+    ///
+    /// Pops a struct and pushes the value of the field at the given index.
+    StructGet(Box<[Type]>, usize),
+
+    /// Load from an array at a dynamic index.
+    ///
+    /// Stack: `[array, index] -> [value]`
+    ArrayGet(Type),
+
+    /// Create a fixed-size array from values on the stack.
+    ///
+    /// Stack: `[elem_0, elem_1, ..., elem_n] -> [array]`
+    ///
+    /// Pops n values (where n is the parameter) and creates an array with those elements.
+    ArrayNewFixed { inner_type: Type, length: usize },
+
+    /// Call a function.
+    ///
+    /// Stack: `[func_ref, argument] -> [result]`
+    Call {
+        parameters: Box<[Type]>,
+        returns: Box<[Type]>,
+    },
+
+    /// Mark a code path as unreachable.
+    ///
+    /// Stack: `[] -> [bottom]`
     Unreachable,
+
+    /// Discard the top value from the stack.
+    ///
+    /// Stack: `[value] -> []`
     Drop,
+
+    /// Begin a conditional branch.
+    ///
+    /// Stack: `[condition] -> []` (condition popped, control flow branches)
+    ///
+    /// Must be matched with `Else` and `End`.
     If(Option<Type>),
+
+    /// Separate the true and false branches of an `If`.
+    ///
+    /// Stack: `[] -> []`
+    ///
+    /// Follows an `If` and precedes `End`.
     Else,
+
+    /// End a block, loop, if, or function.
+    ///
+    /// Stack: depends on context (produces block result if `Block`/`If` has a type)
     End,
+
+    /// Begin a loop that can be branched back to.
+    ///
+    /// Stack: `[] -> []`
+    ///
+    /// Must be matched with `End`. Branches to `Loop` restart the loop.
     Loop,
+
+    /// Begin a labeled block.
+    ///
+    /// Stack: `[] -> []` (produces block result if type is present)
+    ///
+    /// Must be matched with `End`. `Break` targets this block.
     Block(Option<Type>),
+
+    /// Unconditional branch to a labeled block.
+    ///
+    /// Stack: `[result_values...] -> [bottom]`
+    ///
+    /// Jumps to the block at depth n, popping result values if the block expects a type.
     Break(usize),
+
+    /// Conditional branch to a labeled block.
+    ///
+    /// Stack: `[condition, result_values...] -> []`
+    ///
+    /// Pops condition; if true, jumps to block at depth n with result values.
     BreakIf(usize),
+
+    /// 32-bit integer arithmetic/comparison operation.
+    ///
+    /// Stack: `[left, right] -> [result]` (for binary operations)
     I32Op(NumberOperation),
+
+    /// 64-bit integer arithmetic/comparison operation.
+    ///
+    /// Stack: `[left, right] -> [result]` (for binary operations)
     I64Op(NumberOperation),
+
+    /// 32-bit floating-point arithmetic/comparison operation.
+    ///
+    /// Stack: `[left, right] -> [result]` (for binary operations)
     F32Op(NumberOperation),
+
+    /// 64-bit floating-point arithmetic/comparison operation.
+    ///
+    /// Stack: `[left, right] -> [result]` (for binary operations)
     F64Op(NumberOperation),
-    Macro(MacroKind),
 }
 
 #[derive(Debug, Clone, Default)]

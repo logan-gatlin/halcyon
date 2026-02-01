@@ -1,7 +1,7 @@
 use super::*;
 use crate::ir::{
-    left_pad,
     PrettyPrint,
+    left_pad,
 };
 
 use colored::Colorize;
@@ -98,12 +98,6 @@ impl PrettyPrint for NumberOperation {
     }
 }
 
-impl PrettyPrint for MacroKind {
-    fn pretty(&self) -> String {
-        format!("{self:?}").red().to_lowercase()
-    }
-}
-
 impl PrettyPrint for Instruction {
     fn pretty(&self) -> String {
         use Instruction::*;
@@ -122,10 +116,38 @@ impl PrettyPrint for Instruction {
                         .join(", ")
                 )
             }
-            StructGet(type_, index) => format!("struct.get [{}] {index}", type_.pretty()),
-            ArrayGet => "array.get".into(),
-            ArrayNewFixed(size) => format!("array.new_fixed {size}"),
-            Call => "call".into(),
+            StructGet(types, index) => {
+                format!(
+                    "struct.get [{}] {index}",
+                    types
+                        .iter()
+                        .map(PrettyPrint::pretty)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            }
+            ArrayGet(t) => format!("array.get [{}]", t.pretty()),
+            ArrayNewFixed { inner_type, length } => {
+                format!("array.new_fixed [{}] {length}", inner_type.pretty())
+            }
+            Call {
+                parameters,
+                returns,
+            } => {
+                format!(
+                    "call [{}] -> [{}]",
+                    parameters
+                        .iter()
+                        .map(PrettyPrint::pretty)
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    returns
+                        .iter()
+                        .map(PrettyPrint::pretty)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            }
             Unreachable => "unreachable".into(),
             Drop => "drop".into(),
             If(t) => {
@@ -153,7 +175,6 @@ impl PrettyPrint for Instruction {
             I64Op(num) => format!("i64.{}", num.pretty()),
             F32Op(num) => format!("f32.{}", num.pretty()),
             F64Op(num) => format!("f64.{}", num.pretty()),
-            Macro(m) => m.pretty(),
         }
     }
 }

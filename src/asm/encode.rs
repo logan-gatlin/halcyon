@@ -1,0 +1,362 @@
+use std::collections::HashMap;
+
+use super::*;
+use wasm_encoder::{
+    self,
+    ArrayType,
+    BlockType,
+    ConstExpr,
+    ExportKind,
+    FieldType,
+    FuncType,
+    GlobalType,
+    HeapType,
+    Instruction as winstr,
+    RefType,
+    StorageType,
+    ValType,
+};
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum ConcreteType {
+    Function(FuncType),
+    Array(ArrayType),
+    StructType(Box<[FieldType]>),
+}
+
+#[derive(Debug, Clone, Default)]
+struct TypeSection {
+    type_section: Vec<ConcreteType>,
+    cache: HashMap<ConcreteType, u32>,
+}
+
+impl TypeSection {
+    fn new() -> Self {
+        Self::default()
+    }
+
+    fn get_or_insert(
+        &mut self,
+        ct: ConcreteType,
+    ) -> u32 {
+        if let Some(index) = self.cache.get(&ct) {
+            *index
+        } else {
+            self.type_section.push(ct.clone());
+            let index = (self.type_section.len() - 1) as u32;
+            self.cache.insert(ct, index);
+            index
+        }
+    }
+
+    fn new_struct(
+        &mut self,
+        fields: &[Type],
+    ) -> u32 {
+        let fields = fields
+            .iter()
+            .map(|f| {
+                FieldType {
+                    element_type: StorageType::Val(self.valtype_of(f)),
+                    mutable: true,
+                }
+            })
+            .collect();
+        self.get_or_insert(ConcreteType::StructType(fields))
+    }
+
+    fn new_array(
+        &mut self,
+        inner: &Type,
+    ) -> u32 {
+        let ct = ConcreteType::Array(ArrayType(FieldType {
+            element_type: StorageType::Val(self.valtype_of(inner)),
+            mutable: true,
+        }));
+        self.get_or_insert(ct)
+    }
+
+    fn new_function(
+        &mut self,
+        parameters: &[Type],
+        returns: &[Type],
+    ) -> u32 {
+        let ct = ConcreteType::Function(FuncType::new(
+            parameters
+                .iter()
+                .map(|p| self.valtype_of(p))
+                .collect::<Box<_>>(),
+            returns
+                .iter()
+                .map(|p| self.valtype_of(p))
+                .collect::<Box<_>>(),
+        ));
+        self.get_or_insert(ct)
+    }
+
+    fn valtype_of(
+        &mut self,
+        type_: &Type,
+    ) -> ValType {
+        match type_ {
+            Type::Any => ValType::Ref(RefType::ANYREF),
+            Type::I32 => ValType::I32,
+            Type::I64 => ValType::I64,
+            Type::F32 => ValType::F32,
+            Type::F64 => ValType::F64,
+            Type::Struct(items) => {
+                ValType::Ref(RefType {
+                    nullable: true,
+                    heap_type: HeapType::Concrete(self.new_struct(items)),
+                })
+            }
+            Type::Array(_) => ValType::Ref(RefType::ARRAYREF),
+            Type::Function => ValType::Ref(RefType::FUNCREF),
+        }
+    }
+}
+
+impl wasm_encoder::Encode for TypeSection {
+    fn encode(
+        &self,
+        sink: &mut Vec<u8>,
+    ) {
+        let mut ts = wasm_encoder::TypeSection::new();
+        for t in &self.type_section {
+            match t {
+                ConcreteType::Function(func_type) => ts.ty().func_type(func_type),
+                ConcreteType::Array(ArrayType(FieldType {
+                    element_type,
+                    mutable,
+                })) => ts.ty().array(element_type, *mutable),
+                ConcreteType::StructType(field_types) => ts.ty().struct_(field_types.clone()),
+            }
+        }
+        ts.encode(sink);
+    }
+}
+
+impl wasm_encoder::Section for TypeSection {
+    fn id(&self) -> u8 {
+        1
+    }
+}
+
+fn default_value(valtype: &ValType) -> ConstExpr {
+    match valtype {
+        ValType::I32 => ConstExpr::i32_const(0),
+        ValType::I64 => ConstExpr::i64_const(0),
+        ValType::F32 => ConstExpr::f32_const(0.0.into()),
+        ValType::F64 => ConstExpr::f64_const(0.0.into()),
+        ValType::V128 => ConstExpr::v128_const(0),
+        ValType::Ref(RefType { heap_type, .. }) => ConstExpr::ref_null(*heap_type),
+    }
+}
+
+pub fn encode(module: Module) -> Vec<u8> {
+    let mut type_section = TypeSection::new();
+    let mut function_section = wasm_encoder::FunctionSection::new();
+    let mut global_section = wasm_encoder::GlobalSection::new();
+    let mut export_section = wasm_encoder::ExportSection::new();
+    let mut code_section = wasm_encoder::CodeSection::new();
+
+    let mut global_namespace = HashMap::new();
+
+    for (id, (name, type_)) in module.globals.iter().enumerate() {
+        let global_id = id as u32;
+        let val_type = type_section.valtype_of(type_);
+        global_section.global(
+            GlobalType {
+                val_type,
+                mutable: true,
+                shared: false,
+            },
+            &default_value(&val_type),
+        );
+        export_section.export(&format!("{name}"), ExportKind::Global, global_id);
+        global_namespace.insert(name, global_id);
+    }
+
+    for f in &module.functions {
+        let type_id = type_section.new_function(
+            f.parameters
+                .values()
+                .cloned()
+                .collect::<Vec<_>>()
+                .as_slice(),
+            &f.returns,
+        );
+        function_section.function(type_id);
+
+        let local_namespace = f
+            .parameters
+            .iter()
+            .chain(f.variables.iter())
+            .enumerate()
+            .map(|(id, (name, _))| (name.clone(), id))
+            .collect::<HashMap<_, _>>();
+
+        let mut function_body = wasm_encoder::Function::new_with_locals_types(
+            f.variables.iter().map(|(_, t)| type_section.valtype_of(t)),
+        );
+        // Instruction lowering
+        code_section.function(
+            f.ops
+                .iter()
+                .map(|o| {
+                    use {
+                        Instruction as i,
+                        NumberOperation as n,
+                    };
+                    match o {
+                        i::Set(path) => {
+                            if let Some(&idx) = local_namespace.get(path) {
+                                winstr::LocalSet(idx as u32)
+                            } else if let Some(&idx) = global_namespace.get(&path) {
+                                winstr::GlobalSet(idx)
+                            } else {
+                                unreachable!("Unknown variable: {}", &path)
+                            }
+                        }
+                        i::Get(path) => {
+                            if let Some(&idx) = local_namespace.get(path) {
+                                winstr::LocalGet(idx as u32)
+                            } else if let Some(&idx) = global_namespace.get(&path) {
+                                winstr::GlobalGet(idx)
+                            } else {
+                                unreachable!("Unknown variable: {path}")
+                            }
+                        }
+                        i::Const(const_value) => {
+                            match const_value {
+                                ConstValue::Unit => winstr::I32Const(0),
+                                ConstValue::Integer(i) => winstr::I64Const(*i),
+                                ConstValue::Real(f) => winstr::F64Const((*f).into()),
+                                ConstValue::Boolean(b) => winstr::I32Const(if *b { 1 } else { 0 }),
+                                ConstValue::String(_) => {
+                                    unreachable!("String constants not yet supported")
+                                }
+                                ConstValue::Glyph(c) => winstr::I32Const(*c as i32),
+                            }
+                        }
+                        i::Func(id) => winstr::RefFunc(*id as u32),
+                        i::StructNew(items) => winstr::StructNew(type_section.new_struct(items)),
+                        i::StructGet(t, field_index) => {
+                            winstr::StructGet {
+                                struct_type_index: type_section.new_struct(t),
+                                field_index: *field_index as u32,
+                            }
+                        }
+                        i::ArrayGet(t) => winstr::ArrayGet(type_section.new_array(t)),
+                        i::ArrayNewFixed { inner_type, length } => {
+                            winstr::ArrayNewFixed {
+                                array_type_index: type_section.new_array(inner_type),
+                                array_size: *length as u32,
+                            }
+                        }
+                        i::Call {
+                            parameters,
+                            returns,
+                        } => winstr::CallRef(type_section.new_function(parameters, returns)),
+                        i::Unreachable => winstr::Unreachable,
+                        i::Drop => winstr::Drop,
+                        i::If(result) => {
+                            winstr::If(match result {
+                                Some(r) => BlockType::Result(type_section.valtype_of(r)),
+                                None => BlockType::Empty,
+                            })
+                        }
+                        i::Else => winstr::Else,
+                        i::End => winstr::End,
+                        i::Loop => winstr::Loop(BlockType::Empty),
+                        i::Block(result) => {
+                            winstr::Block(match result {
+                                Some(r) => BlockType::Result(type_section.valtype_of(r)),
+                                None => BlockType::Empty,
+                            })
+                        }
+                        i::Break(target) => winstr::Br(*target as u32),
+                        i::BreakIf(target) => winstr::BrIf(*target as u32),
+                        i::I32Op(op) => {
+                            match op {
+                                n::Eq => winstr::I32Eq,
+                                n::Ne => winstr::I32Ne,
+                                n::Gt => winstr::I32GtS,
+                                n::Lt => winstr::I32LtS,
+                                n::Ge => winstr::I32GeS,
+                                n::Le => winstr::I32LeS,
+                                n::Add => winstr::I32Add,
+                                n::Sub => winstr::I32Sub,
+                                n::Mul => winstr::I32Mul,
+                                n::Div => winstr::I32DivS,
+                                n::And => winstr::I32And,
+                                n::Or => winstr::I32Or,
+                                n::Xor => winstr::I32Xor,
+                            }
+                        }
+                        i::I64Op(op) => {
+                            match op {
+                                n::Eq => winstr::I64Eq,
+                                n::Ne => winstr::I64Ne,
+                                n::Gt => winstr::I64GtS,
+                                n::Lt => winstr::I64LtS,
+                                n::Ge => winstr::I64GeS,
+                                n::Le => winstr::I64LeS,
+                                n::Add => winstr::I64Add,
+                                n::Sub => winstr::I64Sub,
+                                n::Mul => winstr::I64Mul,
+                                n::Div => winstr::I64DivS,
+                                n::And => winstr::I64And,
+                                n::Or => winstr::I64Or,
+                                n::Xor => winstr::I64Xor,
+                            }
+                        }
+                        i::F32Op(op) => {
+                            match op {
+                                n::Eq => winstr::F32Eq,
+                                n::Ne => winstr::F32Ne,
+                                n::Gt => winstr::F32Gt,
+                                n::Lt => winstr::F32Lt,
+                                n::Ge => winstr::F32Ge,
+                                n::Le => winstr::F32Le,
+                                n::Add => winstr::F32Add,
+                                n::Sub => winstr::F32Sub,
+                                n::Mul => winstr::F32Mul,
+                                n::Div => winstr::F32Div,
+                                n::And | n::Or | n::Xor => {
+                                    unreachable!("Bitwise operations not supported on F32")
+                                }
+                            }
+                        }
+                        i::F64Op(op) => {
+                            match op {
+                                n::Eq => winstr::F64Eq,
+                                n::Ne => winstr::F64Ne,
+                                n::Gt => winstr::F64Gt,
+                                n::Lt => winstr::F64Lt,
+                                n::Ge => winstr::F64Ge,
+                                n::Le => winstr::F64Le,
+                                n::Add => winstr::F64Add,
+                                n::Sub => winstr::F64Sub,
+                                n::Mul => winstr::F64Mul,
+                                n::Div => winstr::F64Div,
+                                n::And | n::Or | n::Xor => {
+                                    unreachable!("Bitwise operations not supported on F64")
+                                }
+                            }
+                        }
+                    }
+                })
+                .fold::<&mut _, _>(&mut function_body, |body, i| body.instruction(&i))
+                .instruction(&winstr::End),
+        );
+    }
+    let mut module = wasm_encoder::Module::new();
+    module
+        .section(&type_section)
+        .section(&function_section)
+        .section(&global_section)
+        .section(&export_section)
+        .section(&code_section);
+    module.finish()
+}
