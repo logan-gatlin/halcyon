@@ -1,5 +1,6 @@
 use crate::Visit;
 use crate::ir::{
+    Glob,
     IrNode,
     Pattern,
 };
@@ -58,6 +59,12 @@ impl<'a> Encoder<'a> {
                 self.push(i::Drop);
             }
             p::Identifier(path) => {
+                if path.major != self.module.name {
+                    self.module
+                        .imports
+                        .entry(path.clone())
+                        .or_insert_with(|| type_.clone());
+                }
                 self.push(i::Set(path));
             }
             p::Tuple(items) => {
@@ -83,8 +90,103 @@ impl<'a> Encoder<'a> {
                 starting,
                 glob,
                 ending,
-                is_exact,
-            } => todo!(),
+            } => {
+                let semantic::Type::Array(inner_type) = &pat.type_ else {
+                    unreachable!()
+                };
+                let inner_type_lowered = lower_type(inner_type, symbols);
+                let temporary = self.temporary_name("array_pattern");
+                self.new_register(temporary.clone(), scope, type_.clone());
+                self.push(i::Set(temporary.clone()));
+
+                let start_len = starting.len() as i32;
+                let end_len = ending.len() as i32;
+                let min_len = start_len + end_len;
+
+                let cmp_op = if glob.is_exact() {
+                    NumberOperation::Ne
+                } else {
+                    NumberOperation::Lt
+                };
+                self.extend([
+                    i::Get(temporary.clone()),
+                    i::ArrayLen,
+                    i::I32Const(min_len),
+                    i::I32Op(cmp_op),
+                    i::BreakIf(0),
+                ]);
+
+                // Match starting patterns at indices 0, 1, 2, ...
+                for (index, pattern) in starting.into_iter().enumerate() {
+                    self.push(i::Get(temporary.clone()));
+                    self.push(i::I32Const(index as i32));
+                    self.push(i::ArrayGet(inner_type_lowered.clone()));
+                    self.lower_pattern(pattern, scope, symbols);
+                }
+
+                // Compute middle_len and capture glob if needed
+                let middle_len_var = if glob.is_exact() {
+                    None
+                } else {
+                    let var = self.temporary_name("middle_len");
+                    self.new_register(var.clone(), scope, Type::I32);
+                    self.extend([
+                        i::Get(temporary.clone()),
+                        i::ArrayLen,
+                        i::I32Const(min_len),
+                        i::I32Op(NumberOperation::Sub),
+                        i::Set(var.clone()),
+                    ]);
+
+                    // Capture glob slice if named
+                    if let Glob::Named(glob_name) = glob {
+                        let new_array = self.temporary_name("slice");
+                        self.new_register(new_array.clone(), scope, type_.clone());
+                        self.extend([
+                            i::Get(var.clone()),
+                            i::ArrayNewDefault(inner_type_lowered.clone()),
+                            i::Set(new_array.clone()),
+                        ]);
+                        // Copy elements: [dst, dst_offset, src, src_offset, length]
+                        self.extend([
+                            i::Get(new_array.clone()),
+                            i::I32Const(0),
+                            i::Get(temporary.clone()),
+                            i::I32Const(start_len),
+                            i::Get(var.clone()),
+                            i::ArrayCopy {
+                                dst_type: inner_type_lowered.clone(),
+                                src_type: inner_type_lowered.clone(),
+                            },
+                        ]);
+                        // Bind to glob name
+                        self.new_register(glob_name.clone(), scope, type_.clone());
+                        self.extend([i::Get(new_array), i::Set(glob_name)]);
+                    }
+
+                    Some(var)
+                };
+
+                // Match ending patterns at (start_len + middle_len + index)
+                for (index, pattern) in ending.into_iter().enumerate() {
+                    self.push(i::Get(temporary.clone()));
+                    if let Some(ref mlv) = middle_len_var {
+                        // Dynamic offset: start_len + middle_len + index
+                        self.extend([
+                            i::I32Const(start_len),
+                            i::Get(mlv.clone()),
+                            i::I32Op(NumberOperation::Add),
+                            i::I32Const(index as i32),
+                            i::I32Op(NumberOperation::Add),
+                        ]);
+                    } else {
+                        // Static offset (exact match): start_len + index
+                        self.push(i::I32Const(start_len + index as i32));
+                    }
+                    self.push(i::ArrayGet(inner_type_lowered.clone()));
+                    self.lower_pattern(pattern, scope, symbols);
+                }
+            }
             p::Struct(index_map) => {
                 let temporary = self.temporary_name("pattern");
                 self.new_register(temporary.clone(), scope, type_.clone());
@@ -154,8 +256,10 @@ impl<'a> Encoder<'a> {
                 self.push(i::End);
             }
             Immediate(const_value) => {
-                let type_ = lower_type(&const_value.type_of(), symbols);
-                self.extend([i::Const(const_value), i::StructNew([type_].into())]);
+                let Type::Struct(inner_types) = lower_type(&const_value.type_of(), symbols) else {
+                    unreachable!()
+                };
+                self.extend([i::Const(const_value), i::StructNew(inner_types)]);
             }
             Identifier(path) => {
                 self.push(i::Get(path));
@@ -223,7 +327,7 @@ impl<'a> Encoder<'a> {
                 let capture_array_name = new_enc.temporary_name("captured_symbols");
                 new_enc.new_parameter(capture_array_name.clone(), Type::Array(Type::Any.into()));
                 let semantic::Type::Function(parameter_type, return_type) = ir.type_ else {
-                    unreachable!("Previously checked to be function type")
+                    unreachable!()
                 };
                 let parameter_type = lower_type(&parameter_type, symbols);
                 let return_type = lower_type(&return_type, symbols);
@@ -239,7 +343,7 @@ impl<'a> Encoder<'a> {
                     new_enc.new_register(capture_name.clone(), ScopeKind::Local, capture_type);
                     new_enc.extend([
                         i::Get(capture_array_name.clone()),
-                        i::Const(ConstValue::Integer(id as i64)),
+                        i::I32Const(id as i32),
                         i::ArrayGet(Type::Any),
                         i::Set(capture_name.clone()),
                     ]);

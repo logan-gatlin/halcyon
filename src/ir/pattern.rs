@@ -15,14 +15,24 @@ pub enum PatternKind {
     Tuple(Vec<Pattern>),
     Array {
         starting: Vec<Pattern>,
-        glob: Option<Path>,
+        glob: Glob,
         ending: Vec<Pattern>,
-        is_exact: bool,
     },
     Struct(IndexMap<Spanned<String>, Pattern>),
     Constructor(Constructor, Box<Pattern>),
     Immediate(ConstValue),
     TypeHint(Box<Pattern>, Type),
+}
+
+/// Glob pattern in array destructuring.
+#[derive(Debug, Clone)]
+pub enum Glob {
+    /// No glob present - exact length match required: `[a, b, c]`
+    None,
+    /// Unnamed glob - matches any remaining elements: `[a, .., b]`
+    Unnamed,
+    /// Named glob - captures remaining elements: `[a, ..rest, b]`
+    Named(Path),
 }
 
 #[derive(Debug, Clone)]
@@ -48,22 +58,17 @@ impl Visit<Type> for Constructor {
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum ArrayPattern {
-    Exact(Vec<Pattern>),
-    Leading {
-        head: Vec<Pattern>,
-        tail: Option<Path>,
-    },
-    Trailing {
-        head: Option<Path>,
-        tail: Vec<Pattern>,
-    },
-    LeadingAndTrailing {
-        head: Vec<Pattern>,
-        middle: Option<Path>,
-        tail: Vec<Pattern>,
-    },
+impl Glob {
+    pub fn is_exact(&self) -> bool {
+        matches!(self, Glob::None)
+    }
+
+    pub fn name(&self) -> Option<&Path> {
+        match self {
+            Glob::Named(path) => Some(path),
+            _ => None,
+        }
+    }
 }
 
 impl Pattern {
@@ -73,7 +78,7 @@ impl Pattern {
             if let PatternKind::Identifier(_) = *p.inner {
                 count += 1
             } else if let PatternKind::Array { glob, .. } = &*p.inner {
-                count += glob.is_some() as usize
+                count += matches!(glob, Glob::Named(_)) as usize
             }
         });
         count
@@ -137,23 +142,6 @@ impl Visit<Pattern> for Pattern {
     }
 }
 
-impl Visit<Pattern> for ArrayPattern {
-    fn _visit(
-        &mut self,
-        f: &mut impl FnMut(&mut Pattern),
-    ) {
-        match self {
-            ArrayPattern::Exact(array_patterns) => array_patterns._visit(f),
-            ArrayPattern::Leading { head, .. } => head._visit(f),
-            ArrayPattern::Trailing { tail, .. } => tail._visit(f),
-            ArrayPattern::LeadingAndTrailing { head, tail, .. } => {
-                head._visit(f);
-                tail._visit(f);
-            }
-        };
-    }
-}
-
 impl Visit<Type> for Pattern {
     fn _visit(
         &mut self,
@@ -182,7 +170,8 @@ impl Visit<Path> for Pattern {
             if let PatternKind::Identifier(id) = &mut p.inner.inner {
                 f(id)
             } else if let PatternKind::Array {
-                glob: Some(glob), ..
+                glob: Glob::Named(glob),
+                ..
             } = &mut p.inner.inner
             {
                 f(glob)
@@ -205,7 +194,8 @@ impl Visit<(Path, Type)> for Pattern {
                     p.type_ = tup.1;
                 }
                 PatternKind::Array {
-                    glob: Some(glob), ..
+                    glob: Glob::Named(glob),
+                    ..
                 } => {
                     let mut tup = (glob.clone(), p.type_.clone());
                     f(&mut tup);
@@ -266,9 +256,8 @@ impl<'a> super::build_ir::Builder<'a> {
                 }
                 Array(pats) => {
                     let mut starting = vec![];
-                    let mut glob = None;
+                    let mut glob = Glob::None;
                     let mut ending = vec![];
-                    let mut is_exact = true;
                     let glob_err = |this: &mut Self, span| {
                         this.logger
                             .error("Multiple glob patterns in an array are ambiguous")
@@ -279,25 +268,29 @@ impl<'a> super::build_ir::Builder<'a> {
                         match p {
                             ParsedArrayPattern::Pattern(pat) => {
                                 let pat = self.pattern(pat, is_global)?;
-                                if glob.is_none() && is_exact {
+                                if glob.is_exact() {
                                     starting.push(pat);
                                 } else {
                                     ending.push(pat)
                                 }
                             }
                             ParsedArrayPattern::ExpansionAssign(id) => {
-                                if !is_exact || glob.is_some() {
+                                if !glob.is_exact() {
                                     glob_err(self, id.span);
                                 } else {
-                                    glob = Some(self.define_name(id, NameSpace::Term, is_global)?)
+                                    glob = Glob::Named(self.define_name(
+                                        id,
+                                        NameSpace::Term,
+                                        is_global,
+                                    )?);
                                 }
-                                is_exact = false;
                             }
                             ParsedArrayPattern::Expansion(span) => {
-                                if !is_exact || glob.is_some() {
+                                if !glob.is_exact() {
                                     glob_err(self, span);
+                                } else {
+                                    glob = Glob::Unnamed;
                                 }
-                                is_exact = false;
                             }
                         }
                     }
@@ -305,7 +298,6 @@ impl<'a> super::build_ir::Builder<'a> {
                         starting,
                         glob,
                         ending,
-                        is_exact,
                     }
                 }
                 Constructor((a, b), pat) => {

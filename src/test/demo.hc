@@ -1,4 +1,3 @@
 module demo =
-  let a = 4
-  let b = a
+  let c = 1
 end

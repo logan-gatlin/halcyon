@@ -1,7 +1,7 @@
 use super::*;
 use crate::ir::{
-    PrettyPrint,
     left_pad,
+    PrettyPrint,
 };
 
 use colored::Colorize;
@@ -105,6 +105,7 @@ impl PrettyPrint for Instruction {
             Set(path) => format!("set {}", path.pretty()),
             Get(path) => format!("get {}", path.pretty()),
             Const(const_value) => format!("const {}", const_value.pretty()),
+            I32Const(i) => format!("i32.const {i}"),
             Func(id) => format!("func {id}"),
             StructNew(items) => {
                 format!(
@@ -175,6 +176,11 @@ impl PrettyPrint for Instruction {
             I64Op(num) => format!("i64.{}", num.pretty()),
             F32Op(num) => format!("f32.{}", num.pretty()),
             F64Op(num) => format!("f64.{}", num.pretty()),
+            ArrayNewDefault(t) => format!("array.new_default [{}]", t.pretty()),
+            ArrayLen => "array.len".into(),
+            ArrayCopy { dst_type, src_type } => {
+                format!("array.copy [{}] [{}]", dst_type.pretty(), src_type.pretty())
+            }
         }
     }
 }

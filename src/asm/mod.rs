@@ -124,6 +124,8 @@ pub enum Instruction {
     /// Stack: `[] -> [const_value]`
     Const(ConstValue),
 
+    I32Const(i32),
+
     /// Push a function reference onto the stack.
     ///
     /// Stack: `[] -> [func_ref]`
@@ -153,7 +155,28 @@ pub enum Instruction {
     /// Stack: `[elem_0, elem_1, ..., elem_n] -> [array]`
     ///
     /// Pops n values (where n is the parameter) and creates an array with those elements.
-    ArrayNewFixed { inner_type: Type, length: usize },
+    ArrayNewFixed {
+        inner_type: Type,
+        length: usize,
+    },
+
+    /// Create a new array with default-initialized elements.
+    ///
+    /// Stack: `[length: i32] -> [array]`
+    ArrayNewDefault(Type),
+
+    /// Get the length of an array.
+    ///
+    /// Stack: `[array] -> [i32]`
+    ArrayLen,
+
+    /// Copy elements from source array to destination array.
+    ///
+    /// Stack: `[dst_array, dst_offset, src_array, src_offset, length] -> []`
+    ArrayCopy {
+        dst_type: Type,
+        src_type: Type,
+    },
 
     /// Call a function.
     ///
@@ -251,6 +274,8 @@ pub struct Function {
 
 #[derive(Debug, Clone, Default)]
 pub struct Module {
+    pub name: String,
+    pub imports: IndexMap<Path, Type>,
     pub globals: IndexMap<Path, Type>,
     pub functions: Vec<Function>,
 }
@@ -271,15 +296,22 @@ pub fn lower_module(
     ir_module: crate::ir::Module,
     symbols: &SymbolTable,
 ) -> Module {
-    let mut module = Module::default();
+    let mut module = Module::new(ir_module.name.clone());
     let mut init_func = module.new_function();
     for code in ir_module.code {
         init_func.lower_ir(code, symbols);
+        init_func.push(Instruction::Drop);
     }
     module
 }
 
 impl Module {
+    fn new(name: String) -> Self {
+        Self {
+            name,
+            ..Default::default()
+        }
+    }
     fn new_function<'a>(&'a mut self) -> Encoder<'a> {
         self.functions.push(Function::new());
         Encoder {

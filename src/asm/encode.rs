@@ -1,4 +1,7 @@
-use std::collections::HashMap;
+use std::collections::{
+    BTreeSet,
+    HashMap,
+};
 
 use super::*;
 use wasm_encoder::{
@@ -110,7 +113,12 @@ impl TypeSection {
                     heap_type: HeapType::Concrete(self.new_struct(items)),
                 })
             }
-            Type::Array(_) => ValType::Ref(RefType::ARRAYREF),
+            Type::Array(inner) => {
+                ValType::Ref(RefType {
+                    nullable: true,
+                    heap_type: HeapType::Concrete(self.new_array(inner)),
+                })
+            }
             Type::Function => ValType::Ref(RefType::FUNCREF),
         }
     }
@@ -156,11 +164,14 @@ fn default_value(valtype: &ValType) -> ConstExpr {
 pub fn encode(module: Module) -> Vec<u8> {
     let mut type_section = TypeSection::new();
     let mut function_section = wasm_encoder::FunctionSection::new();
+    let mut table_section = wasm_encoder::TableSection::new();
     let mut global_section = wasm_encoder::GlobalSection::new();
     let mut export_section = wasm_encoder::ExportSection::new();
+    let mut element_section = wasm_encoder::ElementSection::new();
     let mut code_section = wasm_encoder::CodeSection::new();
 
     let mut global_namespace = HashMap::new();
+    let mut referenced_funcs: BTreeSet<u32> = BTreeSet::new();
 
     for (id, (name, type_)) in module.globals.iter().enumerate() {
         let global_id = id as u32;
@@ -229,7 +240,7 @@ pub fn encode(module: Module) -> Vec<u8> {
                         }
                         i::Const(const_value) => {
                             match const_value {
-                                ConstValue::Unit => winstr::I32Const(0),
+                                ConstValue::Unit => winstr::Nop,
                                 ConstValue::Integer(i) => winstr::I64Const(*i),
                                 ConstValue::Real(f) => winstr::F64Const((*f).into()),
                                 ConstValue::Boolean(b) => winstr::I32Const(if *b { 1 } else { 0 }),
@@ -239,7 +250,11 @@ pub fn encode(module: Module) -> Vec<u8> {
                                 ConstValue::Glyph(c) => winstr::I32Const(*c as i32),
                             }
                         }
-                        i::Func(id) => winstr::RefFunc(*id as u32),
+                        i::I32Const(i) => winstr::I32Const(*i),
+                        i::Func(id) => {
+                            referenced_funcs.insert(*id as u32);
+                            winstr::RefFunc(*id as u32)
+                        }
                         i::StructNew(items) => winstr::StructNew(type_section.new_struct(items)),
                         i::StructGet(t, field_index) => {
                             winstr::StructGet {
@@ -252,6 +267,14 @@ pub fn encode(module: Module) -> Vec<u8> {
                             winstr::ArrayNewFixed {
                                 array_type_index: type_section.new_array(inner_type),
                                 array_size: *length as u32,
+                            }
+                        }
+                        i::ArrayNewDefault(t) => winstr::ArrayNewDefault(type_section.new_array(t)),
+                        i::ArrayLen => winstr::ArrayLen,
+                        i::ArrayCopy { dst_type, src_type } => {
+                            winstr::ArrayCopy {
+                                array_type_index_dst: type_section.new_array(dst_type),
+                                array_type_index_src: type_section.new_array(src_type),
                             }
                         }
                         i::Call {
@@ -351,12 +374,26 @@ pub fn encode(module: Module) -> Vec<u8> {
                 .instruction(&winstr::End),
         );
     }
+
+    // Declare all referenced functions in the element section
+    let referenced_funcs: Vec<u32> = referenced_funcs.into_iter().collect();
+    table_section.table(wasm_encoder::TableType {
+        element_type: RefType::FUNCREF,
+        table64: false,
+        minimum: referenced_funcs.len() as u64,
+        maximum: Some(referenced_funcs.len() as u64),
+        shared: false,
+    });
+    element_section.declared(wasm_encoder::Elements::Functions(referenced_funcs.into()));
+
     let mut module = wasm_encoder::Module::new();
     module
         .section(&type_section)
         .section(&function_section)
+        .section(&table_section)
         .section(&global_section)
         .section(&export_section)
+        .section(&element_section)
         .section(&code_section);
     module.finish()
 }

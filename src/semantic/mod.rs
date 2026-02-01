@@ -80,7 +80,6 @@ fn infer_pattern(
             starting,
             glob,
             ending,
-            ..
         } => {
             let fresh_tv = env.symbols.fresh_tv();
             env.free.insert(fresh_tv);
@@ -93,7 +92,7 @@ fn infer_pattern(
                     span: pat.span,
                 });
             }
-            if let Some(glob) = glob {
+            if let Glob::Named(glob) = glob {
                 env.symbols.terms.insert(glob.clone(), type_.clone());
             }
             type_

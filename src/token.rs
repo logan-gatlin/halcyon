@@ -596,8 +596,10 @@ pub fn tokenize(
             iter.push(TokenKind::Error, start);
             continue;
         }
-        let is_ident = |c: char| (!c.is_ascii_punctuation() || c == '_') && !c.is_whitespace();
-        if !is_ident(current) {
+        let is_ident_start = |c: char| (!c.is_ascii_punctuation() || c == '_') && !c.is_whitespace();
+        let is_ident_continue =
+            |c: char| (!c.is_ascii_punctuation() || c == '_' || c == '-') && !c.is_whitespace();
+        if !is_ident_start(current) {
             let span = iter.logger.new_span(start, 1);
             iter.logger
                 .error("Unexpected character")
@@ -614,12 +616,16 @@ pub fn tokenize(
             iter.push(TokenKind::Error, start);
             continue;
         }
-        // Parse identifier or keyowrd
+        // Parse identifier or keyword
         let mut buffer: Vec<u8> = vec![];
         let _ = write!(buffer, "{current}");
         while let Some(next) = iter.peek()
-            && is_ident(next)
+            && is_ident_continue(next)
         {
+            // Don't consume a trailing hyphen
+            if next == '-' && iter.peek_nth(1).is_none_or(|c| !is_ident_continue(c) || c == '-') {
+                break;
+            }
             iter.next();
             let _ = write!(buffer, "{next}");
         }

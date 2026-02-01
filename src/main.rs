@@ -5,21 +5,6 @@ use codespan_reporting::term::termcolor::StandardStream;
 use halcyon_lib::hc_core::core_symbol_table;
 use halcyon_lib::*;
 
-/*
-fn test1<A>(a: A) -> A {
-    a
-}
-
-fn test2<B>(b: &B) -> &B {
-    b
-}
-
-fn _main() {
-    let mut i = 1;
-    let r = test2(test1(&mut i));
-}
-*/
-
 pub fn compile(
     input: &str,
     logger: &mut Logger,
@@ -28,23 +13,27 @@ pub fn compile(
     let tokens = tokenize(input.chars(), logger);
     let parse_trees = parse(logger, tokens);
 
-    for p in parse_trees {
+    if let Some(p) = parse_trees.into_iter().next() {
         let mut ir_module = build_ir(logger, symbols, p);
         semantic::analyze(&mut ir_module, symbols, logger);
-        println!("{}\n", ir_module.pretty());
+        eprintln!("{}\n", ir_module.pretty());
         let asm_module = asm::lower_module(ir_module, symbols);
-        println!("{}", asm_module.pretty());
+        //eprintln!("{}", asm_module.pretty());
         let bin = asm::encode(asm_module);
-        let wat = wasmprinter::print_bytes(bin).unwrap();
-        println!("{wat}");
+        if let Err(e) = wasmparser::validate(&bin) {
+            eprintln!("FAILED TO VALIDATE:");
+            eprintln!("{e}");
+        };
+        bin
+    } else {
+        unreachable!()
     }
-    vec![]
 }
 
 fn compile_file_arg() {
     let mut args = std::env::args().skip(1);
-    if args.len() != 1 {
-        eprintln!("Usage: halcyon <file_path>");
+    if args.len() < 1 || args.len() > 2 {
+        eprintln!("Usage: halcyon <file-path> <optional-output-path>");
         std::process::exit(1);
     }
     let path = args.next().unwrap();
@@ -53,9 +42,9 @@ fn compile_file_arg() {
     let file_id = files.add(path, str.clone());
     let mut logger = Logger::new(file_id);
     let mut symbols = core_symbol_table();
-    let _bytes = compile(&str, &mut logger, &mut symbols);
+    let bin = compile(&str, &mut logger, &mut symbols);
     let mut writer =
-        StandardStream::stdout(codespan_reporting::term::termcolor::ColorChoice::Always);
+        StandardStream::stderr(codespan_reporting::term::termcolor::ColorChoice::Always);
     let config = codespan_reporting::term::Config {
         display_style: term::DisplayStyle::Rich,
         ..Default::default()
@@ -65,6 +54,12 @@ fn compile_file_arg() {
     }
     if !logger.is_ok() {
         std::process::exit(1);
+    }
+    if let Some(path) = args.next() {
+        std::fs::write(path, bin).unwrap();
+    } else {
+        let wat = wasmprinter::print_bytes(&bin).unwrap();
+        println!("{wat}");
     }
 }
 

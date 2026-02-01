@@ -94,7 +94,7 @@ impl<'a> Builder<'a> {
                     .note("You may have meant to write a recursive function instead"));
             }
             if !is_global {
-                for capture in depth..current_depth {
+                for capture in current_depth..depth {
                     if !self.captures[capture].contains(&path) {
                         self.captures[capture].push(path.clone());
                     }
@@ -221,7 +221,7 @@ impl<'a> Builder<'a> {
         }
         this.logger.merge_with(this.name_map.logger);
         Module {
-            module_name: this.module_name,
+            name: this.module_name,
             types,
             code: this.code,
         }

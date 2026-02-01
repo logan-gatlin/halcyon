@@ -57,22 +57,19 @@ impl PrettyPrint for Pattern {
                 starting,
                 glob,
                 ending,
-                is_exact,
             } => {
+                let glob_str = match glob {
+                    Glob::None => None,
+                    Glob::Unnamed => Some("..".to_string()),
+                    Glob::Named(id) => Some(format!("..{id}")),
+                };
                 format!(
                     "[\n{},\n]",
                     starting
                         .iter()
                         .map(Pattern::pretty)
                         .map(left_pad)
-                        .chain(
-                            match (glob, is_exact) {
-                                (_, true) => None,
-                                (Some(id), _) => Some(format!("..{id}")),
-                                (None, _) => Some("..".to_string()),
-                            }
-                            .into_iter(),
-                        )
+                        .chain(glob_str)
                         .chain(ending.iter().map(Pattern::pretty).map(left_pad))
                         .collect::<Vec<_>>()
                         .join(",\n")
@@ -112,7 +109,7 @@ impl PrettyPrint for Module {
             type_definitions.push_str("\n\n");
         }
         let module = "module".red();
-        let module_name = self.module_name.yellow();
+        let module_name = self.name.yellow();
         let end = "end".red();
         format!("{module} {module_name} {equal}\n{type_definitions}{let_definitions}\n{end}")
     }
