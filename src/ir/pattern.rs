@@ -37,8 +37,15 @@ pub enum Glob {
 
 #[derive(Debug, Clone)]
 pub enum Constructor {
-    SumConstant(usize, Type),
-    SumFunction(usize, Type, Type),
+    /// Sum type variant with no inner data, like `| None`
+    SumConstant { tag: usize, sum_type: Type },
+    /// Sum type variant with inner data, like `| Some a`
+    SumFunction {
+        tag: usize,
+        sum_type: Type,
+        parameter_type: Type,
+    },
+    /// A struct constructor, effectively just a type hint
     Structure(Type),
 }
 
@@ -48,10 +55,14 @@ impl Visit<Type> for Constructor {
         f: &mut impl FnMut(&mut Type),
     ) {
         match self {
-            Constructor::SumConstant(_, t) => t._visit(f),
-            Constructor::SumFunction(_, t1, t2) => {
-                t1._visit(f);
-                t2._visit(f);
+            Constructor::SumConstant { sum_type, .. } => sum_type._visit(f),
+            Constructor::SumFunction {
+                sum_type,
+                parameter_type: inner_type,
+                ..
+            } => {
+                sum_type._visit(f);
+                inner_type._visit(f);
             }
             Constructor::Structure(t) => t._visit(f),
         }

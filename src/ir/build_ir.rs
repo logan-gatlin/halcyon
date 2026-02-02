@@ -196,7 +196,7 @@ impl<'a> Builder<'a> {
                     let Some(mut at) = this.type_definition(path.clone(), *value, &[]) else {
                         continue;
                     };
-                    if at.base.contains_type_variable(tv) {
+                    if at.base.always_contains_type_variable(tv) {
                         this.logger
                             .error("Uninhabited type")
                             .primary(

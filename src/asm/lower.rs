@@ -1,5 +1,6 @@
 use crate::Visit;
 use crate::ir::{
+    Constructor,
     Glob,
     IrNode,
     Pattern,
@@ -207,7 +208,44 @@ impl<'a> Encoder<'a> {
                     self.lower_pattern(pattern, scope, symbols);
                 }
             }
-            p::Constructor(constructor, inner) => todo!(),
+            p::Constructor(constructor, inner) => {
+                use crate::ir::Constructor;
+                match constructor {
+                    Constructor::Structure(_) => {
+                        // Structure constructor is just a type hint, match inner pattern
+                        self.lower_pattern(*inner, scope, symbols);
+                    }
+                    Constructor::SumConstant { tag, .. } | Constructor::SumFunction { tag, .. } => {
+                        // Sum type is Struct([I32, Any]) - tag at index 0, value at index 1
+                        let sum_type: Box<[Type]> = [Type::I32, Type::Any].into();
+
+                        let temporary = self.temporary_name("constructor_pattern");
+                        self.new_register(temporary.clone(), scope, type_.clone());
+                        self.push(i::Set(temporary.clone()));
+
+                        // Check if tag matches, break if not
+                        self.extend([
+                            i::Get(temporary.clone()),
+                            i::StructGet(sum_type.clone(), 0),
+                            i::I32Const(tag as i32),
+                            i::I32Op(NumberOperation::Ne),
+                            i::BreakIf(0),
+                        ]);
+
+                        // Get value and match inner pattern
+                        self.extend([i::Get(temporary), i::StructGet(sum_type, 1)]);
+                        // Cast anyref to the expected type
+                        let inner_type = lower_type(&inner.type_, symbols);
+                        match &inner_type {
+                            Type::Struct(fields) => self.push(i::RefCastStruct(fields.clone())),
+                            Type::Array(inner) => self.push(i::RefCastArray(inner.clone())),
+                            Type::Any => {}
+                            _ => {}
+                        }
+                        self.lower_pattern(*inner, scope, symbols);
+                    }
+                }
+            }
             p::Immediate(const_value) => {
                 let double_equal_path = BinaryOp::DoubleEqual.path();
                 if double_equal_path.major != self.module.name {
@@ -216,11 +254,24 @@ impl<'a> Encoder<'a> {
                         .entry(double_equal_path.clone())
                         .or_insert_with(|| lower_type(&BinaryOp::DoubleEqual.get_type(), symbols));
                 }
-                self.extend([i::Const(const_value), i::Get(double_equal_path)]);
-                self.call_closure();
-                self.call_closure();
+                let Type::Struct(inner_types) = lower_type(&const_value.type_of(), symbols) else {
+                    unreachable!()
+                };
                 self.extend([
-                    i::StructGet([lower_type(&semantic::Type::Boolean, symbols)].into(), 0),
+                    i::Const(const_value),
+                    i::StructNew(inner_types),
+                    i::Get(double_equal_path),
+                ]);
+                self.call_closure();
+                self.call_closure();
+                let Type::Struct(bool_fields) = lower_type(&semantic::Type::Boolean, symbols)
+                else {
+                    unreachable!()
+                };
+                self.extend([
+                    i::RefCastStruct(bool_fields.clone()),
+                    i::StructGet(bool_fields, 0),
+                    i::I32Const(1),
                     i::I32Op(NumberOperation::Xor),
                     i::BreakIf(0),
                 ]);
@@ -344,13 +395,27 @@ impl<'a> Encoder<'a> {
                 let new_func_index = new_enc.func_index;
                 let capture_array_name = new_enc.temporary_name("captured_symbols");
                 new_enc.new_parameter(capture_array_name.clone(), Type::Array(Type::Any.into()));
-                let semantic::Type::Function(parameter_type, return_type) = ir.type_ else {
+                let semantic::Type::Function(parameter_type, ..) = ir.type_ else {
                     unreachable!()
                 };
                 let parameter_type = lower_type(&parameter_type, symbols);
-                let return_type = lower_type(&return_type, symbols);
-                new_enc.new_parameter(parameter_name.inner, parameter_type);
-                new_enc.new_return(return_type);
+                let param_anyref_name = new_enc.temporary_name("parameter");
+                new_enc.new_parameter(param_anyref_name.clone(), Type::Any);
+                new_enc.new_return(Type::Any);
+                // Cast the anyref parameter to the actual type and bind to the user's name
+                new_enc.new_register(
+                    parameter_name.inner.clone(),
+                    ScopeKind::Local,
+                    parameter_type.clone(),
+                );
+                new_enc.push(i::Get(param_anyref_name));
+                match &parameter_type {
+                    Type::Struct(fields) => new_enc.push(i::RefCastStruct(fields.clone())),
+                    Type::Array(inner) => new_enc.push(i::RefCastArray(inner.clone())),
+                    Type::Any => {} // No cast needed
+                    _ => {} // Primitives don't need casting (i32, i64, etc. shouldn't appear here)
+                }
+                new_enc.push(i::Set(parameter_name.inner));
                 for (id, (capture_name, capture_type)) in capture_names
                     .clone()
                     .into_iter()
@@ -358,13 +423,24 @@ impl<'a> Encoder<'a> {
                     .enumerate()
                 {
                     let capture_type = lower_type(&capture_type, symbols);
-                    new_enc.new_register(capture_name.clone(), ScopeKind::Local, capture_type);
+                    new_enc.new_register(
+                        capture_name.clone(),
+                        ScopeKind::Local,
+                        capture_type.clone(),
+                    );
                     new_enc.extend([
                         i::Get(capture_array_name.clone()),
                         i::I32Const(id as i32),
                         i::ArrayGet(Type::Any),
-                        i::Set(capture_name.clone()),
                     ]);
+                    // Cast anyref from array to the actual capture type
+                    match &capture_type {
+                        Type::Struct(fields) => new_enc.push(i::RefCastStruct(fields.clone())),
+                        Type::Array(inner) => new_enc.push(i::RefCastArray(inner.clone())),
+                        Type::Any => {} // No cast needed
+                        _ => {}         // Primitives shouldn't appear here (captured in closures)
+                    }
+                    new_enc.push(i::Set(capture_name.clone()));
                 }
                 new_enc.lower_ir(*body, symbols);
                 let num_captures = capture_names.len();
@@ -406,6 +482,21 @@ impl<'a> Encoder<'a> {
             Unreachable => {
                 self.push(i::Unreachable);
             }
+        }
+    }
+
+    pub fn lower_constructor(
+        &mut self,
+        cons: Constructor,
+    ) {
+        match cons {
+            Constructor::SumConstant { tag, sum_type } => todo!(),
+            Constructor::SumFunction {
+                tag,
+                sum_type,
+                parameter_type,
+            } => todo!(),
+            Constructor::Structure(_) => todo!(),
         }
     }
 

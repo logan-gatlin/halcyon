@@ -98,9 +98,16 @@ impl<'a> super::build_ir::Builder<'a> {
                     self.symbols.constructors.insert(
                         cons_path.clone(),
                         if type_ == Type::Unit {
-                            Constructor::SumConstant(id, named_type.clone())
+                            Constructor::SumConstant {
+                                tag: id,
+                                sum_type: named_type.clone(),
+                            }
                         } else {
-                            Constructor::SumFunction(id, type_.clone(), named_type.clone())
+                            Constructor::SumFunction {
+                                tag: id,
+                                sum_type: named_type.clone(),
+                                parameter_type: type_.clone(),
+                            }
                         },
                     );
                     self.symbols.terms.insert(

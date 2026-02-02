@@ -4,8 +4,7 @@
     WebAssembly functionality.
 */
 
-use crate::SymbolTable;
-use crate::ir::Path;
+use crate::ir::*;
 use crate::semantic::{
     AbstractType,
     Type,
@@ -70,7 +69,7 @@ pub fn core_symbol_table() -> SymbolTable {
         .into_iter()
         .map(|op| {
             let mut type_ = op.get_type();
-            freshen_type_variables(&mut type_, table.fresh_tv_source());
+            freshen_type_variables(&mut type_, &table);
             (op.path(), op.get_type())
         })
         .collect::<Vec<_>>();
@@ -79,7 +78,7 @@ pub fn core_symbol_table() -> SymbolTable {
         .into_iter()
         .map(|op| {
             let mut type_ = op.get_type();
-            freshen_type_variables(&mut type_, table.fresh_tv_source());
+            freshen_type_variables(&mut type_, &table);
             (op.path(), op.get_type())
         })
         .collect::<Vec<_>>();
@@ -99,7 +98,10 @@ pub fn core_symbol_table() -> SymbolTable {
             ),
             (
                 "concatenate_arrays",
-                Type::func(generic_array_type.clone(), generic_array_type.clone()),
+                Type::func(
+                    generic_array_type.clone(),
+                    Type::func(generic_array_type.clone(), generic_array_type.clone()),
+                ),
             ),
         ]
         .into_iter()

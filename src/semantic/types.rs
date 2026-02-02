@@ -83,17 +83,20 @@ pub enum Type {
     Instantiation(Path, Vec<Type>),
 }
 
-pub fn freshen_type_variables<T: Visit<Type>>(
+pub fn freshen_type_variables<T, S>(
     t: &mut T,
-    mut fresh_type_variable: impl FnMut() -> TypeVariable,
-) {
+    tv_source: S,
+) where
+    T: Visit<Type>,
+    S: TypeVariableSource,
+{
     let mut map = HashMap::new();
     t.visit(|t: &mut Type| {
         if let Type::Variable(t) = t {
             if let Some(tv) = map.get(t) {
                 *t = *tv;
             } else {
-                let tv = fresh_type_variable();
+                let tv = tv_source.fresh_tv();
                 map.insert(*t, tv);
                 *t = tv;
             }
@@ -101,7 +104,27 @@ pub fn freshen_type_variables<T: Visit<Type>>(
     })
 }
 
-// THIS DOES NOT WORK BECAUSE VISIT IS BOTTOM UP
+pub fn freshen_type_variables_with_map<T, S>(
+    t: &mut T,
+    tv_source: S,
+    map: &mut HashMap<TypeVariable, TypeVariable>,
+) where
+    T: Visit<Type>,
+    S: TypeVariableSource,
+{
+    t.visit(|t: &mut Type| {
+        if let Type::Variable(tv) = t {
+            if let Some(new_tv) = map.get(tv) {
+                *tv = *new_tv;
+            } else {
+                let new_tv = tv_source.fresh_tv();
+                map.insert(*tv, new_tv);
+                *tv = new_tv;
+            }
+        }
+    })
+}
+
 pub fn substitute_type_variables<T: Visit<Type>>(
     t: &mut T,
     solution: &[Solution],
@@ -134,33 +157,40 @@ impl Type {
     ) -> Type {
         Type::Function(parameter.into(), returns.into())
     }
-    /*
-    pub fn field_type(
-        &self,
-        name: &str,
-    ) -> Option<Type> {
-        todo!()
-    }
-    */
-    pub fn contains_type_variable(
+    pub fn always_contains_type_variable(
         &self,
         tv: TypeVariable,
     ) -> bool {
         match self {
             Type::Any
-            | Type::Sum { .. }
             | Type::Unit
             | Type::Integer
             | Type::Real
             | Type::Boolean
             | Type::String
             | Type::Glyph => false,
+            // Sum types can be recursive without being infinite, such as with linked lists:
+            // ```
+            // type LL = fn a => | Cons (LL a) | Nil
+            // ```
+            // So long as at least one variant does not contain itself, the type is constructable.
+            Type::Sum { variant_types, .. } => {
+                variant_types
+                    .iter()
+                    .all(|t| t.always_contains_type_variable(tv))
+            }
             Type::Variable(t) => *t == tv,
-            Type::Array(t) => t.contains_type_variable(tv),
-            Type::Struct { fields, .. } => fields.values().any(|t| t.contains_type_variable(tv)),
-            Type::Tuple(items) => items.iter().any(|t| t.contains_type_variable(tv)),
-            Type::Function(a, b) => a.contains_type_variable(tv) || b.contains_type_variable(tv),
-            Type::Instantiation(_, items) => items.iter().any(|t| t.contains_type_variable(tv)),
+            Type::Array(t) => t.always_contains_type_variable(tv),
+            Type::Struct { fields, .. } => {
+                fields.values().any(|t| t.always_contains_type_variable(tv))
+            }
+            Type::Tuple(items) => items.iter().any(|t| t.always_contains_type_variable(tv)),
+            Type::Function(a, b) => {
+                a.always_contains_type_variable(tv) || b.always_contains_type_variable(tv)
+            }
+            Type::Instantiation(_, items) => {
+                items.iter().any(|t| t.always_contains_type_variable(tv))
+            }
         }
     }
 }
@@ -170,7 +200,6 @@ impl Visit<Type> for Type {
         &mut self,
         f: &mut impl FnMut(&mut Type),
     ) {
-        f(self);
         match self {
             Type::Any
             | Type::Unit
@@ -195,6 +224,7 @@ impl Visit<Type> for Type {
                 b._visit(f);
             }
         }
+        f(self);
     }
 }
 

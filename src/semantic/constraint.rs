@@ -31,6 +31,15 @@ pub struct Solution {
     pub new: Type,
 }
 
+impl Visit<Type> for Solution {
+    fn _visit(
+        &mut self,
+        f: &mut impl FnMut(&mut Type),
+    ) {
+        self.new._visit(f);
+    }
+}
+
 #[derive(Debug, Clone, derive_new::new)]
 enum TypeError {
     Mismatch {
@@ -53,15 +62,110 @@ pub(super) fn solve_constraints(
     let struct_cons = &mut env.constraints.struct_;
     let mut solutions = vec![];
     let mut type_errors = vec![];
+    // Keep solving type constraints until:
+    // * None remain (success case)
+    // * An error is caught (failure case)
+    // * No progress can be made (ambiguous case, considered a failure)
     loop {
-        let (left, right, span) = if let Some(c) = eq_cons.pop() {
-            (c.left, c.right, c.span)
-        } else if let Some(StructConstraint { base, field, span }) = struct_cons.pop() {
+        let mut progress = false;
+        // Solve current equality constraints
+        while let Some(c) = eq_cons.pop() {
+            progress = true;
+            let (left, right, span) = (c.left, c.right, c.span);
+            match (left, right) {
+                (Type::Variable(t1), Type::Variable(t2)) if t1 != t2 => {
+                    let t2 = Type::Variable(t2);
+                    let new_solution = [Solution::new(t1, t2.clone())];
+                    substitute_type_variables(eq_cons, &new_solution);
+                    substitute_type_variables(struct_cons, &new_solution);
+                    substitute_type_variables(&mut solutions, &new_solution);
+                    solutions.push(new_solution[0].clone());
+                }
+                (t1, t2) if t1 == t2 => {}
+                (Type::Variable(tv), t) | (t, Type::Variable(tv))
+                    if !t.always_contains_type_variable(tv) =>
+                {
+                    let new_solution = [Solution::new(tv, t.clone())];
+                    substitute_type_variables(eq_cons, &new_solution);
+                    substitute_type_variables(struct_cons, &new_solution);
+                    substitute_type_variables(&mut solutions, &new_solution);
+                    solutions.push(new_solution[0].clone());
+                }
+                (Type::Function(a1, b1), Type::Function(a2, b2)) => {
+                    eq_cons.push(EqualityConstraint::new(*a1, *a2, span));
+                    eq_cons.push(EqualityConstraint::new(*b1, *b2, span));
+                }
+                (Type::Array(t1), Type::Array(t2)) => {
+                    eq_cons.push(EqualityConstraint::new(*t1, *t2, span));
+                }
+                (Type::Tuple(p1), Type::Tuple(p2)) if p1.len() == p2.len() => {
+                    for (t1, t2) in p1.into_iter().zip(p2) {
+                        eq_cons.push(EqualityConstraint::new(t1, t2, span));
+                    }
+                }
+                (
+                    Type::Sum {
+                        variant_names: names1,
+                        variant_types: types1,
+                        name: name1,
+                    },
+                    Type::Sum {
+                        variant_names: names2,
+                        variant_types: types2,
+                        name: name2,
+                    },
+                ) if name1 == name2 && types1.len() == types2.len() => {
+                    for (t1, t2) in types1.into_iter().zip(types2) {
+                        eq_cons.push(EqualityConstraint::new(t1, t2, span));
+                    }
+                }
+                (
+                    Type::Struct {
+                        name: name1,
+                        fields: f1,
+                    },
+                    Type::Struct {
+                        name: name2,
+                        fields: f2,
+                    },
+                ) if name1 == name2 => {
+                    for (t1, t2) in f1.into_values().zip(f2.into_values()) {
+                        eq_cons.push(EqualityConstraint::new(t1, t2, span));
+                    }
+                }
+                (Type::Instantiation(name1, types1), Type::Instantiation(name2, types2))
+                    if name1 == name2 && types1.len() == types2.len() =>
+                {
+                    for (t1, t2) in types1.into_iter().zip(types2) {
+                        eq_cons.push(EqualityConstraint::new(t1, t2, span));
+                    }
+                }
+                (Type::Instantiation(path, types), t2) | (t2, Type::Instantiation(path, types)) => {
+                    if let Some(t1) = env
+                        .symbols
+                        .get_type(&path)
+                        .clone()
+                        .instantiate(&types)
+                        .into_log(logger, span)
+                    {
+                        eq_cons.push(EqualityConstraint::new(t1, t2, span));
+                    }
+                }
+                (t1, t2) => {
+                    type_errors.push(TypeError::new_mismatch(t1, t2, span));
+                }
+            }
+        }
+        // Solve as many struct constraints as possible
+        let mut remaining_struct_cons = Vec::new();
+        while let Some(StructConstraint { base, field, span }) = struct_cons.pop() {
             if let Type::Struct { fields, .. } = &base
                 && let Some(t) = fields.get(&field.inner).cloned()
             {
+                progress = true;
                 eq_cons.push(EqualityConstraint::new(t.clone(), field.type_, span));
             } else if let Type::Instantiation(path, ts) = &base {
+                progress = true;
                 let t = env
                     .symbols
                     .get_type(path)
@@ -69,91 +173,19 @@ pub(super) fn solve_constraints(
                     .instantiate(ts)
                     .unwrap_or_else(|_| unreachable!());
                 struct_cons.push(StructConstraint::new(t, field, span));
+            } else if let Type::Variable(_) = base {
+                remaining_struct_cons.push(StructConstraint::new(base, field, span));
             } else {
                 type_errors.push(TypeError::new_struct(base, field.inner, span));
             }
-            continue;
-        } else {
+        }
+        *struct_cons = remaining_struct_cons;
+
+        if !progress && eq_cons.is_empty() {
+            for StructConstraint { base, field, span } in struct_cons.drain(..) {
+                type_errors.push(TypeError::new_struct(base, field.inner, span));
+            }
             break;
-        };
-        match (left, right) {
-            (Type::Variable(t1), Type::Variable(t2)) if t1 != t2 => {
-                let t2 = Type::Variable(t2);
-                let new_solution = [Solution::new(t1, t2.clone())];
-                substitute_type_variables(eq_cons, &new_solution);
-                substitute_type_variables(struct_cons, &new_solution);
-                solutions.push(new_solution[0].clone());
-            }
-            (t1, t2) if t1 == t2 => {}
-            (Type::Variable(tv), t) | (t, Type::Variable(tv)) if !t.contains_type_variable(tv) => {
-                let new_solution = [Solution::new(tv, t.clone())];
-                substitute_type_variables(eq_cons, &new_solution);
-                substitute_type_variables(struct_cons, &new_solution);
-                solutions.push(new_solution[0].clone());
-            }
-            (Type::Function(a1, b1), Type::Function(a2, b2)) => {
-                eq_cons.push(EqualityConstraint::new(*a1, *a2, span));
-                eq_cons.push(EqualityConstraint::new(*b1, *b2, span));
-            }
-            (Type::Array(t1), Type::Array(t2)) => {
-                eq_cons.push(EqualityConstraint::new(*t1, *t2, span));
-            }
-            (Type::Tuple(p1), Type::Tuple(p2)) if p1.len() == p2.len() => {
-                for (t1, t2) in p1.into_iter().zip(p2) {
-                    eq_cons.push(EqualityConstraint::new(t1, t2, span));
-                }
-            }
-            (
-                Type::Sum {
-                    variant_names: names1,
-                    variant_types: types1,
-                    ..
-                },
-                Type::Sum {
-                    variant_names: names2,
-                    variant_types: types2,
-                    ..
-                },
-            ) if names1 == names2 => {
-                for (t1, t2) in types1.into_iter().zip(types2) {
-                    eq_cons.push(EqualityConstraint::new(t1, t2, span));
-                }
-            }
-            (
-                Type::Struct {
-                    name: name1,
-                    fields: f1,
-                },
-                Type::Struct {
-                    name: name2,
-                    fields: f2,
-                },
-            ) if name1 == name2 => {
-                for (t1, t2) in f1.into_values().zip(f2.into_values()) {
-                    eq_cons.push(EqualityConstraint::new(t1, t2, span));
-                }
-            }
-            (Type::Instantiation(_, types1), Type::Instantiation(_, types2))
-                if types1.len() == types2.len() =>
-            {
-                for (t1, t2) in types1.into_iter().zip(types2) {
-                    eq_cons.push(EqualityConstraint::new(t1, t2, span));
-                }
-            }
-            (Type::Instantiation(path, types), t2) | (t2, Type::Instantiation(path, types)) => {
-                if let Some(t1) = env
-                    .symbols
-                    .get_type(&path)
-                    .clone()
-                    .instantiate(&types)
-                    .into_log(logger, span)
-                {
-                    eq_cons.push(EqualityConstraint::new(t1, t2, span));
-                }
-            }
-            (t1, t2) => {
-                type_errors.push(TypeError::new_mismatch(t1, t2, span));
-            }
         }
     }
     type_errors.reverse();
@@ -176,7 +208,7 @@ pub(super) fn solve_constraints(
                     .primary("This field is incorrect", span)
                     .note(format!("The type {type_} does not have a field `{field}`"));
                 if matches!(type_, Type::Variable(_)) {
-                    e.note("Try providing a type hint for this expression")
+                    e.note("This field access is ambiguous. Try providing a type hint.")
                 } else {
                     e
                 }

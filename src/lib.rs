@@ -47,8 +47,8 @@ pub use ir::{
 pub use parse::parse;
 pub use token::tokenize;
 
-//#[cfg(test)]
-//mod test;
+#[cfg(test)]
+mod test;
 
 pub use indoc::*;
 pub use logging::*;

@@ -83,42 +83,54 @@ fn infer_pattern(
         } => {
             let fresh_tv = env.symbols.fresh_tv();
             env.free.insert(fresh_tv);
-            let type_ = Type::Variable(fresh_tv);
+            let element_type = Type::Variable(fresh_tv);
             for pat in starting.iter_mut().chain(ending.iter_mut()) {
                 infer_pattern(pat, env);
                 env.constraints.equality.push(EqualityConstraint {
                     left: pat.type_.clone(),
-                    right: type_.clone(),
+                    right: element_type.clone(),
                     span: pat.span,
                 });
             }
             if let Glob::Named(glob) = glob {
-                env.symbols.terms.insert(glob.clone(), type_.clone());
+                // The glob has the type of the surrounding array, array's inner type
+                env.symbols
+                    .terms
+                    .insert(glob.clone(), Type::Array(element_type.clone().into()));
             }
-            type_
+            Type::Array(element_type.into())
         }
-        PatternKind::Constructor(Constructor::SumConstant(_, t), pat) => {
-            freshen_type_variables(t, env.symbols.fresh_tv_source());
+        PatternKind::Constructor(Constructor::SumConstant { sum_type, .. }, pat) => {
+            freshen_type_variables(sum_type, &env.symbols);
             infer_pattern(pat, env);
             env.constraints.equality.push(EqualityConstraint::new(
-                t.clone(),
+                pat.type_.clone(),
+                Type::Unit,
+                span,
+            ));
+            sum_type.clone()
+        }
+        PatternKind::Constructor(
+            Constructor::SumFunction {
+                sum_type,
+                parameter_type: inner_type,
+                ..
+            },
+            pat,
+        ) => {
+            let mut map = HashMap::new();
+            freshen_type_variables_with_map(sum_type, &env.symbols, &mut map);
+            freshen_type_variables_with_map(inner_type, &env.symbols, &mut map);
+            infer_pattern(pat, env);
+            env.constraints.equality.push(EqualityConstraint::new(
+                inner_type.clone(),
                 pat.type_.clone(),
                 span,
             ));
-            t.clone()
-        }
-        PatternKind::Constructor(Constructor::SumFunction(_, t1, t2), pat) => {
-            freshen_type_variables(t1, env.symbols.fresh_tv_source());
-            freshen_type_variables(t2, env.symbols.fresh_tv_source());
-            infer_pattern(pat, env);
-            env.constraints.equality.push(EqualityConstraint::new(
-                t1.clone(),
-                pat.type_.clone(),
-                span,
-            ));
-            t2.clone()
+            sum_type.clone()
         }
         PatternKind::Constructor(Constructor::Structure(t), pat) => {
+            freshen_type_variables(t, &env.symbols);
             infer_pattern(pat, env);
             env.constraints.equality.push(EqualityConstraint::new(
                 t.clone(),
@@ -141,11 +153,14 @@ fn infer_pattern(
     pat.type_ = type_;
 }
 
-pub fn freshen_nonfree_type_variables<T: Visit<Type>>(
+pub fn freshen_nonfree_type_variables<T, S>(
     t: &mut T,
-    mut fresh_type_variable: impl FnMut() -> TypeVariable,
+    tv_source: S,
     free: &FreeVariableSet,
-) {
+) where
+    T: Visit<Type>,
+    S: TypeVariableSource,
+{
     let mut map = HashMap::new();
     t.visit(|t: &mut Type| {
         if let Type::Variable(t) = t
@@ -154,7 +169,7 @@ pub fn freshen_nonfree_type_variables<T: Visit<Type>>(
             if let Some(tv) = map.get(t) {
                 *t = *tv;
             } else {
-                let tv = fresh_type_variable();
+                let tv = tv_source.fresh_tv();
                 map.insert(*t, tv);
                 *t = tv;
             }
@@ -182,7 +197,7 @@ fn infer_ir<'a, 'b, 'c>(
             };
             infer_pattern(assignee, new_env);
             infer_ir(value, new_env);
-            infer_ir(then, env);
+            infer_ir(then, new_env);
             infer_ir(else_, env);
             env.constraints.equality.extend_from_slice(&[
                 EqualityConstraint {
@@ -202,7 +217,7 @@ fn infer_ir<'a, 'b, 'c>(
         IrKind::Identifier(path) => {
             let mut type_ = env.symbols.get_term(path).clone();
             let old_free = env.free.clone();
-            freshen_nonfree_type_variables(&mut type_, env.symbols.fresh_tv_source(), &old_free);
+            freshen_nonfree_type_variables(&mut type_, &env.symbols, &old_free);
             type_
         }
         IrKind::Tuple(nodes) => {
@@ -271,11 +286,7 @@ fn infer_ir<'a, 'b, 'c>(
                 .iter()
                 .map(|c| {
                     let mut type_ = new_env.symbols.get_term(c).clone();
-                    freshen_nonfree_type_variables(
-                        &mut type_,
-                        new_env.symbols.fresh_tv_source(),
-                        &new_env.free,
-                    );
+                    freshen_nonfree_type_variables(&mut type_, &new_env.symbols, &new_env.free);
                     type_
                 })
                 .collect();

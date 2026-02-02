@@ -12,7 +12,7 @@ Note that error messages may be printed to stderr, so filter the output if neede
 cargo run -- <input-path>
 ```
 The second way is to provide an output binary path.
-The compiled binary (wasm) file will be written to this location
+The compiled binary (wasm) file will be written to this location.
 ```sh
 cargo run -- <input-path> <output-path>
 ```
@@ -21,6 +21,7 @@ cargo run -- <input-path> <output-path>
 Halcyon is an immutable functional programming language based on ML.
 It's type system uses type variables to achieve parametric polymorphism.
 The target platform for Halcyon is WebAssembly.
+Halcyon source files end in `.hc`.
 
 # Implementation
 The compiler runs in phases:
@@ -30,12 +31,19 @@ The compiler runs in phases:
 * [Type checking](src/semantic/)
 * [Code generation](src/asm/)
 
+## Tokenization and parsing
+The grammar is informally specified [here](./GRAMMAR.md).
+
 ## IR generation
 The syntax tree produced by the parser is reduced into a kind of lambda calculus which is the IR.
 Several simplifications are made:
 * Binary and unary operators become function calls
 * Array construction is reduced to a sequence of append function calls
 * `let`, `if`, and `match` constructs are unified into `let <pattern> = <predicate> else <fallback>`
+
+## Type checking
+Types are determined using the hindley-milner type inference algorithm.
+Type equality is semantic, not structural.
 
 ## Code generation
 Internally, we rely on the GC proposal for handling data.
@@ -52,6 +60,5 @@ This is because WASM does not support type variables, so types like 'a -> 'a are
 After a closure is called, it is necessary to cast the result to its appropriate type.
 This should never fail.
 
-It is not always possible or practical to construct a type all at once.
-Therefore, generated code uses nullable and mutable references.
+It is not always possible or practical to construct a type all at once, so generated code uses nullable and mutable references.
 In practice, a reference should never be null or mutated after construction.

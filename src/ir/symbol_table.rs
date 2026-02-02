@@ -1,4 +1,7 @@
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{
+    AtomicU64,
+    Ordering,
+};
 
 use super::*;
 
@@ -14,17 +17,6 @@ pub struct SymbolTable {
 impl SymbolTable {
     pub fn new() -> Self {
         Self::default()
-    }
-    pub fn fresh_tv(&mut self) -> TypeVariable {
-        let tv = self
-            .current_type_variable
-            .load(std::sync::atomic::Ordering::Relaxed);
-        self.current_type_variable
-            .store(tv + 1, std::sync::atomic::Ordering::Relaxed);
-        tv
-    }
-    pub fn fresh_tv_source(&mut self) -> impl FnMut() -> TypeVariable {
-        || self.fresh_tv()
     }
     pub fn contains_symbol(
         &self,
@@ -60,5 +52,39 @@ impl SymbolTable {
         self.constructors
             .get(path)
             .unwrap_or_else(|| unreachable!("Accessed {path}"))
+    }
+}
+
+pub trait TypeVariableSource {
+    fn fresh_tv(&self) -> TypeVariable;
+}
+
+impl TypeVariableSource for SymbolTable {
+    fn fresh_tv(&self) -> TypeVariable {
+        self.current_type_variable.fresh_tv()
+    }
+}
+
+impl TypeVariableSource for AtomicU64 {
+    fn fresh_tv(&self) -> TypeVariable {
+        self.fetch_add(1, Ordering::Relaxed)
+    }
+}
+
+impl<T> TypeVariableSource for &T
+where
+    T: TypeVariableSource,
+{
+    fn fresh_tv(&self) -> TypeVariable {
+        TypeVariableSource::fresh_tv(*self)
+    }
+}
+
+impl<T> TypeVariableSource for &mut T
+where
+    T: TypeVariableSource,
+{
+    fn fresh_tv(&self) -> TypeVariable {
+        TypeVariableSource::fresh_tv(&**self)
     }
 }
