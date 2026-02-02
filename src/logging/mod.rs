@@ -23,6 +23,13 @@ impl Logger {
             diagnostics: vec![],
         }
     }
+    /// Produces a mock logger for testing purposes
+    pub fn mock() -> Self {
+        Self {
+            id: 0,
+            diagnostics: vec![],
+        }
+    }
     pub fn spawn_new(&self) -> Self {
         Self {
             id: self.id,

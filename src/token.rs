@@ -46,7 +46,7 @@ impl std::fmt::Display for Base {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenKind {
     LeftParen,
     RightParen,
@@ -140,18 +140,6 @@ impl TokenKind {
             LineComment(_) | BlockComment(_) | DocComment(_) | Error => Extra,
         }
     }
-}
-
-impl PartialEq for TokenKind {
-    fn eq(
-        &self,
-        other: &Self,
-    ) -> bool {
-        std::mem::discriminant(self) == std::mem::discriminant(other)
-    }
-}
-
-impl Eq for TokenKind {
 }
 
 impl std::fmt::Display for TokenKind {
@@ -549,6 +537,12 @@ pub fn tokenize(
             if iter.peek().is_some_and(|c| c == 'e') {
                 iter.next();
                 let _ = write!(buffer, "e");
+                if let Some(sign) = iter.peek()
+                    && (sign == '+' || sign == '-')
+                {
+                    iter.next();
+                    let _ = write!(buffer, "{sign}");
+                }
                 while let Some(next) = iter.peek()
                     && is_digit(next)
                 {
@@ -596,7 +590,8 @@ pub fn tokenize(
             iter.push(TokenKind::Error, start);
             continue;
         }
-        let is_ident_start = |c: char| (!c.is_ascii_punctuation() || c == '_') && !c.is_whitespace();
+        let is_ident_start =
+            |c: char| (!c.is_ascii_punctuation() || c == '_') && !c.is_whitespace();
         let is_ident_continue =
             |c: char| (!c.is_ascii_punctuation() || c == '_' || c == '-') && !c.is_whitespace();
         if !is_ident_start(current) {
@@ -623,7 +618,11 @@ pub fn tokenize(
             && is_ident_continue(next)
         {
             // Don't consume a trailing hyphen
-            if next == '-' && iter.peek_nth(1).is_none_or(|c| !is_ident_continue(c) || c == '-') {
+            if next == '-'
+                && iter
+                    .peek_nth(1)
+                    .is_none_or(|c| !is_ident_continue(c) || c == '-')
+            {
                 break;
             }
             iter.next();
@@ -741,7 +740,7 @@ fn bake_string(
                             acc
                         }
                     });
-                    let bytes: Vec<_> = collect_hex_bytes(&[iter.next(), iter.next()]);
+                    let bytes: Vec<_> = collect_hex_bytes(&chars);
                     if bytes.len() != 2 {
                         let span = logger.new_span(start - 1, 4);
                         logger.error("Unknown escape sequence")
@@ -752,7 +751,7 @@ fn bake_string(
                         return None;
                     }
                     start += length;
-                    unsafe { char::from_u32_unchecked(bytes[0] << 8 | bytes[1]) }
+                    unsafe { char::from_u32_unchecked(bytes[0] << 4 | bytes[1]) }
                 }
                 'w' => {
                     let bytes =
@@ -766,7 +765,7 @@ fn bake_string(
                     start += 4;
                     unsafe {
                         char::from_u32_unchecked(
-                            bytes[0] << 24 | bytes[1] << 16 | bytes[2] << 8 | bytes[3],
+                            bytes[0] << 12 | bytes[1] << 8 | bytes[2] << 4 | bytes[3],
                         )
                     }
                 }
@@ -783,4 +782,180 @@ fn bake_string(
         })
     }
     Some(baked)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn lex(input: &str) -> Vec<TokenKind> {
+        let mut logger = Logger::new(0);
+        let tokens = tokenize(input.chars(), &mut logger);
+        assert!(logger.is_ok(), "Tokenizer produced errors: {:?}", logger);
+        tokens.into_iter().map(|t| t.inner).collect()
+    }
+
+    #[test]
+    fn test_symbols() {
+        // Updated expectation: The test string includes symbols.
+        // We need to match the exact TokenKind variants produced by the tokenizer.
+        use TokenKind::*;
+        let tokens =
+            lex("() {} [] , : :: ; . .. + - / * +. -. /. *. % |> << >> -> => != = == > >= < <= |");
+        let expected = vec![
+            LeftParen,
+            RightParen,
+            LeftBrace,
+            RightBrace,
+            LeftSquare,
+            RightSquare,
+            Comma,
+            Colon,
+            DoubleColon,
+            Semicolon,
+            Dot,
+            DotDot,
+            Plus,
+            Minus,
+            Slash,
+            Star,
+            PlusDot,
+            MinusDot,
+            SlashDot,
+            StarDot,
+            Percent,
+            Apply,
+            ComposeLeft,
+            ComposeRight,
+            Arrow,
+            FatArrow,
+            BangEqual,
+            Equal,
+            DoubleEqual,
+            Greater,
+            GreaterEqual,
+            Less,
+            LessEqual,
+            Pipe,
+        ];
+
+        let tokens_str: Vec<String> = tokens.iter().map(|t| t.to_string()).collect();
+        let expected_str: Vec<String> = expected.iter().map(|t| t.to_string()).collect();
+
+        assert_eq!(tokens_str, expected_str);
+    }
+
+    #[test]
+    fn test_keywords() {
+        let tokens = lex(
+            "module import use end match with let type do of in if then else and or xor not true false fn",
+        );
+        let expected = vec![
+            TokenKind::Module,
+            TokenKind::Import,
+            TokenKind::Use,
+            TokenKind::End,
+            TokenKind::Match,
+            TokenKind::With,
+            TokenKind::Let,
+            TokenKind::Type,
+            TokenKind::Do,
+            TokenKind::Of,
+            TokenKind::In,
+            TokenKind::If,
+            TokenKind::Then,
+            TokenKind::Else,
+            TokenKind::And,
+            TokenKind::Or,
+            TokenKind::Xor,
+            TokenKind::Not,
+            TokenKind::True,
+            TokenKind::False,
+            TokenKind::Fn,
+        ];
+        let tokens_str: Vec<String> = tokens.iter().map(|t| t.to_string()).collect();
+        let expected_str: Vec<String> = expected.iter().map(|t| t.to_string()).collect();
+        assert_eq!(tokens_str, expected_str);
+    }
+
+    #[test]
+    fn test_identifiers() {
+        let tokens = lex("foo bar_baz _qux");
+        let tokens_str: Vec<String> = tokens.iter().map(|t| t.to_string()).collect();
+        assert_eq!(tokens_str, vec!["`foo`", "`bar_baz`", "`_qux`"]);
+    }
+
+    #[test]
+    fn test_identifiers_with_hyphens() {
+        let tokens = lex("foo-bar foo-");
+        let tokens_str: Vec<String> = tokens.iter().map(|t| t.to_string()).collect();
+        assert_eq!(tokens_str, vec!["`foo-bar`", "`foo`", "-"]);
+    }
+
+    #[test]
+    fn test_integers() {
+        let tokens = lex("123 0xff 0o77 0b101");
+        let tokens_str: Vec<String> = tokens.iter().map(|t| t.to_string()).collect();
+        assert_eq!(tokens_str, vec!["123", "0xff", "0o77", "0b101"]);
+    }
+
+    #[test]
+    fn test_floats() {
+        let tokens = lex("1.0 0.5 1e10 1.2e-5");
+        let tokens_str: Vec<String> = tokens.iter().map(|t| t.to_string()).collect();
+        assert_eq!(tokens_str, vec!["1.0", "0.5", "1e10", "1.2e-5"]);
+    }
+
+    #[test]
+    fn test_strings() {
+        let tokens = lex(r#""hello" "world\n""#);
+        let tokens_str: Vec<String> = tokens.iter().map(|t| t.to_string()).collect();
+        assert_eq!(
+            tokens_str,
+            vec![
+                r#""hello""#,
+                r#""world
+""#
+            ]
+        );
+        // Note: Display for StringLiteral uses write!(f, "\"{s}\"").
+        // "world\n" as string contains a newline character.
+    }
+
+    #[test]
+    fn test_glyphs() {
+        let tokens = lex(r#"'a' '\n' '\x41'"#);
+        let tokens_str: Vec<String> = tokens.iter().map(|t| t.to_string()).collect();
+        // '\n' char is newline.
+        assert_eq!(tokens_str, vec!["'a'", "'\n'", "'A'"]);
+    }
+
+    #[test]
+    fn test_comments() {
+        let tokens = lex("1 -- comment\n2 (* block comment *) 3");
+
+        match &tokens[1] {
+            TokenKind::LineComment(s) => assert_eq!(s, " comment"),
+            _ => panic!("Expected LineComment"),
+        }
+        match &tokens[3] {
+            TokenKind::BlockComment(s) => assert_eq!(s, " block comment "),
+            _ => panic!("Expected BlockComment"),
+        }
+    }
+
+    #[test]
+    fn test_doc_comments() {
+        let tokens = lex("--> doc comment\n(*> block doc *)");
+
+        match &tokens[0] {
+            TokenKind::DocComment(s) => assert_eq!(s, " doc comment"),
+            _ => panic!("Expected DocComment at 0"),
+        }
+
+        match &tokens[1] {
+            TokenKind::DocComment(s) => assert_eq!(s, " block doc "),
+            _ => panic!("Expected DocComment at 1, got {:?}", tokens[1]),
+        }
+    }
 }

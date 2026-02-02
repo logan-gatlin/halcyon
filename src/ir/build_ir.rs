@@ -223,6 +223,7 @@ impl<'a> Builder<'a> {
         Module {
             name: this.module_name,
             types,
+            constructors: this.symbols.constructors.clone(),
             code: this.code,
         }
     }
@@ -270,8 +271,10 @@ impl<'a> Builder<'a> {
                             Some(t) => Some(self.type_expr(t)?),
                             None => None,
                         },
-                        capture_types: vec![Type::Any; captures.len()],
-                        captures,
+                        captures: captures
+                            .into_iter()
+                            .map(|c| c.with_type(Type::Any))
+                            .collect(),
                         body,
                     }
                 }

@@ -258,7 +258,6 @@ fn infer_ir<'a, 'b, 'c>(
             parameter_name,
             parameter_type,
             captures,
-            capture_types,
             body,
         } => {
             let new_env = &mut Environment {
@@ -282,14 +281,11 @@ fn infer_ir<'a, 'b, 'c>(
                     span,
                 ));
             }
-            *capture_types = captures
-                .iter()
-                .map(|c| {
-                    let mut type_ = new_env.symbols.get_term(c).clone();
-                    freshen_nonfree_type_variables(&mut type_, &new_env.symbols, &new_env.free);
-                    type_
-                })
-                .collect();
+            captures.iter_mut().for_each(|c| {
+                let mut type_ = new_env.symbols.get_term(c).clone();
+                freshen_nonfree_type_variables(&mut type_, &new_env.symbols, &new_env.free);
+                c.type_ = type_;
+            });
             infer_ir(body, new_env);
             Type::func(parameter_inferred_type, body.type_.clone())
         }

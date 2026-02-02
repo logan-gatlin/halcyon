@@ -33,6 +33,7 @@ pub fn build_ir(
     build_ir::Builder::build_ir(logger, symbols, module)
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum IrKind {
     Let {
@@ -58,8 +59,7 @@ pub enum IrKind {
     Function {
         parameter_name: Spanned<Path>,
         parameter_type: Option<Type>,
-        captures: Vec<Path>,
-        capture_types: Vec<Type>,
+        captures: Vec<Typed<Path>>,
         body: Box<IrNode>,
     },
     Call {
@@ -112,11 +112,11 @@ impl Visit<Type> for IrNode {
                 IrKind::Let { assignee, .. } => assignee._visit(f),
                 IrKind::Function {
                     parameter_type,
-                    capture_types,
+                    captures,
                     ..
                 } => {
                     parameter_type._visit(f);
-                    capture_types._visit(f);
+                    captures.iter_mut().for_each(|c| c.type_._visit(f));
                 }
                 _ => {}
             }
@@ -131,6 +131,7 @@ pub type IrNode = Typed<Spanned<IrKind>>;
 pub struct Module {
     pub name: String,
     pub types: HashMap<Path, AbstractType>,
+    pub constructors: HashMap<Path, Constructor>,
     pub code: Vec<IrNode>,
 }
 

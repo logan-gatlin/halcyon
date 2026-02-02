@@ -1,5 +1,7 @@
 mod module;
 mod pattern;
+#[cfg(test)]
+mod test;
 mod type_expression;
 mod value_expression;
 
@@ -107,7 +109,7 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
         tk: &TokenKind,
     ) -> Option<Token> {
         if let Some(next) = self.iter.peek()
-            && &next.inner == tk
+            && (&next.inner == tk || matches!((tk, &next.inner), (Identifier(..), Identifier(..))))
         {
             let next = next.clone();
             self.skip();

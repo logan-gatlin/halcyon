@@ -1,10 +1,6 @@
-#![allow(clippy::all, clippy::panic, clippy::unwrap_used)]
-
 use codespan_reporting::files::SimpleFiles;
+use codespan_reporting::term;
 use codespan_reporting::term::termcolor::StandardStream;
-use codespan_reporting::term::{
-    self,
-};
 
 use crate::hc_core::core_symbol_table;
 

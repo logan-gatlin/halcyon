@@ -212,7 +212,6 @@ impl PrettyPrint for IrNode {
                 parameter_name,
                 parameter_type,
                 captures,
-                capture_types: _,
                 body,
             } => {
                 let fn_kw = "fn".red();
@@ -222,8 +221,7 @@ impl PrettyPrint for IrNode {
                     "".to_string()
                 };
                 format!(
-                    "{fn_kw} (: {type_}) {parameter_name}{parameter_type}\n{captures} =>\n{body}",
-                    captures = left_pad(format!("[{}]", captures.pretty().replace("\n", " "))),
+                    "{fn_kw} (: {type_}) {parameter_name}{parameter_type} =>\n{body}",
                     body = left_pad(body.pretty()),
                     type_ = self.type_.pretty()
                 )

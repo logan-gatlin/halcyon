@@ -87,7 +87,7 @@ impl PrettyPrint for Type {
                     items = type_.pretty(),
                 )
             }
-            Function => "function".italic().blue().to_string(),
+            Function { .. } => "function".italic().blue().to_string(),
         }
     }
 }

@@ -20,8 +20,8 @@ use crate::ir::{
     Path,
 };
 use crate::{
-    SymbolTable,
     semantic,
+    SymbolTable,
 };
 
 pub use encode::encode;
@@ -341,6 +341,12 @@ pub fn lower_module(
 ) -> Module {
     let mut module = Module::new(ir_module.name.clone());
     let mut init_func = module.new_function();
+
+    // Lower constructors first so they're available as globals
+    for (path, cons) in ir_module.constructors {
+        init_func.lower_constructor(path, cons, symbols);
+    }
+
     for code in ir_module.code {
         init_func.lower_ir(code, symbols);
         init_func.push(Instruction::Drop);

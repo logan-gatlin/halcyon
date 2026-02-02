@@ -21,6 +21,7 @@
     clippy::try_err,
     mismatched_lifetime_syntaxes
 )]
+#![cfg_attr(test, allow(clippy::panic, clippy::unwrap_used))]
 // Debug tools set to warn to help find and remove before deploying
 #![warn(
     clippy::print_stdout,
