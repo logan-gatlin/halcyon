@@ -350,3 +350,630 @@ impl<'a> super::build_ir::Builder<'a> {
         )
     }
 }
+
+pub fn are_patterns_comprehensive(
+    type_: &Type,
+    patterns: &[Pattern],
+    symbols: &SymbolTable,
+) -> bool {
+    if patterns.is_empty() {
+        return false;
+    }
+    let normalized = normalize_type(type_, symbols);
+    if patterns
+        .iter()
+        .any(|pattern| pattern_covers_all(&normalized, pattern, symbols))
+    {
+        return true;
+    }
+    match normalized {
+        Type::Array(inner) => are_array_patterns_comprehensive(&inner, patterns, symbols),
+        _ => {
+            let rows = patterns
+                .iter()
+                .map(|pattern| vec![pattern_to_slot(pattern)])
+                .collect::<Vec<_>>();
+            is_exhaustive_matrix(&[normalized], &rows, symbols)
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum PatternSlot<'a> {
+    Wildcard,
+    Pat(&'a Pattern),
+}
+
+#[derive(Clone)]
+enum ConstructorSpec {
+    Unit,
+    Boolean(bool),
+    Sum {
+        tag: usize,
+        sum_name: Path,
+        payload: Type,
+    },
+    Tuple {
+        elements: Vec<Type>,
+    },
+    Struct {
+        fields: Vec<(String, Type)>,
+    },
+}
+
+fn normalize_type(
+    type_: &Type,
+    symbols: &SymbolTable,
+) -> Type {
+    match type_ {
+        Type::Instantiation(path, types) => {
+            symbols
+                .get_type(path)
+                .clone()
+                .instantiate(types)
+                .unwrap_or_else(|_| type_.clone())
+        }
+        _ => type_.clone(),
+    }
+}
+
+fn strip_pattern(pattern: &Pattern) -> &Pattern {
+    match &pattern.inner.inner {
+        PatternKind::TypeHint(inner, _) => strip_pattern(inner),
+        PatternKind::Constructor(Constructor::Structure(_), inner) => strip_pattern(inner),
+        _ => pattern,
+    }
+}
+
+fn is_wildcard_pattern(pattern: &Pattern) -> bool {
+    matches!(
+        strip_pattern(pattern).inner.inner,
+        PatternKind::Hole | PatternKind::Identifier(_)
+    )
+}
+
+fn pattern_to_slot(pattern: &Pattern) -> PatternSlot<'_> {
+    if is_wildcard_pattern(pattern) {
+        PatternSlot::Wildcard
+    } else {
+        PatternSlot::Pat(pattern)
+    }
+}
+
+fn sum_type_name(
+    type_: &Type,
+    symbols: &SymbolTable,
+) -> Option<Path> {
+    match normalize_type(type_, symbols) {
+        Type::Sum { name, .. } => Some(name),
+        _ => None,
+    }
+}
+
+fn pattern_covers_all(
+    type_: &Type,
+    pattern: &Pattern,
+    symbols: &SymbolTable,
+) -> bool {
+    if is_wildcard_pattern(pattern) {
+        return true;
+    }
+    let type_ = normalize_type(type_, symbols);
+    let pattern = strip_pattern(pattern);
+    match &type_ {
+        Type::Unit => {
+            matches!(
+                pattern.inner.inner,
+                PatternKind::Immediate(ConstValue::Unit)
+            )
+        }
+        Type::Boolean => false,
+        Type::Sum {
+            name,
+            variant_types,
+            ..
+        } => {
+            if variant_types.len() != 1 {
+                return false;
+            }
+            let PatternKind::Constructor(constructor, inner) = &pattern.inner.inner else {
+                return false;
+            };
+            let matches_sum = match constructor {
+                Constructor::SumConstant { tag, sum_type }
+                | Constructor::SumFunction { tag, sum_type, .. } => {
+                    *tag == 0
+                        && sum_type_name(sum_type, symbols)
+                            .is_some_and(|sum_name| &sum_name == name)
+                }
+                Constructor::Structure(_) => false,
+            };
+            matches_sum && pattern_covers_all(&variant_types[0], inner, symbols)
+        }
+        Type::Tuple(items) => {
+            match &pattern.inner.inner {
+                PatternKind::Tuple(pats) => {
+                    pats.len().eq(&items.len())
+                        && pats
+                            .iter()
+                            .zip(items)
+                            .all(|(pat, item_type)| pattern_covers_all(item_type, pat, symbols))
+                }
+                _ => false,
+            }
+        }
+        Type::Struct { fields, .. } => {
+            match &pattern.inner.inner {
+                PatternKind::Struct(map) => {
+                    map.keys().all(|key| fields.contains_key(&key.inner))
+                        && map.iter().all(|(key, pat)| {
+                            fields.get(&key.inner).is_some_and(|field_type| {
+                                pattern_covers_all(field_type, pat, symbols)
+                            })
+                        })
+                }
+                _ => false,
+            }
+        }
+        Type::Array(_) => {
+            match &pattern.inner.inner {
+                PatternKind::Array {
+                    starting,
+                    glob,
+                    ending,
+                } => !glob.is_exact() && starting.is_empty() && ending.is_empty(),
+                _ => false,
+            }
+        }
+        Type::Any
+        | Type::Integer
+        | Type::Real
+        | Type::String
+        | Type::Glyph
+        | Type::Variable(_)
+        | Type::Function(..)
+        | Type::Instantiation(..) => false,
+    }
+}
+
+fn constructors_for_type(type_: &Type) -> Option<Vec<ConstructorSpec>> {
+    match type_ {
+        Type::Unit => Some(vec![ConstructorSpec::Unit]),
+        Type::Boolean => {
+            Some(vec![
+                ConstructorSpec::Boolean(true),
+                ConstructorSpec::Boolean(false),
+            ])
+        }
+        Type::Sum {
+            name,
+            variant_types,
+            ..
+        } => {
+            Some(
+                variant_types
+                    .iter()
+                    .enumerate()
+                    .map(|(tag, payload)| {
+                        ConstructorSpec::Sum {
+                            tag,
+                            sum_name: name.clone(),
+                            payload: payload.clone(),
+                        }
+                    })
+                    .collect(),
+            )
+        }
+        Type::Tuple(items) => {
+            Some(vec![ConstructorSpec::Tuple {
+                elements: items.clone(),
+            }])
+        }
+        Type::Struct { fields, .. } => {
+            Some(vec![ConstructorSpec::Struct {
+                fields: fields
+                    .iter()
+                    .map(|(name, type_)| (name.clone(), type_.clone()))
+                    .collect(),
+            }])
+        }
+        _ => None,
+    }
+}
+
+fn constructor_arity(constructor: &ConstructorSpec) -> usize {
+    match constructor {
+        ConstructorSpec::Unit | ConstructorSpec::Boolean(_) => 0,
+        ConstructorSpec::Sum { .. } => 1,
+        ConstructorSpec::Tuple { elements } => elements.len(),
+        ConstructorSpec::Struct { fields } => fields.len(),
+    }
+}
+
+fn constructor_arg_types(constructor: &ConstructorSpec) -> Vec<Type> {
+    match constructor {
+        ConstructorSpec::Unit | ConstructorSpec::Boolean(_) => Vec::new(),
+        ConstructorSpec::Sum { payload, .. } => vec![payload.clone()],
+        ConstructorSpec::Tuple { elements } => elements.clone(),
+        ConstructorSpec::Struct { fields } => {
+            fields
+                .iter()
+                .map(|(_, field_type)| field_type.clone())
+                .collect()
+        }
+    }
+}
+
+fn slot_covers_all(
+    type_: &Type,
+    slot: PatternSlot<'_>,
+    symbols: &SymbolTable,
+) -> bool {
+    match slot {
+        PatternSlot::Wildcard => true,
+        PatternSlot::Pat(pattern) => pattern_covers_all(type_, pattern, symbols),
+    }
+}
+
+fn specialize_row<'a>(
+    row: &[PatternSlot<'a>],
+    constructor: &ConstructorSpec,
+    symbols: &SymbolTable,
+) -> Option<Vec<PatternSlot<'a>>> {
+    let (head, tail) = row.split_first()?;
+    let rest = tail.to_vec();
+    match head {
+        PatternSlot::Wildcard => {
+            let mut slots = vec![PatternSlot::Wildcard; constructor_arity(constructor)];
+            slots.extend_from_slice(&rest);
+            Some(slots)
+        }
+        PatternSlot::Pat(pattern) => {
+            let pattern = strip_pattern(pattern);
+            match constructor {
+                ConstructorSpec::Unit => {
+                    match &pattern.inner.inner {
+                        PatternKind::Immediate(ConstValue::Unit) => Some(rest),
+                        _ => None,
+                    }
+                }
+                ConstructorSpec::Boolean(value) => {
+                    match &pattern.inner.inner {
+                        PatternKind::Immediate(ConstValue::Boolean(v)) if v == value => Some(rest),
+                        _ => None,
+                    }
+                }
+                ConstructorSpec::Sum { tag, sum_name, .. } => {
+                    let PatternKind::Constructor(constructor, inner) = &pattern.inner.inner else {
+                        return None;
+                    };
+                    let matches_sum = match constructor {
+                        Constructor::SumConstant {
+                            tag: pat_tag,
+                            sum_type,
+                        }
+                        | Constructor::SumFunction {
+                            tag: pat_tag,
+                            sum_type,
+                            ..
+                        } => {
+                            pat_tag == tag
+                                && sum_type_name(sum_type, symbols)
+                                    .is_some_and(|name| &name == sum_name)
+                        }
+                        Constructor::Structure(_) => false,
+                    };
+                    matches_sum.then(|| {
+                        let mut slots = vec![PatternSlot::Pat(inner)];
+                        slots.extend_from_slice(&rest);
+                        slots
+                    })
+                }
+                ConstructorSpec::Tuple { elements } => {
+                    match &pattern.inner.inner {
+                        PatternKind::Tuple(items) if items.len() == elements.len() => {
+                            let mut slots = items.iter().map(PatternSlot::Pat).collect::<Vec<_>>();
+                            slots.extend_from_slice(&rest);
+                            Some(slots)
+                        }
+                        _ => None,
+                    }
+                }
+                ConstructorSpec::Struct { fields } => {
+                    match &pattern.inner.inner {
+                        PatternKind::Struct(map) => {
+                            if map
+                                .keys()
+                                .any(|key| !fields.iter().any(|(name, _)| name == &key.inner))
+                            {
+                                return None;
+                            }
+                            let mut slots = fields
+                                .iter()
+                                .map(|(name, _)| {
+                                    map.iter()
+                                        .find(|(key, _)| name == &key.inner)
+                                        .map_or(PatternSlot::Wildcard, |(_, pat)| {
+                                            PatternSlot::Pat(pat)
+                                        })
+                                })
+                                .collect::<Vec<_>>();
+                            slots.extend_from_slice(&rest);
+                            Some(slots)
+                        }
+                        _ => None,
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn is_exhaustive_matrix<'a>(
+    types: &[Type],
+    rows: &[Vec<PatternSlot<'a>>],
+    symbols: &SymbolTable,
+) -> bool {
+    if types.is_empty() {
+        return !rows.is_empty();
+    }
+    if rows.is_empty() {
+        return false;
+    }
+    let head_type = normalize_type(&types[0], symbols);
+    let tail_types = &types[1..];
+    if let Some(constructors) = constructors_for_type(&head_type) {
+        constructors.into_iter().all(|constructor| {
+            let specialized = rows
+                .iter()
+                .filter_map(|row| specialize_row(row, &constructor, symbols))
+                .collect::<Vec<_>>();
+            if specialized.is_empty() {
+                return false;
+            }
+            let mut next_types = constructor_arg_types(&constructor);
+            next_types.extend_from_slice(tail_types);
+            is_exhaustive_matrix(&next_types, &specialized, symbols)
+        })
+    } else {
+        let specialized = rows
+            .iter()
+            .filter_map(|row| row.first().map(|slot| (*slot, row)))
+            .filter(|&(slot, _)| slot_covers_all(&head_type, slot, symbols))
+            .map(|(_, row)| row.iter().skip(1).copied().collect::<Vec<_>>())
+            .collect::<Vec<_>>();
+        if specialized.is_empty() {
+            return false;
+        }
+        is_exhaustive_matrix(tail_types, &specialized, symbols)
+    }
+}
+
+fn are_array_patterns_comprehensive(
+    inner: &Type,
+    patterns: &[Pattern],
+    symbols: &SymbolTable,
+) -> bool {
+    let array_patterns = patterns
+        .iter()
+        .filter(|pattern| array_pattern_parts(pattern).is_some())
+        .collect::<Vec<_>>();
+    let Some(min_glob_len) = array_patterns
+        .iter()
+        .filter_map(|pattern| {
+            let (starting, glob, ending) = array_pattern_parts(pattern)?;
+            (!glob.is_exact()).then_some(starting.len() + ending.len())
+        })
+        .min()
+    else {
+        return false;
+    };
+    let short_lengths_ok = (0..min_glob_len).all(|length| {
+        let rows = array_patterns
+            .iter()
+            .filter_map(|pattern| array_pattern_to_row(pattern, length))
+            .collect::<Vec<_>>();
+        !rows.is_empty() && is_exhaustive_matrix(&repeated_types(inner, length), &rows, symbols)
+    });
+    if !short_lengths_ok {
+        return false;
+    }
+    let rows = array_patterns
+        .iter()
+        .filter_map(|pattern| {
+            let (starting, glob, ending) = array_pattern_parts(pattern)?;
+            (!glob.is_exact() && starting.len() + ending.len() == min_glob_len)
+                .then(|| array_pattern_to_row(pattern, min_glob_len))
+                .flatten()
+        })
+        .collect::<Vec<_>>();
+    !rows.is_empty() && is_exhaustive_matrix(&repeated_types(inner, min_glob_len), &rows, symbols)
+}
+
+fn array_pattern_parts(pattern: &Pattern) -> Option<(&[Pattern], &Glob, &[Pattern])> {
+    match &strip_pattern(pattern).inner.inner {
+        PatternKind::Array {
+            starting,
+            glob,
+            ending,
+        } => Some((starting.as_slice(), glob, ending.as_slice())),
+        _ => None,
+    }
+}
+
+fn array_pattern_to_row<'a>(
+    pattern: &'a Pattern,
+    length: usize,
+) -> Option<Vec<PatternSlot<'a>>> {
+    let (starting, glob, ending) = array_pattern_parts(pattern)?;
+    let min_len = starting.len() + ending.len();
+    if glob.is_exact() {
+        if min_len != length {
+            return None;
+        }
+    } else if length < min_len {
+        return None;
+    }
+    let mut slots = vec![PatternSlot::Wildcard; length];
+    for (index, pat) in starting.iter().enumerate() {
+        slots[index] = PatternSlot::Pat(pat);
+    }
+    for (index, pat) in ending.iter().enumerate() {
+        let offset = length - ending.len();
+        slots[offset + index] = PatternSlot::Pat(pat);
+    }
+    Some(slots)
+}
+
+fn repeated_types(
+    type_: &Type,
+    length: usize,
+) -> Vec<Type> {
+    std::iter::repeat_n(type_.clone(), length).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn span() -> Span {
+        Span::default()
+    }
+
+    fn pattern(kind: PatternKind) -> Pattern {
+        kind.with_span(span()).with_type(Type::Any)
+    }
+
+    fn unit_pattern() -> Pattern {
+        pattern(PatternKind::Immediate(ConstValue::Unit))
+    }
+
+    fn boolean_pattern(value: bool) -> Pattern {
+        pattern(PatternKind::Immediate(ConstValue::Boolean(value)))
+    }
+
+    fn integer_pattern(value: i64) -> Pattern {
+        pattern(PatternKind::Immediate(ConstValue::Integer(value)))
+    }
+
+    fn hole_pattern() -> Pattern {
+        pattern(PatternKind::Hole)
+    }
+
+    fn constructor_pattern(
+        constructor: Constructor,
+        inner: Pattern,
+    ) -> Pattern {
+        pattern(PatternKind::Constructor(constructor, inner.into()))
+    }
+
+    fn array_pattern(
+        starting: Vec<Pattern>,
+        glob: Glob,
+        ending: Vec<Pattern>,
+    ) -> Pattern {
+        pattern(PatternKind::Array {
+            starting,
+            glob,
+            ending,
+        })
+    }
+
+    #[test]
+    fn unit_patterns_are_exhaustive() {
+        let symbols = SymbolTable::default();
+        let patterns = vec![unit_pattern()];
+
+        assert!(are_patterns_comprehensive(&Type::Unit, &patterns, &symbols));
+    }
+
+    #[test]
+    fn boolean_patterns_need_both_constants() {
+        let symbols = SymbolTable::default();
+        let patterns = vec![boolean_pattern(true)];
+
+        assert!(!are_patterns_comprehensive(
+            &Type::Boolean,
+            &patterns,
+            &symbols
+        ));
+
+        let patterns = vec![boolean_pattern(true), boolean_pattern(false)];
+        assert!(are_patterns_comprehensive(
+            &Type::Boolean,
+            &patterns,
+            &symbols
+        ));
+    }
+
+    #[test]
+    fn integer_constants_do_not_exhaust() {
+        let symbols = SymbolTable::default();
+        let patterns = vec![integer_pattern(0), integer_pattern(1)];
+
+        assert!(!are_patterns_comprehensive(
+            &Type::Integer,
+            &patterns,
+            &symbols
+        ));
+
+        let patterns = vec![hole_pattern()];
+        assert!(are_patterns_comprehensive(
+            &Type::Integer,
+            &patterns,
+            &symbols
+        ));
+    }
+
+    #[test]
+    fn sum_patterns_cover_all_variants() {
+        let symbols = SymbolTable::default();
+        let sum_name = Path::new("Test", "Option");
+        let sum_type = Type::Sum {
+            name: sum_name.clone(),
+            variant_names: vec!["None".to_string(), "Some".to_string()],
+            variant_types: vec![Type::Unit, Type::Integer],
+        };
+        let none_constructor = Constructor::SumConstant {
+            tag: 0,
+            sum_type: sum_type.clone(),
+        };
+        let some_constructor = Constructor::SumFunction {
+            tag: 1,
+            sum_type: sum_type.clone(),
+            parameter_type: Type::Integer,
+        };
+        let patterns = vec![
+            constructor_pattern(none_constructor.clone(), unit_pattern()),
+            constructor_pattern(some_constructor.clone(), hole_pattern()),
+        ];
+
+        assert!(are_patterns_comprehensive(&sum_type, &patterns, &symbols));
+
+        let patterns = vec![constructor_pattern(none_constructor, unit_pattern())];
+        assert!(!are_patterns_comprehensive(&sum_type, &patterns, &symbols));
+    }
+
+    #[test]
+    fn array_patterns_cover_all_lengths_and_values() {
+        let symbols = SymbolTable::default();
+        let array_type = Type::Array(Type::Boolean.into());
+        let patterns = vec![
+            array_pattern(vec![], Glob::None, vec![]),
+            array_pattern(vec![boolean_pattern(true)], Glob::Unnamed, vec![]),
+            array_pattern(vec![boolean_pattern(false)], Glob::Unnamed, vec![]),
+        ];
+
+        assert!(are_patterns_comprehensive(&array_type, &patterns, &symbols));
+
+        let patterns = vec![
+            array_pattern(vec![boolean_pattern(true)], Glob::Unnamed, vec![]),
+            array_pattern(vec![boolean_pattern(false)], Glob::Unnamed, vec![]),
+        ];
+        assert!(!are_patterns_comprehensive(
+            &array_type,
+            &patterns,
+            &symbols
+        ));
+    }
+}

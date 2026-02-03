@@ -20,11 +20,10 @@ pub fn compile(
     if let Some(p) = parse_trees.into_iter().next() {
         let mut ir_module = build_ir(logger, symbols, p);
         semantic::analyze(&mut ir_module, symbols, logger);
-        eprintln!("{}\n", ir_module.pretty());
-        //let asm_module = asm::lower_module(ir_module, symbols);
+        //eprintln!("{}\n", ir_module.pretty());
+        let asm_module = asm::lower_module(ir_module, symbols);
         //eprintln!("{}", asm_module.pretty());
-        //asm::encode(asm_module)
-        vec![]
+        asm::encode(asm_module)
     } else {
         eprintln!("Output is empty");
         std::process::exit(1);

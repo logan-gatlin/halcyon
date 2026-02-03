@@ -6,7 +6,10 @@ use crate::ir::{
     Pattern,
 };
 use crate::operator::BinaryOp;
-use crate::semantic::Typed;
+use crate::semantic::{
+    Typed,
+    WithType,
+};
 
 use super::*;
 
@@ -458,72 +461,17 @@ impl<'a> Encoder<'a> {
                 body,
                 ..
             } => {
-                let mut new_enc = self.module.new_function();
-                let new_func_index = new_enc.func_index;
-                let capture_array_name = new_enc.temporary_name("captured_symbols");
-                new_enc.new_parameter(capture_array_name.clone(), Type::Array(Type::Any.into()));
                 let semantic::Type::Function(parameter_type, ..) = ir.type_ else {
                     unreachable!()
                 };
-                let parameter_type = lower_type(&parameter_type, symbols);
-                let param_anyref_name = new_enc.temporary_name("parameter");
-                new_enc.new_parameter(param_anyref_name.clone(), Type::Any);
-                new_enc.new_return(Type::Any);
-                // Cast the anyref parameter to the actual type and bind to the user's name
-                new_enc.new_register(
-                    parameter_name.inner.clone(),
-                    ScopeKind::Local,
-                    parameter_type.clone(),
+                self.closure(
+                    symbols,
+                    parameter_name.inner.clone().with_type(*parameter_type),
+                    captures,
+                    |new_enc, symbols| {
+                        new_enc.lower_ir(*body, symbols);
+                    },
                 );
-                new_enc.push(i::Get(param_anyref_name));
-                match &parameter_type {
-                    Type::Struct(fields) => new_enc.push(i::RefCastStruct(fields.clone())),
-                    Type::Array(inner) => new_enc.push(i::RefCastArray(inner.clone())),
-                    Type::Any => {} // No cast needed
-                    _ => {} // Primitives don't need casting (i32, i64, etc. shouldn't appear here)
-                }
-                new_enc.push(i::Set(parameter_name.inner));
-                for (
-                    id,
-                    Typed {
-                        inner: capture_name,
-                        type_: capture_type,
-                    },
-                ) in captures.clone().into_iter().enumerate()
-                {
-                    let capture_type = lower_type(&capture_type, symbols);
-                    new_enc.new_register(
-                        capture_name.clone(),
-                        ScopeKind::Local,
-                        capture_type.clone(),
-                    );
-                    new_enc.extend([
-                        i::Get(capture_array_name.clone()),
-                        i::I32Const(id as i32),
-                        i::ArrayGet(Type::Any),
-                    ]);
-                    // Cast anyref from array to the actual capture type
-                    match &capture_type {
-                        Type::Struct(fields) => new_enc.push(i::RefCastStruct(fields.clone())),
-                        Type::Array(inner) => new_enc.push(i::RefCastArray(inner.clone())),
-                        Type::Any => {} // No cast needed
-                        _ => {}         // Primitives shouldn't appear here (captured in closures)
-                    }
-                    new_enc.push(i::Set(capture_name.clone()));
-                }
-                new_enc.lower_ir(*body, symbols);
-                let num_captures = captures.len();
-                for capture in captures {
-                    self.push(i::Get(capture.inner));
-                }
-                self.extend([
-                    i::ArrayNewFixed {
-                        inner_type: Type::Any,
-                        length: num_captures,
-                    },
-                    i::Func(new_func_index),
-                    i::StructNew([Type::function_capture(), Type::closure_function_type()].into()),
-                ])
             }
             Call { callee, argument } => {
                 let callee_name = self.temporary_name("callee");
@@ -581,41 +529,20 @@ impl<'a> Encoder<'a> {
                 parameter_type,
                 ..
             } => {
-                let mut inner_func = self.module.new_function();
-                let inner_func_index = inner_func.func_index;
-
-                // Set up function parameters: (captures: [any], parameter: any) -> any
-                let captures_param = inner_func.temporary_name("captures");
-                inner_func.new_parameter(captures_param, Type::Array(Type::Any.into()));
-
-                let param_anyref = inner_func.temporary_name("param_anyref");
-                inner_func.new_parameter(param_anyref.clone(), Type::Any);
-                inner_func.new_return(Type::Any);
-
-                // Function body: create { tag, parameter }
-                let param_type_lowered = lower_type(&parameter_type, symbols);
-                inner_func.push(i::I32Const(tag as i32));
-                inner_func.push(i::Get(param_anyref));
-                // Cast to expected type then back - ensures proper typing
-                match &param_type_lowered {
-                    Type::Struct(fields) => inner_func.push(i::RefCastStruct(fields.clone())),
-                    Type::Array(inner) => inner_func.push(i::RefCastArray(inner.clone())),
-                    Type::Any => {}
-                    _ => {}
-                }
-                inner_func.push(i::StructNew(sum_struct_type.clone()));
-
-                // Create closure: { captures: [], func: inner_func }
-                self.new_register(path.clone(), ScopeKind::Global, Type::closure_type());
-                self.extend([
-                    i::ArrayNewFixed {
-                        inner_type: Type::Any,
-                        length: 0,
+                let parameter_name = self.temporary_name("cons_param");
+                self.closure(
+                    symbols,
+                    parameter_name.clone().with_type(parameter_type),
+                    vec![],
+                    |inner_func, _| {
+                        inner_func.push(i::I32Const(tag as i32));
+                        inner_func.push(i::Get(parameter_name));
+                        inner_func.push(i::StructNew(sum_struct_type.clone()));
                     },
-                    i::Func(inner_func_index),
-                    i::StructNew([Type::function_capture(), Type::closure_function_type()].into()),
-                    i::Set(path),
-                ]);
+                );
+
+                self.new_register(path.clone(), ScopeKind::Global, Type::closure_type());
+                self.extend([i::Set(path)]);
             }
             Constructor::Structure(struct_type) => {
                 // Structure constructor is an identity function that serves as a type hint

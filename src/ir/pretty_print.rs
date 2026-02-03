@@ -211,8 +211,8 @@ impl PrettyPrint for IrNode {
             Function {
                 parameter_name,
                 parameter_type,
-                captures,
                 body,
+                ..
             } => {
                 let fn_kw = "fn".red();
                 let parameter_type = if let Some(parameter_type) = parameter_type {
