@@ -159,7 +159,7 @@ impl<'a> Builder<'a> {
             captures: Default::default(),
             term_info: Default::default(),
         };
-        let mut types = HashMap::new();
+        let mut types = IndexMap::new();
         for item in module.inner.contents {
             match item.inner {
                 DocComment(_) => {}

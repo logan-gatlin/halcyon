@@ -351,56 +351,68 @@ impl<'a> super::build_ir::Builder<'a> {
     }
 }
 
+/// Check exhaustiveness and return a concrete refutation pattern on failure.
+#[allow(clippy::result_large_err)]
 pub fn are_patterns_comprehensive(
     type_: &Type,
     patterns: &[Pattern],
     symbols: &SymbolTable,
-) -> bool {
+) -> std::result::Result<(), Pattern> {
     if patterns.is_empty() {
-        return false;
+        return Err(default_refutation(type_, symbols));
     }
     let normalized = normalize_type(type_, symbols);
     if patterns
         .iter()
         .any(|pattern| pattern_covers_all(&normalized, pattern, symbols))
     {
-        return true;
+        return Ok(());
     }
-    match normalized {
-        Type::Array(inner) => are_array_patterns_comprehensive(&inner, patterns, symbols),
-        _ => {
-            let rows = patterns
-                .iter()
-                .map(|pattern| vec![pattern_to_slot(pattern)])
-                .collect::<Vec<_>>();
-            is_exhaustive_matrix(&[normalized], &rows, symbols)
+    if let Type::Array(inner) = &normalized {
+        return are_array_patterns_comprehensive(inner, patterns, symbols);
+    }
+    let rows = patterns
+        .iter()
+        .map(|pattern| vec![pattern_to_slot(pattern)])
+        .collect::<Vec<_>>();
+    match refutation_matrix(std::slice::from_ref(&normalized), &rows, symbols) {
+        Some(witness) => {
+            Err(witness
+                .into_iter()
+                .next()
+                .unwrap_or_else(|| default_refutation(&normalized, symbols)))
         }
+        None => Ok(()),
     }
 }
 
+/// Matrix slot representing a wildcard or concrete pattern.
 #[derive(Clone, Copy)]
 enum PatternSlot<'a> {
     Wildcard,
     Pat(&'a Pattern),
 }
 
+/// Canonical constructor view for exhaustiveness checking.
 #[derive(Clone)]
 enum ConstructorSpec {
     Unit,
     Boolean(bool),
     Sum {
         tag: usize,
-        sum_name: Path,
+        sum_type: Type,
         payload: Type,
     },
     Tuple {
         elements: Vec<Type>,
     },
     Struct {
+        name: Path,
         fields: Vec<(String, Type)>,
     },
 }
 
+/// Resolve instantiations into their concrete base types.
 fn normalize_type(
     type_: &Type,
     symbols: &SymbolTable,
@@ -417,6 +429,7 @@ fn normalize_type(
     }
 }
 
+/// Remove type hints and structure constructors for matching.
 fn strip_pattern(pattern: &Pattern) -> &Pattern {
     match &pattern.inner.inner {
         PatternKind::TypeHint(inner, _) => strip_pattern(inner),
@@ -425,6 +438,7 @@ fn strip_pattern(pattern: &Pattern) -> &Pattern {
     }
 }
 
+/// True if the pattern matches any value of its type.
 fn is_wildcard_pattern(pattern: &Pattern) -> bool {
     matches!(
         strip_pattern(pattern).inner.inner,
@@ -432,6 +446,7 @@ fn is_wildcard_pattern(pattern: &Pattern) -> bool {
     )
 }
 
+/// Convert a pattern into a matrix slot.
 fn pattern_to_slot(pattern: &Pattern) -> PatternSlot<'_> {
     if is_wildcard_pattern(pattern) {
         PatternSlot::Wildcard
@@ -440,6 +455,186 @@ fn pattern_to_slot(pattern: &Pattern) -> PatternSlot<'_> {
     }
 }
 
+/// Construct a pattern while explicitly setting its semantic type.
+fn pattern_with_type(
+    kind: PatternKind,
+    type_: Type,
+) -> Pattern {
+    kind.with_span(Span::default()).with_type(type_)
+}
+
+/// Wildcard pattern with a concrete type for witness generation.
+fn wildcard_pattern(type_: &Type) -> Pattern {
+    pattern_with_type(PatternKind::Hole, type_.clone())
+}
+
+/// Constant pattern with the constant's intrinsic type.
+fn immediate_pattern(value: ConstValue) -> Pattern {
+    let type_ = value.type_of();
+    pattern_with_type(PatternKind::Immediate(value), type_)
+}
+
+/// Tuple pattern with a concrete tuple type.
+fn tuple_pattern(
+    elements: &[Type],
+    items: Vec<Pattern>,
+) -> Pattern {
+    pattern_with_type(PatternKind::Tuple(items), Type::Tuple(elements.to_vec()))
+}
+
+/// Normalize struct fields into an ordered map.
+fn struct_fields_map(fields: &[(String, Type)]) -> IndexMap<String, Type> {
+    fields
+        .iter()
+        .map(|(name, type_)| (name.clone(), type_.clone()))
+        .collect()
+}
+
+/// Struct pattern with ordered fields and a concrete struct type.
+fn struct_pattern(
+    name: &Path,
+    fields: &[(String, Type)],
+    items: Vec<Pattern>,
+) -> Pattern {
+    let span = Span::default();
+    let map = fields
+        .iter()
+        .zip(items)
+        .map(|((name, _), pat)| (name.clone().with_span(span), pat))
+        .collect::<IndexMap<_, _>>();
+    pattern_with_type(
+        PatternKind::Struct(map),
+        Type::Struct {
+            name: name.clone(),
+            fields: struct_fields_map(fields),
+        },
+    )
+}
+
+/// Exact-length array pattern used for refutation witnesses.
+fn array_pattern_exact(
+    inner: &Type,
+    items: Vec<Pattern>,
+) -> Pattern {
+    pattern_with_type(
+        PatternKind::Array {
+            starting: items,
+            glob: Glob::None,
+            ending: Vec::new(),
+        },
+        Type::Array(inner.clone().into()),
+    )
+}
+
+/// Build a constructor pattern from its argument patterns.
+fn constructor_pattern_from_args(
+    constructor: &ConstructorSpec,
+    args: Vec<Pattern>,
+) -> Pattern {
+    match constructor {
+        ConstructorSpec::Unit => immediate_pattern(ConstValue::Unit),
+        ConstructorSpec::Boolean(value) => immediate_pattern(ConstValue::Boolean(*value)),
+        ConstructorSpec::Sum {
+            tag,
+            sum_type,
+            payload,
+        } => {
+            if payload == &Type::Unit {
+                let inner = immediate_pattern(ConstValue::Unit);
+                let constructor = Constructor::SumConstant {
+                    tag: *tag,
+                    sum_type: sum_type.clone(),
+                };
+                pattern_with_type(
+                    PatternKind::Constructor(constructor, inner.into()),
+                    sum_type.clone(),
+                )
+            } else {
+                let inner = args
+                    .into_iter()
+                    .next()
+                    .unwrap_or_else(|| wildcard_pattern(payload));
+                let constructor = Constructor::SumFunction {
+                    tag: *tag,
+                    sum_type: sum_type.clone(),
+                    parameter_type: payload.clone(),
+                };
+                pattern_with_type(
+                    PatternKind::Constructor(constructor, inner.into()),
+                    sum_type.clone(),
+                )
+            }
+        }
+        ConstructorSpec::Tuple { elements } => {
+            let items = if args.len() == elements.len() {
+                args
+            } else {
+                elements.iter().map(wildcard_pattern).collect()
+            };
+            tuple_pattern(elements, items)
+        }
+        ConstructorSpec::Struct { name, fields } => {
+            let items = if args.len() == fields.len() {
+                args
+            } else {
+                fields
+                    .iter()
+                    .map(|(_, type_)| wildcard_pattern(type_))
+                    .collect()
+            };
+            struct_pattern(name, fields, items)
+        }
+    }
+}
+
+/// Constructor pattern that uses wildcards for all arguments.
+fn constructor_pattern_with_wildcards(constructor: &ConstructorSpec) -> Pattern {
+    let args = constructor_arg_types(constructor)
+        .into_iter()
+        .map(|type_| wildcard_pattern(&type_))
+        .collect();
+    constructor_pattern_from_args(constructor, args)
+}
+
+/// Default witness pattern for a given type.
+fn default_refutation(
+    type_: &Type,
+    symbols: &SymbolTable,
+) -> Pattern {
+    let normalized = normalize_type(type_, symbols);
+    match &normalized {
+        Type::Unit => immediate_pattern(ConstValue::Unit),
+        Type::Boolean => immediate_pattern(ConstValue::Boolean(true)),
+        Type::Sum { variant_types, .. } => {
+            let payload = variant_types.first().cloned().unwrap_or(Type::Unit);
+            let constructor = ConstructorSpec::Sum {
+                tag: 0,
+                sum_type: normalized.clone(),
+                payload,
+            };
+            constructor_pattern_with_wildcards(&constructor)
+        }
+        Type::Tuple(elements) => {
+            let items = elements.iter().map(wildcard_pattern).collect();
+            tuple_pattern(elements, items)
+        }
+        Type::Struct { name, fields } => {
+            let field_list = fields
+                .iter()
+                .map(|(name, type_)| (name.clone(), type_.clone()))
+                .collect::<Vec<_>>();
+            let items = field_list
+                .iter()
+                .map(|(_, type_)| wildcard_pattern(type_))
+                .collect();
+            struct_pattern(name, &field_list, items)
+        }
+        Type::Array(inner) => array_pattern_exact(inner, Vec::new()),
+        _ => wildcard_pattern(&normalized),
+    }
+}
+
+/// Extract the name of a sum type after normalization.
 fn sum_type_name(
     type_: &Type,
     symbols: &SymbolTable,
@@ -450,6 +645,7 @@ fn sum_type_name(
     }
 }
 
+/// Check whether a single pattern covers all values of a type.
 fn pattern_covers_all(
     type_: &Type,
     pattern: &Pattern,
@@ -536,6 +732,7 @@ fn pattern_covers_all(
     }
 }
 
+/// Enumerate constructors for finite or single-constructor types.
 fn constructors_for_type(type_: &Type) -> Option<Vec<ConstructorSpec>> {
     match type_ {
         Type::Unit => Some(vec![ConstructorSpec::Unit]),
@@ -545,11 +742,8 @@ fn constructors_for_type(type_: &Type) -> Option<Vec<ConstructorSpec>> {
                 ConstructorSpec::Boolean(false),
             ])
         }
-        Type::Sum {
-            name,
-            variant_types,
-            ..
-        } => {
+        Type::Sum { variant_types, .. } => {
+            let sum_type = type_.clone();
             Some(
                 variant_types
                     .iter()
@@ -557,7 +751,7 @@ fn constructors_for_type(type_: &Type) -> Option<Vec<ConstructorSpec>> {
                     .map(|(tag, payload)| {
                         ConstructorSpec::Sum {
                             tag,
-                            sum_name: name.clone(),
+                            sum_type: sum_type.clone(),
                             payload: payload.clone(),
                         }
                     })
@@ -569,8 +763,9 @@ fn constructors_for_type(type_: &Type) -> Option<Vec<ConstructorSpec>> {
                 elements: items.clone(),
             }])
         }
-        Type::Struct { fields, .. } => {
+        Type::Struct { name, fields } => {
             Some(vec![ConstructorSpec::Struct {
+                name: name.clone(),
                 fields: fields
                     .iter()
                     .map(|(name, type_)| (name.clone(), type_.clone()))
@@ -581,21 +776,23 @@ fn constructors_for_type(type_: &Type) -> Option<Vec<ConstructorSpec>> {
     }
 }
 
+/// Number of arguments required by a constructor.
 fn constructor_arity(constructor: &ConstructorSpec) -> usize {
     match constructor {
         ConstructorSpec::Unit | ConstructorSpec::Boolean(_) => 0,
         ConstructorSpec::Sum { .. } => 1,
         ConstructorSpec::Tuple { elements } => elements.len(),
-        ConstructorSpec::Struct { fields } => fields.len(),
+        ConstructorSpec::Struct { fields, .. } => fields.len(),
     }
 }
 
+/// Types of constructor arguments in order.
 fn constructor_arg_types(constructor: &ConstructorSpec) -> Vec<Type> {
     match constructor {
         ConstructorSpec::Unit | ConstructorSpec::Boolean(_) => Vec::new(),
         ConstructorSpec::Sum { payload, .. } => vec![payload.clone()],
         ConstructorSpec::Tuple { elements } => elements.clone(),
-        ConstructorSpec::Struct { fields } => {
+        ConstructorSpec::Struct { fields, .. } => {
             fields
                 .iter()
                 .map(|(_, field_type)| field_type.clone())
@@ -604,6 +801,7 @@ fn constructor_arg_types(constructor: &ConstructorSpec) -> Vec<Type> {
     }
 }
 
+/// Check whether a matrix slot covers all values of a type.
 fn slot_covers_all(
     type_: &Type,
     slot: PatternSlot<'_>,
@@ -615,6 +813,7 @@ fn slot_covers_all(
     }
 }
 
+/// Specialize a row against a constructor, expanding wildcards as needed.
 fn specialize_row<'a>(
     row: &[PatternSlot<'a>],
     constructor: &ConstructorSpec,
@@ -643,10 +842,11 @@ fn specialize_row<'a>(
                         _ => None,
                     }
                 }
-                ConstructorSpec::Sum { tag, sum_name, .. } => {
+                ConstructorSpec::Sum { tag, sum_type, .. } => {
                     let PatternKind::Constructor(constructor, inner) = &pattern.inner.inner else {
                         return None;
                     };
+                    let sum_name = sum_type_name(sum_type, symbols);
                     let matches_sum = match constructor {
                         Constructor::SumConstant {
                             tag: pat_tag,
@@ -656,11 +856,7 @@ fn specialize_row<'a>(
                             tag: pat_tag,
                             sum_type,
                             ..
-                        } => {
-                            pat_tag == tag
-                                && sum_type_name(sum_type, symbols)
-                                    .is_some_and(|name| &name == sum_name)
-                        }
+                        } => pat_tag == tag && sum_type_name(sum_type, symbols) == sum_name,
                         Constructor::Structure(_) => false,
                     };
                     matches_sum.then(|| {
@@ -679,7 +875,7 @@ fn specialize_row<'a>(
                         _ => None,
                     }
                 }
-                ConstructorSpec::Struct { fields } => {
+                ConstructorSpec::Struct { fields, .. } => {
                     match &pattern.inner.inner {
                         PatternKind::Struct(map) => {
                             if map
@@ -709,32 +905,62 @@ fn specialize_row<'a>(
     }
 }
 
-fn is_exhaustive_matrix<'a>(
+/// Find a concrete refutation witness for a pattern matrix.
+fn refutation_matrix<'a>(
     types: &[Type],
     rows: &[Vec<PatternSlot<'a>>],
     symbols: &SymbolTable,
-) -> bool {
+) -> Option<Vec<Pattern>> {
     if types.is_empty() {
-        return !rows.is_empty();
+        return rows.is_empty().then_some(Vec::new());
     }
     if rows.is_empty() {
-        return false;
+        return Some(
+            types
+                .iter()
+                .map(|type_| default_refutation(type_, symbols))
+                .collect(),
+        );
     }
     let head_type = normalize_type(&types[0], symbols);
     let tail_types = &types[1..];
     if let Some(constructors) = constructors_for_type(&head_type) {
-        constructors.into_iter().all(|constructor| {
+        for constructor in constructors {
             let specialized = rows
                 .iter()
                 .filter_map(|row| specialize_row(row, &constructor, symbols))
                 .collect::<Vec<_>>();
+            let arity = constructor_arity(&constructor);
             if specialized.is_empty() {
-                return false;
+                let mut witness = Vec::with_capacity(1 + tail_types.len());
+                witness.push(constructor_pattern_with_wildcards(&constructor));
+                witness.extend(
+                    tail_types
+                        .iter()
+                        .map(|type_| default_refutation(type_, symbols)),
+                );
+                return Some(witness);
             }
             let mut next_types = constructor_arg_types(&constructor);
             next_types.extend_from_slice(tail_types);
-            is_exhaustive_matrix(&next_types, &specialized, symbols)
-        })
+            if let Some(mut witness) = refutation_matrix(&next_types, &specialized, symbols) {
+                if witness.len() < arity {
+                    return Some(
+                        types
+                            .iter()
+                            .map(|type_| default_refutation(type_, symbols))
+                            .collect(),
+                    );
+                }
+                let remaining = witness.split_off(arity);
+                let head_pattern = constructor_pattern_from_args(&constructor, witness);
+                let mut result = Vec::with_capacity(1 + remaining.len());
+                result.push(head_pattern);
+                result.extend(remaining);
+                return Some(result);
+            }
+        }
+        None
     } else {
         let specialized = rows
             .iter()
@@ -743,41 +969,73 @@ fn is_exhaustive_matrix<'a>(
             .map(|(_, row)| row.iter().skip(1).copied().collect::<Vec<_>>())
             .collect::<Vec<_>>();
         if specialized.is_empty() {
-            return false;
+            let mut witness = Vec::with_capacity(1 + tail_types.len());
+            witness.push(default_refutation(&head_type, symbols));
+            witness.extend(
+                tail_types
+                    .iter()
+                    .map(|type_| default_refutation(type_, symbols)),
+            );
+            return Some(witness);
         }
-        is_exhaustive_matrix(tail_types, &specialized, symbols)
+        refutation_matrix(tail_types, &specialized, symbols).map(|mut witness| {
+            let mut result = Vec::with_capacity(1 + witness.len());
+            result.push(default_refutation(&head_type, symbols));
+            result.append(&mut witness);
+            result
+        })
     }
 }
 
+/// Exhaustiveness check for array patterns with length reasoning.
+#[allow(clippy::result_large_err)]
 fn are_array_patterns_comprehensive(
     inner: &Type,
     patterns: &[Pattern],
     symbols: &SymbolTable,
-) -> bool {
+) -> std::result::Result<(), Pattern> {
     let array_patterns = patterns
         .iter()
         .filter(|pattern| array_pattern_parts(pattern).is_some())
         .collect::<Vec<_>>();
-    let Some(min_glob_len) = array_patterns
+    if array_patterns.is_empty() {
+        return Err(array_pattern_exact(inner, Vec::new()));
+    }
+    let min_glob_len = array_patterns
         .iter()
         .filter_map(|pattern| {
             let (starting, glob, ending) = array_pattern_parts(pattern)?;
             (!glob.is_exact()).then_some(starting.len() + ending.len())
         })
-        .min()
-    else {
-        return false;
+        .min();
+    let Some(min_glob_len) = min_glob_len else {
+        let covered_lengths = array_patterns
+            .iter()
+            .filter_map(|pattern| {
+                let (starting, glob, ending) = array_pattern_parts(pattern)?;
+                glob.is_exact().then_some(starting.len() + ending.len())
+            })
+            .collect::<std::collections::HashSet<_>>();
+        let mut missing_len = 0;
+        while covered_lengths.contains(&missing_len) {
+            missing_len += 1;
+        }
+        return Err(array_pattern_with_wildcards(inner, missing_len));
     };
-    let short_lengths_ok = (0..min_glob_len).all(|length| {
+
+    for length in 0..min_glob_len {
         let rows = array_patterns
             .iter()
             .filter_map(|pattern| array_pattern_to_row(pattern, length))
             .collect::<Vec<_>>();
-        !rows.is_empty() && is_exhaustive_matrix(&repeated_types(inner, length), &rows, symbols)
-    });
-    if !short_lengths_ok {
-        return false;
+        if rows.is_empty() {
+            return Err(array_pattern_with_wildcards(inner, length));
+        }
+        if let Some(witness) = refutation_matrix(&repeated_types(inner, length), &rows, symbols) {
+            return Err(array_pattern_from_row(inner, witness));
+        }
     }
+
     let rows = array_patterns
         .iter()
         .filter_map(|pattern| {
@@ -787,9 +1045,16 @@ fn are_array_patterns_comprehensive(
                 .flatten()
         })
         .collect::<Vec<_>>();
-    !rows.is_empty() && is_exhaustive_matrix(&repeated_types(inner, min_glob_len), &rows, symbols)
+    if rows.is_empty() {
+        return Err(array_pattern_with_wildcards(inner, min_glob_len));
+    }
+    if let Some(witness) = refutation_matrix(&repeated_types(inner, min_glob_len), &rows, symbols) {
+        return Err(array_pattern_from_row(inner, witness));
+    }
+    Ok(())
 }
 
+/// Extract array pattern parts while ignoring type hints.
 fn array_pattern_parts(pattern: &Pattern) -> Option<(&[Pattern], &Glob, &[Pattern])> {
     match &strip_pattern(pattern).inner.inner {
         PatternKind::Array {
@@ -801,6 +1066,7 @@ fn array_pattern_parts(pattern: &Pattern) -> Option<(&[Pattern], &Glob, &[Patter
     }
 }
 
+/// Build a row for a fixed array length.
 fn array_pattern_to_row<'a>(
     pattern: &'a Pattern,
     length: usize,
@@ -825,6 +1091,26 @@ fn array_pattern_to_row<'a>(
     Some(slots)
 }
 
+/// Exact array pattern of a given length filled with wildcards.
+fn array_pattern_with_wildcards(
+    inner: &Type,
+    length: usize,
+) -> Pattern {
+    let items = std::iter::repeat_with(|| wildcard_pattern(inner))
+        .take(length)
+        .collect();
+    array_pattern_exact(inner, items)
+}
+
+/// Convert a witness row into an exact array pattern.
+fn array_pattern_from_row(
+    inner: &Type,
+    items: Vec<Pattern>,
+) -> Pattern {
+    array_pattern_exact(inner, items)
+}
+
+/// Repeat a type to build a fixed-length product type vector.
 fn repeated_types(
     type_: &Type,
     length: usize,
@@ -884,7 +1170,7 @@ mod tests {
         let symbols = SymbolTable::default();
         let patterns = vec![unit_pattern()];
 
-        assert!(are_patterns_comprehensive(&Type::Unit, &patterns, &symbols));
+        assert!(are_patterns_comprehensive(&Type::Unit, &patterns, &symbols).is_ok());
     }
 
     #[test]
@@ -892,18 +1178,10 @@ mod tests {
         let symbols = SymbolTable::default();
         let patterns = vec![boolean_pattern(true)];
 
-        assert!(!are_patterns_comprehensive(
-            &Type::Boolean,
-            &patterns,
-            &symbols
-        ));
+        assert!(are_patterns_comprehensive(&Type::Boolean, &patterns, &symbols).is_err());
 
         let patterns = vec![boolean_pattern(true), boolean_pattern(false)];
-        assert!(are_patterns_comprehensive(
-            &Type::Boolean,
-            &patterns,
-            &symbols
-        ));
+        assert!(are_patterns_comprehensive(&Type::Boolean, &patterns, &symbols).is_ok());
     }
 
     #[test]
@@ -911,18 +1189,10 @@ mod tests {
         let symbols = SymbolTable::default();
         let patterns = vec![integer_pattern(0), integer_pattern(1)];
 
-        assert!(!are_patterns_comprehensive(
-            &Type::Integer,
-            &patterns,
-            &symbols
-        ));
+        assert!(are_patterns_comprehensive(&Type::Integer, &patterns, &symbols).is_err());
 
         let patterns = vec![hole_pattern()];
-        assert!(are_patterns_comprehensive(
-            &Type::Integer,
-            &patterns,
-            &symbols
-        ));
+        assert!(are_patterns_comprehensive(&Type::Integer, &patterns, &symbols).is_ok());
     }
 
     #[test]
@@ -948,10 +1218,10 @@ mod tests {
             constructor_pattern(some_constructor.clone(), hole_pattern()),
         ];
 
-        assert!(are_patterns_comprehensive(&sum_type, &patterns, &symbols));
+        assert!(are_patterns_comprehensive(&sum_type, &patterns, &symbols).is_ok());
 
         let patterns = vec![constructor_pattern(none_constructor, unit_pattern())];
-        assert!(!are_patterns_comprehensive(&sum_type, &patterns, &symbols));
+        assert!(are_patterns_comprehensive(&sum_type, &patterns, &symbols).is_err());
     }
 
     #[test]
@@ -964,16 +1234,12 @@ mod tests {
             array_pattern(vec![boolean_pattern(false)], Glob::Unnamed, vec![]),
         ];
 
-        assert!(are_patterns_comprehensive(&array_type, &patterns, &symbols));
+        assert!(are_patterns_comprehensive(&array_type, &patterns, &symbols).is_ok());
 
         let patterns = vec![
             array_pattern(vec![boolean_pattern(true)], Glob::Unnamed, vec![]),
             array_pattern(vec![boolean_pattern(false)], Glob::Unnamed, vec![]),
         ];
-        assert!(!are_patterns_comprehensive(
-            &array_type,
-            &patterns,
-            &symbols
-        ));
+        assert!(are_patterns_comprehensive(&array_type, &patterns, &symbols).is_err());
     }
 }

@@ -130,7 +130,7 @@ pub type IrNode = Typed<Spanned<IrKind>>;
 #[derive(Debug, Clone)]
 pub struct Module {
     pub name: String,
-    pub types: HashMap<Path, AbstractType>,
+    pub types: IndexMap<Path, AbstractType>,
     pub constructors: HashMap<Path, Constructor>,
     pub code: Vec<IrNode>,
 }

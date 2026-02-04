@@ -12,6 +12,7 @@
 mod encode;
 mod lower;
 pub mod pretty_print;
+pub mod type_encoder;
 
 use indexmap::IndexMap;
 
@@ -20,8 +21,8 @@ use crate::ir::{
     Path,
 };
 use crate::{
-    semantic,
     SymbolTable,
+    semantic,
 };
 
 pub use encode::encode;

@@ -48,13 +48,14 @@ pub fn lower_type(
 use Instruction as i;
 use indexmap::IndexMap;
 impl<'a> Encoder<'a> {
+    /// Create a new closure, push a reference to it onto the stack
     pub fn closure(
         &mut self,
         symbols: &SymbolTable,
         parameter: Typed<Path>,
         captures: Vec<Typed<Path>>,
         body: impl for<'b> FnOnce(&mut Encoder<'b>, &SymbolTable),
-    ) {
+    ) -> usize {
         let mut new_enc = self.module.new_function();
         let new_func_index = new_enc.func_index;
         let capture_array_name = new_enc.temporary_name("captured_symbols");
@@ -114,6 +115,7 @@ impl<'a> Encoder<'a> {
             i::Func(new_func_index),
             i::StructNew([Type::function_capture(), Type::closure_function_type()].into()),
         ]);
+        new_func_index
     }
     // Preconditions:
     // * Predicate to be pattern-matched on is top of stack
@@ -535,9 +537,11 @@ impl<'a> Encoder<'a> {
                     parameter_name.clone().with_type(parameter_type),
                     vec![],
                     |inner_func, _| {
-                        inner_func.push(i::I32Const(tag as i32));
-                        inner_func.push(i::Get(parameter_name));
-                        inner_func.push(i::StructNew(sum_struct_type.clone()));
+                        inner_func.extend([
+                            i::I32Const(tag as i32),
+                            i::Get(parameter_name),
+                            i::StructNew(sum_struct_type.clone()),
+                        ]);
                     },
                 );
 
@@ -545,42 +549,18 @@ impl<'a> Encoder<'a> {
                 self.extend([i::Set(path)]);
             }
             Constructor::Structure(struct_type) => {
-                // Structure constructor is an identity function that serves as a type hint
-                // It takes a struct and returns it unchanged
-
-                let mut inner_func = self.module.new_function();
-                let inner_func_index = inner_func.func_index;
-
-                // Set up function parameters: (captures: [any], parameter: any) -> any
-                let captures_param = inner_func.temporary_name("captures");
-                inner_func.new_parameter(captures_param, Type::Array(Type::Any.into()));
-
-                let param_anyref = inner_func.temporary_name("param_anyref");
-                inner_func.new_parameter(param_anyref.clone(), Type::Any);
-                inner_func.new_return(Type::Any);
-
-                // Function body: just return the parameter (identity)
-                let param_type_lowered = lower_type(&struct_type, symbols);
-                inner_func.push(i::Get(param_anyref));
-                // Cast to struct type to validate, result stays on stack as anyref
-                match &param_type_lowered {
-                    Type::Struct(fields) => inner_func.push(i::RefCastStruct(fields.clone())),
-                    Type::Array(inner) => inner_func.push(i::RefCastArray(inner.clone())),
-                    Type::Any => {}
-                    _ => {}
-                }
-
+                let parameter_name = self.temporary_name("cons_param");
+                self.closure(
+                    symbols,
+                    parameter_name.clone().with_type(struct_type),
+                    vec![],
+                    |inner_func, _| {
+                        inner_func.push(i::Get(parameter_name));
+                    },
+                );
                 // Create closure: { captures: [], func: inner_func }
                 self.new_register(path.clone(), ScopeKind::Global, Type::closure_type());
-                self.extend([
-                    i::ArrayNewFixed {
-                        inner_type: Type::Any,
-                        length: 0,
-                    },
-                    i::Func(inner_func_index),
-                    i::StructNew([Type::function_capture(), Type::closure_function_type()].into()),
-                    i::Set(path),
-                ]);
+                self.extend([i::Set(path)]);
             }
         }
     }

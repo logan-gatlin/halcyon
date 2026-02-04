@@ -82,3 +82,12 @@ impl AbstractType {
         }
     }
 }
+
+impl Visit<Type> for AbstractType {
+    fn _visit(
+        &mut self,
+        f: &mut impl FnMut(&mut Type),
+    ) {
+        self.base._visit(f);
+    }
+}
