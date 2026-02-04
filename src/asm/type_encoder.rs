@@ -137,7 +137,7 @@ impl SignatureSection {
             }
             Instantiation(path, items) => {
                 12usize.encode(sink);
-                path.encode(sink);
+                self.index_map.get(path).encode(sink);
                 items.len().encode(sink);
                 for item in items {
                     self.encode_type(item, sink);
@@ -161,12 +161,18 @@ impl Encode for SignatureSection {
         &self,
         sink: &mut Vec<u8>,
     ) {
-        self.imported_types.encode(sink);
-        self.defined_types.len().encode(sink);
+        let mut temp_sink = vec![];
+        "signature".encode(&mut temp_sink);
+        self.imported_types.encode(&mut temp_sink);
+        self.defined_types.len().encode(&mut temp_sink);
         for (path, t) in &self.defined_types {
-            path.encode(sink);
-            self.encode_type(&t.base, sink);
-            t.variables.encode(sink);
+            path.encode(&mut temp_sink);
+            self.encode_type(&t.base, &mut temp_sink);
+            t.variables.encode(&mut temp_sink);
         }
+        let (len, written) =
+            leb128fmt::encode_u32(temp_sink.len() as u32).unwrap_or_else(|| unreachable!());
+        sink.extend(&len[..written]);
+        sink.extend(temp_sink);
     }
 }

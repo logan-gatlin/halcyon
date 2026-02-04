@@ -187,7 +187,7 @@ fn default_value(valtype: &ValType) -> ConstExpr {
 // 10 Code
 // 11 Data
 // 12 DataCount
-pub fn encode(module: Module) -> Vec<u8> {
+pub fn encode(asm_module: Module) -> Vec<u8> {
     let mut name_section = NameSection::new();
     let mut global_names = NameMap::new();
     let mut type_section = TypeSection::new();
@@ -203,7 +203,7 @@ pub fn encode(module: Module) -> Vec<u8> {
     let mut referenced_funcs: BTreeSet<u32> = BTreeSet::new();
 
     let mut global_id = 0;
-    for (name, type_) in module.imports.iter() {
+    for (name, type_) in asm_module.imports.iter() {
         import_section.import(
             &name.major,
             &name.minor,
@@ -218,7 +218,7 @@ pub fn encode(module: Module) -> Vec<u8> {
         global_id += 1;
     }
 
-    for (name, type_) in module.globals.iter() {
+    for (name, type_) in asm_module.globals.iter() {
         let val_type = type_section.valtype_of(type_);
         global_section.global(
             GlobalType {
@@ -234,7 +234,7 @@ pub fn encode(module: Module) -> Vec<u8> {
         global_id += 1;
     }
 
-    for f in &module.functions {
+    for f in &asm_module.functions {
         let type_id = type_section.new_function(
             f.parameters
                 .values()
@@ -459,6 +459,7 @@ pub fn encode(module: Module) -> Vec<u8> {
         .section(&global_section)
         .section(&export_section)
         .section(&element_section)
-        .section(&code_section);
+        .section(&code_section)
+        .section(&asm_module.sig);
     module.finish()
 }

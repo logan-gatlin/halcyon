@@ -518,6 +518,7 @@ dependencies = [
  "derive-new",
  "indexmap",
  "indoc",
+ "leb128fmt",
  "multipeek",
  "paste",
  "punycode",

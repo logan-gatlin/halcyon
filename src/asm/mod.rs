@@ -15,6 +15,7 @@ pub mod pretty_print;
 pub mod type_encoder;
 
 use indexmap::IndexMap;
+use type_encoder::*;
 
 use crate::ir::{
     ConstValue,
@@ -311,6 +312,7 @@ pub struct Module {
     pub imports: IndexMap<Path, Type>,
     pub globals: IndexMap<Path, Type>,
     pub functions: Vec<Function>,
+    pub sig: SignatureSection,
 }
 
 impl Type {
@@ -352,6 +354,7 @@ pub fn lower_module(
         init_func.lower_ir(code, symbols);
         init_func.push(Instruction::Drop);
     }
+    module.sig = SignatureSection::new(&ir_module.name, symbols);
     module
 }
 
