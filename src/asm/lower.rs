@@ -366,11 +366,11 @@ impl<'a> Encoder<'a> {
                 value,
                 then,
                 else_,
-                ..
+                scope,
             } => {
                 let skip_pattern = !assignee.is_refutable() && assignee.introduced_names() == 0;
                 assignee.visit(|(path, type_)| {
-                    self.new_register(path.clone(), ScopeKind::Local, lower_type(type_, symbols));
+                    self.new_register(path.clone(), scope, lower_type(type_, symbols));
                 });
                 let result_type = lower_type(&ir.type_, symbols);
                 if !skip_pattern {
@@ -378,7 +378,7 @@ impl<'a> Encoder<'a> {
                 }
                 self.lower_ir(*value, symbols);
                 if !skip_pattern {
-                    self.lower_pattern(assignee, ScopeKind::Local, symbols);
+                    self.lower_pattern(assignee, scope, symbols);
                 } else {
                     self.push(i::Drop);
                 }
@@ -570,14 +570,8 @@ impl<'a> Encoder<'a> {
     /// A closure is a struct with fields {captured_args, funcref}.
     /// The calling convention expects [captures, argument] on the stack before funcref.
     pub fn call_closure(&mut self) {
-        let closure_struct_type: Box<[Type]> = [
-            Type::function_capture(),
-            Type::Function {
-                parameters: [Type::Array(Type::Any.into()), Type::Any].into(),
-                results: [Type::Any].into(),
-            },
-        ]
-        .into();
+        let closure_struct_type: Box<[Type]> =
+            [Type::function_capture(), Type::closure_function_type()].into();
 
         // Stack before: [argument, closure: anyref]
         // Cast closure from anyref to the specific closure struct type

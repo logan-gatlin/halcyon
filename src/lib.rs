@@ -54,3 +54,37 @@ mod test;
 pub use indoc::*;
 pub use logging::*;
 pub use map::*;
+
+#[derive(Debug, Clone)]
+pub struct Artifact {
+    pub parse_tree: parse::ParsedModule,
+    pub ir_module: ir::Module,
+    pub asm_module: asm::Module,
+    pub binary: Vec<u8>,
+}
+
+pub fn compile(
+    input: &str,
+    logger: &mut Logger,
+    symbols: &mut SymbolTable,
+) -> Vec<Artifact> {
+    let tokens = tokenize(input.chars(), logger);
+    let parse_trees = parse(logger, tokens);
+    let mut artifacts = vec![];
+
+    for p in parse_trees {
+        let mut ir_module = build_ir(logger, symbols, p.clone());
+        semantic::analyze(&mut ir_module, symbols, logger);
+        //eprintln!("{}\n", ir_module.pretty());
+        let asm_module = asm::lower_module(&ir_module, symbols);
+        //eprintln!("{}", asm_module.pretty());
+        let binary = asm::encode(asm_module.clone());
+        artifacts.push(Artifact {
+            parse_tree: p,
+            ir_module,
+            asm_module,
+            binary,
+        });
+    }
+    artifacts
+}

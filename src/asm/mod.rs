@@ -9,17 +9,18 @@
     'a -> 'a are unrepresentable. After a closure is called, it is necessary
     to cast the result to its appropriate type. This should never fail.
 */
+pub mod custom_section;
 mod encode;
 mod lower;
 pub mod pretty_print;
-pub mod type_encoder;
 
+use custom_section::*;
 use indexmap::IndexMap;
-use type_encoder::*;
 
 use crate::ir::{
     ConstValue,
     Path,
+    ScopeKind,
 };
 use crate::{
     SymbolTable,
@@ -27,12 +28,6 @@ use crate::{
 };
 
 pub use encode::encode;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum ScopeKind {
-    Local,
-    Global,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Type {
@@ -313,6 +308,7 @@ pub struct Module {
     pub globals: IndexMap<Path, Type>,
     pub functions: Vec<Function>,
     pub sig: SignatureSection,
+    pub start: u32,
 }
 
 impl Type {
@@ -339,21 +335,22 @@ impl Function {
 }
 
 pub fn lower_module(
-    ir_module: crate::ir::Module,
+    ir_module: &crate::ir::Module,
     symbols: &SymbolTable,
 ) -> Module {
     let mut module = Module::new(ir_module.name.clone());
     let mut init_func = module.new_function();
 
     // Lower constructors first so they're available as globals
-    for (path, cons) in ir_module.constructors {
-        init_func.lower_constructor(path, cons, symbols);
+    for (path, cons) in &ir_module.constructors {
+        init_func.lower_constructor(path.clone(), cons.clone(), symbols);
     }
 
-    for code in ir_module.code {
-        init_func.lower_ir(code, symbols);
+    for code in &ir_module.code {
+        init_func.lower_ir(code.clone(), symbols);
         init_func.push(Instruction::Drop);
     }
+    module.start = init_func.func_index as u32;
     module.sig = SignatureSection::new(&ir_module.name, symbols);
     module
 }
@@ -437,5 +434,76 @@ impl<'a> Encoder<'a> {
         type_: Type,
     ) {
         self.module.functions[self.func_index].returns.push(type_);
+    }
+}
+
+// This uses the existing codespan-reporting system to report WASM validation
+// errors with their decompiled WAT syntax
+pub fn validate_wasm(bin: &[u8]) -> Result<(), String> {
+    use codespan_reporting::diagnostic::{
+        Diagnostic,
+        Label,
+    };
+    use codespan_reporting::term;
+
+    /// Find the WAT line number (1-indexed) for a given binary offset.
+    /// Returns the line whose binary offset is the largest that doesn't exceed `target_offset`.
+    fn find_wat_line_for_offset(
+        offset_map: &[(usize, Option<usize>)],
+        target_offset: usize,
+    ) -> usize {
+        let mut best_line = 1;
+        for &(line, offset) in offset_map {
+            if let Some(off) = offset
+                && off <= target_offset
+            {
+                best_line = line;
+            }
+        }
+        best_line
+    }
+
+    /// Compute the byte offset in the WAT string for the start of a given line (1-indexed).
+    fn wat_line_byte_offset(
+        wat: &str,
+        line: usize,
+    ) -> usize {
+        wat.lines()
+            .take(line.saturating_sub(1))
+            .map(|l| l.len() + 1) // +1 for newline
+            .sum()
+    }
+
+    use codespan_reporting::files::SimpleFiles;
+    // Generate WAT with offset mapping for validation error reporting
+    let mut wat_storage = String::new();
+    let offset_map: Vec<(usize, Option<usize>)> = wasmprinter::Config::new()
+        .offsets_and_lines(bin, &mut wat_storage)
+        .map(|iter| {
+            iter.enumerate()
+                .map(|(idx, (offset, _text))| (idx + 1, offset)) // 1-indexed lines
+                .collect()
+        })
+        .unwrap_or_default();
+    if let Err(e) = wasmparser::validate(bin) {
+        let error_offset = e.offset();
+        let wat_line = find_wat_line_for_offset(&offset_map, error_offset);
+        let byte_start = wat_line_byte_offset(&wat_storage, wat_line);
+        let byte_end = wat_line_byte_offset(&wat_storage, wat_line + 1).min(wat_storage.len());
+
+        let mut wat_files: SimpleFiles<&str, &str> = SimpleFiles::new();
+        let wat_file_id = wat_files.add("<generated wat>", &wat_storage);
+
+        let diagnostic: Diagnostic<usize> = Diagnostic::error()
+            .with_message(e.message())
+            .with_labels(vec![Label::primary(wat_file_id, byte_start..byte_end)]);
+        let config = codespan_reporting::term::Config {
+            display_style: term::DisplayStyle::Rich,
+            ..Default::default()
+        };
+        Err(term::emit_into_string(&config, &wat_files, &diagnostic)
+            .unwrap_or_else(|_| "Failed to print error to string".into()))
+    } else {
+        Ok(())
     }
 }

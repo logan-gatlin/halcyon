@@ -161,8 +161,10 @@ impl CanonicalMap {
         n: usize,
     ) {
         for _ in 0..n {
-            assert!(!self.history.is_empty(), "Variable scope failed to end");
-            let (key, val) = self.history.pop().unwrap_or_else(|| unreachable!());
+            let (key, val) = self
+                .history
+                .pop()
+                .unwrap_or_else(|| unreachable!("Variable scope failed to end"));
             match val {
                 Some(val) => self.map.insert(key, val),
                 None => self.map.remove(&key),

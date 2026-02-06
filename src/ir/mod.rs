@@ -23,6 +23,12 @@ use crate::{
 };
 pub use pretty_print::*;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ScopeKind {
+    Local,
+    Global,
+}
+
 type Result<'a, T> = std::result::Result<T, LogBuilder<'a>>;
 
 pub fn build_ir(
@@ -40,7 +46,7 @@ pub enum IrKind {
         /// The pattern to compare against
         assignee: Pattern,
         /// Whether this is a module-level let
-        is_global: bool,
+        scope: ScopeKind,
         /// The value which is compared with the value
         value: Box<IrNode>,
         /// The branch which is taken if the pattern binding succeeds

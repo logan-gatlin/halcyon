@@ -196,11 +196,16 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
     let mut table_section = wasm_encoder::TableSection::new();
     let mut global_section = wasm_encoder::GlobalSection::new();
     let mut export_section = wasm_encoder::ExportSection::new();
+    let start_section = wasm_encoder::StartSection {
+        function_index: asm_module.start,
+    };
     let mut element_section = wasm_encoder::ElementSection::new();
     let mut code_section = wasm_encoder::CodeSection::new();
 
     let mut global_namespace = HashMap::new();
     let mut referenced_funcs: BTreeSet<u32> = BTreeSet::new();
+
+    name_section.module(&asm_module.name);
 
     let mut global_id = 0;
     for (name, type_) in asm_module.imports.iter() {
@@ -458,6 +463,7 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
         .section(&table_section)
         .section(&global_section)
         .section(&export_section)
+        .section(&start_section)
         .section(&element_section)
         .section(&code_section)
         .section(&asm_module.sig);

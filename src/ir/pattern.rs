@@ -780,6 +780,7 @@ fn constructors_for_type(type_: &Type) -> Option<Vec<ConstructorSpec>> {
 fn constructor_arity(constructor: &ConstructorSpec) -> usize {
     match constructor {
         ConstructorSpec::Unit | ConstructorSpec::Boolean(_) => 0,
+        // Constant constructors have an implicit unit argument
         ConstructorSpec::Sum { .. } => 1,
         ConstructorSpec::Tuple { elements } => elements.len(),
         ConstructorSpec::Struct { fields, .. } => fields.len(),

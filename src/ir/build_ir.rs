@@ -83,6 +83,7 @@ impl<'a> Builder<'a> {
                 is_global,
             }) = self.term_info.get(&path).cloned()
             else {
+                // A name should NEVER be inside `name_map`, but have no `term_info` entry.
                 unreachable!()
             };
             let depth = self.captures.len();
@@ -313,7 +314,11 @@ impl<'a> Builder<'a> {
                     }
                     IrKind::Let {
                         assignee,
-                        is_global,
+                        scope: if is_global {
+                            ScopeKind::Global
+                        } else {
+                            ScopeKind::Local
+                        },
                         value,
                         then: in_,
                         else_: IrKind::Unreachable
@@ -412,7 +417,7 @@ impl<'a> Builder<'a> {
                         assignee: PatternKind::Immediate(ConstValue::Boolean(true))
                             .with_span(span)
                             .with_type(Type::Any),
-                        is_global: false,
+                        scope: ScopeKind::Local,
                         value: self.expr(*predicate)?.into(),
                         then: self.expr(*then)?.into(),
                         else_: self.expr(*else_)?.into(),
@@ -443,7 +448,7 @@ impl<'a> Builder<'a> {
                         self.name_map.end_local_scopes(assignee.introduced_names());
                         current = IrKind::Let {
                             assignee,
-                            is_global: false,
+                            scope: ScopeKind::Local,
                             value: IrKind::Identifier(scrutinee_path.clone())
                                 .with_span(predicate_span)
                                 .with_type(Type::Any)
@@ -461,7 +466,7 @@ impl<'a> Builder<'a> {
                         assignee: PatternKind::Identifier(scrutinee_path)
                             .with_span(scrutinee.span)
                             .with_type(Type::Any),
-                        is_global: false,
+                        scope: ScopeKind::Local,
                         value: scrutinee.into(),
                         then: current,
                         else_: IrKind::Unreachable

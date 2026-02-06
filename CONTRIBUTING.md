@@ -17,6 +17,14 @@ The compiled binary (wasm) file will be written to this location.
 cargo run -- <input-path> <output-path>
 ```
 
+## Tests
+To run tests:
+```sh
+cargo test
+```
+
+Unit tests are typically submodules named `test` inside of the module they are testing.
+
 # Language design
 Halcyon is an immutable functional programming language based on ML.
 It's type system uses type variables to achieve parametric polymorphism.

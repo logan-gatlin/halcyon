@@ -1,4 +1,4 @@
 module demo =
-	let f = fn a => a
-	let _ = f 2
+	let f = fn a b => a
+	let _ = f 1 2
 end

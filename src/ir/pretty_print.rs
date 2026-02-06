@@ -151,7 +151,7 @@ impl PrettyPrint for IrNode {
                 value,
                 then,
                 else_,
-                is_global: _,
+                ..
             } => {
                 let then_expr = if matches!(then.inner.inner, Immediate(ConstValue::Unit)) {
                     "".to_string()
