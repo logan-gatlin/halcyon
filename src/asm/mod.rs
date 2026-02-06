@@ -23,6 +23,7 @@ use crate::ir::{
     ScopeKind,
 };
 use crate::{
+    Logger,
     SymbolTable,
     semantic,
 };
@@ -335,19 +336,19 @@ impl Function {
 }
 
 pub fn lower_module(
-    ir_module: &crate::ir::Module,
+    ir_module: crate::ir::Module,
     symbols: &SymbolTable,
 ) -> Module {
     let mut module = Module::new(ir_module.name.clone());
     let mut init_func = module.new_function();
 
     // Lower constructors first so they're available as globals
-    for (path, cons) in &ir_module.constructors {
-        init_func.lower_constructor(path.clone(), cons.clone(), symbols);
+    for (path, cons) in ir_module.constructors {
+        init_func.lower_constructor(path, cons, symbols);
     }
 
-    for code in &ir_module.code {
-        init_func.lower_ir(code.clone(), symbols);
+    for code in ir_module.code {
+        init_func.lower_ir(code, symbols);
         init_func.push(Instruction::Drop);
     }
     module.start = init_func.func_index as u32;
@@ -439,12 +440,14 @@ impl<'a> Encoder<'a> {
 
 // This uses the existing codespan-reporting system to report WASM validation
 // errors with their decompiled WAT syntax
-pub fn validate_wasm(bin: &[u8]) -> Result<(), String> {
+pub fn validate_wasm(
+    bin: &[u8],
+    logger: &mut Logger,
+) {
     use codespan_reporting::diagnostic::{
         Diagnostic,
         Label,
     };
-    use codespan_reporting::term;
 
     /// Find the WAT line number (1-indexed) for a given binary offset.
     /// Returns the line whose binary offset is the largest that doesn't exceed `target_offset`.
@@ -493,17 +496,10 @@ pub fn validate_wasm(bin: &[u8]) -> Result<(), String> {
 
         let mut wat_files: SimpleFiles<&str, &str> = SimpleFiles::new();
         let wat_file_id = wat_files.add("<generated wat>", &wat_storage);
-
-        let diagnostic: Diagnostic<usize> = Diagnostic::error()
-            .with_message(e.message())
-            .with_labels(vec![Label::primary(wat_file_id, byte_start..byte_end)]);
-        let config = codespan_reporting::term::Config {
-            display_style: term::DisplayStyle::Rich,
-            ..Default::default()
-        };
-        Err(term::emit_into_string(&config, &wat_files, &diagnostic)
-            .unwrap_or_else(|_| "Failed to print error to string".into()))
-    } else {
-        Ok(())
+        logger.consume_diagnostic(
+            Diagnostic::bug()
+                .with_message(e.message())
+                .with_labels(vec![Label::primary(wat_file_id, byte_start..byte_end)]),
+        );
     }
 }

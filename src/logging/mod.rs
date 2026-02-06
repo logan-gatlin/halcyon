@@ -7,6 +7,8 @@ pub use span::*;
 pub use with_context::*;
 
 use codespan_reporting::diagnostic::*;
+use codespan_reporting::files::SimpleFiles;
+use codespan_reporting::term;
 
 pub type FileId = usize;
 
@@ -42,6 +44,12 @@ impl Logger {
     ) {
         assert_eq!(self.id, other.id, "Merged loggers with different file IDs");
         self.diagnostics.extend_from_slice(&other.diagnostics);
+    }
+    pub fn consume_diagnostic(
+        &mut self,
+        diagnostic: Diagnostic<FileId>,
+    ) {
+        self.diagnostics.push(diagnostic);
     }
     pub fn diagnostic(
         &mut self,
@@ -97,6 +105,21 @@ impl Logger {
             file_id: self.id,
             start,
             width,
+        }
+    }
+    pub fn print(
+        &self,
+        files: &SimpleFiles<String, String>,
+    ) {
+        let mut writer = codespan_reporting::term::termcolor::StandardStream::stderr(
+            codespan_reporting::term::termcolor::ColorChoice::Always,
+        );
+        let config = codespan_reporting::term::Config {
+            display_style: codespan_reporting::term::DisplayStyle::Rich,
+            ..Default::default()
+        };
+        for d in self.iter() {
+            let _ = term::emit_to_write_style(&mut writer, &config, files, d);
         }
     }
 }

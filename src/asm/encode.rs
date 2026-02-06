@@ -233,9 +233,9 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
             },
             &default_value(&val_type),
         );
-        export_section.export(&format!("{name}"), ExportKind::Global, global_id);
+        export_section.export(&name.minor, ExportKind::Global, global_id);
         global_namespace.insert(name, global_id);
-        global_names.append(global_id, &format!("{name}"));
+        global_names.append(global_id, &name.minor);
         global_id += 1;
     }
 

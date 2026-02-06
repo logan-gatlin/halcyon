@@ -57,10 +57,19 @@ pub use map::*;
 
 #[derive(Debug, Clone)]
 pub struct Artifact {
+    pub module_name: String,
     pub parse_tree: parse::ParsedModule,
     pub ir_module: ir::Module,
-    pub asm_module: asm::Module,
+    /// `None` if compilation failed
+    pub asm_module: Option<asm::Module>,
+    /// Empty if compilation failed
     pub binary: Vec<u8>,
+}
+
+impl Artifact {
+    pub fn is_ok(&self) -> bool {
+        self.asm_module.is_some() && !self.binary.is_empty()
+    }
 }
 
 pub fn compile(
@@ -75,11 +84,15 @@ pub fn compile(
     for p in parse_trees {
         let mut ir_module = build_ir(logger, symbols, p.clone());
         semantic::analyze(&mut ir_module, symbols, logger);
-        //eprintln!("{}\n", ir_module.pretty());
-        let asm_module = asm::lower_module(&ir_module, symbols);
-        //eprintln!("{}", asm_module.pretty());
-        let binary = asm::encode(asm_module.clone());
+        let (asm_module, binary) = if logger.is_ok() {
+            let asm_module = asm::lower_module(ir_module.clone(), symbols);
+            let binary = asm::encode(asm_module.clone());
+            (Some(asm_module), binary)
+        } else {
+            (None, vec![])
+        };
         artifacts.push(Artifact {
+            module_name: p.name.inner.clone(),
             parse_tree: p,
             ir_module,
             asm_module,

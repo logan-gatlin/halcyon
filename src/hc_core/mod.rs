@@ -67,11 +67,7 @@ pub fn core_symbol_table() -> SymbolTable {
     // Operators
     let ops = crate::operator::BinaryOp::all()
         .into_iter()
-        .map(|op| {
-            let mut type_ = op.get_type();
-            freshen_type_variables(&mut type_, &table);
-            (op.path(), op.get_type())
-        })
+        .map(|op| (op.path(), op.get_type()))
         .collect::<Vec<_>>();
     table.terms.extend(ops);
     let ops = crate::operator::UnaryOp::all()
