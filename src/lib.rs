@@ -54,6 +54,13 @@ mod test;
 pub use indoc::*;
 pub use logging::*;
 pub use map::*;
+use wasmparser::{
+    KnownCustom,
+    Parser,
+};
+
+use crate::asm::custom_section::SignatureSection;
+use crate::asm::validate_wasm;
 
 #[derive(Debug, Clone)]
 pub struct Artifact {
@@ -66,24 +73,183 @@ pub struct Artifact {
     pub binary: Vec<u8>,
 }
 
-impl Artifact {
-    pub fn is_ok(&self) -> bool {
-        self.asm_module.is_some() && !self.binary.is_empty()
+pub fn compile_file(
+    file_name: &str,
+    input: &[u8],
+    logger: &mut Logger,
+    symbols: &mut SymbolTable,
+) -> Vec<Artifact> {
+    if let Some([0x0, 0x61, 0x73, 0x6D] /* WASM magic number */) = input.get(0..4) {
+        link_binary(file_name, input, logger, symbols)
+            .map(|a| vec![a])
+            .unwrap_or_default()
+    } else {
+        let input = String::from_utf8_lossy(input);
+        compile_source(file_name, &input, logger, symbols)
     }
 }
 
-pub fn compile(
+pub fn link_binary(
+    file_name: &str,
+    input: &[u8],
+    logger: &mut Logger,
+    symbols: &mut SymbolTable,
+) -> Option<Artifact> {
+    let mut file_logger = validate_wasm(file_name, input, logger);
+    let parser = Parser::new(0);
+    let mut signature_section = None;
+    let mut module_name = None;
+    let mut corrupted_module = |mut l: FileLogger| {
+        l.error("Module is missing necessary metadata")
+            .note("Was it produced by the same version of Halcyon compiler?")
+            .done();
+        logger.consume_file(l);
+    };
+    for payload in parser.parse_all(input) {
+        if let Ok(wasmparser::Payload::CustomSection(r)) = payload {
+            match r.name() {
+                "signature" => {
+                    let Some(s) = SignatureSection::decode_data_slice(r.data()) else {
+                        corrupted_module(file_logger);
+                        return None;
+                    };
+                    signature_section = Some(s);
+                }
+                "name" => {
+                    let KnownCustom::Name(mut n) = r.as_known() else {
+                        corrupted_module(file_logger);
+                        return None;
+                    };
+                    let Some(parsed_module_name) = n.find_map(|n| {
+                        if let Ok(wasmparser::Name::Module { name, .. }) = n {
+                            Some(name)
+                        } else {
+                            None
+                        }
+                    }) else {
+                        corrupted_module(file_logger);
+                        return None;
+                    };
+                    module_name = Some(parsed_module_name);
+                }
+                _ => {}
+            }
+        }
+    }
+    let (Some(module_name), Some(sig)) = (module_name, signature_section) else {
+        corrupted_module(file_logger);
+        return None;
+    };
+    for path in &sig.imported_types {
+        if !symbols.types.contains_key(path) {
+            file_logger
+                .error(format!("Missing definition of type `{path}`"))
+                .done();
+        }
+    }
+    for (path, at) in sig.defined_types {
+        let named_type = semantic::Type::Instantiation(
+            path.clone(),
+            at.variables
+                .iter()
+                .map(|v| semantic::Type::Variable(*v))
+                .collect(),
+        );
+        match &at.base {
+            semantic::Type::Sum {
+                variant_names,
+                variant_types,
+                ..
+            } => {
+                for (tag, (variant_name, variant_type)) in
+                    variant_names.iter().zip(variant_types).enumerate()
+                {
+                    let cons_path = ir::Path::new(path.major.clone(), variant_name);
+                    symbols.constructors.insert(
+                        cons_path.clone(),
+                        if *variant_type == semantic::Type::Unit {
+                            ir::Constructor::SumConstant {
+                                tag,
+                                sum_type: named_type.clone(),
+                            }
+                        } else {
+                            ir::Constructor::SumFunction {
+                                tag,
+                                sum_type: named_type.clone(),
+                                parameter_type: variant_type.clone(),
+                            }
+                        },
+                    );
+                    symbols.terms.insert(
+                        cons_path,
+                        if *variant_type == semantic::Type::Unit {
+                            named_type.clone()
+                        } else {
+                            semantic::Type::func(variant_type.clone(), named_type.clone())
+                        },
+                    );
+                }
+            }
+            semantic::Type::Struct { .. } => {
+                let cons_path = ir::Path::new(path.major.clone(), &path.minor);
+                symbols.constructors.insert(
+                    cons_path.clone(),
+                    ir::Constructor::Structure(named_type.clone()),
+                );
+                symbols.terms.insert(
+                    cons_path,
+                    semantic::Type::func(named_type.clone(), named_type),
+                );
+            }
+            _ => {}
+        }
+        symbols.types.insert(path, at);
+    }
+    for (path, mut t) in sig.defined_terms {
+        t.visit(|t: &mut semantic::Type| {
+            if let semantic::Type::Instantiation(type_path, _) = t
+                && !symbols.types.contains_key(type_path)
+            {
+                file_logger
+                    .error(format!("Missing definition of type `{type_path}`"))
+                    .done();
+            }
+        });
+        symbols.terms.insert(path, t);
+    }
+    logger.consume_file(file_logger);
+    Some(Artifact {
+        module_name: module_name.to_string(),
+        parse_tree: parse::InnerParsedModule {
+            name: module_name.to_string().with_span(Span::default()),
+            contents: vec![],
+        }
+        .with_span(Span::default()),
+        ir_module: ir::Module {
+            name: module_name.to_string(),
+            types: Default::default(),
+            constructors: Default::default(),
+            code: vec![],
+        },
+        asm_module: None,
+        binary: input.to_vec(),
+    })
+}
+
+pub fn compile_source(
+    file_name: &str,
     input: &str,
     logger: &mut Logger,
     symbols: &mut SymbolTable,
 ) -> Vec<Artifact> {
-    let tokens = tokenize(input.chars(), logger);
-    let parse_trees = parse(logger, tokens);
+    let mut file_logger = logger.new_file(file_name, input);
+    let tokens = tokenize(input.chars(), &mut file_logger);
+    let parse_trees = parse(&mut file_logger, tokens);
     let mut artifacts = vec![];
 
     for p in parse_trees {
-        let mut ir_module = build_ir(logger, symbols, p.clone());
-        semantic::analyze(&mut ir_module, symbols, logger);
+        let mut ir_module = build_ir(&mut file_logger, symbols, p.clone());
+        semantic::analyze(&mut ir_module, symbols, &mut file_logger);
         let (asm_module, binary) = if logger.is_ok() {
             let asm_module = asm::lower_module(ir_module.clone(), symbols);
             let binary = asm::encode(asm_module.clone());

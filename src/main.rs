@@ -1,10 +1,7 @@
 extern crate halcyon_lib;
-use std::path::PathBuf;
-
-use codespan_reporting::files::SimpleFiles;
 use halcyon_lib::asm::validate_wasm;
-use halcyon_lib::hc_core::core_symbol_table;
 use halcyon_lib::*;
+use std::path::PathBuf;
 
 fn compile_file_arg() {
     let mut args = std::env::args().skip(1);
@@ -14,10 +11,8 @@ fn compile_file_arg() {
     }
     let path = args.next().unwrap();
     let str = std::fs::read_to_string(&path).expect("Could not open file");
-    let mut files = SimpleFiles::new();
-    let file_id = files.add(path, str.clone());
-    let mut logger = Logger::new(file_id);
-    let mut symbols = core_symbol_table();
+    let mut logger = Logger::new();
+    let mut symbols = SymbolTable::new();
     let mut bins = vec![];
 
     #[allow(unused_variables)]
@@ -27,14 +22,8 @@ fn compile_file_arg() {
         ir_module,
         asm_module,
         binary,
-    } in compile(&str, &mut logger, &mut symbols)
+    } in compile_source(&path, &str, &mut logger, &mut symbols)
     {
-        /*
-        eprintln!("{}", ir_module.pretty());
-        if let Some(asm_module) = asm_module {
-            eprintln!("{}", asm_module.pretty());
-        }
-        */
         if !binary.is_empty() {
             bins.push(binary);
         }
@@ -68,10 +57,15 @@ fn compile_file_arg() {
         } else {
             println!("{wat}");
         }
-        validate_wasm(bin, &mut logger)
+        let wat_logger = validate_wasm(&path, bin, &mut logger);
+        logger.consume_file(wat_logger);
+        logger.print_logs();
+        if !logger.is_ok() {
+            std::process::exit(1);
+        }
     }
     // Emit source-level diagnostics
-    logger.print(&files);
+    logger.print_logs();
     if !logger.is_ok() {
         std::process::exit(1);
     }

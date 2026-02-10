@@ -23,12 +23,15 @@ use crate::ir::{
     ScopeKind,
 };
 use crate::{
+    FileLogger,
     Logger,
     SymbolTable,
+    WithContext,
     semantic,
 };
 
 pub use encode::encode;
+pub use lower::lower_type;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Type {
@@ -357,13 +360,13 @@ pub fn lower_module(
 }
 
 impl Module {
-    fn new(name: String) -> Self {
+    pub fn new(name: String) -> Self {
         Self {
             name,
             ..Default::default()
         }
     }
-    fn new_function<'a>(&'a mut self) -> Encoder<'a> {
+    pub fn new_function<'a>(&'a mut self) -> Encoder<'a> {
         self.functions.push(Function::new());
         Encoder {
             func_index: self.functions.len() - 1,
@@ -441,14 +444,10 @@ impl<'a> Encoder<'a> {
 // This uses the existing codespan-reporting system to report WASM validation
 // errors with their decompiled WAT syntax
 pub fn validate_wasm(
+    file_name: &str,
     bin: &[u8],
     logger: &mut Logger,
-) {
-    use codespan_reporting::diagnostic::{
-        Diagnostic,
-        Label,
-    };
-
+) -> FileLogger {
     /// Find the WAT line number (1-indexed) for a given binary offset.
     /// Returns the line whose binary offset is the largest that doesn't exceed `target_offset`.
     fn find_wat_line_for_offset(
@@ -477,7 +476,6 @@ pub fn validate_wasm(
             .sum()
     }
 
-    use codespan_reporting::files::SimpleFiles;
     // Generate WAT with offset mapping for validation error reporting
     let mut wat_storage = String::new();
     let offset_map: Vec<(usize, Option<usize>)> = wasmprinter::Config::new()
@@ -488,18 +486,19 @@ pub fn validate_wasm(
                 .collect()
         })
         .unwrap_or_default();
+    let mut file_logger = logger.new_file(file_name, wat_storage.clone());
     if let Err(e) = wasmparser::validate(bin) {
         let error_offset = e.offset();
         let wat_line = find_wat_line_for_offset(&offset_map, error_offset);
         let byte_start = wat_line_byte_offset(&wat_storage, wat_line);
         let byte_end = wat_line_byte_offset(&wat_storage, wat_line + 1).min(wat_storage.len());
 
-        let mut wat_files: SimpleFiles<&str, &str> = SimpleFiles::new();
-        let wat_file_id = wat_files.add("<generated wat>", &wat_storage);
-        logger.consume_diagnostic(
-            Diagnostic::bug()
-                .with_message(e.message())
-                .with_labels(vec![Label::primary(wat_file_id, byte_start..byte_end)]),
-        );
+        let span = file_logger.new_span(byte_start, byte_end);
+
+        file_logger
+            .bug(e.message())
+            .primary("Failed validation here", span)
+            .done();
     }
+    file_logger
 }

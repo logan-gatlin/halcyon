@@ -14,8 +14,8 @@ use std::collections::HashMap;
 use crate::parse::ParsedModule;
 use crate::semantic::*;
 use crate::{
+    FileLogger,
     LogBuilder,
-    Logger,
     Span,
     Spanned,
     Visit,
@@ -32,7 +32,7 @@ pub enum ScopeKind {
 type Result<'a, T> = std::result::Result<T, LogBuilder<'a>>;
 
 pub fn build_ir(
-    logger: &mut Logger,
+    logger: &mut FileLogger,
     symbols: &mut SymbolTable,
     module: ParsedModule,
 ) -> Module {

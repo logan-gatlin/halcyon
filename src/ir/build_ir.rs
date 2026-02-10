@@ -1,8 +1,8 @@
 use crate::hc_core::CORE_MODULE_NAME;
 use crate::parse::*;
 use crate::{
+    FileLogger,
     IntoLog,
-    Logger,
     WithSpan,
 };
 
@@ -19,7 +19,7 @@ pub struct TermInfo {
 pub struct Builder<'a> {
     pub name_map: CanonicalMap,
     pub module_name: String,
-    pub logger: &'a mut Logger,
+    pub logger: &'a mut FileLogger,
     pub symbols: &'a mut SymbolTable,
     pub local_types: HashMap<Path, TypeVariable>,
     pub code: Vec<IrNode>,
@@ -144,7 +144,7 @@ impl<'a> Builder<'a> {
         }
     }
     pub fn build_ir(
-        logger: &'a mut Logger,
+        logger: &'a mut FileLogger,
         symbols: &'a mut SymbolTable,
         module: ParsedModule,
     ) -> Module {

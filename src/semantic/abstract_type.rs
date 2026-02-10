@@ -16,7 +16,7 @@ impl IntoLog for InstantiationError {
 
     fn into_log(
         self,
-        logger: &mut crate::Logger,
+        logger: &mut crate::FileLogger,
         span: crate::Span,
     ) -> Self::OutT {
         let err = logger

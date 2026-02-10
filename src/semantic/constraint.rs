@@ -56,7 +56,7 @@ enum TypeError {
 
 pub(super) fn solve_constraints(
     env: &mut Environment,
-    logger: &mut Logger,
+    logger: &mut FileLogger,
 ) -> Vec<Solution> {
     let eq_cons = &mut env.constraints.equality;
     let struct_cons = &mut env.constraints.struct_;

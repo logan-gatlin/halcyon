@@ -1,23 +1,18 @@
-#![allow(clippy::unwrap_used)]
 /*!
     End-to-end testing for the compiler
 */
-
-use codespan_reporting::files::SimpleFiles;
-
-use crate::hc_core::core_symbol_table;
+#![allow(clippy::unwrap_used)]
 
 use super::*;
 
 fn compile_file(name: &str) -> Vec<Artifact> {
     let path = format!("src/test/{name}.hc");
     let input = std::fs::read_to_string(&path).expect("Failed to read test file");
-    let mut files = SimpleFiles::new();
-    let file_id = files.add(path, input.clone());
-    let mut logger = Logger::new(file_id);
-    let mut symbols = core_symbol_table();
-    let arts = compile(&input, &mut logger, &mut symbols);
-    logger.print(&files);
+    let mut logger = Logger::new();
+    let mut symbols = SymbolTable::new();
+    let arts = compile_source(&path, &input, &mut logger, &mut symbols);
+    logger.print_logs();
+    assert!(logger.is_ok());
     arts
 }
 

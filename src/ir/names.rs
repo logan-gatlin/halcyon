@@ -36,7 +36,7 @@ impl std::fmt::Display for NameSpace {
 
 #[derive(Debug, Clone)]
 pub struct CanonicalMap {
-    pub(super) logger: Logger,
+    pub(super) logger: FileLogger,
     module_name: String,
     map: HashMap<(String, NameSpace), Path>,
     globals: HashSet<(NameSpace, Path)>,
@@ -68,7 +68,7 @@ impl Path {
 impl CanonicalMap {
     pub fn new(
         module_name: String,
-        logger: Logger,
+        logger: FileLogger,
     ) -> Self {
         Self {
             module_name,

@@ -1,19 +1,17 @@
 use super::*;
-use crate::token::{
-    tokenize,
-    Base,
-};
 use crate::Logger;
+use crate::token::{
+    Base,
+    tokenize,
+};
 
 fn parse_str(input: &str) -> Vec<ParsedModule> {
-    let mut logger = Logger::mock();
-    let tokens = tokenize(input.chars(), &mut logger);
-    let modules = parse(&mut logger, tokens);
-    assert!(
-        logger.is_ok(),
-        "Parser produced errors: {:?}",
-        logger.iter().collect::<Vec<_>>()
-    );
+    let mut logger = Logger::new();
+    let mut file_logger = logger.new_file("<test-file>", input);
+    let tokens = tokenize(input.chars(), &mut file_logger);
+    let modules = parse(&mut file_logger, tokens);
+    logger.print_logs();
+    assert!(logger.is_ok(),);
     modules
 }
 

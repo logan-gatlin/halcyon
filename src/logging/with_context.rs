@@ -39,7 +39,7 @@ pub trait WithContext: Sized {
 }
 
 impl<'a> WithContext for super::LogBuilder<'a> {
-    type DoneT = &'a mut Logger;
+    type DoneT = &'a mut FileLogger;
     fn label(
         mut self,
         style: LabelStyle,
@@ -62,7 +62,7 @@ impl<'a> WithContext for super::LogBuilder<'a> {
         self.notes.push(message.into());
         self
     }
-    fn done(self) -> &'a mut Logger {
+    fn done(self) -> &'a mut FileLogger {
         self.logger.diagnostics.push(Diagnostic {
             severity: self.severity,
             code: None,

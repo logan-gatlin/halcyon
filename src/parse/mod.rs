@@ -20,7 +20,7 @@ use multipeek::{
 use crate::operator::*;
 use crate::token::*;
 use crate::{
-    Logger,
+    FileLogger,
     Span,
     Spanned,
     WithContext,
@@ -47,14 +47,14 @@ pub enum RecoveryBehavior {
 type Result<T> = std::result::Result<T, RecoveryBehavior>;
 
 pub struct Parser<'a, I: Iterator<Item = Token>> {
-    logger: &'a mut Logger,
+    logger: &'a mut FileLogger,
     iter: MultiPeek<I>,
     last_span: Span,
 }
 
 impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
     pub fn new(
-        logger: &'a mut Logger,
+        logger: &'a mut FileLogger,
         iter: impl IntoIterator<IntoIter = I>,
     ) -> Self {
         Self {
@@ -236,7 +236,7 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
 }
 
 pub fn parse(
-    logger: &mut Logger,
+    logger: &mut FileLogger,
     iter: impl IntoIterator<Item = Token>,
 ) -> Vec<ParsedModule> {
     let mut p = Parser {

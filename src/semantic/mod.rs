@@ -11,7 +11,7 @@ mod constraint;
 mod types;
 use crate::ir::*;
 use crate::{
-    Logger,
+    FileLogger,
     Visit,
 };
 use std::collections::{
@@ -320,7 +320,7 @@ fn infer_ir<'a, 'b, 'c>(
 pub fn analyze(
     module: &mut Module,
     symbols: &mut SymbolTable,
-    logger: &mut Logger,
+    logger: &mut FileLogger,
 ) {
     for ir in module.code.iter_mut() {
         let mut constraints = ConstraintSet::default();

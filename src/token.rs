@@ -1,7 +1,7 @@
 use std::io::Write;
 
 use crate::{
-    Logger,
+    FileLogger,
     Span,
     Spanned,
     WithContext,
@@ -263,7 +263,7 @@ struct Tokenizer<'a, I: Iterator<Item = char>> {
     iter: MultiPeek<I>,
     tokens: Vec<Token>,
     position: usize,
-    logger: &'a mut Logger,
+    logger: &'a mut FileLogger,
 }
 
 impl<'a, I: Iterator<Item = char>> Tokenizer<'a, I> {
@@ -300,7 +300,7 @@ impl<'a, I: Iterator<Item = char>> Tokenizer<'a, I> {
 
 pub fn tokenize(
     input: impl IntoIterator<Item = char>,
-    logger: &mut Logger,
+    logger: &mut FileLogger,
 ) -> Vec<Token> {
     let mut iter = Tokenizer {
         iter: multipeek(input),
@@ -687,7 +687,7 @@ fn parse_delimited(
 
 fn bake_string(
     mut start: usize,
-    logger: &mut Logger,
+    logger: &mut FileLogger,
     s: &str,
 ) -> Option<String> {
     let collect_hex_bytes = |arr: &[Option<char>]| {
@@ -789,7 +789,7 @@ mod tests {
     use super::*;
 
     fn lex(input: &str) -> Vec<TokenKind> {
-        let mut logger = Logger::new(0);
+        let mut logger = FileLogger::new(0);
         let tokens = tokenize(input.chars(), &mut logger);
         assert!(logger.is_ok(), "Tokenizer produced errors: {:?}", logger);
         tokens.into_iter().map(|t| t.inner).collect()

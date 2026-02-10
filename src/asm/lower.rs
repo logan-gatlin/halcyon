@@ -49,7 +49,7 @@ use Instruction as i;
 use indexmap::IndexMap;
 impl<'a> Encoder<'a> {
     /// Create a new closure, push a reference to it onto the stack
-    pub fn closure(
+    pub fn create_closure(
         &mut self,
         symbols: &SymbolTable,
         parameter: Typed<Path>,
@@ -117,6 +117,36 @@ impl<'a> Encoder<'a> {
         ]);
         new_func_index
     }
+    /// Like `create_closure`, but curries multiple parameters into nested closures.
+    /// For 0 parameters, an implicit unit parameter is used.
+    pub fn create_curried_closure(
+        &mut self,
+        symbols: &SymbolTable,
+        parameters: &[Typed<Path>],
+        captures: Vec<Typed<Path>>,
+        body: impl for<'b> FnOnce(&mut Encoder<'b>, &SymbolTable),
+    ) -> usize {
+        match parameters {
+            [] => {
+                let unit_param = self.temporary_name("unit");
+                self.create_closure(
+                    symbols,
+                    unit_param.with_type(semantic::Type::Unit),
+                    captures,
+                    body,
+                )
+            }
+            [param] => self.create_closure(symbols, param.clone(), captures, body),
+            [first, rest @ ..] => {
+                let mut inner_captures = captures.clone();
+                inner_captures.push(first.clone());
+                self.create_closure(symbols, first.clone(), captures, |enc, symbols| {
+                    enc.create_curried_closure(symbols, rest, inner_captures, body);
+                })
+            }
+        }
+    }
+
     // Preconditions:
     // * Predicate to be pattern-matched on is top of stack
     // * A br 0 instruction indicates pattern matching has failed
@@ -466,7 +496,7 @@ impl<'a> Encoder<'a> {
                 let semantic::Type::Function(parameter_type, ..) = ir.type_ else {
                     unreachable!()
                 };
-                self.closure(
+                self.create_closure(
                     symbols,
                     parameter_name.inner.clone().with_type(*parameter_type),
                     captures,
@@ -532,7 +562,7 @@ impl<'a> Encoder<'a> {
                 ..
             } => {
                 let parameter_name = self.temporary_name("cons_param");
-                self.closure(
+                self.create_closure(
                     symbols,
                     parameter_name.clone().with_type(parameter_type),
                     vec![],
@@ -550,7 +580,7 @@ impl<'a> Encoder<'a> {
             }
             Constructor::Structure(struct_type) => {
                 let parameter_name = self.temporary_name("cons_param");
-                self.closure(
+                self.create_closure(
                     symbols,
                     parameter_name.clone().with_type(struct_type),
                     vec![],

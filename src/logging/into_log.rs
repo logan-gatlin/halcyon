@@ -4,7 +4,7 @@ pub trait IntoLog {
     type OutT;
     fn into_log(
         self,
-        logger: &mut Logger,
+        logger: &mut FileLogger,
         span: Span,
     ) -> Self::OutT;
 }
@@ -17,7 +17,7 @@ where
 
     fn into_log(
         self,
-        logger: &mut Logger,
+        logger: &mut FileLogger,
         span: Span,
     ) -> Self::OutT {
         match self {
@@ -35,7 +35,7 @@ impl IntoLog for std::num::ParseIntError {
 
     fn into_log(
         self,
-        logger: &mut Logger,
+        logger: &mut FileLogger,
         span: Span,
     ) -> Self::OutT {
         use std::num::IntErrorKind::*;
@@ -63,7 +63,7 @@ impl IntoLog for std::num::ParseFloatError {
 
     fn into_log(
         self,
-        logger: &mut Logger,
+        logger: &mut FileLogger,
         span: Span,
     ) -> Self::OutT {
         logger

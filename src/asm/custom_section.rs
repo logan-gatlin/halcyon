@@ -88,6 +88,7 @@ pub struct SignatureSection {
     pub imported_types: Vec<Path>,
     /// An ordered map of type declarations from this module
     pub defined_types: IndexMap<Path, AbstractType>,
+    pub defined_terms: IndexMap<Path, semantic::Type>,
     /// The index of each referenced type in this section
     index_map: HashMap<Path, usize>,
 }
@@ -100,6 +101,8 @@ impl SignatureSection {
     ) -> Self {
         let mut imported_types = vec![];
         let mut defined_types = IndexMap::new();
+        let mut defined_terms = IndexMap::new();
+
         // PERFORMANCE:
         // This is O(n^2) because it iterates over every type, and is called for
         // every module in the symbol table. To fix, the symbol table will need
@@ -108,7 +111,21 @@ impl SignatureSection {
             if path.major == module_name {
                 defined_types.insert(path.clone(), t.clone());
                 t.clone().visit(|t: &mut semantic::Type| {
-                    if let semantic::Type::Instantiation(path, _) = t {
+                    if let semantic::Type::Instantiation(path, _) = t
+                        && !defined_types.contains_key(path)
+                    {
+                        imported_types.push(path.clone());
+                    }
+                });
+            }
+        }
+        for (path, t) in &symbols.terms {
+            if path.major == module_name {
+                defined_terms.insert(path.clone(), t.clone());
+                t.clone().visit(|t: &mut semantic::Type| {
+                    if let semantic::Type::Instantiation(path, _) = t
+                        && !defined_types.contains_key(path)
+                    {
                         imported_types.push(path.clone());
                     }
                 });
@@ -125,6 +142,7 @@ impl SignatureSection {
         Self {
             imported_types,
             defined_types,
+            defined_terms,
             index_map,
         }
     }
@@ -199,7 +217,7 @@ impl SignatureSection {
             }
             Instantiation(path, items) => {
                 12usize.encode(sink);
-                self.index_map.get(path).encode(sink);
+                self.index_map[path].encode(sink);
                 items.len().encode(sink);
                 for item in items {
                     self.encode_type(item, sink);
@@ -209,15 +227,24 @@ impl SignatureSection {
     }
 
     /// Decode a SignatureSection from raw bytes (without section id or length prefix)
+    /// Decode a complete section including the name prefix.
+    /// Used when reading raw encoded bytes (e.g. in roundtrip tests).
     pub fn decode(data: &[u8]) -> Option<Self> {
         let mut dec = Decoder::new(data);
-
-        // Decode section name
         let name = dec.decode_string()?;
         if name != Self::NAME {
             return None;
         }
+        Self::decode_data(&mut dec)
+    }
 
+    /// Decode section data without the name prefix.
+    /// Used when reading from `wasmparser`, which strips the name.
+    pub fn decode_data_slice(data: &[u8]) -> Option<Self> {
+        Self::decode_data(&mut Decoder::new(data))
+    }
+
+    fn decode_data(dec: &mut Decoder) -> Option<Self> {
         // Decode imported types
         let import_count = dec.decode_usize()?;
         let mut imported_types = Vec::with_capacity(import_count);
@@ -234,7 +261,7 @@ impl SignatureSection {
         for _ in 0..defined_count {
             let path = dec.decode_path()?;
             reverse_index.push(path.clone());
-            let base = Self::decode_type(&mut dec, &reverse_index)?;
+            let base = Self::decode_type(dec, &path, &reverse_index)?;
             let var_count = dec.decode_usize()?;
             let mut variables = Vec::with_capacity(var_count);
             for _ in 0..var_count {
@@ -249,6 +276,14 @@ impl SignatureSection {
             );
         }
 
+        let defined_count = dec.decode_usize()?;
+        let mut defined_terms = IndexMap::new();
+        for _ in 0..defined_count {
+            let path = dec.decode_path()?;
+            let type_ = Self::decode_type(dec, &path, &reverse_index)?;
+            defined_terms.insert(path, type_);
+        }
+
         // Rebuild index_map
         let mut index_map = HashMap::new();
         for (id, path) in imported_types.iter().enumerate() {
@@ -261,12 +296,14 @@ impl SignatureSection {
         Some(Self {
             imported_types,
             defined_types,
+            defined_terms,
             index_map,
         })
     }
 
     fn decode_type(
         dec: &mut Decoder,
+        this_path: &Path,
         reverse_index: &[Path],
     ) -> Option<semantic::Type> {
         use semantic::Type::*;
@@ -283,20 +320,20 @@ impl SignatureSection {
                 let mut fields = IndexMap::new();
                 for _ in 0..field_count {
                     let name = dec.decode_string()?;
-                    let type_ = Self::decode_type(dec, reverse_index)?;
+                    let type_ = Self::decode_type(dec, this_path, reverse_index)?;
                     fields.insert(name, type_);
                 }
                 Struct {
-                    name: Path::default(),
+                    name: this_path.clone(),
                     fields,
                 }
             }
-            8 => Array(Box::new(Self::decode_type(dec, reverse_index)?)),
+            8 => Array(Box::new(Self::decode_type(dec, this_path, reverse_index)?)),
             9 => {
                 let item_count = dec.decode_usize()?;
                 let mut items = Vec::with_capacity(item_count);
                 for _ in 0..item_count {
-                    items.push(Self::decode_type(dec, reverse_index)?);
+                    items.push(Self::decode_type(dec, this_path, reverse_index)?);
                 }
                 Tuple(items)
             }
@@ -306,7 +343,7 @@ impl SignatureSection {
                 let mut variant_types = Vec::with_capacity(variant_count);
                 for _ in 0..variant_count {
                     variant_names.push(dec.decode_string()?);
-                    variant_types.push(Self::decode_type(dec, reverse_index)?);
+                    variant_types.push(Self::decode_type(dec, this_path, reverse_index)?);
                 }
                 Sum {
                     name: Path::default(),
@@ -315,8 +352,8 @@ impl SignatureSection {
                 }
             }
             11 => {
-                let param = Self::decode_type(dec, reverse_index)?;
-                let result = Self::decode_type(dec, reverse_index)?;
+                let param = Self::decode_type(dec, this_path, reverse_index)?;
+                let result = Self::decode_type(dec, this_path, reverse_index)?;
                 Function(Box::new(param), Box::new(result))
             }
             12 => {
@@ -325,7 +362,7 @@ impl SignatureSection {
                 let item_count = dec.decode_usize()?;
                 let mut items = Vec::with_capacity(item_count);
                 for _ in 0..item_count {
-                    items.push(Self::decode_type(dec, reverse_index)?);
+                    items.push(Self::decode_type(dec, this_path, reverse_index)?);
                 }
                 Instantiation(path, items)
             }
@@ -356,6 +393,11 @@ impl Encode for SignatureSection {
             path.encode(&mut temp_sink);
             self.encode_type(&t.base, &mut temp_sink);
             t.variables.encode(&mut temp_sink);
+        }
+        self.defined_terms.len().encode(&mut temp_sink);
+        for (path, t) in &self.defined_terms {
+            path.encode(&mut temp_sink);
+            self.encode_type(t, &mut temp_sink);
         }
         // LEB128 encode the section length
         let mut len = temp_sink.len();
@@ -447,7 +489,7 @@ mod tests {
         fields.insert("x".into(), semantic::Type::Integer);
         fields.insert("y".into(), semantic::Type::Real);
         roundtrip_type(semantic::Type::Struct {
-            name: Path::default(),
+            name: Path::new("test", "MyType"),
             fields,
         });
     }
@@ -554,6 +596,7 @@ mod tests {
         "T".encode(&mut data); // path.minor
         99usize.encode(&mut data); // invalid type tag
         0usize.encode(&mut data); // 0 variables
+        0usize.encode(&mut data); // 0 defined terms
         assert!(SignatureSection::decode(&data).is_none());
     }
 
@@ -569,6 +612,7 @@ mod tests {
         999usize.encode(&mut data); // out-of-bounds index into reverse_index
         0usize.encode(&mut data); // 0 type args
         0usize.encode(&mut data); // 0 variables
+        0usize.encode(&mut data); // 0 defined terms
         assert!(SignatureSection::decode(&data).is_none());
     }
 
@@ -609,5 +653,107 @@ mod tests {
             format!("{:?}", original.base),
             format!("{:?}", decoded_val.base)
         );
+    }
+
+    #[test]
+    fn roundtrip_term() {
+        let path = Path {
+            major: "test".into(),
+            minor: "my_fn".into(),
+        };
+        let mut section = SignatureSection::default();
+        section.defined_terms.insert(
+            path,
+            semantic::Type::Function(
+                Box::new(semantic::Type::Integer),
+                Box::new(semantic::Type::String),
+            ),
+        );
+
+        let mut encoded = vec![];
+        section.encode(&mut encoded);
+
+        let mut pos = 0;
+        while encoded[pos] & 0x80 != 0 {
+            pos += 1;
+        }
+        pos += 1;
+
+        let decoded = SignatureSection::decode(&encoded[pos..]).unwrap();
+        assert_eq!(section.defined_terms.len(), decoded.defined_terms.len());
+        let original = section.defined_terms.values().next().unwrap();
+        let decoded_val = decoded.defined_terms.values().next().unwrap();
+        assert_eq!(format!("{original:?}"), format!("{decoded_val:?}"));
+    }
+
+    #[test]
+    fn roundtrip_types_and_terms() {
+        let type_path = Path {
+            major: "test".into(),
+            minor: "MyType".into(),
+        };
+        let term_path = Path {
+            major: "test".into(),
+            minor: "make".into(),
+        };
+
+        let mut section = SignatureSection::default();
+        section.defined_types.insert(
+            type_path.clone(),
+            AbstractType {
+                variables: Box::new([1]),
+                base: semantic::Type::Struct {
+                    name: Path::new("test", "MyType"),
+                    fields: {
+                        let mut f = IndexMap::new();
+                        f.insert("value".into(), semantic::Type::Variable(1));
+                        f
+                    },
+                },
+            },
+        );
+        section.index_map.insert(type_path.clone(), 0);
+
+        section.defined_terms.insert(
+            term_path,
+            semantic::Type::Function(
+                Box::new(semantic::Type::Variable(1)),
+                Box::new(semantic::Type::Instantiation(
+                    type_path,
+                    vec![semantic::Type::Variable(1)],
+                )),
+            ),
+        );
+
+        let mut encoded = vec![];
+        section.encode(&mut encoded);
+
+        let mut pos = 0;
+        while encoded[pos] & 0x80 != 0 {
+            pos += 1;
+        }
+        pos += 1;
+
+        let decoded = SignatureSection::decode(&encoded[pos..]).unwrap();
+        assert_eq!(section.defined_types.len(), decoded.defined_types.len());
+        assert_eq!(section.defined_terms.len(), decoded.defined_terms.len());
+
+        let orig_type = &section.defined_types.values().next().unwrap().base;
+        let dec_type = &decoded.defined_types.values().next().unwrap().base;
+        assert_eq!(format!("{orig_type:?}"), format!("{dec_type:?}"));
+
+        let orig_term = section.defined_terms.values().next().unwrap();
+        let dec_term = decoded.defined_terms.values().next().unwrap();
+        assert_eq!(format!("{orig_term:?}"), format!("{dec_term:?}"));
+    }
+
+    #[test]
+    fn decode_truncated_terms_returns_none() {
+        let mut data = vec![];
+        SignatureSection::NAME.encode(&mut data);
+        0usize.encode(&mut data); // 0 imports
+        0usize.encode(&mut data); // 0 defined types
+        1usize.encode(&mut data); // 1 defined term (but no term data follows)
+        assert!(SignatureSection::decode(&data).is_none());
     }
 }
