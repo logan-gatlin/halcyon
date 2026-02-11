@@ -1,4 +1,3 @@
 module demo =
-	let f = fn a b => a
-	let _ = f 1 2
+	let a = 4 / 2
 end

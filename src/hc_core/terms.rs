@@ -1,8 +1,9 @@
 use crate::asm::{
+    lower_type,
     Encoder,
     Instruction,
     NumberOperation,
-    lower_type,
+    Type,
 };
 use crate::operator::{
     BinaryOp,
@@ -33,7 +34,7 @@ pub fn operator_definitions(
     let p2 = Path::new("[temp]", "p2");
     [
         (b::Plus, i::I64Op(Add)),
-        (b::Minus, i::I64Op(Add)),
+        (b::Minus, i::I64Op(Sub)),
         (b::Star, i::I64Op(Mul)),
         (b::Slash, i::I64Op(Div)),
         (b::PlusDot, i::F64Op(Add)),
@@ -54,14 +55,16 @@ pub fn operator_definitions(
             ],
             vec![],
             |enc, syms| {
-                let t = lower_type(&op.parameter_type(), syms);
+                let Type::Struct(fields) = lower_type(&op.parameter_type(), syms) else {
+                    unreachable!("operator parameter type must lower to a struct");
+                };
                 enc.extend([
                     i::Get(p1.clone()),
-                    i::StructGet([t.clone()].into(), 0),
+                    i::StructGet(fields.clone(), 0),
                     i::Get(p2.clone()),
-                    i::StructGet([t.clone()].into(), 0),
+                    i::StructGet(fields.clone(), 0),
                     instr,
-                    i::StructNew([t.clone()].into()),
+                    i::StructNew(fields),
                 ]);
             },
         );

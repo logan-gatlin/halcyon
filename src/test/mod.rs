@@ -4,13 +4,18 @@
 #![allow(clippy::unwrap_used)]
 
 use super::*;
+use crate::hc_core::compile_core_module;
 
 fn compile_file(name: &str) -> Vec<Artifact> {
     let path = format!("src/test/{name}.hc");
     let input = std::fs::read_to_string(&path).expect("Failed to read test file");
     let mut logger = Logger::new();
     let mut symbols = SymbolTable::new();
-    let arts = compile_source(&path, &input, &mut logger, &mut symbols);
+    let mut arts = vec![];
+    if let Some(core) = compile_core_module(&mut logger, &mut symbols) {
+        arts.push(core);
+    }
+    arts.extend(compile_source(&path, &input, &mut logger, &mut symbols));
     logger.print_logs();
     assert!(logger.is_ok());
     arts

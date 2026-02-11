@@ -1,5 +1,6 @@
 extern crate halcyon_lib;
 use halcyon_lib::asm::validate_wasm;
+use halcyon_lib::hc_core::compile_core_module;
 use halcyon_lib::*;
 use std::path::PathBuf;
 
@@ -14,6 +15,8 @@ fn compile_file_arg() {
     let mut logger = Logger::new();
     let mut symbols = SymbolTable::new();
     let mut bins = vec![];
+    let core_module = compile_core_module(&mut logger, &mut symbols).unwrap();
+    bins.push(core_module.binary);
 
     #[allow(unused_variables)]
     for Artifact {

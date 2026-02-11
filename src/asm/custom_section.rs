@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
-use wasm_encoder::Encode;
+use wasm_encoder::{
+    CustomSection,
+    Encode,
+};
 
 use crate::map::*;
 use crate::semantic::AbstractType;
@@ -94,7 +97,7 @@ pub struct SignatureSection {
 }
 
 impl SignatureSection {
-    pub const NAME: &str = "signature";
+    pub const NAME: &str = "type_signature";
     pub fn new(
         module_name: &str,
         symbols: &SymbolTable,
@@ -385,28 +388,24 @@ impl Encode for SignatureSection {
         &self,
         sink: &mut Vec<u8>,
     ) {
-        let mut temp_sink = vec![];
-        Self::NAME.encode(&mut temp_sink);
-        self.imported_types.encode(&mut temp_sink);
-        self.defined_types.len().encode(&mut temp_sink);
+        let mut data = vec![];
+        self.imported_types.encode(&mut data);
+        self.defined_types.len().encode(&mut data);
         for (path, t) in &self.defined_types {
-            path.encode(&mut temp_sink);
-            self.encode_type(&t.base, &mut temp_sink);
-            t.variables.encode(&mut temp_sink);
+            path.encode(&mut data);
+            self.encode_type(&t.base, &mut data);
+            t.variables.encode(&mut data);
         }
-        self.defined_terms.len().encode(&mut temp_sink);
+        self.defined_terms.len().encode(&mut data);
         for (path, t) in &self.defined_terms {
-            path.encode(&mut temp_sink);
-            self.encode_type(t, &mut temp_sink);
+            path.encode(&mut data);
+            self.encode_type(t, &mut data);
         }
-        // LEB128 encode the section length
-        let mut len = temp_sink.len();
-        while len >= 0x80 {
-            sink.push((len as u8) | 0x80);
-            len >>= 7;
+        CustomSection {
+            name: Self::NAME.into(),
+            data: data.into(),
         }
-        sink.push(len as u8);
-        sink.extend(temp_sink);
+        .encode(sink);
     }
 }
 

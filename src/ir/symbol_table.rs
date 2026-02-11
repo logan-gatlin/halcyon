@@ -35,7 +35,7 @@ impl SymbolTable {
     ) -> &Type {
         self.terms
             .get(path)
-            .unwrap_or_else(|| unreachable!("Accessed {path}"))
+            .unwrap_or_else(|| unreachable!("Accessed non-existant term {path}"))
     }
     pub fn get_type(
         &self,

@@ -140,7 +140,7 @@ impl FileLogger {
         &mut self,
         message: impl Into<String>,
     ) -> LogBuilder<'_> {
-        self.diagnostic(Severity::Warning, message)
+        self.diagnostic(Severity::Bug, message)
     }
     pub fn error(
         &'_ mut self,
