@@ -59,7 +59,10 @@ use wasmparser::{
     Parser,
 };
 
-use crate::asm::custom_section::SignatureSection;
+// Grab the version number from Cargo.toml at compile time
+pub const COMPILER_VERSION_STRING: &str = env!("CARGO_PKG_VERSION");
+
+use crate::asm::custom_section::TypeSignatureSection;
 use crate::asm::validate_wasm;
 
 #[derive(Debug, Clone)]
@@ -108,8 +111,8 @@ pub fn link_binary(
     for payload in parser.parse_all(input) {
         if let Ok(wasmparser::Payload::CustomSection(r)) = payload {
             match r.name() {
-                "signature" => {
-                    let Some(s) = SignatureSection::decode_data_slice(r.data()) else {
+                TypeSignatureSection::NAME => {
+                    let Some(s) = TypeSignatureSection::decode_data_slice(r.data()) else {
                         corrupted_module(file_logger);
                         return None;
                     };

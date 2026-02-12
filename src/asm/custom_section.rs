@@ -86,7 +86,7 @@ impl Encode for Path {
 /// are only a simplification of Halcyon types. This section provides semantic
 /// information to linkers about a module's type signature
 #[derive(Debug, Clone, Default)]
-pub struct SignatureSection {
+pub struct TypeSignatureSection {
     /// Types referenced in this module, but defined elsewhere
     pub imported_types: Vec<Path>,
     /// An ordered map of type declarations from this module
@@ -96,7 +96,7 @@ pub struct SignatureSection {
     index_map: HashMap<Path, usize>,
 }
 
-impl SignatureSection {
+impl TypeSignatureSection {
     pub const NAME: &str = "type_signature";
     pub fn new(
         module_name: &str,
@@ -374,7 +374,7 @@ impl SignatureSection {
     }
 }
 
-impl wasm_encoder::Section for SignatureSection {
+impl wasm_encoder::Section for TypeSignatureSection {
     fn id(&self) -> u8 {
         0 // Custom section
     }
@@ -383,7 +383,7 @@ impl wasm_encoder::Section for SignatureSection {
 /// Section layout:
 /// [Path] (imported type paths)
 /// [(Path, Type, [uint])] (Type definitions)
-impl Encode for SignatureSection {
+impl Encode for TypeSignatureSection {
     fn encode(
         &self,
         sink: &mut Vec<u8>,
@@ -419,7 +419,7 @@ mod tests {
             major: "test".into(),
             minor: "MyType".into(),
         };
-        let mut section = SignatureSection::default();
+        let mut section = TypeSignatureSection::default();
         section.defined_types.insert(
             path.clone(),
             AbstractType {
@@ -439,7 +439,7 @@ mod tests {
         }
         pos += 1;
 
-        let decoded = SignatureSection::decode(&encoded[pos..]).unwrap();
+        let decoded = TypeSignatureSection::decode(&encoded[pos..]).unwrap();
         assert_eq!(section.defined_types.len(), decoded.defined_types.len());
 
         let original_type = &section.defined_types.values().next().unwrap().base;
@@ -537,28 +537,28 @@ mod tests {
 
     #[test]
     fn decode_empty_returns_none() {
-        assert!(SignatureSection::decode(&[]).is_none());
+        assert!(TypeSignatureSection::decode(&[]).is_none());
     }
 
     #[test]
     fn decode_wrong_name_returns_none() {
         let mut data = vec![];
         "not_signature".encode(&mut data);
-        assert!(SignatureSection::decode(&data).is_none());
+        assert!(TypeSignatureSection::decode(&data).is_none());
     }
 
     #[test]
     fn decode_truncated_after_name_returns_none() {
         let mut data = vec![];
-        SignatureSection::NAME.encode(&mut data);
+        TypeSignatureSection::NAME.encode(&mut data);
         // No import count follows — truncated
-        assert!(SignatureSection::decode(&data).is_none());
+        assert!(TypeSignatureSection::decode(&data).is_none());
     }
 
     #[test]
     fn decode_truncated_leb128_returns_none() {
         // A continuation byte (high bit set) with no following byte
-        assert!(SignatureSection::decode(&[0x80]).is_none());
+        assert!(TypeSignatureSection::decode(&[0x80]).is_none());
     }
 
     #[test]
@@ -588,7 +588,7 @@ mod tests {
     #[test]
     fn decode_unknown_type_tag_returns_none() {
         let mut data = vec![];
-        SignatureSection::NAME.encode(&mut data);
+        TypeSignatureSection::NAME.encode(&mut data);
         0usize.encode(&mut data); // 0 imports
         1usize.encode(&mut data); // 1 defined type
         "test".encode(&mut data); // path.major
@@ -596,13 +596,13 @@ mod tests {
         99usize.encode(&mut data); // invalid type tag
         0usize.encode(&mut data); // 0 variables
         0usize.encode(&mut data); // 0 defined terms
-        assert!(SignatureSection::decode(&data).is_none());
+        assert!(TypeSignatureSection::decode(&data).is_none());
     }
 
     #[test]
     fn decode_out_of_bounds_instantiation_index_returns_none() {
         let mut data = vec![];
-        SignatureSection::NAME.encode(&mut data);
+        TypeSignatureSection::NAME.encode(&mut data);
         0usize.encode(&mut data); // 0 imports
         1usize.encode(&mut data); // 1 defined type
         "test".encode(&mut data); // path.major
@@ -612,7 +612,7 @@ mod tests {
         0usize.encode(&mut data); // 0 type args
         0usize.encode(&mut data); // 0 variables
         0usize.encode(&mut data); // 0 defined terms
-        assert!(SignatureSection::decode(&data).is_none());
+        assert!(TypeSignatureSection::decode(&data).is_none());
     }
 
     #[test]
@@ -621,7 +621,7 @@ mod tests {
             major: "test".into(),
             minor: "Generic".into(),
         };
-        let mut section = SignatureSection::default();
+        let mut section = TypeSignatureSection::default();
         section.defined_types.insert(
             path.clone(),
             AbstractType {
@@ -644,7 +644,7 @@ mod tests {
         }
         pos += 1;
 
-        let decoded = SignatureSection::decode(&encoded[pos..]).unwrap();
+        let decoded = TypeSignatureSection::decode(&encoded[pos..]).unwrap();
         let original = section.defined_types.values().next().unwrap();
         let decoded_val = decoded.defined_types.values().next().unwrap();
         assert_eq!(original.variables.len(), decoded_val.variables.len());
@@ -660,7 +660,7 @@ mod tests {
             major: "test".into(),
             minor: "my_fn".into(),
         };
-        let mut section = SignatureSection::default();
+        let mut section = TypeSignatureSection::default();
         section.defined_terms.insert(
             path,
             semantic::Type::Function(
@@ -678,7 +678,7 @@ mod tests {
         }
         pos += 1;
 
-        let decoded = SignatureSection::decode(&encoded[pos..]).unwrap();
+        let decoded = TypeSignatureSection::decode(&encoded[pos..]).unwrap();
         assert_eq!(section.defined_terms.len(), decoded.defined_terms.len());
         let original = section.defined_terms.values().next().unwrap();
         let decoded_val = decoded.defined_terms.values().next().unwrap();
@@ -696,7 +696,7 @@ mod tests {
             minor: "make".into(),
         };
 
-        let mut section = SignatureSection::default();
+        let mut section = TypeSignatureSection::default();
         section.defined_types.insert(
             type_path.clone(),
             AbstractType {
@@ -733,7 +733,7 @@ mod tests {
         }
         pos += 1;
 
-        let decoded = SignatureSection::decode(&encoded[pos..]).unwrap();
+        let decoded = TypeSignatureSection::decode(&encoded[pos..]).unwrap();
         assert_eq!(section.defined_types.len(), decoded.defined_types.len());
         assert_eq!(section.defined_terms.len(), decoded.defined_terms.len());
 
@@ -749,10 +749,10 @@ mod tests {
     #[test]
     fn decode_truncated_terms_returns_none() {
         let mut data = vec![];
-        SignatureSection::NAME.encode(&mut data);
+        TypeSignatureSection::NAME.encode(&mut data);
         0usize.encode(&mut data); // 0 imports
         0usize.encode(&mut data); // 0 defined types
         1usize.encode(&mut data); // 1 defined term (but no term data follows)
-        assert!(SignatureSection::decode(&data).is_none());
+        assert!(TypeSignatureSection::decode(&data).is_none());
     }
 }

@@ -7,17 +7,17 @@
 mod terms;
 mod types;
 
-use crate::asm::custom_section::SignatureSection;
+use crate::asm::custom_section::TypeSignatureSection;
 use crate::ir::*;
 use crate::semantic::{
     AbstractType,
     Type,
 };
 use crate::{
-    asm,
-    link_binary,
     Artifact,
     Logger,
+    asm,
+    link_binary,
 };
 
 pub const CORE_MODULE_NAME: &str = "core";
@@ -35,7 +35,7 @@ pub fn compile_core_module(
     let mut module = asm::Module::new(CORE_MODULE_NAME.into());
     let mut init_func = module.new_function();
     terms::operator_definitions(&mut init_func, &mut syms);
-    module.sig = SignatureSection::new(CORE_MODULE_NAME, &syms);
+    module.sig = TypeSignatureSection::new(CORE_MODULE_NAME, &syms);
     link_binary("<core-module>", &asm::encode(module), logger, symbols)
 }
 

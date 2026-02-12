@@ -1,6 +1,6 @@
 [package]
 name = "halcyon-lib"
-version = "0.1.0"
+version = "2026.02.11"
 authors = ["Logan Gatlin <logan@gatlintc.com>"]
 edition = "2024"
 # rust-version = ""

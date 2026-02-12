@@ -311,7 +311,7 @@ pub struct Module {
     pub imports: IndexMap<Path, Type>,
     pub globals: IndexMap<Path, Type>,
     pub functions: Vec<Function>,
-    pub sig: SignatureSection,
+    pub sig: TypeSignatureSection,
     pub start: u32,
 }
 
@@ -355,7 +355,7 @@ pub fn lower_module(
         init_func.push(Instruction::Drop);
     }
     module.start = init_func.func_index as u32;
-    module.sig = SignatureSection::new(&ir_module.name, symbols);
+    module.sig = TypeSignatureSection::new(&ir_module.name, symbols);
     module
 }
 

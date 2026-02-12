@@ -19,6 +19,7 @@ use wasm_encoder::{
     Instruction as winstr,
     NameMap,
     NameSection,
+    ProducersField,
     RefType,
     StorageType,
     ValType,
@@ -201,6 +202,12 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
     };
     let mut element_section = wasm_encoder::ElementSection::new();
     let mut code_section = wasm_encoder::CodeSection::new();
+    let mut producer_section = wasm_encoder::ProducersSection::new();
+
+    producer_section.field(
+        "language",
+        ProducersField::new().value("Halcyon", crate::COMPILER_VERSION_STRING),
+    );
 
     let mut global_namespace = HashMap::new();
     let mut referenced_funcs: BTreeSet<u32> = BTreeSet::new();
