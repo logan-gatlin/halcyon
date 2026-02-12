@@ -61,18 +61,22 @@ use wasmparser::{
 
 // Grab the version number from Cargo.toml at compile time
 pub const COMPILER_VERSION_STRING: &str = env!("CARGO_PKG_VERSION");
+pub const WASM_MAGIC_NUMBER: [u8; 4] = [0, b'a', b's', b'm'];
 
 use crate::asm::custom_section::TypeSignatureSection;
 use crate::asm::validate_wasm;
 
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum Artifact {
-    /// A pre-compiled WASM binary linked into the project
+    // When linking from a binary file, we do not have access to the
+    // syntax tree, IR, or assembly representation
     Binary {
         module_name: String,
         binary: Vec<u8>,
     },
-    /// A compiled Halcyon source module
+    // Modules compiled from source have much more information available
+    // for debugging than those loaded from a binary
     Source {
         module_name: String,
         parse_tree: parse::ParsedModule,
@@ -110,7 +114,7 @@ pub fn compile_file(
     logger: &mut Logger,
     symbols: &mut SymbolTable,
 ) -> Vec<Artifact> {
-    if let Some([0x0, 0x61, 0x73, 0x6D] /* WASM magic number */) = input.get(0..4) {
+    if input.get(0..4).is_some_and(|n| n == WASM_MAGIC_NUMBER) {
         link_binary(file_name, input, logger, symbols)
             .map(|a| vec![a])
             .unwrap_or_default()

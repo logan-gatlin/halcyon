@@ -78,7 +78,7 @@ impl TypeSection {
         inner: &Type,
     ) -> u32 {
         let ct = ConcreteType::Array(ArrayType(FieldType {
-            element_type: StorageType::Val(self.valtype_of(inner)),
+            element_type: self.storagetype_of(inner),
             mutable: true,
         }));
         self.get_or_insert(ct)
@@ -102,12 +102,25 @@ impl TypeSection {
         self.get_or_insert(ct)
     }
 
+    fn storagetype_of(
+        &mut self,
+        type_: &Type,
+    ) -> StorageType {
+        match type_ {
+            Type::I8 => StorageType::I8,
+            Type::I16 => StorageType::I16,
+            _ => StorageType::Val(self.valtype_of(type_)),
+        }
+    }
+
     fn valtype_of(
         &mut self,
         type_: &Type,
     ) -> ValType {
         match type_ {
             Type::Any => ValType::Ref(RefType::ANYREF),
+            // Small storage-only types are upcast
+            Type::I8 | Type::I16 => ValType::I32,
             Type::I32 => ValType::I32,
             Type::I64 => ValType::I64,
             Type::F32 => ValType::F32,

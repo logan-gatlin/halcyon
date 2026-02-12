@@ -1,7 +1,7 @@
 use super::*;
 use crate::ir::{
-    left_pad,
     PrettyPrint,
+    left_pad,
 };
 
 use colored::Colorize;
@@ -66,7 +66,7 @@ impl PrettyPrint for Type {
     fn pretty(&self) -> String {
         use Type::*;
         match self {
-            Any | I32 | I64 | F32 | F64 => {
+            Any | I8 | I16 | I32 | I64 | F32 | F64 => {
                 format!("{self:?}")
                     .to_lowercase()
                     .italic()

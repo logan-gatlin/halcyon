@@ -1,9 +1,9 @@
 use crate::asm::{
-    lower_type,
     Encoder,
     Instruction,
     NumberOperation,
     Type,
+    lower_type,
 };
 use crate::operator::{
     BinaryOp,

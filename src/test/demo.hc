@@ -1,3 +1,3 @@
 module demo =
-	let a = 4 / 2
+	let a = "foo"
 end

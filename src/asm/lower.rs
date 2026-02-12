@@ -24,7 +24,7 @@ pub fn lower_type(
         Integer => Type::Struct([Type::I64].into()),
         Real => Type::Struct([Type::F64].into()),
         Glyph | Boolean => Type::Struct([Type::I32].into()),
-        String => Type::Array(Type::I32.into()),
+        String => Type::Array(Type::I8.into()),
         Struct { fields, .. } => {
             Type::Struct(fields.values().map(|v| lower_type(v, symbols)).collect())
         }
@@ -418,6 +418,13 @@ impl<'a> Encoder<'a> {
                     self.lower_ir(*else_, symbols);
                     self.push(i::End);
                 }
+            }
+            Immediate(ConstValue::String(s)) => {
+                self.extend(s.bytes().map(|b| i::I32Const(b as i32)));
+                self.push(i::ArrayNewFixed {
+                    inner_type: Type::I8,
+                    length: s.len(),
+                })
             }
             Immediate(const_value) => {
                 let Type::Struct(inner_types) = lower_type(&const_value.type_of(), symbols) else {

@@ -36,6 +36,8 @@ pub use lower::lower_type;
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Type {
     Any,
+    I8,
+    I16,
     I32,
     I64,
     F32,
