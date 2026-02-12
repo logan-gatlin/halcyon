@@ -16,6 +16,7 @@ pub mod pretty_print;
 
 use custom_section::*;
 use indexmap::IndexMap;
+pub use wasm_encoder::ValType;
 
 use crate::ir::{
     ConstValue,
@@ -195,13 +196,18 @@ pub enum Instruction {
         src_type: Type,
     },
 
-    /// Call a function.
+    /// Call a function reference.
     ///
     /// Stack: `[func_ref, argument] -> [result]`
-    Call {
+    CallRef {
         parameters: Box<[Type]>,
         returns: Box<[Type]>,
     },
+
+    /// Call an imported function by index.
+    ///
+    /// Stack: depends on function signature
+    Call(usize),
 
     /// Mark a code path as unreachable.
     ///
@@ -297,14 +303,32 @@ pub enum Instruction {
     ///
     /// Stack: `[anyref] -> [(ref null $array_type)]`
     RefCastArray(Box<Type>),
+
+    /// Store a byte to linear memory.
+    ///
+    /// Stack: `[address: i32, value: i32] -> []`
+    I32Store8,
+
+    /// Store an i32 to linear memory.
+    ///
+    /// Stack: `[address: i32, value: i32] -> []`
+    I32Store,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct Function {
-    parameters: IndexMap<Path, Type>,
-    returns: Vec<Type>,
-    variables: IndexMap<Path, Type>,
-    ops: Vec<Instruction>,
+    pub parameters: IndexMap<Path, Type>,
+    pub returns: Vec<Type>,
+    pub variables: IndexMap<Path, Type>,
+    pub ops: Vec<Instruction>,
+}
+
+#[derive(Debug, Clone)]
+pub struct FunctionImport {
+    pub module: String,
+    pub name: String,
+    pub params: Box<[ValType]>,
+    pub results: Box<[ValType]>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -313,6 +337,8 @@ pub struct Module {
     pub imports: IndexMap<Path, Type>,
     pub globals: IndexMap<Path, Type>,
     pub functions: Vec<Function>,
+    pub function_imports: Vec<FunctionImport>,
+    pub has_memory: bool,
     pub sig: TypeSignatureSection,
     pub start: u32,
 }

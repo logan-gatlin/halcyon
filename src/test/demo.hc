@@ -1,3 +1,3 @@
 module demo =
-	let a = "foo"
+	let a = core::put_str "Hello, World!\n"
 end

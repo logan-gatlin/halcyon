@@ -102,6 +102,18 @@ impl TypeSection {
         self.get_or_insert(ct)
     }
 
+    fn new_function_raw(
+        &mut self,
+        parameters: &[ValType],
+        returns: &[ValType],
+    ) -> u32 {
+        let ct = ConcreteType::Function(FuncType::new(
+            parameters.iter().copied().collect::<Box<_>>(),
+            returns.iter().copied().collect::<Box<_>>(),
+        ));
+        self.get_or_insert(ct)
+    }
+
     fn storagetype_of(
         &mut self,
         type_: &Type,
@@ -208,10 +220,12 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
     let mut import_section = ImportSection::new();
     let mut function_section = wasm_encoder::FunctionSection::new();
     let mut table_section = wasm_encoder::TableSection::new();
+    let mut memory_section = wasm_encoder::MemorySection::new();
     let mut global_section = wasm_encoder::GlobalSection::new();
     let mut export_section = wasm_encoder::ExportSection::new();
+    let num_func_imports = asm_module.function_imports.len() as u32;
     let start_section = wasm_encoder::StartSection {
-        function_index: asm_module.start,
+        function_index: asm_module.start + num_func_imports,
     };
     let mut element_section = wasm_encoder::ElementSection::new();
     let mut code_section = wasm_encoder::CodeSection::new();
@@ -226,6 +240,12 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
     let mut referenced_funcs: BTreeSet<u32> = BTreeSet::new();
 
     name_section.module(&asm_module.name);
+
+    // Encode function imports (these occupy function indices 0..N)
+    for fi in &asm_module.function_imports {
+        let type_idx = type_section.new_function_raw(&fi.params, &fi.results);
+        import_section.import(&fi.module, &fi.name, EntityType::Function(type_idx));
+    }
 
     let mut global_id = 0;
     for (name, type_) in asm_module.imports.iter() {
@@ -257,6 +277,18 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
         global_namespace.insert(name, global_id);
         global_names.append(global_id, &name.minor);
         global_id += 1;
+    }
+
+    // Add linear memory if required (e.g. for WASI)
+    if asm_module.has_memory {
+        memory_section.memory(wasm_encoder::MemoryType {
+            minimum: 1,
+            maximum: None,
+            memory64: false,
+            shared: false,
+            page_size_log2: None,
+        });
+        export_section.export("memory", ExportKind::Memory, 0);
     }
 
     for f in &asm_module.functions {
@@ -323,8 +355,9 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
                         }
                         i::I32Const(i) => winstr::I32Const(*i),
                         i::Func(id) => {
-                            referenced_funcs.insert(*id as u32);
-                            winstr::RefFunc(*id as u32)
+                            let adjusted = *id as u32 + num_func_imports;
+                            referenced_funcs.insert(adjusted);
+                            winstr::RefFunc(adjusted)
                         }
                         i::StructNew(items) => winstr::StructNew(type_section.new_struct(items)),
                         i::StructGet(t, field_index) => {
@@ -333,7 +366,13 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
                                 field_index: *field_index as u32,
                             }
                         }
-                        i::ArrayGet(t) => winstr::ArrayGet(type_section.new_array(t)),
+                        i::ArrayGet(t) => {
+                            let arr_idx = type_section.new_array(t);
+                            match t {
+                                Type::I8 | Type::I16 => winstr::ArrayGetU(arr_idx),
+                                _ => winstr::ArrayGet(arr_idx),
+                            }
+                        }
                         i::ArrayNewFixed { inner_type, length } => {
                             winstr::ArrayNewFixed {
                                 array_type_index: type_section.new_array(inner_type),
@@ -348,7 +387,7 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
                                 array_type_index_src: type_section.new_array(src_type),
                             }
                         }
-                        i::Call {
+                        i::CallRef {
                             parameters,
                             returns,
                         } => winstr::CallRef(type_section.new_function(parameters, returns)),
@@ -454,6 +493,21 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
                             let array_type_idx = type_section.new_array(inner);
                             winstr::RefCastNullable(HeapType::Concrete(array_type_idx))
                         }
+                        i::I32Store8 => {
+                            winstr::I32Store8(wasm_encoder::MemArg {
+                                offset: 0,
+                                align: 0,
+                                memory_index: 0,
+                            })
+                        }
+                        i::I32Store => {
+                            winstr::I32Store(wasm_encoder::MemArg {
+                                offset: 0,
+                                align: 2,
+                                memory_index: 0,
+                            })
+                        }
+                        i::Call(idx) => winstr::Call(*idx as u32),
                     }
                 })
                 .fold::<&mut _, _>(&mut function_body, |body, i| body.instruction(&i))
@@ -480,7 +534,11 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
         .section(&type_section)
         .section(&import_section)
         .section(&function_section)
-        .section(&table_section)
+        .section(&table_section);
+    if asm_module.has_memory {
+        module.section(&memory_section);
+    }
+    module
         .section(&global_section)
         .section(&export_section)
         .section(&start_section)

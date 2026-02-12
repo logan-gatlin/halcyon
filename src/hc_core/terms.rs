@@ -1,8 +1,10 @@
 use crate::asm::{
+    self,
     Encoder,
+    FunctionImport,
     Instruction,
     NumberOperation,
-    Type,
+    ValType,
     lower_type,
 };
 use crate::operator::{
@@ -55,7 +57,7 @@ pub fn operator_definitions(
             ],
             vec![],
             |enc, syms| {
-                let Type::Struct(fields) = lower_type(&op.parameter_type(), syms) else {
+                let asm::Type::Struct(fields) = lower_type(&op.parameter_type(), syms) else {
                     unreachable!("operator parameter type must lower to a struct");
                 };
                 enc.extend([
@@ -75,4 +77,119 @@ pub fn operator_definitions(
         );
         enc.push(i::Set(op.path()));
     });
+}
+
+/// Register `put_str : string -> unit` and emit its WASI-backed implementation.
+pub fn put_str_definition(
+    enc: &mut Encoder,
+    syms: &mut SymbolTable,
+) {
+    use Instruction as i;
+    use NumberOperation::*;
+
+    let put_str_type = Type::Function(Box::new(Type::String), Box::new(Type::Unit));
+    let put_str_path = core("put_str");
+    syms.terms
+        .insert(put_str_path.clone(), put_str_type.clone());
+
+    // Register fd_write as function import index 0
+    let fd_write_index = enc.module.function_imports.len();
+    enc.module.function_imports.push(FunctionImport {
+        module: "wasi_snapshot_preview1".into(),
+        name: "fd_write".into(),
+        params: [ValType::I32, ValType::I32, ValType::I32, ValType::I32].into(),
+        results: [ValType::I32].into(),
+    });
+    enc.module.has_memory = true;
+
+    let param = Path::new("[temp]", "str_param");
+    enc.create_closure(
+        syms,
+        param.clone().with_type(Type::String),
+        vec![],
+        |enc, _syms| {
+            // param is an (array i8) on the local stack
+            // Memory layout:
+            //   [0..4)  = iovec.buf pointer (will be 12)
+            //   [4..8)  = iovec.buf_len
+            //   [8..12) = nwritten (output)
+            //   [12..)  = string data
+
+            // Store iovec.buf = 12 at memory offset 0
+            enc.extend([i::I32Const(0), i::I32Const(12), i::I32Store]);
+
+            // Store iovec.buf_len = array.len(param) at memory offset 4
+            enc.extend([
+                i::I32Const(4),
+                i::Get(param.clone()),
+                i::ArrayLen,
+                i::I32Store,
+            ]);
+
+            // Copy loop: for counter in 0..len, memory[12+counter] = param[counter]
+            let counter = enc.temporary_name("counter");
+            enc.new_register(counter.clone(), ScopeKind::Local, asm::Type::I32);
+            enc.extend([i::I32Const(0), i::Set(counter.clone())]);
+
+            // Only loop if length > 0
+            enc.extend([
+                i::Get(param.clone()),
+                i::ArrayLen,
+                i::I32Const(0),
+                i::I32Op(Gt),
+                i::If(None),
+                i::Loop,
+            ]);
+
+            // address = 12 + counter
+            enc.extend([i::I32Const(12), i::Get(counter.clone()), i::I32Op(Add)]);
+            // value = param[counter]
+            enc.extend([
+                i::Get(param.clone()),
+                i::Get(counter.clone()),
+                i::ArrayGet(asm::Type::I8),
+            ]);
+            // store byte
+            enc.push(i::I32Store8);
+
+            // counter = counter + 1
+            enc.extend([
+                i::Get(counter.clone()),
+                i::I32Const(1),
+                i::I32Op(Add),
+                i::Set(counter.clone()),
+            ]);
+
+            // branch back to loop if counter < array.len(param)
+            enc.extend([
+                i::Get(counter.clone()),
+                i::Get(param.clone()),
+                i::ArrayLen,
+                i::I32Op(Lt),
+                i::BreakIf(0), // branch to Loop
+                i::End,        // end Loop
+                i::End,        // end If
+            ]);
+
+            // Call fd_write(stdout=1, iovs_ptr=0, iovs_count=1, nwritten_ptr=8)
+            enc.extend([
+                i::I32Const(1), // fd: stdout
+                i::I32Const(0), // iovs pointer
+                i::I32Const(1), // iovs count
+                i::I32Const(8), // nwritten pointer
+                i::Call(fd_write_index),
+                i::Drop, // discard errno
+            ]);
+
+            // Return unit
+            enc.push(i::StructNew([].into()));
+        },
+    );
+
+    enc.new_register(
+        put_str_path.clone(),
+        ScopeKind::Global,
+        lower_type(&put_str_type, syms),
+    );
+    enc.push(i::Set(put_str_path));
 }

@@ -656,7 +656,7 @@ impl<'a> Encoder<'a> {
         ]);
         // Stack: [captures, argument, typed_funcref]
 
-        self.push(i::Call {
+        self.push(i::CallRef {
             parameters: func_params,
             returns: func_returns,
         });

@@ -131,7 +131,7 @@ impl PrettyPrint for Instruction {
             ArrayNewFixed { inner_type, length } => {
                 format!("array.new_fixed [{}] {length}", inner_type.pretty())
             }
-            Call {
+            CallRef {
                 parameters,
                 returns,
             } => {
@@ -212,6 +212,9 @@ impl PrettyPrint for Instruction {
             RefCastArray(inner) => {
                 format!("ref.cast.array [{}]", inner.pretty())
             }
+            I32Store8 => "i32.store8".into(),
+            I32Store => "i32.store".into(),
+            Call(idx) => format!("call ${idx}"),
         }
     }
 }

@@ -23,14 +23,24 @@ fn compile_file(name: &str) -> Vec<Artifact> {
 
 fn exec_file(artifacts: &[Artifact]) {
     use wasmtime::*;
+    use wasmtime_wasi::p2::WasiCtxBuilder;
+    use wasmtime_wasi::preview1::{
+        self,
+        WasiP1Ctx,
+    };
+
     let mut config = Config::default();
     config.wasm_gc(true);
     config.wasm_function_references(true);
     config.debug_info(true);
     config.wasm_backtrace_details(WasmBacktraceDetails::Enable);
     let engine = Engine::new(&config).unwrap();
-    let mut linker = Linker::new(&engine);
-    let mut store = Store::new(&engine, ());
+    let mut linker = Linker::<WasiP1Ctx>::new(&engine);
+
+    preview1::add_to_linker_sync(&mut linker, |ctx| ctx).unwrap();
+
+    let wasi_ctx = WasiCtxBuilder::new().inherit_stdout().build_p1();
+    let mut store = Store::new(&engine, wasi_ctx);
     for artifact in artifacts {
         let module = Module::new(&engine, artifact.binary()).unwrap();
         let instance = linker.instantiate(&mut store, &module).unwrap();
