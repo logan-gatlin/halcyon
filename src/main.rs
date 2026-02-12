@@ -16,17 +16,10 @@ fn compile_file_arg() {
     let mut symbols = SymbolTable::new();
     let mut bins = vec![];
     let core_module = compile_core_module(&mut logger, &mut symbols).unwrap();
-    bins.push(core_module.binary);
+    bins.push(core_module.into_binary());
 
-    #[allow(unused_variables)]
-    for Artifact {
-        module_name,
-        parse_tree,
-        ir_module,
-        asm_module,
-        binary,
-    } in compile_source(&path, &str, &mut logger, &mut symbols)
-    {
+    for artifact in compile_source(&path, &str, &mut logger, &mut symbols) {
+        let binary = artifact.into_binary();
         if !binary.is_empty() {
             bins.push(binary);
         }

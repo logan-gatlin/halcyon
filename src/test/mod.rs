@@ -32,10 +32,10 @@ fn exec_file(artifacts: &[Artifact]) {
     let mut linker = Linker::new(&engine);
     let mut store = Store::new(&engine, ());
     for artifact in artifacts {
-        let module = Module::new(&engine, &artifact.binary).unwrap();
+        let module = Module::new(&engine, artifact.binary()).unwrap();
         let instance = linker.instantiate(&mut store, &module).unwrap();
         linker
-            .instance(&mut store, &artifact.module_name, instance)
+            .instance(&mut store, artifact.module_name(), instance)
             .unwrap();
     }
 }

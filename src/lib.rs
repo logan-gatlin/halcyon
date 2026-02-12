@@ -66,14 +66,42 @@ use crate::asm::custom_section::TypeSignatureSection;
 use crate::asm::validate_wasm;
 
 #[derive(Debug, Clone)]
-pub struct Artifact {
-    pub module_name: String,
-    pub parse_tree: parse::ParsedModule,
-    pub ir_module: ir::Module,
-    /// `None` if compilation failed
-    pub asm_module: Option<asm::Module>,
-    /// Empty if compilation failed
-    pub binary: Vec<u8>,
+pub enum Artifact {
+    /// A pre-compiled WASM binary linked into the project
+    Binary {
+        module_name: String,
+        binary: Vec<u8>,
+    },
+    /// A compiled Halcyon source module
+    Source {
+        module_name: String,
+        parse_tree: parse::ParsedModule,
+        ir_module: ir::Module,
+        /// `None` if compilation failed
+        asm_module: Option<asm::Module>,
+        /// Empty if compilation failed
+        binary: Vec<u8>,
+    },
+}
+
+impl Artifact {
+    pub fn module_name(&self) -> &str {
+        match self {
+            Self::Binary { module_name, .. } | Self::Source { module_name, .. } => module_name,
+        }
+    }
+
+    pub fn binary(&self) -> &[u8] {
+        match self {
+            Self::Binary { binary, .. } | Self::Source { binary, .. } => binary,
+        }
+    }
+
+    pub fn into_binary(self) -> Vec<u8> {
+        match self {
+            Self::Binary { binary, .. } | Self::Source { binary, .. } => binary,
+        }
+    }
 }
 
 pub fn compile_file(
@@ -221,20 +249,8 @@ pub fn link_binary(
         symbols.terms.insert(path, t);
     }
     logger.consume_file(file_logger);
-    Some(Artifact {
+    Some(Artifact::Binary {
         module_name: module_name.to_string(),
-        parse_tree: parse::InnerParsedModule {
-            name: module_name.to_string().with_span(Span::default()),
-            contents: vec![],
-        }
-        .with_span(Span::default()),
-        ir_module: ir::Module {
-            name: module_name.to_string(),
-            types: Default::default(),
-            constructors: Default::default(),
-            code: vec![],
-        },
-        asm_module: None,
         binary: input.to_vec(),
     })
 }
@@ -260,7 +276,7 @@ pub fn compile_source(
         } else {
             (None, vec![])
         };
-        artifacts.push(Artifact {
+        artifacts.push(Artifact::Source {
             module_name: p.name.inner.clone(),
             parse_tree: p,
             ir_module,

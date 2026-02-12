@@ -511,7 +511,7 @@ dependencies = [
 
 [[package]]
 name = "halcyon-lib"
-version = "0.1.0"
+version = "2026.2.11"
 dependencies = [
  "codespan-reporting",
  "colored",
