@@ -163,7 +163,6 @@ impl<'a> Builder<'a> {
         let mut types = IndexMap::new();
         for item in module.inner.contents {
             match item.inner {
-                DocComment(_) => {}
                 Let { assignee, value } => {
                     let span = assignee.span + value.span;
                     let expr = this.expr(

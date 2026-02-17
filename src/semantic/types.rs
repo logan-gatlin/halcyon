@@ -57,7 +57,7 @@ pub enum Type {
     Real,
     /// true or false
     Boolean,
-    /// Fat pointer to byte array of UTF-8
+    /// Pointer + length for byte array of UTF-8
     String,
     /// UTF-8 codepoint 32 bit
     Glyph,
@@ -171,7 +171,7 @@ impl Type {
             | Type::Glyph => false,
             // Sum types can be recursive without being infinite, such as with linked lists:
             // ```
-            // type LL = fn a => | Cons (LL a) | Nil
+            // type LL: a = | Cons (LL a) | Nil
             // ```
             // So long as at least one variant does not contain itself, the type is constructable.
             Type::Sum { variant_types, .. } => {

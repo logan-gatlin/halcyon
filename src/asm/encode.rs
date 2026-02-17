@@ -224,9 +224,6 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
     let mut global_section = wasm_encoder::GlobalSection::new();
     let mut export_section = wasm_encoder::ExportSection::new();
     let num_func_imports = asm_module.function_imports.len() as u32;
-    let start_section = wasm_encoder::StartSection {
-        function_index: asm_module.start + num_func_imports,
-    };
     let mut element_section = wasm_encoder::ElementSection::new();
     let mut code_section = wasm_encoder::CodeSection::new();
     let mut producer_section = wasm_encoder::ProducersSection::new();
@@ -237,14 +234,16 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
     );
 
     let mut global_namespace = HashMap::new();
+    let mut func_namespace: HashMap<&Path, u32> = HashMap::new();
     let mut referenced_funcs: BTreeSet<u32> = BTreeSet::new();
 
     name_section.module(&asm_module.name);
 
     // Encode function imports (these occupy function indices 0..N)
-    for fi in &asm_module.function_imports {
+    for (idx, (path, fi)) in asm_module.function_imports.iter().enumerate() {
         let type_idx = type_section.new_function_raw(&fi.params, &fi.results);
         import_section.import(&fi.module, &fi.name, EntityType::Function(type_idx));
+        func_namespace.insert(path, idx as u32);
     }
 
     let mut global_id = 0;
@@ -291,7 +290,17 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
         export_section.export("memory", ExportKind::Memory, 0);
     }
 
-    for f in &asm_module.functions {
+    // Build function namespace for local functions (indices N..)
+    for (idx, (path, _)) in asm_module.functions.iter().enumerate() {
+        func_namespace.insert(path, idx as u32 + num_func_imports);
+    }
+
+    // Resolve start function
+    let start_section = wasm_encoder::StartSection {
+        function_index: func_namespace[&asm_module.start],
+    };
+
+    for (_, f) in &asm_module.functions {
         let type_id = type_section.new_function(
             f.parameters
                 .values()
@@ -354,10 +363,10 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
                             }
                         }
                         i::I32Const(i) => winstr::I32Const(*i),
-                        i::Func(id) => {
-                            let adjusted = *id as u32 + num_func_imports;
-                            referenced_funcs.insert(adjusted);
-                            winstr::RefFunc(adjusted)
+                        i::Func(path) => {
+                            let idx = func_namespace[path];
+                            referenced_funcs.insert(idx);
+                            winstr::RefFunc(idx)
                         }
                         i::StructNew(items) => winstr::StructNew(type_section.new_struct(items)),
                         i::StructGet(t, field_index) => {
@@ -507,7 +516,7 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
                                 memory_index: 0,
                             })
                         }
-                        i::Call(idx) => winstr::Call(*idx as u32),
+                        i::Call(path) => winstr::Call(func_namespace[path]),
                     }
                 })
                 .fold::<&mut _, _>(&mut function_body, |body, i| body.instruction(&i))
@@ -526,6 +535,11 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
     });
     element_section.declared(wasm_encoder::Elements::Functions(referenced_funcs.into()));
 
+    let mut func_names = NameMap::new();
+    for (path, &idx) in &func_namespace {
+        func_names.append(idx, &format!("{path}"));
+    }
+    name_section.functions(&func_names);
     name_section.globals(&global_names);
 
     let mut module = wasm_encoder::Module::new();

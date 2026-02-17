@@ -46,7 +46,14 @@ impl<'a> WithContext for super::LogBuilder<'a> {
         message: impl Into<String>,
         span: Span,
     ) -> Self {
-        let span = span.start..(span.start + span.width);
+        if Span::Generated == span {
+            self.notes
+                .push("This lint occured in generated code".into());
+        }
+        let span = match span {
+            Span::Source { start, width, .. } => start..(start + width),
+            Span::Generated => 0..0,
+        };
         self.labels.push(Label {
             style,
             file_id: self.logger.id,

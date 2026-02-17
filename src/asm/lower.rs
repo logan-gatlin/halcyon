@@ -55,9 +55,9 @@ impl<'a> Encoder<'a> {
         parameter: Typed<Path>,
         captures: Vec<Typed<Path>>,
         body: impl for<'b> FnOnce(&mut Encoder<'b>, &SymbolTable),
-    ) -> usize {
-        let mut new_enc = self.module.new_function();
-        let new_func_index = new_enc.func_index;
+    ) -> Path {
+        let func_name = self.temporary_name("closure");
+        let mut new_enc = self.module.new_function(func_name.clone());
         let capture_array_name = new_enc.temporary_name("captured_symbols");
         new_enc.new_parameter(capture_array_name.clone(), Type::Array(Type::Any.into()));
         let parameter_type = lower_type(&parameter.type_, symbols);
@@ -112,10 +112,10 @@ impl<'a> Encoder<'a> {
                 inner_type: Type::Any,
                 length: num_captures,
             },
-            i::Func(new_func_index),
+            i::Func(func_name.clone()),
             i::StructNew([Type::function_capture(), Type::closure_function_type()].into()),
         ]);
-        new_func_index
+        func_name
     }
     /// Like `create_closure`, but curries multiple parameters into nested closures.
     /// For 0 parameters, an implicit unit parameter is used.
@@ -125,7 +125,7 @@ impl<'a> Encoder<'a> {
         parameters: &[Typed<Path>],
         captures: Vec<Typed<Path>>,
         body: impl for<'b> FnOnce(&mut Encoder<'b>, &SymbolTable),
-    ) -> usize {
+    ) -> Path {
         match parameters {
             [] => {
                 let unit_param = self.temporary_name("unit");

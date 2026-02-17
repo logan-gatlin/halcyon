@@ -1,5 +1,32 @@
 use super::*;
 
+#[derive(Copy, Clone, enum_iterator::Sequence)]
+pub enum CoreTypes {
+    Unit,
+    Integer,
+    Real,
+    Boolean,
+    String,
+    Glyph,
+    Array,
+    Function,
+}
+
+impl CoreTypes {
+    pub fn path(&self) -> Path {
+        match self {
+            CoreTypes::Unit => Path::core("unit"),
+            CoreTypes::Integer => Path::core("integer"),
+            CoreTypes::Real => Path::core("real"),
+            CoreTypes::Boolean => Path::core("boolean"),
+            CoreTypes::String => Path::core("string"),
+            CoreTypes::Glyph => Path::core("glyph"),
+            CoreTypes::Array => Path::core("array"),
+            CoreTypes::Function => Path::core("function"),
+        }
+    }
+}
+/*
 pub fn type_definitions(syms: &mut SymbolTable) {
     // Primitive types
     syms.types.extend(
@@ -37,3 +64,4 @@ pub fn type_definitions(syms: &mut SymbolTable) {
         },
     );
 }
+*/

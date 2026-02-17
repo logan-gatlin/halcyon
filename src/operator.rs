@@ -1,220 +1,148 @@
-use crate::hc_core::CORE_MODULE_NAME;
-use crate::ir::Path;
-use crate::semantic::Type;
-use crate::token::*;
+use crate::new_ir::Path;
 
 pub type Precedence = usize;
 
-macro_rules! op {
-  ($name:ident; $prefix:literal; $($op:ident, $prec:expr, $assoc:expr);*;) => {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-    pub enum $name {
-      $($op,)*
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Associativity {
+    Left,
+    Right,
+}
 
-    #[allow(dead_code)]
-    impl $name {
-        pub fn all() -> Vec<Self> {
-            vec![$(Self::$op),*]
+pub trait Operator {
+    fn precedence(&self) -> Precedence;
+    fn associative(&self) -> Associativity;
+    fn path(&self) -> Path;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, enum_iterator::Sequence)]
+pub enum BinaryOp {
+    Star,
+    StarDot,
+    Slash,
+    SlashDot,
+    Percent,
+    Plus,
+    PlusDot,
+    Minus,
+    MinusDot,
+    ComposeLeft,
+    ComposeRight,
+    Xor,
+    Or,
+    Apply,
+    DoubleEqual,
+    BangEqual,
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
+    And,
+    Semicolon,
+}
+
+impl Operator for BinaryOp {
+    fn precedence(&self) -> Precedence {
+        match self {
+            Self::Star => 15,
+            Self::StarDot => 15,
+            Self::Slash => 15,
+            Self::SlashDot => 15,
+            Self::Percent => 15,
+            Self::Plus => 14,
+            Self::PlusDot => 14,
+            Self::Minus => 14,
+            Self::MinusDot => 14,
+            Self::ComposeLeft => 10,
+            Self::ComposeRight => 10,
+            Self::Xor => 10,
+            Self::Or => 9,
+            Self::Apply => 9,
+            Self::DoubleEqual => 8,
+            Self::BangEqual => 8,
+            Self::Less => 8,
+            Self::LessEqual => 8,
+            Self::Greater => 8,
+            Self::GreaterEqual => 8,
+            Self::And => 7,
+            Self::Semicolon => 1,
         }
+    }
+    fn associative(&self) -> Associativity {
+        Associativity::Left
+    }
+    fn path(&self) -> Path {
+        Path::core(format!("{self}"))
+    }
+}
 
-        pub fn precedence(&self) -> Precedence {
+impl std::fmt::Display for BinaryOp {
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        write!(
+            f,
+            "({})",
             match self {
-                $(Self::$op => $prec),*
+                BinaryOp::Star => " * ",
+                BinaryOp::StarDot => " *. ",
+                BinaryOp::Slash => "/",
+                BinaryOp::SlashDot => "/.",
+                BinaryOp::Percent => "%",
+                BinaryOp::Plus => "+",
+                BinaryOp::PlusDot => "+.",
+                BinaryOp::Minus => "-",
+                BinaryOp::MinusDot => "-.",
+                BinaryOp::ComposeLeft => ">>",
+                BinaryOp::ComposeRight => "<<",
+                BinaryOp::Xor => "xor",
+                BinaryOp::Or => "or",
+                BinaryOp::Apply => "|>",
+                BinaryOp::DoubleEqual => "==",
+                BinaryOp::BangEqual => "!=",
+                BinaryOp::Less => "<",
+                BinaryOp::LessEqual => "<=",
+                BinaryOp::Greater => ">",
+                BinaryOp::GreaterEqual => ">=",
+                BinaryOp::And => "and",
+                BinaryOp::Semicolon => ";",
             }
-        }
+        )
+    }
+}
 
-        pub fn assoc(&self) -> bool {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, enum_iterator::Sequence)]
+pub enum UnaryOp {
+    Minus,
+    MinusDot,
+    Not,
+}
+
+impl Operator for UnaryOp {
+    fn precedence(&self) -> Precedence {
+        15
+    }
+    fn associative(&self) -> Associativity {
+        Associativity::Left
+    }
+    fn path(&self) -> Path {
+        Path::core(format!("{self}"))
+    }
+}
+
+impl std::fmt::Display for UnaryOp {
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        write!(
+            f,
+            "(unary {})",
             match self {
-                $(Self::$op => $assoc),*
+                UnaryOp::Minus => "-",
+                UnaryOp::MinusDot => "-.",
+                UnaryOp::Not => "not",
             }
-        }
-
-        pub fn path(&self) -> Path {
-            Path::new(CORE_MODULE_NAME, format!("{self}"))
-        }
-    }
-
-    impl std::fmt::Display for $name {
-      fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-          $(Self::$op => write!(f, "({}{})", $prefix, TokenKind::$op)),*
-        }
-      }
-    }
-
-    impl TryFrom<&TokenKind> for $name {
-      type Error = ();
-      fn try_from(value: &TokenKind) -> std::result::Result<Self, ()> {
-        match value {
-          $(TokenKind::$op => Ok(Self::$op),)*
-          _ => Err(()),
-        }
-      }
-    }
-  }
-}
-
-pub const RIGHT_ASSOC: bool = true;
-pub const LEFT_ASSOC: bool = false;
-pub const FIELD_PREC: Precedence = 17;
-pub const CALL_PREC: Precedence = 12;
-
-// Name, precedence, associativity;
-op! {
-  BinaryOp; "";
-  Star, 15, LEFT_ASSOC;
-  StarDot, 15, LEFT_ASSOC;
-  Slash, 15, LEFT_ASSOC;
-  SlashDot, 15, LEFT_ASSOC;
-  Percent, 15, LEFT_ASSOC;
-  Plus, 14, LEFT_ASSOC;
-  PlusDot, 14, LEFT_ASSOC;
-  Minus, 14, LEFT_ASSOC;
-  MinusDot, 14, LEFT_ASSOC;
-  ComposeLeft, 10, LEFT_ASSOC;
-  ComposeRight, 10, LEFT_ASSOC;
-  Xor, 10, LEFT_ASSOC;
-  Or, 9, LEFT_ASSOC;
-  Apply, 9, LEFT_ASSOC;
-  DoubleEqual, 8, LEFT_ASSOC;
-  BangEqual, 8, LEFT_ASSOC;
-  Less, 8, LEFT_ASSOC;
-  LessEqual, 8, LEFT_ASSOC;
-  Greater, 8, LEFT_ASSOC;
-  GreaterEqual, 8, LEFT_ASSOC;
-  And, 7, LEFT_ASSOC;
-  Semicolon, 1, LEFT_ASSOC;
-}
-
-op! {
-  UnaryOp; "unary ";
-  Minus, 15, LEFT_ASSOC;
-  MinusDot, 15, LEFT_ASSOC;
-  Not, 15, LEFT_ASSOC;
-}
-
-op! {
-  BinaryTypeOp; "";
-  Arrow, 5, RIGHT_ASSOC;
-}
-
-#[allow(unused)]
-impl BinaryOp {
-    pub fn parameter_type(&self) -> Type {
-        match self {
-            BinaryOp::Minus
-            | BinaryOp::Star
-            | BinaryOp::Slash
-            | BinaryOp::Percent
-            | BinaryOp::Plus => Type::Integer,
-            BinaryOp::PlusDot | BinaryOp::StarDot | BinaryOp::SlashDot | BinaryOp::MinusDot => {
-                Type::Real
-            }
-            BinaryOp::And | BinaryOp::Xor | BinaryOp::Or => Type::Boolean,
-            BinaryOp::DoubleEqual
-            | BinaryOp::BangEqual
-            | BinaryOp::Less
-            | BinaryOp::LessEqual
-            | BinaryOp::Greater
-            | BinaryOp::GreaterEqual => Type::Variable(0),
-            BinaryOp::Apply | BinaryOp::Semicolon => Type::Variable(0),
-            BinaryOp::ComposeRight | BinaryOp::ComposeLeft => {
-                Type::func(Type::Variable(0), Type::Variable(1))
-            }
-        }
-    }
-
-    pub fn return_type(&self) -> Type {
-        match self {
-            BinaryOp::Minus
-            | BinaryOp::Star
-            | BinaryOp::Slash
-            | BinaryOp::Percent
-            | BinaryOp::Plus => Type::Integer,
-            BinaryOp::PlusDot | BinaryOp::StarDot | BinaryOp::SlashDot | BinaryOp::MinusDot => {
-                Type::Real
-            }
-            BinaryOp::DoubleEqual
-            | BinaryOp::BangEqual
-            | BinaryOp::Less
-            | BinaryOp::LessEqual
-            | BinaryOp::Greater
-            | BinaryOp::GreaterEqual
-            | BinaryOp::And
-            | BinaryOp::Xor
-            | BinaryOp::Or => Type::Boolean,
-            BinaryOp::Apply | BinaryOp::Semicolon => Type::Variable(1),
-            BinaryOp::ComposeLeft | BinaryOp::ComposeRight => {
-                Type::func(Type::Variable(0), Type::Variable(2))
-            }
-        }
-    }
-
-    pub fn get_type(&self) -> Type {
-        use BinaryOp::*;
-        use Type as t;
-        match self {
-            Semicolon => {
-                t::func(
-                    Type::Variable(0),
-                    Type::func(Type::Variable(1), Type::Variable(1)),
-                )
-            }
-            Apply => {
-                t::func(
-                    Type::Variable(0),
-                    Type::func(
-                        Type::func(Type::Variable(0), Type::Variable(1)),
-                        Type::Variable(1),
-                    ),
-                )
-            }
-            ComposeRight => {
-                t::curry(
-                    &[
-                        t::func(t::Variable(0), t::Variable(1)),
-                        t::func(t::Variable(1), t::Variable(2)),
-                        t::Variable(0),
-                    ],
-                    t::Variable(2),
-                )
-            }
-            ComposeLeft => {
-                t::curry(
-                    &[
-                        t::func(t::Variable(1), t::Variable(2)),
-                        t::func(t::Variable(0), t::Variable(1)),
-                        t::Variable(0),
-                    ],
-                    t::Variable(2),
-                )
-            }
-            op => {
-                Type::curry(
-                    &[op.parameter_type(), op.parameter_type()],
-                    op.return_type(),
-                )
-            }
-        }
-    }
-}
-
-#[allow(unused)]
-impl UnaryOp {
-    pub fn get_type(&self) -> Type {
-        Type::func(self.parameter_type(), self.parameter_type())
-    }
-
-    pub fn parameter_type(&self) -> Type {
-        match self {
-            UnaryOp::Minus => Type::Integer,
-            UnaryOp::MinusDot => Type::Real,
-            UnaryOp::Not => Type::Boolean,
-        }
-    }
-
-    pub fn return_type(&self) -> Type {
-        self.parameter_type()
+        )
     }
 }

@@ -100,10 +100,10 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
                 self.skip();
                 let mut arguments = vec![];
                 loop {
-                    if self.eat(&FatArrow).is_some() {
+                    if self.eat(&DoubleArrow).is_some() {
                         break;
                     } else if self.eat(&Equal).is_some() {
-                        self.error_expected(&FatArrow).done();
+                        self.error_expected(&DoubleArrow).done();
                         break;
                     }
                     arguments.push(self.eat_ident_or_err().ok_or(UntilNextStatement)?);

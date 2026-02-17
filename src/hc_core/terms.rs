@@ -1,20 +1,23 @@
-use crate::asm::{
-    self,
-    Encoder,
-    FunctionImport,
-    Instruction,
-    NumberOperation,
-    ValType,
-    lower_type,
-};
-use crate::operator::{
-    BinaryOp,
-    UnaryOp,
-};
-use crate::semantic::WithType;
-
 use super::*;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CoreSymbols {
+    EmptyArray,
+    ArrayPush,
+    ArrayConcat,
+}
+
+impl CoreSymbols {
+    pub fn path(&self) -> Path {
+        match self {
+            CoreSymbols::EmptyArray => Path::core("array_empty"),
+            CoreSymbols::ArrayPush => Path::core("array_push"),
+            CoreSymbols::ArrayConcat => Path::core("array_concat"),
+        }
+    }
+}
+
+/*
 pub fn operator_definitions(
     enc: &mut Encoder,
     syms: &mut SymbolTable,
@@ -92,14 +95,17 @@ pub fn put_str_definition(
     syms.terms
         .insert(put_str_path.clone(), put_str_type.clone());
 
-    // Register fd_write as function import index 0
-    let fd_write_index = enc.module.function_imports.len();
-    enc.module.function_imports.push(FunctionImport {
-        module: "wasi_snapshot_preview1".into(),
-        name: "fd_write".into(),
-        params: [ValType::I32, ValType::I32, ValType::I32, ValType::I32].into(),
-        results: [ValType::I32].into(),
-    });
+    // Register fd_write as a function import
+    let fd_write_path = Path::new("wasi_snapshot_preview1", "fd_write");
+    enc.module.function_imports.insert(
+        fd_write_path.clone(),
+        FunctionImport {
+            module: "wasi_snapshot_preview1".into(),
+            name: "fd_write".into(),
+            params: [ValType::I32, ValType::I32, ValType::I32, ValType::I32].into(),
+            results: [ValType::I32].into(),
+        },
+    );
     enc.module.has_memory = true;
 
     let param = Path::new("[temp]", "str_param");
@@ -177,7 +183,7 @@ pub fn put_str_definition(
                 i::I32Const(0), // iovs pointer
                 i::I32Const(1), // iovs count
                 i::I32Const(8), // nwritten pointer
-                i::Call(fd_write_index),
+                i::Call(fd_write_path.clone()),
                 i::Drop, // discard errno
             ]);
 
@@ -193,3 +199,4 @@ pub fn put_str_definition(
     );
     enc.push(i::Set(put_str_path));
 }
+*/

@@ -72,7 +72,7 @@ pub enum TokenKind {
     StarDot,
     Percent,
     Arrow,
-    FatArrow,
+    DoubleArrow,
     Apply,
     ComposeLeft,
     ComposeRight,
@@ -115,10 +115,9 @@ pub enum TokenKind {
     False,
     Fn,
 
-    //Whitespace(String),
+    Whitespace,
     LineComment(String),
     BlockComment(String),
-    DocComment(String),
     Error,
 }
 
@@ -136,8 +135,8 @@ impl TokenKind {
             Identifier(_) | StringLiteral(_) | GlyphLiteral(_) | IntegerLiteral(..)
             | RealLiteral(_) => Literal,
             Module | Import | Use | End | Match | With | Let | Type | Do | Of | In | If | Then
-            | Else | And | Or | Xor | Not | True | False | Fn | Pipe | FatArrow => Keyword,
-            LineComment(_) | BlockComment(_) | DocComment(_) | Error => Extra,
+            | Else | And | Or | Xor | Not | True | False | Fn | Pipe | DoubleArrow => Keyword,
+            Whitespace | LineComment(_) | BlockComment(_) | Error => Extra,
         }
     }
 }
@@ -177,7 +176,7 @@ impl std::fmt::Display for TokenKind {
                 ComposeLeft => "<<",
                 ComposeRight => ">>",
                 Arrow => "->",
-                FatArrow => "=>",
+                DoubleArrow => "=>",
                 BangEqual => "!=",
                 Equal => "=",
                 DoubleEqual => "==",
@@ -212,9 +211,9 @@ impl std::fmt::Display for TokenKind {
                 Fn => "fn",
                 Type => "type",
                 Of => "of",
+                Whitespace => " ",
                 BlockComment(_) => "block comment",
                 LineComment(_) => "line comment",
-                DocComment(_) => "doc comment",
                 Error => "[ERROR]",
             }
         )
@@ -294,7 +293,7 @@ impl<'a, I: Iterator<Item = char>> Tokenizer<'a, I> {
         &self,
         start: usize,
     ) -> Span {
-        self.logger.new_span(start, self.position - start)
+        Span::new(start, self.position - start)
     }
 }
 
@@ -310,11 +309,14 @@ pub fn tokenize(
     };
     while let Some(current) = iter.next() {
         let start = iter.position - 1;
-        // Skip whitespace
+        // Consume whitespace
         if current.is_whitespace() {
+            while iter.peek().is_some_and(|c| c.is_whitespace()) {
+                iter.next();
+            }
+            iter.push(TokenKind::Whitespace, start);
             continue;
         }
-        const DOC_COMMENT_START: &str = ">";
         // Parse multiline comment
         if let ('(', Some('*')) = (current, iter.peek())
             && iter.peek_nth(1) != Some(')')
@@ -336,11 +338,7 @@ pub fn tokenize(
                 let _ = write!(buffer, "{current}");
             }
             let content = String::from_utf8_lossy(&buffer).to_string();
-            if let Some(content) = content.strip_prefix(DOC_COMMENT_START) {
-                iter.push(TokenKind::DocComment(content.to_string()), start);
-            } else {
-                iter.push(TokenKind::BlockComment(content), start);
-            }
+            iter.push(TokenKind::BlockComment(content), start);
             continue;
         }
         // Parse single line comment
@@ -353,11 +351,7 @@ pub fn tokenize(
                 let _ = write!(buffer, "{c}");
             }
             let content = String::from_utf8_lossy(&buffer).to_string();
-            if let Some(content) = content.strip_prefix(DOC_COMMENT_START) {
-                iter.push(TokenKind::DocComment(content.to_string()), start);
-            } else {
-                iter.push(TokenKind::LineComment(content), start);
-            }
+            iter.push(TokenKind::LineComment(content), start);
             continue;
         }
         let next_char = iter.peek();
@@ -404,7 +398,7 @@ pub fn tokenize(
                 ('<', '=') => LessEqual,
                 ('>', '=') => GreaterEqual,
                 ('-', '>') => Arrow,
-                ('=', '>') => FatArrow,
+                ('=', '>') => DoubleArrow,
                 (':', ':') => DoubleColon,
                 ('|', '>') => Apply,
                 ('<', '<') => ComposeLeft,
@@ -444,7 +438,7 @@ pub fn tokenize(
                     iter.push(TokenKind::StringLiteral("".into()), start);
                 }
             } else {
-                let span = iter.logger.new_span(start, 1);
+                let span = Span::new(start, 1);
                 iter.logger
                     .error("Missing closing single quote (\')")
                     .primary("Opening \' here is not closed", span)
@@ -464,7 +458,7 @@ pub fn tokenize(
                     iter.push(TokenKind::Error, start);
                 }
             } else {
-                let span = iter.logger.new_span(start, 1);
+                let span = Span::new(start, 1);
                 iter.logger
                     .error("Missing closing double quote (\")")
                     .primary("Opening \" here is not closed", span)
@@ -579,7 +573,7 @@ pub fn tokenize(
             }
             // Found erroneous character
             let next_char = iter.peek().unwrap_or_else(|| unreachable!());
-            let span = iter.logger.new_span(iter.position + 1, 1);
+            let span = Span::new(iter.position + 1, 1);
             iter.logger
                 .error("Illegal character in number.")
                 .primary(
@@ -595,7 +589,7 @@ pub fn tokenize(
         let is_ident_continue =
             |c: char| (!c.is_ascii_punctuation() || c == '_' || c == '-') && !c.is_whitespace();
         if !is_ident_start(current) {
-            let span = iter.logger.new_span(start, 1);
+            let span = Span::new(start, 1);
             iter.logger
                 .error("Unexpected character")
                 .primary(
@@ -711,7 +705,7 @@ fn bake_string(
         start += next.len_utf8();
         baked.push(if next == '\\' {
             let Some(next) = iter.next() else {
-                let span = logger.new_span(start - 1, 2);
+                let span = Span::new(start - 1, 2);
                 logger
                     .error("Unknown escape sequence")
                     .primary(
@@ -742,7 +736,7 @@ fn bake_string(
                     });
                     let bytes: Vec<_> = collect_hex_bytes(&chars);
                     if bytes.len() != 2 {
-                        let span = logger.new_span(start - 1, 4);
+                        let span = Span::new(start - 1, 4);
                         logger.error("Unknown escape sequence")
                             .primary(
                                 "This sequence starts with \\x, but is not followed by two hexadecimal digits.",
@@ -757,7 +751,7 @@ fn bake_string(
                     let bytes =
                         collect_hex_bytes(&[iter.next(), iter.next(), iter.next(), iter.next()]);
                     if bytes.len() != 4 {
-                        let span = logger.new_span(start - 1, 6);
+                        let span = Span::new(start - 1, 6);
                         logger.error("Unknown escape sequence")
                             .primary("This sequence starts with \\w, but is not followed by 4 hex digits.", span).done();
                         return None;
@@ -770,7 +764,7 @@ fn bake_string(
                     }
                 }
                 c => {
-                    let span = logger.new_span(start - 1, 2);
+                    let span = Span::new(start - 1, 2);
                     logger.error("Unknown escape sequence").primary(
                         format!("The \\{c} sequence here is not recognized."), span
                     ).done();
@@ -792,7 +786,11 @@ mod tests {
         let mut logger = FileLogger::new(0);
         let tokens = tokenize(input.chars(), &mut logger);
         assert!(logger.is_ok(), "Tokenizer produced errors: {:?}", logger);
-        tokens.into_iter().map(|t| t.inner).collect()
+        tokens
+            .into_iter()
+            .map(|t| t.inner)
+            .filter(|t| !matches!(t, TokenKind::Whitespace))
+            .collect()
     }
 
     #[test]
@@ -828,7 +826,7 @@ mod tests {
             ComposeLeft,
             ComposeRight,
             Arrow,
-            FatArrow,
+            DoubleArrow,
             BangEqual,
             Equal,
             DoubleEqual,
@@ -941,21 +939,6 @@ mod tests {
         match &tokens[3] {
             TokenKind::BlockComment(s) => assert_eq!(s, " block comment "),
             _ => panic!("Expected BlockComment"),
-        }
-    }
-
-    #[test]
-    fn test_doc_comments() {
-        let tokens = lex("--> doc comment\n(*> block doc *)");
-
-        match &tokens[0] {
-            TokenKind::DocComment(s) => assert_eq!(s, " doc comment"),
-            _ => panic!("Expected DocComment at 0"),
-        }
-
-        match &tokens[1] {
-            TokenKind::DocComment(s) => assert_eq!(s, " block doc "),
-            _ => panic!("Expected DocComment at 1, got {:?}", tokens[1]),
         }
     }
 }

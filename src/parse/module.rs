@@ -2,7 +2,6 @@ use super::*;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ModuleStatementKind {
-    DocComment(String),
     Let {
         assignee: PatternExpression,
         value: Box<ValueExpression>,
@@ -43,9 +42,6 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
                 unreachable!(
                     "The `end` token should be handled outside of `parse_module_statement`, because it marks the end of a module"
                 );
-            }
-            DocComment(comment) => {
-                ModuleStatementKind::DocComment(comment)
             }
             Let => {
                 let assignee = self.parse_pattern()?;

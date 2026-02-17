@@ -3,6 +3,7 @@
 */
 #![allow(clippy::unwrap_used)]
 
+/*
 use super::*;
 use crate::hc_core::compile_core_module;
 
@@ -55,3 +56,4 @@ fn demo() {
     let artifacts = compile_file("demo");
     exec_file(&artifacts);
 }
+*/

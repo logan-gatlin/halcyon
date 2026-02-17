@@ -105,7 +105,7 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
                 let mut branches = vec![];
                 loop {
                     predicates.push(self.parse_pattern()?);
-                    self.eat_or_err(&FatArrow)
+                    self.eat_or_err(&DoubleArrow)
                         .or_else(|| self.eat(&Equal))
                         .ok_or(UntilNextStatement)?;
                     branches.push(self.parse_value_expression(0)?);
@@ -137,7 +137,7 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
                     }
                     // End of parameters
                     else {
-                        self.eat_or_err(&FatArrow)
+                        self.eat_or_err(&DoubleArrow)
                             .or_else(|| self.eat(&Equal))
                             .ok_or(UntilNextStatement)?;
                         break;
@@ -233,7 +233,7 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
                 let mut branches = vec![];
                 loop {
                     predicates.push(self.parse_pattern()?);
-                    self.eat_or_err(&FatArrow)
+                    self.eat_or_err(&DoubleArrow)
                         .or_else(|| self.eat(&Equal))
                         .ok_or(UntilNextStatement)?;
                     branches.push(self.parse_value_expression(0)?);

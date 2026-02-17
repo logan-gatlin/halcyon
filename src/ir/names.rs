@@ -56,7 +56,6 @@ impl Path {
             minor: minor.into(),
         }
     }
-
     pub fn is_in_module(
         &self,
         module: &str,

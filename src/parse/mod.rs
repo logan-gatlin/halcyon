@@ -58,7 +58,7 @@ impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
         iter: impl IntoIterator<IntoIter = I>,
     ) -> Self {
         Self {
-            last_span: logger.new_span(0, 0),
+            last_span: Span::Generated,
             logger,
             iter: multipeek(iter),
         }
@@ -243,7 +243,7 @@ pub fn parse(
         iter: multipeek(iter.into_iter().filter(|t| {
             !matches!(
                 t.inner,
-                TokenKind::LineComment(_) | TokenKind::BlockComment(_)
+                TokenKind::Whitespace | TokenKind::LineComment(_) | TokenKind::BlockComment(_)
             )
         })),
         last_span: Span::default(),

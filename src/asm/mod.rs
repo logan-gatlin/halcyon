@@ -26,6 +26,7 @@ use crate::ir::{
 use crate::{
     FileLogger,
     Logger,
+    Span,
     SymbolTable,
     WithContext,
     semantic,
@@ -147,7 +148,7 @@ pub enum Instruction {
     /// Push a function reference onto the stack.
     ///
     /// Stack: `[] -> [func_ref]`
-    Func(usize),
+    Func(Path),
 
     /// Create a struct from values on the stack.
     ///
@@ -204,10 +205,10 @@ pub enum Instruction {
         returns: Box<[Type]>,
     },
 
-    /// Call an imported function by index.
+    /// Call a function by name.
     ///
     /// Stack: depends on function signature
-    Call(usize),
+    Call(Path),
 
     /// Mark a code path as unreachable.
     ///
@@ -336,11 +337,11 @@ pub struct Module {
     pub name: String,
     pub imports: IndexMap<Path, Type>,
     pub globals: IndexMap<Path, Type>,
-    pub functions: Vec<Function>,
-    pub function_imports: Vec<FunctionImport>,
+    pub functions: IndexMap<Path, Function>,
+    pub function_imports: IndexMap<Path, FunctionImport>,
     pub has_memory: bool,
     pub sig: TypeSignatureSection,
-    pub start: u32,
+    pub start: Path,
 }
 
 impl Type {
@@ -371,7 +372,8 @@ pub fn lower_module(
     symbols: &SymbolTable,
 ) -> Module {
     let mut module = Module::new(ir_module.name.clone());
-    let mut init_func = module.new_function();
+    let init_name = Path::new(&ir_module.name, "[init]");
+    let mut init_func = module.new_function(init_name.clone());
 
     // Lower constructors first so they're available as globals
     for (path, cons) in ir_module.constructors {
@@ -382,7 +384,7 @@ pub fn lower_module(
         init_func.lower_ir(code, symbols);
         init_func.push(Instruction::Drop);
     }
-    module.start = init_func.func_index as u32;
+    module.start = init_name;
     module.sig = TypeSignatureSection::new(&ir_module.name, symbols);
     module
 }
@@ -394,10 +396,13 @@ impl Module {
             ..Default::default()
         }
     }
-    pub fn new_function<'a>(&'a mut self) -> Encoder<'a> {
-        self.functions.push(Function::new());
+    pub fn new_function<'a>(
+        &'a mut self,
+        name: Path,
+    ) -> Encoder<'a> {
+        self.functions.insert(name.clone(), Function::new());
         Encoder {
-            func_index: self.functions.len() - 1,
+            func_name: name,
             module: self,
             temporary_salt: 0,
         }
@@ -406,22 +411,28 @@ impl Module {
 
 pub struct Encoder<'a> {
     pub module: &'a mut Module,
-    pub func_index: usize,
+    pub func_name: Path,
     pub temporary_salt: usize,
 }
 
 impl<'a> Encoder<'a> {
+    fn current_func(&mut self) -> &mut Function {
+        self.module
+            .functions
+            .get_mut(&self.func_name)
+            .unwrap_or_else(|| unreachable!("Function {} not found", self.func_name))
+    }
     pub fn push(
         &mut self,
         instr: Instruction,
     ) {
-        self.module.functions[self.func_index].ops.push(instr);
+        self.current_func().ops.push(instr);
     }
     pub fn extend(
         &mut self,
         instrs: impl IntoIterator<Item = Instruction>,
     ) {
-        self.module.functions[self.func_index].ops.extend(instrs);
+        self.current_func().ops.extend(instrs);
     }
     pub fn temporary_name(
         &mut self,
@@ -436,9 +447,7 @@ impl<'a> Encoder<'a> {
         name: Path,
         type_: Type,
     ) {
-        self.module.functions[self.func_index]
-            .parameters
-            .insert(name, type_);
+        self.current_func().parameters.insert(name, type_);
     }
     pub fn new_register(
         &mut self,
@@ -453,7 +462,7 @@ impl<'a> Encoder<'a> {
             );
         } else {
             assert!(
-                self.module.functions[self.func_index]
+                self.current_func()
                     .variables
                     .insert(name.clone(), type_)
                     .is_none(),
@@ -465,7 +474,7 @@ impl<'a> Encoder<'a> {
         &mut self,
         type_: Type,
     ) {
-        self.module.functions[self.func_index].returns.push(type_);
+        self.current_func().returns.push(type_);
     }
 }
 
@@ -521,7 +530,7 @@ pub fn validate_wasm(
         let byte_start = wat_line_byte_offset(&wat_storage, wat_line);
         let byte_end = wat_line_byte_offset(&wat_storage, wat_line + 1).min(wat_storage.len());
 
-        let span = file_logger.new_span(byte_start, byte_end);
+        let span = Span::new(byte_start, byte_end);
 
         file_logger
             .bug(e.message())

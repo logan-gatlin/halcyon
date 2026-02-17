@@ -1,4 +1,8 @@
 extern crate halcyon_lib;
+
+fn main() {
+}
+/*
 use halcyon_lib::asm::validate_wasm;
 use halcyon_lib::hc_core::compile_core_module;
 use halcyon_lib::*;
@@ -15,6 +19,9 @@ fn compile_file_arg() {
     let mut logger = Logger::new();
     let mut symbols = SymbolTable::new();
     let mut bins = vec![];
+
+    //let p = parse_lossless::parse(&str, &mut logger.new_file(&path, &str));
+
     let core_module = compile_core_module(&mut logger, &mut symbols).unwrap();
     bins.push(core_module.into_binary());
 
@@ -70,3 +77,4 @@ fn compile_file_arg() {
 fn main() {
     compile_file_arg();
 }
+*/

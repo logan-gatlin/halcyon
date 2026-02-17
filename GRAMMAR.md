@@ -5,13 +5,12 @@
 <file>       ::= <module>*
 <module>     ::= "module" <ident> "=" <statement>* "end"
 <statement>  ::= "let" <pattern> "=" <expr>
-               | "type" <ident> "=" <type_def>
+               | "type" <ident> (":" <ident>+)? "=" <type_def>
 ```
 
 ## Type Definitions
 ```bnf
-<type_def>   ::= "fn" <ident>+ "=>" <type_def>     -- Type function / Generics
-               | "{" <field_decl>+ "}"             -- Record definition
+<type_def>   ::= "{" <field_decl>+ "}"             -- Record definition
                | ("|" <variant>)*        -- Sum type (Variant)
                | <type_expr>                       -- Type alias
 
@@ -22,7 +21,7 @@
 ## Type Expressions
 ```bnf
 <type_expr>  ::= <type_term> "->" <type_expr>      -- Function type
-               | <type_term> <type_term>           -- Type application (e.g., `list int`)
+               | <type_term> <type_term>+          -- Type application (e.g., `map int string`)
                | <type_term>
 
 <type_term>  ::= <ident> | <path>                  -- Type name

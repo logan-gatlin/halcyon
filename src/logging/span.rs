@@ -3,11 +3,44 @@ use std::ops::{
     AddAssign,
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Hash)]
-pub struct Span {
-    pub file_id: usize,
-    pub start: usize,
-    pub width: usize,
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+pub enum Span {
+    Source {
+        start: usize,
+        width: usize,
+    },
+    #[default]
+    Generated,
+}
+
+impl Span {
+    pub fn new(
+        start: usize,
+        width: usize,
+    ) -> Self {
+        Self::Source { start, width }
+    }
+
+    pub fn then<T, F>(
+        &self,
+        f: F,
+    ) -> Option<T>
+    where
+        F: FnOnce(Span) -> T,
+    {
+        match self {
+            Span::Source { .. } => Some(f(*self)),
+            Span::Generated => None,
+        }
+    }
+}
+
+impl From<rowan::TextRange> for Span {
+    fn from(value: rowan::TextRange) -> Self {
+        let start: usize = value.start().into();
+        let end: usize = value.end().into();
+        Span::new(start, end - start)
+    }
 }
 
 impl Add<Span> for Span {
@@ -17,19 +50,30 @@ impl Add<Span> for Span {
         self,
         rhs: Span,
     ) -> Self::Output {
-        assert_eq!(
-            self.file_id, rhs.file_id,
-            "Attempted to add spans from different files"
-        );
-        let (min, max) = if self.start < rhs.start {
-            (self, rhs)
-        } else {
-            (rhs, self)
-        };
-        Span {
-            file_id: self.file_id,
-            start: min.start,
-            width: max.width + (max.start - min.start),
+        match (self, rhs) {
+            (s @ Self::Source { .. }, Self::Generated)
+            | (Self::Generated, s @ Self::Source { .. }) => s,
+            (Self::Generated, Self::Generated) => self,
+            (
+                Self::Source {
+                    start: start1,
+                    width: width1,
+                },
+                Self::Source {
+                    start: start2,
+                    width: width2,
+                },
+            ) => {
+                let (min, max) = if start1 < start2 {
+                    ((start1, width1), (start2, width2))
+                } else {
+                    ((start2, width2), (start1, width1))
+                };
+                Self::Source {
+                    start: min.0,
+                    width: max.1 + (max.0 - min.0),
+                }
+            }
         }
     }
 }
@@ -128,6 +172,9 @@ impl std::fmt::Display for Span {
         &self,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
-        write!(f, "[{}+{}]", self.start, self.width)
+        match self {
+            Span::Source { start, width, .. } => write!(f, "[{}+{}]", start, width),
+            Span::Generated => Ok(()),
+        }
     }
 }

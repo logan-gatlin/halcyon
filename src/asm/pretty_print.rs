@@ -1,7 +1,7 @@
 use super::*;
 use crate::ir::{
-    PrettyPrint,
     left_pad,
+    PrettyPrint,
 };
 
 use colored::Colorize;
@@ -10,7 +10,6 @@ impl PrettyPrint for Module {
     fn pretty(&self) -> String {
         self.functions
             .iter()
-            .enumerate()
             .map(|(id, f)| {
                 let parameters = if f.parameters.is_empty() {
                     "".to_string()
@@ -106,7 +105,7 @@ impl PrettyPrint for Instruction {
             Get(path) => format!("get {}", path.pretty()),
             Const(const_value) => format!("const {}", const_value.pretty()),
             I32Const(i) => format!("i32.const {i}"),
-            Func(id) => format!("func {id}"),
+            Func(path) => format!("func {}", path.pretty()),
             StructNew(items) => {
                 format!(
                     "struct.new [{}]",
@@ -214,7 +213,7 @@ impl PrettyPrint for Instruction {
             }
             I32Store8 => "i32.store8".into(),
             I32Store => "i32.store".into(),
-            Call(idx) => format!("call ${idx}"),
+            Call(path) => format!("call {}", path.pretty()),
         }
     }
 }

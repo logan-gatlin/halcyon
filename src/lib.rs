@@ -30,22 +30,23 @@
     clippy::unwrap_used
 )]
 
-pub mod asm;
+//pub mod asm;
 pub mod hc_core;
-pub mod ir;
+//pub mod ir;
 pub mod logging;
 pub mod map;
+mod new_ir;
 pub mod operator;
-pub mod parse;
-pub mod semantic;
+//pub mod parse;
+pub mod parse_lossless;
+//pub mod semantic;
 pub mod token;
-
-pub use ir::{
+/*pub use ir::{
     PrettyPrint,
     SymbolTable,
     build_ir,
-};
-pub use parse::parse;
+};*/
+//pub use parse::parse;
 pub use token::tokenize;
 
 #[cfg(test)]
@@ -62,7 +63,9 @@ use wasmparser::{
 // Grab the version number from Cargo.toml at compile time
 pub const COMPILER_VERSION_STRING: &str = env!("CARGO_PKG_VERSION");
 pub const WASM_MAGIC_NUMBER: [u8; 4] = [0, b'a', b's', b'm'];
+pub const CORE_MODULE_NAME: &str = "core";
 
+/*
 use crate::asm::custom_section::TypeSignatureSection;
 use crate::asm::validate_wasm;
 
@@ -290,3 +293,4 @@ pub fn compile_source(
     }
     artifacts
 }
+*/

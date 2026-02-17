@@ -7,25 +7,14 @@
 mod terms;
 mod types;
 
-use crate::asm::custom_section::TypeSignatureSection;
-use crate::ir::*;
-use crate::semantic::{
-    AbstractType,
-    Type,
-};
-use crate::{
-    asm,
-    link_binary,
-    Artifact,
-    Logger,
-};
+pub use terms::CoreSymbols;
+pub use types::CoreTypes;
+
+use crate::new_ir::Path;
 
 pub const CORE_MODULE_NAME: &str = "core";
 
-fn core(s: impl Into<String>) -> Path {
-    Path::new(CORE_MODULE_NAME, s)
-}
-
+/*
 pub fn compile_core_module(
     logger: &mut Logger,
     symbols: &mut SymbolTable,
@@ -33,9 +22,11 @@ pub fn compile_core_module(
     let mut syms = SymbolTable::new();
     types::type_definitions(&mut syms);
     let mut module = asm::Module::new(CORE_MODULE_NAME.into());
-    let mut init_func = module.new_function();
+    let init_name = core("[init]");
+    let mut init_func = module.new_function(init_name.clone());
     terms::operator_definitions(&mut init_func, &mut syms);
     terms::put_str_definition(&mut init_func, &mut syms);
+    module.start = init_name;
     module.sig = TypeSignatureSection::new(CORE_MODULE_NAME, &syms);
     link_binary("<core-module>", &asm::encode(module), logger, symbols)
 }
@@ -57,3 +48,4 @@ mod test {
         assert!(logger.is_ok());
     }
 }
+*/

@@ -168,17 +168,6 @@ impl FileLogger {
     pub fn iter(&self) -> impl Iterator<Item = &Diagnostic<FileId>> {
         self.diagnostics.iter()
     }
-    pub fn new_span(
-        &self,
-        start: usize,
-        width: usize,
-    ) -> Span {
-        Span {
-            file_id: self.id,
-            start,
-            width,
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
