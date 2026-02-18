@@ -1,5 +1,9 @@
-use crate::parse_lossless::parser::Parser;
-use crate::parse_lossless::SyntaxKind;
+use super::{
+    paren_list,
+    path_or_ident,
+};
+use crate::parse::SyntaxKind;
+use crate::parse::parser::Parser;
 
 // ── Type definitions ─────────────────────────────────────────────────
 
@@ -136,41 +140,13 @@ fn type_primary(p: &mut Parser<'_, '_>) -> bool {
         Some(kind) => {
             match kind {
                 SyntaxKind::IDENT => {
-                    // Ident or Module::Ident path
-                    if p.nth(1) == Some(SyntaxKind::DOUBLE_COLON) {
-                        let m = p.start_node(SyntaxKind::PATH);
-                        p.bump(); // module
-                        p.bump(); // ::
-                        p.expect(SyntaxKind::IDENT);
-                        p.finish_node(m);
-                    } else {
-                        let m = p.start_node(SyntaxKind::PATH);
-                        p.bump();
-                        p.finish_node(m);
-                    }
+                    path_or_ident(p, SyntaxKind::PATH, SyntaxKind::PATH);
                     true
                 }
 
                 SyntaxKind::L_PAREN => {
                     // `()` unit type, `(type)` grouping, `(type, type, ...)` tuple type
-                    if p.nth(1) == Some(SyntaxKind::R_PAREN) {
-                        let m = p.start_node(SyntaxKind::UNIT);
-                        p.bump(); // (
-                        p.bump(); // )
-                        p.finish_node(m);
-                    } else {
-                        let m = p.start_node(SyntaxKind::TUPLE_TYPE);
-                        p.bump(); // (
-                        type_expr(p);
-                        while p.eat(SyntaxKind::COMMA) {
-                            if p.at(SyntaxKind::R_PAREN) {
-                                break;
-                            }
-                            type_expr(p);
-                        }
-                        p.expect(SyntaxKind::R_PAREN);
-                        p.finish_node(m);
-                    }
+                    paren_list(p, SyntaxKind::UNIT, SyntaxKind::TUPLE_TYPE, type_expr);
                     true
                 }
 
@@ -184,7 +160,7 @@ fn type_primary(p: &mut Parser<'_, '_>) -> bool {
                 }
 
                 _ => {
-                    p.error_at_current("expected type");
+                    p.error_and_bump("expected type");
                     false
                 }
             }

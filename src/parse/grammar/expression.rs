@@ -1,7 +1,10 @@
-use crate::parse_lossless::SyntaxKind;
-use crate::parse_lossless::parser::Parser;
+use crate::parse::SyntaxKind;
+use crate::parse::parser::Parser;
 
 use super::{
+    literal,
+    paren_list,
+    path_or_ident,
     pattern,
     type_expr,
 };
@@ -124,9 +127,7 @@ fn infix_bp(kind: SyntaxKind) -> Option<(u8, u8)> {
         | SyntaxKind::GREATER
         | SyntaxKind::GREATER_EQUAL => Some((10, 11)),
 
-        SyntaxKind::COMPOSE_LEFT | SyntaxKind::COMPOSE_RIGHT | SyntaxKind::XOR_KW => {
-            Some((12, 13))
-        }
+        SyntaxKind::COMPOSE_LEFT | SyntaxKind::COMPOSE_RIGHT | SyntaxKind::XOR_KW => Some((12, 13)),
 
         SyntaxKind::PLUS | SyntaxKind::PLUS_DOT | SyntaxKind::MINUS | SyntaxKind::MINUS_DOT => {
             Some((14, 15))
@@ -176,26 +177,13 @@ fn primary(p: &mut Parser<'_, '_>) -> bool {
                 | SyntaxKind::GLYPH
                 | SyntaxKind::TRUE_KW
                 | SyntaxKind::FALSE_KW => {
-                    let m = p.start_node(SyntaxKind::LITERAL);
-                    p.bump();
-                    p.finish_node(m);
+                    literal(p);
                     true
                 }
 
                 // Identifier or path
                 SyntaxKind::IDENT => {
-                    // Check for path: Ident::Ident
-                    if p.nth(1) == Some(SyntaxKind::DOUBLE_COLON) {
-                        let m = p.start_node(SyntaxKind::PATH);
-                        p.bump(); // first ident
-                        p.bump(); // ::
-                        p.expect(SyntaxKind::IDENT);
-                        p.finish_node(m);
-                    } else {
-                        let m = p.start_node(SyntaxKind::IDENT_EXPR);
-                        p.bump();
-                        p.finish_node(m);
-                    }
+                    path_or_ident(p, SyntaxKind::IDENT_NODE, SyntaxKind::PATH);
                     true
                 }
 
@@ -218,7 +206,7 @@ fn primary(p: &mut Parser<'_, '_>) -> bool {
                 }
 
                 _ => {
-                    p.error_at_current("expected expression");
+                    p.error_and_bump("expected expression");
                     false
                 }
             }
@@ -231,21 +219,10 @@ fn primary(p: &mut Parser<'_, '_>) -> bool {
 /// `"(" ")"` (unit), `"(" expr ")"` (paren), `"(" expr "," ... ")"` (tuple),
 /// or `"(" op ")"` (operator-as-value).
 fn paren_or_tuple(p: &mut Parser<'_, '_>) {
-    // Unit: `()`
-    if p.nth(1) == Some(SyntaxKind::R_PAREN) {
-        let m = p.start_node(SyntaxKind::UNIT);
-        p.bump(); // (
-        p.bump(); // )
-        p.finish_node(m);
-        return;
-    }
-
-    let m = p.start_node(SyntaxKind::PAREN_EXPR);
-    p.expect(SyntaxKind::L_PAREN);
-
     // Operator as value: `(+)`, `(not)`, etc.
-    if is_operator(p) && p.nth(1) == Some(SyntaxKind::R_PAREN) {
-        // Wrap the operator in OPERATOR_EXPR
+    if p.nth(1).is_some_and(is_operator_kind) && p.nth(2) == Some(SyntaxKind::R_PAREN) {
+        let m = p.start_node(SyntaxKind::PAREN_EXPR);
+        p.expect(SyntaxKind::L_PAREN);
         let om = p.start_node(SyntaxKind::OPERATOR_EXPR);
         p.bump(); // the operator token
         p.finish_node(om);
@@ -254,60 +231,36 @@ fn paren_or_tuple(p: &mut Parser<'_, '_>) {
         return;
     }
 
-    // First expression
-    expr(p);
-
-    if p.at(SyntaxKind::COMMA) {
-        // Tuple — re-tag the node kind by finishing and noting this is
-        // a tuple.  Since we can't retag with rowan's builder API we
-        // finish as PAREN_EXPR and note: the PAREN_EXPR with commas is
-        // a tuple at the semantic level.  Actually let's use a
-        // checkpoint approach to wrap properly.
-        //
-        // We already opened PAREN_EXPR which is fine for tuples too;
-        // we'll reinterpret in the AST layer. For now PAREN_EXPR serves
-        // for both grouping and tuple.
-        while p.eat(SyntaxKind::COMMA) {
-            if p.at(SyntaxKind::R_PAREN) {
-                break; // trailing comma
-            }
-            expr(p);
-        }
-    }
-
-    p.expect(SyntaxKind::R_PAREN);
-    p.finish_node(m);
+    paren_list(p, SyntaxKind::UNIT, SyntaxKind::PAREN_EXPR, expr);
 }
 
-fn is_operator(p: &mut Parser<'_, '_>) -> bool {
-    p.current().is_some_and(|k| {
-        matches!(
-            k,
-            SyntaxKind::PLUS
-                | SyntaxKind::PLUS_DOT
-                | SyntaxKind::MINUS
-                | SyntaxKind::MINUS_DOT
-                | SyntaxKind::STAR
-                | SyntaxKind::STAR_DOT
-                | SyntaxKind::SLASH
-                | SyntaxKind::SLASH_DOT
-                | SyntaxKind::PERCENT
-                | SyntaxKind::PIPE_ARROW
-                | SyntaxKind::COMPOSE_LEFT
-                | SyntaxKind::COMPOSE_RIGHT
-                | SyntaxKind::DOUBLE_EQUAL
-                | SyntaxKind::BANG_EQUAL
-                | SyntaxKind::LESS
-                | SyntaxKind::LESS_EQUAL
-                | SyntaxKind::GREATER
-                | SyntaxKind::GREATER_EQUAL
-                | SyntaxKind::AND_KW
-                | SyntaxKind::OR_KW
-                | SyntaxKind::XOR_KW
-                | SyntaxKind::NOT_KW
-                | SyntaxKind::SEMICOLON
-        )
-    })
+fn is_operator_kind(kind: SyntaxKind) -> bool {
+    matches!(
+        kind,
+        SyntaxKind::PLUS
+            | SyntaxKind::PLUS_DOT
+            | SyntaxKind::MINUS
+            | SyntaxKind::MINUS_DOT
+            | SyntaxKind::STAR
+            | SyntaxKind::STAR_DOT
+            | SyntaxKind::SLASH
+            | SyntaxKind::SLASH_DOT
+            | SyntaxKind::PERCENT
+            | SyntaxKind::PIPE_ARROW
+            | SyntaxKind::COMPOSE_LEFT
+            | SyntaxKind::COMPOSE_RIGHT
+            | SyntaxKind::DOUBLE_EQUAL
+            | SyntaxKind::BANG_EQUAL
+            | SyntaxKind::LESS
+            | SyntaxKind::LESS_EQUAL
+            | SyntaxKind::GREATER
+            | SyntaxKind::GREATER_EQUAL
+            | SyntaxKind::AND_KW
+            | SyntaxKind::OR_KW
+            | SyntaxKind::XOR_KW
+            | SyntaxKind::NOT_KW
+            | SyntaxKind::SEMICOLON
+    )
 }
 
 /// `"[" (expr | ".." expr)* "]"`
@@ -409,7 +362,7 @@ fn param(p: &mut Parser<'_, '_>) {
         p.bump();
         p.finish_node(m);
     } else {
-        p.error_at_current("expected parameter");
+        p.error_and_bump("expected parameter");
     }
 }
 
@@ -418,7 +371,7 @@ fn fn_shorthand(p: &mut Parser<'_, '_>) {
     let m = p.start_node(SyntaxKind::FN_SHORTHAND_EXPR);
     p.expect(SyntaxKind::FN_KW);
     while p.at(SyntaxKind::PIPE) {
-        match_arm(p);
+        match_arm(p, true);
     }
     p.finish_node(m);
 }
@@ -441,16 +394,30 @@ fn match_expr(p: &mut Parser<'_, '_>) {
     p.expect(SyntaxKind::MATCH_KW);
     expr(p);
     p.expect(SyntaxKind::WITH_KW);
-    while p.at(SyntaxKind::PIPE) {
-        match_arm(p);
+    if p.at(SyntaxKind::PIPE) {
+        while p.at(SyntaxKind::PIPE) {
+            match_arm(p, true);
+        }
+    } else if p.current().is_some_and(pattern::can_start_pattern) {
+        match_arm(p, false);
+        while p.at(SyntaxKind::PIPE) {
+            match_arm(p, true);
+        }
+    } else {
+        p.error_at_current("expected match arm");
     }
     p.finish_node(m);
 }
 
 /// `"|" pattern "=>" expr`
-fn match_arm(p: &mut Parser<'_, '_>) {
+fn match_arm(
+    p: &mut Parser<'_, '_>,
+    has_pipe: bool,
+) {
     let m = p.start_node(SyntaxKind::MATCH_ARM);
-    p.expect(SyntaxKind::PIPE);
+    if has_pipe {
+        p.expect(SyntaxKind::PIPE);
+    }
     pattern::pattern(p);
     p.expect(SyntaxKind::DOUBLE_ARROW);
     expr(p);

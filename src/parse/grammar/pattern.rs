@@ -1,7 +1,12 @@
-use crate::parse_lossless::parser::Parser;
-use crate::parse_lossless::SyntaxKind;
+use crate::parse::SyntaxKind;
+use crate::parse::parser::Parser;
 
-use super::type_expr;
+use super::{
+    literal,
+    paren_list,
+    path_or_ident,
+    type_expr,
+};
 
 /// Parse a pattern, optionally followed by `: type` for a type hint.
 ///
@@ -21,6 +26,22 @@ pub(crate) fn pattern(p: &mut Parser<'_, '_>) {
     }
 }
 
+pub(crate) fn can_start_pattern(kind: SyntaxKind) -> bool {
+    matches!(
+        kind,
+        SyntaxKind::IDENT
+            | SyntaxKind::INTEGER
+            | SyntaxKind::REAL
+            | SyntaxKind::STRING
+            | SyntaxKind::GLYPH
+            | SyntaxKind::TRUE_KW
+            | SyntaxKind::FALSE_KW
+            | SyntaxKind::L_PAREN
+            | SyntaxKind::L_SQUARE
+            | SyntaxKind::L_BRACE
+    )
+}
+
 /// Parse the core of a pattern without type hints.
 fn pattern_primary(p: &mut Parser<'_, '_>) {
     match p.current() {
@@ -36,9 +57,7 @@ fn pattern_primary(p: &mut Parser<'_, '_>) {
                 | SyntaxKind::GLYPH
                 | SyntaxKind::TRUE_KW
                 | SyntaxKind::FALSE_KW => {
-                    let m = p.start_node(SyntaxKind::LITERAL);
-                    p.bump();
-                    p.finish_node(m);
+                    literal(p);
                 }
 
                 // Identifier, path, or constructor
@@ -54,7 +73,7 @@ fn pattern_primary(p: &mut Parser<'_, '_>) {
                 SyntaxKind::L_BRACE => struct_pattern(p),
 
                 _ => {
-                    p.error_at_current("expected pattern");
+                    p.error_and_bump("expected pattern");
                 }
             }
         }
@@ -64,20 +83,7 @@ fn pattern_primary(p: &mut Parser<'_, '_>) {
 /// Identifier, path (`Module::Ctor`), or constructor (`Ctor of pat`).
 fn ident_or_constructor(p: &mut Parser<'_, '_>) {
     let checkpoint = p.checkpoint();
-
-    let is_path = p.nth(1) == Some(SyntaxKind::DOUBLE_COLON);
-
-    if is_path {
-        let m = p.start_node(SyntaxKind::PATH);
-        p.bump(); // module
-        p.bump(); // ::
-        p.expect(SyntaxKind::IDENT);
-        p.finish_node(m);
-    } else {
-        let m = p.start_node(SyntaxKind::IDENT_EXPR);
-        p.bump(); // ident
-        p.finish_node(m);
-    }
+    path_or_ident(p, SyntaxKind::IDENT_NODE, SyntaxKind::PATH);
 
     // `of` pattern — constructor application
     if p.at(SyntaxKind::OF_KW) {
@@ -90,26 +96,7 @@ fn ident_or_constructor(p: &mut Parser<'_, '_>) {
 
 /// `"(" pattern ("," pattern)* ")"` or `"(" ")"` (unit pattern).
 fn paren_pattern(p: &mut Parser<'_, '_>) {
-    if p.nth(1) == Some(SyntaxKind::R_PAREN) {
-        // Unit pattern
-        let m = p.start_node(SyntaxKind::UNIT);
-        p.bump(); // (
-        p.bump(); // )
-        p.finish_node(m);
-        return;
-    }
-
-    let m = p.start_node(SyntaxKind::PAT_TUPLE);
-    p.bump(); // (
-    pattern(p);
-    while p.eat(SyntaxKind::COMMA) {
-        if p.at(SyntaxKind::R_PAREN) {
-            break;
-        }
-        pattern(p);
-    }
-    p.expect(SyntaxKind::R_PAREN);
-    p.finish_node(m);
+    paren_list(p, SyntaxKind::UNIT, SyntaxKind::PAT_TUPLE, pattern);
 }
 
 /// `"[" (pattern | ".." ident?)* "]"`
@@ -120,7 +107,7 @@ fn array_pattern(p: &mut Parser<'_, '_>) {
         if p.at(SyntaxKind::DOT_DOT) {
             let rm = p.start_node(SyntaxKind::PAT_REST);
             p.bump(); // ..
-                      // Optional binding name
+            // Optional binding name
             if p.at(SyntaxKind::IDENT) {
                 p.bump();
             }

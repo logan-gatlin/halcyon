@@ -3,8 +3,8 @@ use super::{
     pattern,
     type_expr,
 };
-use crate::parse_lossless::parser::Parser;
-use crate::parse_lossless::SyntaxKind;
+use crate::parse::SyntaxKind;
+use crate::parse::parser::Parser;
 
 /// Recovery set at the module-body level: we can resume parsing at any
 /// statement-starting keyword or at `end`.

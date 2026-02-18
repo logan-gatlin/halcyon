@@ -115,6 +115,29 @@ fn nth_child_node<N: AstNode>(
     parent.children().filter_map(N::cast).nth(n)
 }
 
+/// Find the first child node that can be cast to `N` after a marker token.
+fn child_node_after_token<N: AstNode>(
+    parent: &SyntaxNode,
+    marker: SyntaxKind,
+) -> Option<N> {
+    let mut seen_marker = false;
+    for el in parent.children_with_tokens() {
+        match el {
+            rowan::NodeOrToken::Token(tok) => {
+                if tok.kind() == marker {
+                    seen_marker = true;
+                }
+            }
+            rowan::NodeOrToken::Node(node) => {
+                if seen_marker && let Some(cast) = N::cast(node) {
+                    return Some(cast);
+                }
+            }
+        }
+    }
+    None
+}
+
 /// Find the first child token of a given `SyntaxKind`.
 fn child_token(
     parent: &SyntaxNode,
@@ -194,7 +217,7 @@ impl LetStatement {
         child_node(&self.syntax)
     }
     pub fn value(&self) -> Option<Expr> {
-        child_node(&self.syntax)
+        child_node_after_token(&self.syntax, SyntaxKind::EQUAL)
     }
 }
 
@@ -207,7 +230,7 @@ impl HasLeadingComments for TypeStatement {
 impl TypeStatement {
     /// Type parameters declared after `:`, e.g. `type Option: a = ...`.
     /// Returns the IDENT tokens between `:` and `=`.
-    pub fn type_params(&self) -> Vec<SyntaxToken> {
+    pub fn type_params(&self) -> Vec<Spanned<String>> {
         let mut after_colon = false;
         self.syntax
             .children_with_tokens()
@@ -224,6 +247,7 @@ impl TypeStatement {
                 }
                 after_colon && t.kind() == SyntaxKind::IDENT
             })
+            .map(|t| t.text().to_string().with_span(t.text_range().into()))
             .collect()
     }
 
@@ -342,11 +366,11 @@ impl LetExpr {
     }
     /// The value being bound (first Expr child).
     pub fn value(&self) -> Option<Expr> {
-        nth_child_node(&self.syntax, 0)
+        child_node_after_token(&self.syntax, SyntaxKind::EQUAL)
     }
     /// The body after `in` (second Expr child).
     pub fn body(&self) -> Option<Expr> {
-        nth_child_node(&self.syntax, 1)
+        child_node_after_token(&self.syntax, SyntaxKind::IN_KW)
     }
 }
 
@@ -401,7 +425,7 @@ impl MatchArm {
         child_node(&self.syntax)
     }
     pub fn body(&self) -> Option<Expr> {
-        child_node(&self.syntax)
+        child_node_after_token(&self.syntax, SyntaxKind::DOUBLE_ARROW)
     }
 }
 
@@ -567,6 +591,10 @@ impl Literal {
     }
 }
 
+ast_node!(Ident, IDENT_NODE);
+impl HasName for Ident {
+}
+
 ast_node!(Path, PATH);
 
 impl Path {
@@ -692,14 +720,14 @@ impl PatField {
 /// constructor pattern.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum PathOrIdent {
-    Ident(IdentExpr),
+    Ident(Ident),
     Path(Path),
 }
 
 impl PathOrIdent {
     fn cast(node: SyntaxNode) -> Option<Self> {
         match node.kind() {
-            SyntaxKind::IDENT_EXPR => IdentExpr::cast(node).map(Self::Ident),
+            SyntaxKind::IDENT_NODE => Ident::cast(node).map(Self::Ident),
             SyntaxKind::PATH => Path::cast(node).map(Self::Path),
             _ => None,
         }
@@ -828,6 +856,7 @@ pub enum Expr {
     Struct(StructExpr),
     Literal(Literal),
     Unit(Unit),
+    Ident(Ident),
     Path(Path),
     Operator(OperatorExpr),
 }
@@ -849,6 +878,7 @@ impl AstNode for Expr {
             SyntaxKind::STRUCT_EXPR => StructExpr::cast(node).map(Self::Struct),
             SyntaxKind::LITERAL => Literal::cast(node).map(Self::Literal),
             SyntaxKind::UNIT => Unit::cast(node).map(Self::Unit),
+            SyntaxKind::IDENT_NODE => Ident::cast(node).map(Self::Ident),
             SyntaxKind::PATH => Path::cast(node).map(Self::Path),
             SyntaxKind::OPERATOR_EXPR => OperatorExpr::cast(node).map(Self::Operator),
             _ => None,
@@ -870,6 +900,7 @@ impl AstNode for Expr {
             Self::Struct(n) => n.syntax(),
             Self::Literal(n) => n.syntax(),
             Self::Unit(n) => n.syntax(),
+            Self::Ident(n) => n.syntax(),
             Self::Path(n) => n.syntax(),
             Self::Operator(n) => n.syntax(),
         }
@@ -879,7 +910,7 @@ impl AstNode for Expr {
 /// A pattern.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Pattern {
-    Ident(IdentExpr),
+    Ident(Ident),
     Literal(Literal),
     Unit(Unit),
     Tuple(PatTuple),
@@ -893,7 +924,7 @@ pub enum Pattern {
 impl AstNode for Pattern {
     fn cast(node: SyntaxNode) -> Option<Self> {
         match node.kind() {
-            SyntaxKind::IDENT_EXPR => IdentExpr::cast(node).map(Self::Ident),
+            SyntaxKind::IDENT_NODE => Ident::cast(node).map(Self::Ident),
             SyntaxKind::LITERAL => Literal::cast(node).map(Self::Literal),
             SyntaxKind::UNIT => Unit::cast(node).map(Self::Unit),
             SyntaxKind::PAT_TUPLE => PatTuple::cast(node).map(Self::Tuple),

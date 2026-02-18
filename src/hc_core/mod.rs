@@ -10,7 +10,7 @@ mod types;
 pub use terms::CoreSymbols;
 pub use types::CoreTypes;
 
-use crate::new_ir::Path;
+use crate::ir::Path;
 
 pub const CORE_MODULE_NAME: &str = "core";
 

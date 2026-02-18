@@ -1,4 +1,4 @@
-use crate::new_ir::Path;
+use crate::ir::Path;
 
 pub type Precedence = usize;
 

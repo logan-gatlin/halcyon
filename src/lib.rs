@@ -29,18 +29,16 @@
     clippy::todo,
     clippy::unwrap_used
 )]
+#![allow(clippy::large_enum_variant, clippy::result_large_err)]
 
-//pub mod asm;
 pub mod hc_core;
-//pub mod ir;
+pub mod ir;
 pub mod logging;
 pub mod map;
-mod new_ir;
 pub mod operator;
-//pub mod parse;
-pub mod parse_lossless;
-//pub mod semantic;
+pub mod parse;
 pub mod token;
+pub mod types;
 /*pub use ir::{
     PrettyPrint,
     SymbolTable,

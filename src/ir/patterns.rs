@@ -43,6 +43,7 @@ pub type UntypedPattern = Pattern<()>;
 
 pub fn pattern(
     scope: &mut impl Scope,
+    logger: &mut FileLogger,
     pat: ast::Pattern,
 ) -> Option<UntypedPattern> {
     Some(Pattern {
@@ -55,14 +56,16 @@ pub fn pattern(
                     scope.define(pat_ident.name_text_spanned()?, NameSpace::Term),
                 )
             }
-            ast::Pattern::Literal(pat_literal) => PatternKind::Immediate(immediate(pat_literal)?),
+            ast::Pattern::Literal(pat_literal) => {
+                PatternKind::Immediate(immediate(logger, pat_literal)?)
+            }
             ast::Pattern::Unit(_) => PatternKind::Immediate(ImmediateValue::Unit),
             ast::Pattern::Tuple(pat_tuple) => {
                 PatternKind::Tuple(
                     pat_tuple
                         .patterns()
                         .into_iter()
-                        .map(|p| pattern(scope, p))
+                        .map(|p| pattern(scope, logger, p))
                         .collect::<Option<_>>()?,
                 )
             }
@@ -88,7 +91,7 @@ pub fn pattern(
                         continue;
                     }
                     if let Some(pattern_node) = ast::Pattern::cast(child) {
-                        let pat = pattern(scope, pattern_node)?;
+                        let pat = pattern(scope, logger, pattern_node)?;
                         if matches!(glob, Glob::None) {
                             starting.push(pat);
                         } else {
@@ -107,7 +110,12 @@ pub fn pattern(
                     pat_struct
                         .fields()
                         .into_iter()
-                        .map(|f| Some((f.name_text_spanned()?, pattern(scope, f.pattern()?)?)))
+                        .map(|f| {
+                            Some((
+                                f.name_text_spanned()?,
+                                pattern(scope, logger, f.pattern()?)?,
+                            ))
+                        })
                         .collect::<Option<_>>()?,
                 )
             }
@@ -122,12 +130,12 @@ pub fn pattern(
                         }
                         ast::PathOrIdent::Path(pat_path) => pat_path.try_into().ok()?,
                     },
-                    pattern(scope, constructor.payload()?)?.into(),
+                    pattern(scope, logger, constructor.payload()?)?.into(),
                 )
             }
             ast::Pattern::TypeHint(pat_type_hint) => {
                 PatternKind::TypeHint(
-                    pattern(scope, pat_type_hint.pattern()?)?.into(),
+                    pattern(scope, logger, pat_type_hint.pattern()?)?.into(),
                     type_expr(scope, pat_type_hint.ty()?)?,
                 )
             }

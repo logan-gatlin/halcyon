@@ -18,9 +18,9 @@ impl TypeExprKind {
 
 #[derive(Debug, Clone)]
 pub struct TypeExpr {
-    comments: String,
-    kind: TypeExprKind,
-    span: Span,
+    pub comments: String,
+    pub kind: TypeExprKind,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone)]
@@ -38,7 +38,7 @@ pub struct TypeDef {
 }
 
 pub fn typedef(
-    scope: &mut ModuleScope,
+    scope: &mut impl Scope,
     typedef: ast::TypeDef,
 ) -> Option<TypeDef> {
     Some(TypeDef {

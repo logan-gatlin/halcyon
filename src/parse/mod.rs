@@ -1,259 +1,284 @@
-mod module;
-mod pattern;
-#[cfg(test)]
-mod test;
-mod type_expression;
-mod value_expression;
+pub mod ast;
+mod grammar;
+mod parser;
 
-pub use module::*;
-pub use pattern::*;
-pub use type_expression::*;
-pub use value_expression::*;
-
-const ERR_MSG: &str = "Syntax error";
-
-use multipeek::{
-    MultiPeek,
-    multipeek,
+use crate::token::{
+    self,
+    TokenKind,
 };
 
-use crate::operator::*;
-use crate::token::*;
-use crate::{
-    FileLogger,
-    Span,
-    Spanned,
-    WithContext,
-    WithSpan,
-};
-pub use RecoveryBehavior::*;
-use TokenKind::*;
+/// All syntax kinds used in the lossless CST.
+///
+/// Token kinds (leaves) map 1:1 from the existing tokenizer.
+/// Node kinds (interior) represent composite grammar constructs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(u16)]
+#[allow(non_camel_case_types)]
+pub enum SyntaxKind {
+    // ── Tokens (leaves) ──────────────────────────────────────────────
+    // Delimiters
+    L_PAREN = 0,
+    R_PAREN,
+    L_BRACE,
+    R_BRACE,
+    L_SQUARE,
+    R_SQUARE,
 
-pub type Expression<K> = Spanned<K>;
+    // Separators
+    COMMA,
+    COLON,
+    DOUBLE_COLON,
+    SEMICOLON,
 
-/// How to recover from a parsing error
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RecoveryBehavior {
-    /// No recovery necessary
-    NoRecovery,
-    /// Skip until this exact token is next
-    UntilKind(TokenKind),
-    /// Skip until this category of token is next
-    UntilCategory(TokenCategory),
-    /// Until the beginning of the next module statement
-    UntilNextStatement,
+    // Operators
+    DOT,
+    DOT_DOT,
+    PLUS,
+    PLUS_DOT,
+    MINUS,
+    MINUS_DOT,
+    SLASH,
+    SLASH_DOT,
+    STAR,
+    STAR_DOT,
+    PERCENT,
+    ARROW,
+    DOUBLE_ARROW,
+    PIPE_ARROW,
+    COMPOSE_LEFT,
+    COMPOSE_RIGHT,
+    PIPE,
+
+    // Comparison
+    BANG_EQUAL,
+    EQUAL,
+    DOUBLE_EQUAL,
+    GREATER,
+    GREATER_EQUAL,
+    LESS,
+    LESS_EQUAL,
+
+    // Literals
+    IDENT,
+    STRING,
+    GLYPH,
+    INTEGER,
+    REAL,
+
+    // Keywords
+    MODULE_KW,
+    IMPORT_KW,
+    USE_KW,
+    END_KW,
+    MATCH_KW,
+    WITH_KW,
+    LET_KW,
+    TYPE_KW,
+    DO_KW,
+    OF_KW,
+    IN_KW,
+    IF_KW,
+    THEN_KW,
+    ELSE_KW,
+    AND_KW,
+    OR_KW,
+    XOR_KW,
+    NOT_KW,
+    TRUE_KW,
+    FALSE_KW,
+    FN_KW,
+
+    // Trivia
+    WHITESPACE,
+    LINE_COMMENT,
+    BLOCK_COMMENT,
+
+    // Lexer error
+    TOKEN_ERROR,
+
+    // ── Nodes (interior) ─────────────────────────────────────────────
+    SOURCE_FILE,
+    MODULE,
+
+    // Statements
+    LET_STATEMENT,
+    TYPE_STATEMENT,
+
+    // Type definitions
+    STRUCT_DEF,
+    SUM_DEF,
+    VARIANT,
+    FIELD_DECL,
+    TYPE_ALIAS_DEF,
+
+    // Type expressions
+    FUNCTION_TYPE,
+    TYPE_APPLICATION,
+    TUPLE_TYPE,
+    ARRAY_TYPE,
+
+    // Shared across expressions, patterns, and type expressions
+    UNIT,
+
+    // Value expressions (some nodes shared elsewhere)
+    LET_EXPR,
+    FN_EXPR,
+    FN_SHORTHAND_EXPR,
+    IF_EXPR,
+    MATCH_EXPR,
+    MATCH_ARM,
+    PARAM,
+    BINARY_EXPR,
+    UNARY_EXPR,
+    CALL_EXPR,
+    FIELD_EXPR,
+    ARRAY_EXPR,
+    STRUCT_EXPR,
+    STRUCT_FIELD,
+    LITERAL,
+    IDENT_NODE,
+    PATH,
+    PAREN_EXPR,
+    ARRAY_SPLAT,
+    OPERATOR_EXPR,
+
+    // Patterns
+    PAT_TUPLE,
+    PAT_ARRAY,
+    PAT_STRUCT,
+    PAT_CONSTRUCTOR,
+    PAT_TYPE_HINT,
+    PAT_REST,
+    PAT_FIELD,
+
+    // Error recovery
+    ERROR,
 }
 
-type Result<T> = std::result::Result<T, RecoveryBehavior>;
-
-pub struct Parser<'a, I: Iterator<Item = Token>> {
-    logger: &'a mut FileLogger,
-    iter: MultiPeek<I>,
-    last_span: Span,
+impl SyntaxKind {
+    pub fn is_trivia(self) -> bool {
+        matches!(
+            self,
+            Self::WHITESPACE | Self::LINE_COMMENT | Self::BLOCK_COMMENT
+        )
+    }
 }
 
-impl<'a, I: Iterator<Item = Token>> Parser<'a, I> {
-    pub fn new(
-        logger: &'a mut FileLogger,
-        iter: impl IntoIterator<IntoIter = I>,
-    ) -> Self {
-        Self {
-            last_span: Span::Generated,
-            logger,
-            iter: multipeek(iter),
-        }
+impl From<SyntaxKind> for rowan::SyntaxKind {
+    fn from(kind: SyntaxKind) -> Self {
+        Self(kind as u16)
     }
-    pub fn peek(&mut self) -> Option<Token> {
-        self.iter.peek().cloned()
-    }
-    pub fn peek_or_err(&mut self) -> Option<Token> {
-        let res = self.peek();
-        if res.is_none() {
-            let span = self.last_span;
-            self.error()
-                .primary("Unexpected end of source code", span)
-                .done();
-        }
-        res
-    }
-    pub fn peek_nth(
-        &mut self,
-        n: usize,
-    ) -> Option<Token> {
-        self.iter.peek_nth(n).cloned()
-    }
-    pub fn next_token(&mut self) -> Option<Token> {
-        let next = self.iter.next();
-        if let Some(Spanned { span, .. }) = next {
-            self.last_span = span;
-        }
-        next
-    }
-    pub fn next_token_or_err(&mut self) -> Option<Token> {
-        let res = self.next_token();
-        if res.is_none() {
-            let span = self.last_span;
-            self.error()
-                .primary("Unexpected end of source code", span)
-                .done();
-        }
-        res
-    }
-    pub fn skip(&mut self) {
-        if let Some(next) = self.iter.next() {
-            self.last_span = next.span;
-        }
-    }
-    pub fn eat(
-        &mut self,
-        tk: &TokenKind,
-    ) -> Option<Token> {
-        if let Some(next) = self.iter.peek()
-            && (&next.inner == tk || matches!((tk, &next.inner), (Identifier(..), Identifier(..))))
-        {
-            let next = next.clone();
-            self.skip();
-            Some(next)
-        } else {
-            None
-        }
-    }
-    pub fn eat_or_err(
-        &mut self,
-        tk: &TokenKind,
-    ) -> Option<Token> {
-        let res = self.eat(tk);
-        if res.is_none() {
-            self.error_expected(tk).done();
-        }
-        res
-    }
-    pub fn eat_one_of(
-        &mut self,
-        items: impl IntoIterator<Item = TokenKind>,
-    ) -> Option<usize> {
-        let items = items.into_iter().collect::<Vec<_>>();
-        for (id, item) in items.iter().enumerate() {
-            if self.iter.peek().is_some_and(|t| &t.inner == item) {
-                self.skip();
-                return Some(id);
-            }
-        }
-        None
-    }
-    pub fn eat_path(&mut self) -> Option<[Spanned<String>; 2]> {
-        let first = self.eat_ident()?;
-        self.eat(&DoubleColon)?;
-        let second = self.eat_ident()?;
-        Some([first, second])
-    }
-    pub fn eat_path_or_err(&mut self) -> Option<[Spanned<String>; 2]> {
-        let res = self.eat_path();
-        if res.is_none() {
-            let span = self.last_span;
-            self.error().primary("Expected a path here", span).done();
-        }
-        res
-    }
-    pub fn eat_ident(&mut self) -> Option<Spanned<String>> {
-        if let Some(next) = self.iter.peek().cloned()
-            && let Identifier(name) = next.inner
-        {
-            let span = next.span;
-            self.skip();
-            Some(name.with_span(span))
-        } else {
-            None
-        }
-    }
-    pub fn eat_ident_or_err(&mut self) -> Option<Spanned<String>> {
-        let res = self.eat_ident();
-        if res.is_none() {
-            self.error_expected(&TokenKind::Identifier("identifier".to_string()))
-                .done();
-        }
-        res
-    }
-    pub fn error(&mut self) -> crate::LogBuilder<'_> {
-        self.logger.error(ERR_MSG)
-    }
-    pub fn error_expected(
-        &mut self,
-        token: &TokenKind,
-    ) -> crate::LogBuilder<'_> {
-        self.logger
-            .error(ERR_MSG)
-            .primary(format!("Expected `{token}` here"), self.last_span)
-    }
-    pub fn error_dup_struct_field(
-        &mut self,
-        old_span: Span,
-        new_span: Span,
-    ) {
-        self.error()
-            .primary("This key is used more than once", old_span)
-            .secondary("Second use is here", new_span)
-            .note("Keys in a structure must be unique")
-            .done();
-    }
-    pub fn error_dup_func_args(
-        &mut self,
-        old_span: Span,
-        new_span: Span,
-    ) {
-        self.error()
-            .primary("This argument is already defined", old_span)
-            .secondary("Second use is here", new_span)
-            .note("Arguments to a function must be unique")
-            .done();
-    }
-    pub fn recover(
-        &mut self,
-        bh: RecoveryBehavior,
-    ) {
-        match bh {
-            RecoveryBehavior::NoRecovery => (),
-            RecoveryBehavior::UntilKind(token_kind) => {
-                while self.peek().is_some_and(|t| t.inner != token_kind) {
-                    self.skip()
-                }
-            }
-            RecoveryBehavior::UntilCategory(category) => {
-                while self.peek().is_some_and(|t| t.inner.category() != category) {
-                    self.skip()
-                }
-            }
-            RecoveryBehavior::UntilNextStatement => {
-                while self
-                    .peek()
-                    .is_some_and(|t| !matches!(&t.inner, Let | Type | Do | Module | End | Import))
-                {
-                    self.skip();
-                }
-            }
+}
+
+/// Convert a `TokenKind` from the existing tokenizer into a `SyntaxKind`.
+impl From<&TokenKind> for SyntaxKind {
+    fn from(tk: &TokenKind) -> Self {
+        use TokenKind::*;
+        match tk {
+            LeftParen => Self::L_PAREN,
+            RightParen => Self::R_PAREN,
+            LeftBrace => Self::L_BRACE,
+            RightBrace => Self::R_BRACE,
+            LeftSquare => Self::L_SQUARE,
+            RightSquare => Self::R_SQUARE,
+            Comma => Self::COMMA,
+            Colon => Self::COLON,
+            DoubleColon => Self::DOUBLE_COLON,
+            Semicolon => Self::SEMICOLON,
+            Dot => Self::DOT,
+            DotDot => Self::DOT_DOT,
+            Plus => Self::PLUS,
+            PlusDot => Self::PLUS_DOT,
+            Minus => Self::MINUS,
+            MinusDot => Self::MINUS_DOT,
+            Slash => Self::SLASH,
+            SlashDot => Self::SLASH_DOT,
+            Star => Self::STAR,
+            StarDot => Self::STAR_DOT,
+            Percent => Self::PERCENT,
+            Arrow => Self::ARROW,
+            DoubleArrow => Self::DOUBLE_ARROW,
+            Apply => Self::PIPE_ARROW,
+            ComposeLeft => Self::COMPOSE_LEFT,
+            ComposeRight => Self::COMPOSE_RIGHT,
+            Pipe => Self::PIPE,
+            BangEqual => Self::BANG_EQUAL,
+            Equal => Self::EQUAL,
+            DoubleEqual => Self::DOUBLE_EQUAL,
+            Greater => Self::GREATER,
+            GreaterEqual => Self::GREATER_EQUAL,
+            Less => Self::LESS,
+            LessEqual => Self::LESS_EQUAL,
+            Identifier(_) => Self::IDENT,
+            StringLiteral(_) => Self::STRING,
+            GlyphLiteral(_) => Self::GLYPH,
+            IntegerLiteral(..) => Self::INTEGER,
+            RealLiteral(_) => Self::REAL,
+            Module => Self::MODULE_KW,
+            Import => Self::IMPORT_KW,
+            Use => Self::USE_KW,
+            End => Self::END_KW,
+            Match => Self::MATCH_KW,
+            With => Self::WITH_KW,
+            Let => Self::LET_KW,
+            Type => Self::TYPE_KW,
+            Do => Self::DO_KW,
+            Of => Self::OF_KW,
+            In => Self::IN_KW,
+            If => Self::IF_KW,
+            Then => Self::THEN_KW,
+            Else => Self::ELSE_KW,
+            And => Self::AND_KW,
+            Or => Self::OR_KW,
+            Xor => Self::XOR_KW,
+            Not => Self::NOT_KW,
+            True => Self::TRUE_KW,
+            False => Self::FALSE_KW,
+            Fn => Self::FN_KW,
+            Whitespace => Self::WHITESPACE,
+            LineComment(_) => Self::LINE_COMMENT,
+            BlockComment(_) => Self::BLOCK_COMMENT,
+            Error => Self::TOKEN_ERROR,
         }
     }
 }
+
+// ── Rowan language definition ────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum HalcyonLanguage {}
+
+impl rowan::Language for HalcyonLanguage {
+    type Kind = SyntaxKind;
+
+    fn kind_from_raw(raw: rowan::SyntaxKind) -> SyntaxKind {
+        assert!(
+            raw.0 <= SyntaxKind::ERROR as u16,
+            "SyntaxKind out of range: {}",
+            raw.0
+        );
+        // SAFETY: SyntaxKind is repr(u16) and we checked the range.
+        unsafe { std::mem::transmute(raw.0) }
+    }
+
+    fn kind_to_raw(kind: SyntaxKind) -> rowan::SyntaxKind {
+        rowan::SyntaxKind(kind as u16)
+    }
+}
+
+pub type SyntaxNode = rowan::SyntaxNode<HalcyonLanguage>;
+pub type SyntaxToken = rowan::SyntaxToken<HalcyonLanguage>;
+pub type SyntaxElement = rowan::SyntaxElement<HalcyonLanguage>;
 
 pub fn parse(
-    logger: &mut FileLogger,
-    iter: impl IntoIterator<Item = Token>,
-) -> Vec<ParsedModule> {
-    let mut p = Parser {
-        iter: multipeek(iter.into_iter().filter(|t| {
-            !matches!(
-                t.inner,
-                TokenKind::Whitespace | TokenKind::LineComment(_) | TokenKind::BlockComment(_)
-            )
-        })),
-        last_span: Span::default(),
-        logger,
-    };
-    let mut modules = vec![];
-    while p.peek().is_some() {
-        if let Some(module) = p.parse_module() {
-            modules.push(module);
-        }
-    }
-    modules
+    source: &str,
+    logger: &mut crate::FileLogger,
+) -> SyntaxNode {
+    let tokens = token::tokenize(source.chars(), logger);
+    let mut p = parser::Parser::new(&tokens, source, logger);
+    grammar::source_file(&mut p);
+    p.finish()
 }
+
+#[cfg(test)]
+mod test;
