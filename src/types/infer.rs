@@ -17,8 +17,12 @@ use crate::ir::{
 use super::{
     MetaVarId,
     StructMatch,
+    TraitConstraint,
+    TraitRef,
     Type,
+    TypeCatalog,
     TypeName,
+    TypeScheme,
 };
 
 use super::unify::{
@@ -52,7 +56,7 @@ impl From<UnifyError> for TypeError {
 
 #[derive(Debug, Clone, Default)]
 pub struct TypeEnv {
-    bindings: IndexMap<Path, Type>,
+    bindings: IndexMap<Path, TypeScheme>,
 }
 
 impl TypeEnv {
@@ -63,42 +67,55 @@ impl TypeEnv {
     pub fn get(
         &self,
         path: &Path,
-    ) -> Option<&Type> {
+    ) -> Option<&TypeScheme> {
         self.bindings.get(path)
     }
 
     pub fn with_binding(
         &self,
         path: Path,
-        scheme: Type,
+        scheme: impl Into<TypeScheme>,
     ) -> Self {
         let mut next = self.clone();
-        next.bindings.insert(path, scheme);
+        next.bindings.insert(path, scheme.into());
         next
     }
 
-    pub fn with_bindings(
+    pub fn with_bindings<T>(
         &self,
-        bindings: impl IntoIterator<Item = (Path, Type)>,
-    ) -> Self {
+        bindings: impl IntoIterator<Item = (Path, T)>,
+    ) -> Self
+    where
+        T: Into<TypeScheme>,
+    {
         let mut next = self.clone();
-        next.bindings.extend(bindings);
+        next.bindings.extend(
+            bindings
+                .into_iter()
+                .map(|(path, scheme)| (path, scheme.into())),
+        );
         next
     }
 
     pub fn insert(
         &mut self,
         path: Path,
-        scheme: Type,
+        scheme: impl Into<TypeScheme>,
     ) {
-        self.bindings.insert(path, scheme);
+        self.bindings.insert(path, scheme.into());
     }
 
-    pub fn extend(
+    pub fn extend<T>(
         &mut self,
-        bindings: impl IntoIterator<Item = (Path, Type)>,
-    ) {
-        self.bindings.extend(bindings);
+        bindings: impl IntoIterator<Item = (Path, T)>,
+    ) where
+        T: Into<TypeScheme>,
+    {
+        self.bindings.extend(
+            bindings
+                .into_iter()
+                .map(|(path, scheme)| (path, scheme.into())),
+        );
     }
 }
 
@@ -106,11 +123,25 @@ impl TypeEnv {
 pub struct InferenceContext {
     table: UnificationTable,
     level: u32,
+    type_catalog: TypeCatalog,
+}
+
+#[derive(Debug, Clone)]
+pub struct SchemeInstance {
+    pub type_: Type,
+    pub predicates: Vec<TraitConstraint>,
 }
 
 impl InferenceContext {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn set_type_catalog(
+        &mut self,
+        catalog: TypeCatalog,
+    ) {
+        self.type_catalog = catalog;
     }
 
     pub fn table(&self) -> &UnificationTable {
@@ -127,16 +158,31 @@ impl InferenceContext {
 
     pub fn instantiate(
         &mut self,
-        scheme: &Type,
+        scheme: &TypeScheme,
     ) -> Result<Type, TypeError> {
-        let mut current = scheme.clone();
+        Ok(self.instantiate_scheme(scheme)?.type_)
+    }
+
+    pub fn instantiate_scheme(
+        &mut self,
+        scheme: &TypeScheme,
+    ) -> Result<SchemeInstance, TypeError> {
+        let mut current = scheme.type_.clone();
+        let mut predicates = scheme.predicates.clone();
         loop {
             match current {
                 Type::ForAll(body) => {
                     let fresh = self.fresh_meta();
                     current = open_forall(&body, &fresh).ok_or(TypeError::InvalidScheme)?;
+                    predicates = open_forall_predicates(&predicates, &fresh)
+                        .ok_or(TypeError::InvalidScheme)?;
                 }
-                other => return Ok(other),
+                other => {
+                    return Ok(SchemeInstance {
+                        type_: other,
+                        predicates,
+                    });
+                }
             }
         }
     }
@@ -145,11 +191,25 @@ impl InferenceContext {
         &mut self,
         type_: &Type,
         level: u32,
-    ) -> Type {
-        let normalized = self.table.normalize(type_);
-        let mut metas = self
-            .table
-            .free_meta_vars(&normalized)
+    ) -> TypeScheme {
+        self.generalize_with_predicates(type_, level, Vec::new())
+    }
+
+    pub fn generalize_with_predicates(
+        &mut self,
+        type_: &Type,
+        level: u32,
+        predicates: Vec<TraitConstraint>,
+    ) -> TypeScheme {
+        let normalized_type = self.table.normalize(type_);
+        let normalized_predicates = normalize_predicates(&mut self.table, &predicates);
+        let mut metas = self.table.free_meta_vars(&normalized_type);
+        for predicate in normalized_predicates.iter() {
+            for argument in predicate.arguments.iter() {
+                metas.extend(self.table.free_meta_vars(argument));
+            }
+        }
+        let mut metas = metas
             .into_iter()
             .filter(|id| {
                 self.table
@@ -163,9 +223,12 @@ impl InferenceContext {
             .enumerate()
             .map(|(index, id)| (*id, index as u32))
             .collect::<HashMap<_, _>>();
-        (0..metas.len()).fold(replace_meta_vars(&normalized, &replacements), |r, _| {
-            Type::ForAll(Box::new(r))
-        })
+        let type_ = (0..metas.len()).fold(
+            replace_meta_vars(&normalized_type, &replacements),
+            |r, _| Type::ForAll(Box::new(r)),
+        );
+        let predicates = replace_meta_vars_in_predicates(&normalized_predicates, &replacements);
+        TypeScheme::with_predicates(type_, predicates)
     }
 
     pub fn infer_term(
@@ -236,7 +299,7 @@ pub fn infer_term(
             body,
         } => {
             let param_type = match parameter_type {
-                Some(type_expr) => type_expr_to_type(type_expr)?,
+                Some(type_expr) => type_expr_to_type(ctx, type_expr)?,
                 None => ctx.fresh_meta(),
             };
             let mut env_with_param =
@@ -248,7 +311,7 @@ pub fn infer_term(
                     let scheme = env
                         .get(path)
                         .ok_or_else(|| TypeError::UnknownIdentifier(path.clone()))?;
-                    Ok((path.clone(), scheme.clone()))
+                    Ok((path.clone(), scheme.type_.clone()))
                 })
                 .collect::<Result<Vec<_>, TypeError>>()?;
             let type_ = Type::Function(Box::new(param_type), Box::new(typed_body.type_.clone()));
@@ -477,7 +540,7 @@ fn infer_pattern(
             })
         }
         PatternKind::TypeHint(inner, type_expr) => {
-            let hint_type = type_expr_to_type(type_expr)?;
+            let hint_type = type_expr_to_type(ctx, type_expr)?;
             ctx.table.unify(expected, &hint_type)?;
             let typed_inner = infer_pattern(ctx, env, inner, &hint_type, bindings)?;
             Ok(Pattern {
@@ -506,28 +569,47 @@ fn field_access_type(
     Ok(field_type)
 }
 
-fn type_expr_to_type(expr: &TypeExpr) -> Result<Type, TypeError> {
+fn type_expr_to_type(
+    ctx: &InferenceContext,
+    expr: &TypeExpr,
+) -> Result<Type, TypeError> {
     match &expr.kind {
         TypeExprKind::Tuple(items) => {
             let mut types = Vec::with_capacity(items.len());
             for item in items.iter() {
-                types.push(type_expr_to_type(item)?);
+                types.push(type_expr_to_type(ctx, item)?);
             }
             Ok(Type::Tuple(types))
         }
         TypeExprKind::Instantiation(path, args) => {
             let arguments = args
                 .iter()
-                .map(type_expr_to_type)
+                .map(|arg| type_expr_to_type(ctx, arg))
                 .collect::<Result<Vec<_>, _>>()?;
             if path.major == "core" {
                 return core_type_from_path(path, &arguments);
             }
             let name = TypeName::new(path.major.clone(), path.minor.clone());
-            let base = Type::Named {
-                name,
-                body: Box::new(Type::Unit),
-            };
+            let base = ctx
+                .type_catalog
+                .get(path)
+                .map(|definition| Type::Named {
+                    name: name.clone(),
+                    body: Box::new(definition.body.clone()),
+                })
+                .unwrap_or_else(|| Type::Named {
+                    name: name.clone(),
+                    body: Box::new(Type::Unit),
+                });
+            if let Some(definition) = ctx.type_catalog.get(path)
+                && definition.parameters != arguments.len()
+            {
+                return Err(TypeError::InvalidTypeApplication {
+                    name: TypeName::new(path.major.clone(), path.minor.clone()),
+                    expected: definition.parameters,
+                    found: arguments.len(),
+                });
+            }
             if arguments.is_empty() {
                 Ok(base)
             } else {
@@ -679,12 +761,70 @@ fn replace_meta_vars(
     }
 }
 
+fn normalize_predicates(
+    table: &mut UnificationTable,
+    predicates: &[TraitConstraint],
+) -> Vec<TraitConstraint> {
+    predicates
+        .iter()
+        .map(|predicate| {
+            TraitRef {
+                trait_name: predicate.trait_name.clone(),
+                arguments: predicate
+                    .arguments
+                    .iter()
+                    .map(|arg| table.normalize(arg))
+                    .collect(),
+            }
+        })
+        .collect()
+}
+
+fn replace_meta_vars_in_predicates(
+    predicates: &[TraitConstraint],
+    mapping: &HashMap<MetaVarId, u32>,
+) -> Vec<TraitConstraint> {
+    predicates
+        .iter()
+        .map(|predicate| {
+            TraitRef {
+                trait_name: predicate.trait_name.clone(),
+                arguments: predicate
+                    .arguments
+                    .iter()
+                    .map(|arg| replace_meta_vars(arg, mapping))
+                    .collect(),
+            }
+        })
+        .collect()
+}
+
 fn open_forall(
     body: &Type,
     replacement: &Type,
 ) -> Option<Type> {
     body.substitute_type_var(0, replacement)?
         .shift_type_vars(-1, 0)
+}
+
+fn open_forall_predicates(
+    predicates: &[TraitConstraint],
+    replacement: &Type,
+) -> Option<Vec<TraitConstraint>> {
+    predicates
+        .iter()
+        .map(|predicate| {
+            let arguments = predicate
+                .arguments
+                .iter()
+                .map(|arg| open_forall(arg, replacement))
+                .collect::<Option<Vec<_>>>()?;
+            Some(TraitRef {
+                trait_name: predicate.trait_name.clone(),
+                arguments,
+            })
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -725,7 +865,7 @@ mod tests {
         let meta = ctx.fresh_meta();
         let scheme = ctx.generalize_at(&meta, 0);
         let instantiated = ctx.instantiate(&scheme).expect("instantiate");
-        assert!(matches!(scheme, Type::ForAll(_)));
+        assert!(matches!(scheme.type_, Type::ForAll(_)));
         assert!(matches!(instantiated, Type::MetaVar(_)));
     }
 

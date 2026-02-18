@@ -156,9 +156,7 @@ impl UnificationTable {
         right: &Type,
     ) -> Result<(), UnifyError> {
         match (left, right) {
-            (Type::MetaVar(id), Type::MetaVar(other_id)) => {
-                self.unify_meta_pair(*id, *other_id)
-            }
+            (Type::MetaVar(id), Type::MetaVar(other_id)) => self.unify_meta_pair(*id, *other_id),
             (Type::MetaVar(id), other) => self.unify_meta_with_type(*id, other),
             (other, Type::MetaVar(id)) => self.unify_meta_with_type(*id, other),
             _ => {
@@ -206,20 +204,12 @@ impl UnificationTable {
                 )?;
                 Ok(())
             }
-            (
-                Type::StructConstraint {
-                    fields,
-                    mode,
-                },
-                other,
-            ) => self.unify_struct_constraint_with_type(fields, mode, &other),
-            (
-                other,
-                Type::StructConstraint {
-                    fields,
-                    mode,
-                },
-            ) => self.unify_struct_constraint_with_type(fields, mode, &other),
+            (Type::StructConstraint { fields, mode }, other) => {
+                self.unify_struct_constraint_with_type(fields, mode, &other)
+            }
+            (other, Type::StructConstraint { fields, mode }) => {
+                self.unify_struct_constraint_with_type(fields, mode, &other)
+            }
             (Type::Struct { fields: left }, Type::Struct { fields: right }) => {
                 if left.len() != right.len() || !left.keys().eq(right.keys()) {
                     return Err(UnifyError::Mismatch {
@@ -317,13 +307,12 @@ impl UnificationTable {
         if left == right {
             return Ok(());
         }
-        match (self.vars.get(left as usize).cloned(), self.vars.get(right as usize).cloned()) {
-            (Some(MetaVarState::Unbound { .. }), _) => {
-                self.bind_meta(left, &Type::MetaVar(right))
-            }
-            (_, Some(MetaVarState::Unbound { .. })) => {
-                self.bind_meta(right, &Type::MetaVar(left))
-            }
+        match (
+            self.vars.get(left as usize).cloned(),
+            self.vars.get(right as usize).cloned(),
+        ) {
+            (Some(MetaVarState::Unbound { .. }), _) => self.bind_meta(left, &Type::MetaVar(right)),
+            (_, Some(MetaVarState::Unbound { .. })) => self.bind_meta(right, &Type::MetaVar(left)),
             (Some(MetaVarState::Link(left_link)), _) => {
                 self.unify_meta_with_type(right, &left_link)
             }
@@ -363,13 +352,7 @@ impl UnificationTable {
                         }
                         Ok(())
                     }
-                    (
-                        Type::StructConstraint {
-                            fields,
-                            mode,
-                        },
-                        other,
-                    ) => {
+                    (Type::StructConstraint { fields, mode }, other) => {
                         self.unify_struct_constraint_with_type(fields, mode, &other)?;
                         if let Some(state) = self.vars.get_mut(id as usize) {
                             *state = MetaVarState::Link(other);
@@ -422,16 +405,15 @@ impl UnificationTable {
             left.len() == right.len() && left.keys().all(|key| right.contains_key(key))
         };
 
-        let unify_overlap = |this: &mut Self,
-                             left: &IndexMap<String, Type>,
-                             right: &IndexMap<String, Type>| {
-            for (name, left_type) in left.iter() {
-                if let Some(right_type) = right.get(name) {
-                    this.unify(left_type, right_type)?;
+        let unify_overlap =
+            |this: &mut Self, left: &IndexMap<String, Type>, right: &IndexMap<String, Type>| {
+                for (name, left_type) in left.iter() {
+                    if let Some(right_type) = right.get(name) {
+                        this.unify(left_type, right_type)?;
+                    }
                 }
-            }
-            Ok(())
-        };
+                Ok(())
+            };
 
         match (left_mode, right_mode) {
             (StructMatch::Exact, StructMatch::Exact) => {
@@ -783,6 +765,6 @@ fn open_forall(
     body: &Type,
     replacement: &Type,
 ) -> Option<Type> {
-    body.substitute_type_var(0, replacement)
-        .and_then(|replaced| replaced.shift_type_vars(-1, 0))
+    body.substitute_type_var(0, replacement)?
+        .shift_type_vars(-1, 0)
 }

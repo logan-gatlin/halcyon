@@ -2,6 +2,10 @@ pub mod ast;
 mod grammar;
 mod parser;
 
+use self::ast::{
+    AstNode,
+    SourceFile,
+};
 use crate::token::{
     self,
     TokenKind,
@@ -273,11 +277,11 @@ pub type SyntaxElement = rowan::SyntaxElement<HalcyonLanguage>;
 pub fn parse(
     source: &str,
     logger: &mut crate::FileLogger,
-) -> SyntaxNode {
+) -> Option<SourceFile> {
     let tokens = token::tokenize(source.chars(), logger);
     let mut p = parser::Parser::new(&tokens, source, logger);
     grammar::source_file(&mut p);
-    p.finish()
+    SourceFile::cast(p.finish())
 }
 
 #[cfg(test)]

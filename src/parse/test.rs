@@ -15,15 +15,15 @@ use crate::logging::Logger;
 fn parse_to_string(source: &str) -> String {
     let mut logger = Logger::new();
     let mut file_logger = logger.new_file("test.hc", source);
-    let tree = parse(source, &mut file_logger);
-    format!("{tree:#?}")
+    let tree = parse(source, &mut file_logger).expect("root should be SourceFile");
+    format!("{:#?}", tree.syntax())
 }
 
 /// Helper: parse source and check that it has errors.
 fn assert_has_errors(source: &str) {
     let mut logger = Logger::new();
     let mut file_logger = logger.new_file("test.hc", source);
-    let _tree = parse(source, &mut file_logger);
+    let _ = parse(source, &mut file_logger);
     assert!(!file_logger.is_ok(), "Expected parse errors");
 }
 
@@ -31,7 +31,7 @@ fn assert_has_errors(source: &str) {
 fn assert_no_errors(source: &str) {
     let mut logger = Logger::new();
     let mut file_logger = logger.new_file("test.hc", source);
-    let _tree = parse(source, &mut file_logger);
+    let _ = parse(source, &mut file_logger);
     assert!(file_logger.is_ok(), "Expected parse errors to be empty");
 }
 
@@ -40,8 +40,8 @@ fn assert_no_errors(source: &str) {
 fn assert_round_trip(source: &str) {
     let mut logger = Logger::new();
     let mut file_logger = logger.new_file("test.hc", source);
-    let tree = parse(source, &mut file_logger);
-    let recovered: String = tree.text().to_string();
+    let tree = parse(source, &mut file_logger).expect("root should be SourceFile");
+    let recovered: String = tree.syntax().text().to_string();
     assert_eq!(
         recovered, source,
         "Round-trip failed.\nExpected:\n{source}\nGot:\n{recovered}"
@@ -167,10 +167,9 @@ fn parse_error_recovery_invalid_expr_token() {
     let source = "module M =\n  let x = )\n  let y = 1\nend";
     let mut logger = Logger::new();
     let mut file_logger = logger.new_file("test.hc", source);
-    let tree = parse(source, &mut file_logger);
+    let tree = parse(source, &mut file_logger).expect("root should be SourceFile");
     assert!(!file_logger.is_ok(), "Should have errors");
-    let sf = ast::SourceFile::cast(tree).expect("root should be SourceFile");
-    let statements = sf.modules()[0].statements();
+    let statements = tree.modules()[0].statements();
     assert_eq!(statements.len(), 2, "Should recover to next statement");
 }
 
@@ -179,10 +178,9 @@ fn parse_error_recovery_invalid_pattern_token() {
     let source = "module M =\n  let ) = 1\n  let y = 2\nend";
     let mut logger = Logger::new();
     let mut file_logger = logger.new_file("test.hc", source);
-    let tree = parse(source, &mut file_logger);
+    let tree = parse(source, &mut file_logger).expect("root should be SourceFile");
     assert!(!file_logger.is_ok(), "Should have errors");
-    let sf = ast::SourceFile::cast(tree).expect("root should be SourceFile");
-    let statements = sf.modules()[0].statements();
+    let statements = tree.modules()[0].statements();
     assert_eq!(statements.len(), 2, "Should recover to next statement");
 }
 
@@ -191,10 +189,9 @@ fn parse_error_recovery_invalid_type_token() {
     let source = "module M =\n  type t = )\n  type u = int\nend";
     let mut logger = Logger::new();
     let mut file_logger = logger.new_file("test.hc", source);
-    let tree = parse(source, &mut file_logger);
+    let tree = parse(source, &mut file_logger).expect("root should be SourceFile");
     assert!(!file_logger.is_ok(), "Should have errors");
-    let sf = ast::SourceFile::cast(tree).expect("root should be SourceFile");
-    let statements = sf.modules()[0].statements();
+    let statements = tree.modules()[0].statements();
     assert_eq!(statements.len(), 2, "Should recover to next statement");
 }
 
@@ -204,10 +201,10 @@ fn error_recovery_preserves_tree() {
     let source = "module M = !!! end";
     let mut logger = Logger::new();
     let mut file_logger = logger.new_file("test.hc", source);
-    let tree = parse(source, &mut file_logger);
+    let tree = parse(source, &mut file_logger).expect("root should be SourceFile");
     assert!(!file_logger.is_ok(), "Should have errors");
     // The tree should still be rooted at SOURCE_FILE
-    assert_eq!(tree.kind(), SyntaxKind::SOURCE_FILE);
+    assert_eq!(tree.syntax().kind(), SyntaxKind::SOURCE_FILE);
 }
 
 #[test]
@@ -321,8 +318,7 @@ fn parse_array_expr() {
 fn parse_source_file(source: &str) -> ast::SourceFile {
     let mut logger = Logger::new();
     let mut file_logger = logger.new_file("test.hc", source);
-    let tree = parse(source, &mut file_logger);
-    ast::SourceFile::cast(tree).expect("root should be SourceFile")
+    parse(source, &mut file_logger).expect("root should be SourceFile")
 }
 
 #[test]
@@ -759,10 +755,9 @@ fn ast_missing_children_return_none() {
     // for missing parts rather than panicking
     let mut logger = Logger::new();
     let mut file_logger = logger.new_file("test.hc", "module M = let = end");
-    let tree = parse("module M = let = end", &mut file_logger);
+    let tree = parse("module M = let = end", &mut file_logger).expect("root should be SourceFile");
     assert!(!file_logger.is_ok(), "Should have errors");
-    let sf = ast::SourceFile::cast(tree).unwrap();
-    let m = &sf.modules()[0];
+    let m = &tree.modules()[0];
     // We should be able to navigate without panicking
     let stmts = m.statements();
     // The let statement may have None for its value due to errors

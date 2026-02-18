@@ -252,7 +252,12 @@ impl Type {
                             .map(|type_| (name.clone(), type_))
                     })
                     .collect::<Option<IndexMap<_, _>>>()
-                    .map(|fields| Type::StructConstraint { fields, mode: *mode })
+                    .map(|fields| {
+                        Type::StructConstraint {
+                            fields,
+                            mode: *mode,
+                        }
+                    })
             }
             Type::Struct { fields } => {
                 fields
@@ -359,7 +364,12 @@ impl Type {
                             .map(|type_| (name.clone(), type_))
                     })
                     .collect::<Option<IndexMap<_, _>>>()
-                    .map(|fields| Type::StructConstraint { fields, mode: *mode })
+                    .map(|fields| {
+                        Type::StructConstraint {
+                            fields,
+                            mode: *mode,
+                        }
+                    })
             }
             Type::Struct { fields } => {
                 fields
@@ -461,7 +471,12 @@ impl Type {
                             .map(|type_| (name.clone(), type_))
                     })
                     .collect::<Option<IndexMap<_, _>>>()
-                    .map(|fields| Type::StructConstraint { fields, mode: *mode })
+                    .map(|fields| {
+                        Type::StructConstraint {
+                            fields,
+                            mode: *mode,
+                        }
+                    })
             }
             Type::Struct { fields } => {
                 fields
@@ -573,7 +588,12 @@ impl Type {
                             .map(|type_| (name.clone(), type_))
                     })
                     .collect::<Option<IndexMap<_, _>>>()
-                    .map(|fields| Type::StructConstraint { fields, mode: *mode })
+                    .map(|fields| {
+                        Type::StructConstraint {
+                            fields,
+                            mode: *mode,
+                        }
+                    })
             }
             Type::Struct { fields } => {
                 fields
@@ -854,7 +874,27 @@ fn alpha_name(index: u32) -> String {
 }
 
 pub mod infer;
+pub mod catalog;
+pub mod traits;
 pub mod unify;
+pub mod resolve;
+
+pub use catalog::{
+    TypeCatalog,
+    TypeDefinition,
+};
+
+pub use traits::{
+    TraitConstraint,
+    TraitDef,
+    TraitEnv,
+    TraitError,
+    TraitImpl,
+    TraitRef,
+    TypeScheme,
+};
+
+pub use resolve::resolve_module;
 
 #[cfg(test)]
 mod tests;

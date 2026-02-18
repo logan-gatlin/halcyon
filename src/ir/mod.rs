@@ -1,5 +1,6 @@
 mod names;
 mod patterns;
+mod pretty_print;
 mod terms;
 mod types;
 
@@ -8,13 +9,13 @@ pub use patterns::*;
 pub use terms::*;
 pub use types::*;
 
-use crate::parse::SyntaxKind;
 use crate::parse::ast::{
     self,
     AstNode,
     HasLeadingComments,
     HasName,
 };
+use crate::parse::SyntaxKind;
 use crate::{
     FileLogger,
     Span,
@@ -45,8 +46,8 @@ impl std::fmt::Display for ImmediateValue {
 }
 
 #[derive(Debug, Clone)]
-pub enum Statement {
-    Term(UntypedTerm),
+pub enum Statement<T> {
+    Term(Term<T>),
     Type {
         path: Path,
         parameters: Box<[Path]>,
@@ -55,12 +56,12 @@ pub enum Statement {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct Module {
+pub struct Module<T> {
     pub name: String,
-    pub statements: Box<[Statement]>,
+    pub statements: Box<[Statement<T>]>,
 }
 
-impl Module {
+impl<T> Module<T> {
     pub fn new(name: String) -> Self {
         Self {
             name,
@@ -72,7 +73,7 @@ impl Module {
 pub fn module(
     module_node: ast::Module,
     logger: &mut FileLogger,
-) -> Option<Module> {
+) -> Option<Module<()>> {
     let name = module_node.name_text()?;
     let mut module_scope = ModuleScope::new(name.clone());
     Some(Module {

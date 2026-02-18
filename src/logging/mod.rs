@@ -1,8 +1,6 @@
 #![allow(dead_code)]
-mod into_log;
 mod span;
 mod with_context;
-pub use into_log::*;
 pub use span::*;
 pub use with_context::*;
 

@@ -1,5 +1,5 @@
-use crate::WithSpan;
 use crate::hc_core::CoreTypes;
+use crate::WithSpan;
 
 use super::*;
 
@@ -35,6 +35,16 @@ pub struct TypeDef {
     comments: String,
     kind: TypeDefKind,
     span: Span,
+}
+
+impl TypeDef {
+    pub fn kind(&self) -> &TypeDefKind {
+        &self.kind
+    }
+
+    pub fn span(&self) -> Span {
+        self.span
+    }
 }
 
 pub fn typedef(

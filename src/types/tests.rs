@@ -1,4 +1,5 @@
 use super::*;
+use crate::ir::Path;
 use indexmap::IndexMap;
 
 use super::unify::UnificationTable;
@@ -19,6 +20,17 @@ fn fields(pairs: Vec<(&str, Type)>) -> IndexMap<String, Type> {
         .into_iter()
         .map(|(name, type_)| (name.to_string(), type_))
         .collect()
+}
+
+fn list_of(inner: Type) -> Type {
+    let list_type = Type::Named {
+        name: TypeName::new("test", "List"),
+        body: Box::new(Type::Unit),
+    };
+    Type::Apply {
+        constructor: Box::new(list_type),
+        arguments: vec![inner],
+    }
 }
 
 #[test]
@@ -313,4 +325,131 @@ fn struct_constraints_exact_rejects_extra_at_least_fields() {
     };
     table.unify(&meta, &exact).expect("bind exact");
     assert!(table.unify(&meta, &at_least).is_err());
+}
+
+#[test]
+fn resolve_trait_instance() {
+    let mut env = TraitEnv::new();
+    let eq = Path::new("test", "Eq");
+    env.insert_trait(TraitDef {
+        name: eq.clone(),
+        parameters: 1,
+    })
+    .expect("trait def");
+    env.insert_impl(TraitImpl {
+        parameters: 0,
+        head: TraitRef::new(eq.clone(), vec![Type::Integer]),
+        predicates: Vec::new(),
+    })
+    .expect("impl");
+
+    let mut table = UnificationTable::default();
+    let unresolved = env
+        .resolve_predicates(
+            &mut table,
+            &[TraitRef::new(eq.clone(), vec![Type::Integer])],
+        )
+        .expect("resolve");
+    assert!(unresolved.is_empty());
+}
+
+#[test]
+fn resolve_trait_instance_with_context() {
+    let mut env = TraitEnv::new();
+    let eq = Path::new("test", "Eq");
+    env.insert_trait(TraitDef {
+        name: eq.clone(),
+        parameters: 1,
+    })
+    .expect("trait def");
+    env.insert_impl(TraitImpl {
+        parameters: 0,
+        head: TraitRef::new(eq.clone(), vec![Type::Integer]),
+        predicates: Vec::new(),
+    })
+    .expect("impl eq int");
+    env.insert_impl(TraitImpl {
+        parameters: 1,
+        head: TraitRef::new(eq.clone(), vec![list_of(Type::TypeVar(0))]),
+        predicates: vec![TraitRef::new(eq.clone(), vec![Type::TypeVar(0)])],
+    })
+    .expect("impl eq list");
+
+    let mut table = UnificationTable::default();
+    let unresolved = env
+        .resolve_predicates(
+            &mut table,
+            &[TraitRef::new(eq.clone(), vec![list_of(Type::Integer)])],
+        )
+        .expect("resolve");
+    assert!(unresolved.is_empty());
+}
+
+#[test]
+fn resolve_trait_unresolved_predicate_is_retained() {
+    let mut env = TraitEnv::new();
+    let show = Path::new("test", "Show");
+    env.insert_trait(TraitDef {
+        name: show.clone(),
+        parameters: 1,
+    })
+    .expect("trait def");
+
+    let mut table = UnificationTable::default();
+    let meta = table.new_meta(0);
+    let predicate = TraitRef::new(show.clone(), vec![meta.clone()]);
+    let unresolved = env
+        .resolve_predicates(&mut table, std::slice::from_ref(&predicate))
+        .expect("resolve");
+    assert_eq!(unresolved, vec![predicate]);
+}
+
+#[test]
+fn resolve_trait_recursive_predicate_errors() {
+    let mut env = TraitEnv::new();
+    let eq = Path::new("test", "Eq");
+    env.insert_trait(TraitDef {
+        name: eq.clone(),
+        parameters: 1,
+    })
+    .expect("trait def");
+    env.insert_impl(TraitImpl {
+        parameters: 1,
+        head: TraitRef::new(eq.clone(), vec![Type::TypeVar(0)]),
+        predicates: vec![TraitRef::new(eq.clone(), vec![Type::TypeVar(0)])],
+    })
+    .expect("impl");
+
+    let mut table = UnificationTable::default();
+    let meta = table.new_meta(0);
+    let predicate = TraitRef::new(eq.clone(), vec![meta]);
+    let result = env.resolve_predicates(&mut table, &[predicate]);
+    assert!(matches!(result, Err(TraitError::RecursivePredicate { .. })));
+}
+
+#[test]
+fn overlap_detection_rejects_conflicting_instances() {
+    let mut env = TraitEnv::new();
+    let eq = Path::new("test", "Eq");
+    env.insert_trait(TraitDef {
+        name: eq.clone(),
+        parameters: 1,
+    })
+    .expect("trait def");
+    env.insert_impl(TraitImpl {
+        parameters: 1,
+        head: TraitRef::new(eq.clone(), vec![list_of(Type::TypeVar(0))]),
+        predicates: Vec::new(),
+    })
+    .expect("impl list");
+
+    let result = env.insert_impl(TraitImpl {
+        parameters: 0,
+        head: TraitRef::new(eq.clone(), vec![list_of(Type::Integer)]),
+        predicates: Vec::new(),
+    });
+    assert!(matches!(
+        result,
+        Err(TraitError::OverlappingInstance { .. })
+    ));
 }

@@ -64,8 +64,8 @@ fn format_source_text(
         logger.print_logs();
         return None;
     }
-    let root = ast::SourceFile::cast(tree)?;
-    Some(format_source_file(root.syntax()))
+    let tree = tree?;
+    Some(format_source_file(tree.syntax()))
 }
 
 fn format_source_file(root: &SyntaxNode) -> String {
