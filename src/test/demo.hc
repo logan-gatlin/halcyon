@@ -1,3 +1,3 @@
 module demo =
-	let a = ()
+	type foo = | A
 end

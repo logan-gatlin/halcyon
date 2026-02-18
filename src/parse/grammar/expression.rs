@@ -52,10 +52,7 @@ fn postfix_and_infix(
     checkpoint: rowan::Checkpoint,
     min_bp: u8,
 ) {
-    loop {
-        let Some(kind) = p.current() else {
-            break;
-        };
+    while let Some(kind) = p.current() {
 
         // Field access: `.ident`
         if kind == SyntaxKind::DOT {

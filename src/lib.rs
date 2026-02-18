@@ -67,6 +67,10 @@ pub fn compile_source(
         .map(|m| m.modules())
         .unwrap_or_default()
         .into_iter()
+        .map(|m| {
+            println!("{m:#?}");
+            m
+        })
         .flat_map(|m| ir::module(m, logger))
         .collect::<Box<[_]>>()
         .into_iter()

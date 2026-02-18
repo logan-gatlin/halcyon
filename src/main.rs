@@ -1,6 +1,6 @@
 use halcyon_lib::{
-    Logger,
     compile_source,
+    Logger,
 };
 
 extern crate halcyon_lib;
@@ -13,4 +13,6 @@ fn main() {
     for module in modules {
         println!("{}", module.pretty());
     }
+    logger.consume_file(file_logger);
+    logger.print_logs();
 }

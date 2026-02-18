@@ -69,7 +69,21 @@ pub fn typedef(
                     sum_def
                         .variants()
                         .into_iter()
-                        .flat_map(|v| Some((v.name_text()?, type_expr(scope, v.payload_type()?)?)))
+                        .flat_map(|v| {
+                            Some((
+                                v.name_text()?,
+                                match v.payload_type() {
+                                    Some(t) => type_expr(scope, t)?,
+                                    None => {
+                                        TypeExpr {
+                                            kind: TypeExprKind::alias(CoreTypes::Unit.path()),
+                                            comments: Default::default(),
+                                            span: Default::default(),
+                                        }
+                                    }
+                                },
+                            ))
+                        })
                         .collect(),
                 )
             }
