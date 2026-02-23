@@ -140,7 +140,7 @@ fn type_primary(p: &mut Parser<'_, '_>) -> bool {
         Some(kind) => {
             match kind {
                 SyntaxKind::IDENT => {
-                    path_or_ident(p, SyntaxKind::PATH, SyntaxKind::PATH);
+                    path_or_ident(p);
                     true
                 }
 

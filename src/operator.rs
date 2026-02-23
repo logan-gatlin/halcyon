@@ -1,4 +1,9 @@
 use crate::ir::Path;
+use crate::types::{
+    TraitRef,
+    Type,
+    TypeScheme,
+};
 
 pub type Precedence = usize;
 
@@ -12,19 +17,16 @@ pub trait Operator {
     fn precedence(&self) -> Precedence;
     fn associative(&self) -> Associativity;
     fn path(&self) -> Path;
+    fn type_scheme(&self) -> TypeScheme;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, enum_iterator::Sequence)]
 pub enum BinaryOp {
     Star,
-    StarDot,
     Slash,
-    SlashDot,
     Percent,
     Plus,
-    PlusDot,
     Minus,
-    MinusDot,
     ComposeLeft,
     ComposeRight,
     Xor,
@@ -44,14 +46,10 @@ impl Operator for BinaryOp {
     fn precedence(&self) -> Precedence {
         match self {
             Self::Star => 15,
-            Self::StarDot => 15,
             Self::Slash => 15,
-            Self::SlashDot => 15,
             Self::Percent => 15,
             Self::Plus => 14,
-            Self::PlusDot => 14,
             Self::Minus => 14,
-            Self::MinusDot => 14,
             Self::ComposeLeft => 10,
             Self::ComposeRight => 10,
             Self::Xor => 10,
@@ -73,6 +71,56 @@ impl Operator for BinaryOp {
     fn path(&self) -> Path {
         Path::core(format!("{self}"))
     }
+    fn type_scheme(&self) -> TypeScheme {
+        match self {
+            Self::Star => binary_trait_scheme("multiply"),
+            Self::Slash => binary_trait_scheme("divide"),
+            Self::Percent => binary_trait_scheme("remainder"),
+            Self::Plus => binary_trait_scheme("add"),
+            Self::Minus => binary_trait_scheme("subtract"),
+            Self::ComposeLeft => {
+                Type::curry(&[
+                    Type::func(Type::v(2), Type::v(1)),
+                    Type::func(Type::v(1), Type::v(0)),
+                    Type::func(Type::v(2), Type::v(0)),
+                ])
+                .for_all(3)
+                .scheme()
+            }
+            Self::ComposeRight => {
+                Type::curry(&[
+                    Type::func(Type::v(1), Type::v(0)),
+                    Type::func(Type::v(2), Type::v(1)),
+                    Type::func(Type::v(2), Type::v(0)),
+                ])
+                .for_all(3)
+                .scheme()
+            }
+            Self::Xor => binary_trait_scheme("bitwise"),
+            Self::Or => binary_trait_scheme("bitwise"),
+            Self::Apply => {
+                Type::curry(&[Type::v(1), Type::func(Type::v(1), Type::v(0)), Type::v(0)])
+                    .for_all(2)
+                    .scheme()
+            }
+            Self::DoubleEqual => binary_trait_scheme_result("equal", Type::Boolean),
+            Self::BangEqual => binary_trait_scheme_result("equal", Type::Boolean),
+            Self::Less => binary_trait_scheme_result("compare", Type::Boolean),
+            Self::LessEqual => {
+                binary_trait_scheme_result_with(&["compare", "equal"], Type::Boolean)
+            }
+            Self::Greater => binary_trait_scheme_result("compare", Type::Boolean),
+            Self::GreaterEqual => {
+                binary_trait_scheme_result_with(&["compare", "equal"], Type::Boolean)
+            }
+            Self::And => binary_trait_scheme("bitwise"),
+            Self::Semicolon => {
+                Type::curry(&[Type::Unit, Type::v(0), Type::v(0)])
+                    .for_all(1)
+                    .scheme()
+            }
+        }
+    }
 }
 
 impl std::fmt::Display for BinaryOp {
@@ -85,14 +133,10 @@ impl std::fmt::Display for BinaryOp {
             "({})",
             match self {
                 BinaryOp::Star => " * ",
-                BinaryOp::StarDot => " *. ",
                 BinaryOp::Slash => "/",
-                BinaryOp::SlashDot => "/.",
                 BinaryOp::Percent => "%",
                 BinaryOp::Plus => "+",
-                BinaryOp::PlusDot => "+.",
                 BinaryOp::Minus => "-",
-                BinaryOp::MinusDot => "-.",
                 BinaryOp::ComposeLeft => ">>",
                 BinaryOp::ComposeRight => "<<",
                 BinaryOp::Xor => "xor",
@@ -114,7 +158,6 @@ impl std::fmt::Display for BinaryOp {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, enum_iterator::Sequence)]
 pub enum UnaryOp {
     Minus,
-    MinusDot,
     Not,
 }
 
@@ -128,6 +171,12 @@ impl Operator for UnaryOp {
     fn path(&self) -> Path {
         Path::core(format!("{self}"))
     }
+    fn type_scheme(&self) -> TypeScheme {
+        match self {
+            Self::Minus => unary_trait_scheme("subtract"),
+            Self::Not => unary_trait_scheme("bitwise"),
+        }
+    }
 }
 
 impl std::fmt::Display for UnaryOp {
@@ -140,9 +189,42 @@ impl std::fmt::Display for UnaryOp {
             "(unary {})",
             match self {
                 UnaryOp::Minus => "-",
-                UnaryOp::MinusDot => "-.",
                 UnaryOp::Not => "not",
             }
         )
     }
+}
+
+fn binary_trait_scheme(trait_name: &str) -> TypeScheme {
+    binary_trait_scheme_result(trait_name, Type::v(0))
+}
+
+fn binary_trait_scheme_result(
+    trait_name: &str,
+    result: Type,
+) -> TypeScheme {
+    binary_trait_scheme_result_with(&[trait_name], result)
+}
+
+fn binary_trait_scheme_result_with(
+    trait_names: &[&str],
+    result: Type,
+) -> TypeScheme {
+    Type::curry(&[Type::v(0), Type::v(0), result])
+        .for_all(1)
+        .scheme_with_predicates(
+            trait_names
+                .iter()
+                .map(|name| TraitRef::new(Path::core(*name), vec![Type::v(0)]))
+                .collect(),
+        )
+}
+
+fn unary_trait_scheme(trait_name: &str) -> TypeScheme {
+    Type::func(Type::v(0), Type::v(0))
+        .for_all(1)
+        .scheme_with_predicates(vec![TraitRef::new(
+            Path::core(trait_name),
+            vec![Type::v(0)],
+        )])
 }

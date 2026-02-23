@@ -44,6 +44,15 @@ impl Path {
     }
 }
 
+impl std::fmt::Display for Path {
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        write!(f, "{}{}{}", self.major, Self::DELIMETER, self.minor)
+    }
+}
+
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum NameSpace {
     Constructor,

@@ -10,7 +10,7 @@ fn named(
     body: Type,
 ) -> Type {
     Type::Named {
-        name: TypeName::new(module, name),
+        name: Path::new(module, name),
         body: Box::new(body),
     }
 }
@@ -24,7 +24,7 @@ fn fields(pairs: Vec<(&str, Type)>) -> IndexMap<String, Type> {
 
 fn list_of(inner: Type) -> Type {
     let list_type = Type::Named {
-        name: TypeName::new("test", "List"),
+        name: Path::new("test", "List"),
         body: Box::new(Type::Unit),
     };
     Type::Apply {
@@ -86,35 +86,23 @@ fn apply_nonempty_arguments_not_equal_constructor() {
 
 #[test]
 fn shift_type_vars_respects_binder() {
-    let original = Type::Function(
-        Box::new(Type::TypeVar(0)),
-        Box::new(Type::ForAll(Box::new(Type::TypeVar(0)))),
-    );
+    let original = Type::func(Type::v(0), Type::v(0).for_all(1));
     let shifted = original.shift_type_vars(1, 0).expect("shift succeeds");
-    let expected = Type::Function(
-        Box::new(Type::TypeVar(1)),
-        Box::new(Type::ForAll(Box::new(Type::TypeVar(0)))),
-    );
+    let expected = Type::func(Type::v(1), Type::v(0).for_all(1));
     assert_eq!(shifted, expected);
 }
 
 #[test]
 fn shift_type_vars_underflow_returns_none() {
-    let original = Type::TypeVar(0);
+    let original = Type::v(0);
     assert!(original.shift_type_vars(-1, 0).is_none());
 }
 
 #[test]
 fn shift_rec_vars_respects_binder() {
-    let original = Type::Function(
-        Box::new(Type::RecVar(0)),
-        Box::new(Type::Mu(Box::new(Type::RecVar(0)))),
-    );
+    let original = Type::func(Type::RecVar(0), Type::Mu(Box::new(Type::RecVar(0))));
     let shifted = original.shift_rec_vars(1, 0).expect("shift succeeds");
-    let expected = Type::Function(
-        Box::new(Type::RecVar(1)),
-        Box::new(Type::Mu(Box::new(Type::RecVar(0)))),
-    );
+    let expected = Type::func(Type::RecVar(1), Type::Mu(Box::new(Type::RecVar(0))));
     assert_eq!(shifted, expected);
 }
 
@@ -126,73 +114,53 @@ fn shift_rec_vars_underflow_returns_none() {
 
 #[test]
 fn substitute_type_var_respects_binder() {
-    let original = Type::ForAll(Box::new(Type::Function(
-        Box::new(Type::TypeVar(0)),
-        Box::new(Type::TypeVar(1)),
-    )));
+    let original = Type::func(Type::v(0), Type::v(1)).for_all(1);
     let replaced = original
         .substitute_type_var(0, &Type::Integer)
         .expect("substitution succeeds");
-    let expected = Type::ForAll(Box::new(Type::Function(
-        Box::new(Type::TypeVar(0)),
-        Box::new(Type::Integer),
-    )));
+    let expected = Type::func(Type::v(0), Type::Integer).for_all(1);
     assert_eq!(replaced, expected);
 }
 
 #[test]
 fn substitute_type_var_shifts_replacement() {
-    let original = Type::ForAll(Box::new(Type::TypeVar(1)));
-    let replacement = Type::Function(Box::new(Type::TypeVar(0)), Box::new(Type::TypeVar(0)));
+    let original = Type::v(1).for_all(1);
+    let replacement = Type::func(Type::v(0), Type::v(0));
     let replaced = original
         .substitute_type_var(0, &replacement)
         .expect("substitution succeeds");
-    let expected = Type::ForAll(Box::new(Type::Function(
-        Box::new(Type::TypeVar(1)),
-        Box::new(Type::TypeVar(1)),
-    )));
+    let expected = Type::func(Type::v(1), Type::v(1)).for_all(1);
     assert_eq!(replaced, expected);
 }
 
 #[test]
 fn substitute_rec_var_respects_binder() {
-    let original = Type::Mu(Box::new(Type::Function(
-        Box::new(Type::RecVar(0)),
-        Box::new(Type::RecVar(1)),
-    )));
+    let original = Type::Mu(Box::new(Type::func(Type::RecVar(0), Type::RecVar(1))));
     let replaced = original
         .substitute_rec_var(0, &Type::Integer)
         .expect("substitution succeeds");
-    let expected = Type::Mu(Box::new(Type::Function(
-        Box::new(Type::RecVar(0)),
-        Box::new(Type::Integer),
-    )));
+    let expected = Type::Mu(Box::new(Type::func(Type::RecVar(0), Type::Integer)));
     assert_eq!(replaced, expected);
 }
 
 #[test]
 fn substitute_rec_var_shifts_replacement() {
     let original = Type::Mu(Box::new(Type::RecVar(1)));
-    let replacement = Type::Function(Box::new(Type::RecVar(0)), Box::new(Type::RecVar(0)));
+    let replacement = Type::func(Type::RecVar(0), Type::RecVar(0));
     let replaced = original
         .substitute_rec_var(0, &replacement)
         .expect("substitution succeeds");
-    let expected = Type::Mu(Box::new(Type::Function(
-        Box::new(Type::RecVar(1)),
-        Box::new(Type::RecVar(1)),
-    )));
+    let expected = Type::Mu(Box::new(Type::func(Type::RecVar(1), Type::RecVar(1))));
     assert_eq!(replaced, expected);
 }
 
 #[test]
 fn pretty_prints_forall_mu_sum() {
-    let list_type = Type::ForAll(Box::new(Type::Mu(Box::new(Type::Sum {
+    let list_type = Type::Mu(Box::new(Type::Sum {
         variant_names: vec!["Cons".to_string(), "Nil".to_string()],
-        variant_types: vec![
-            Type::Tuple(vec![Type::TypeVar(0), Type::RecVar(0)]),
-            Type::Unit,
-        ],
-    }))));
+        variant_types: vec![Type::Tuple(vec![Type::v(0), Type::RecVar(0)]), Type::Unit],
+    }))
+    .for_all(1);
     assert_eq!(
         list_type.pretty(),
         "forall 'a. mu 'rec a. (| Cons ('a, 'rec a) | Nil )"
@@ -211,10 +179,10 @@ fn pretty_prints_named_application() {
 
 #[test]
 fn pretty_prints_letter_sequence() {
-    assert_eq!(Type::TypeVar(0).pretty(), "'a");
-    assert_eq!(Type::TypeVar(25).pretty(), "'z");
-    assert_eq!(Type::TypeVar(26).pretty(), "'aa");
-    assert_eq!(Type::TypeVar(27).pretty(), "'ab");
+    assert_eq!(Type::v(0).pretty(), "'a");
+    assert_eq!(Type::v(25).pretty(), "'z");
+    assert_eq!(Type::v(26).pretty(), "'aa");
+    assert_eq!(Type::v(27).pretty(), "'ab");
     assert_eq!(Type::RecVar(0).pretty(), "'rec a");
     assert_eq!(Type::RecVar(26).pretty(), "'rec aa");
 }
@@ -329,22 +297,26 @@ fn struct_constraints_exact_rejects_extra_at_least_fields() {
 
 #[test]
 fn resolve_trait_instance() {
-    let mut env = TraitEnv::new();
+    let mut symbols = SymbolTable::new();
     let eq = Path::new("test", "Eq");
-    env.insert_trait(TraitDef {
-        name: eq.clone(),
-        parameters: 1,
-    })
-    .expect("trait def");
-    env.insert_impl(TraitImpl {
-        parameters: 0,
-        head: TraitRef::new(eq.clone(), vec![Type::Integer]),
-        predicates: Vec::new(),
-    })
-    .expect("impl");
+    symbols
+        .insert_trait(TraitDef {
+            name: eq.clone(),
+            parameters: 1,
+            methods: IndexMap::new(),
+        })
+        .expect("trait def");
+    symbols
+        .insert_impl(TraitImpl {
+            parameters: 0,
+            head: TraitRef::new(eq.clone(), vec![Type::Integer]),
+            predicates: Vec::new(),
+            methods: IndexMap::new(),
+        })
+        .expect("impl");
 
     let mut table = UnificationTable::default();
-    let unresolved = env
+    let unresolved = symbols
         .resolve_predicates(
             &mut table,
             &[TraitRef::new(eq.clone(), vec![Type::Integer])],
@@ -355,28 +327,34 @@ fn resolve_trait_instance() {
 
 #[test]
 fn resolve_trait_instance_with_context() {
-    let mut env = TraitEnv::new();
+    let mut symbols = SymbolTable::new();
     let eq = Path::new("test", "Eq");
-    env.insert_trait(TraitDef {
-        name: eq.clone(),
-        parameters: 1,
-    })
-    .expect("trait def");
-    env.insert_impl(TraitImpl {
-        parameters: 0,
-        head: TraitRef::new(eq.clone(), vec![Type::Integer]),
-        predicates: Vec::new(),
-    })
-    .expect("impl eq int");
-    env.insert_impl(TraitImpl {
-        parameters: 1,
-        head: TraitRef::new(eq.clone(), vec![list_of(Type::TypeVar(0))]),
-        predicates: vec![TraitRef::new(eq.clone(), vec![Type::TypeVar(0)])],
-    })
-    .expect("impl eq list");
+    symbols
+        .insert_trait(TraitDef {
+            name: eq.clone(),
+            parameters: 1,
+            methods: IndexMap::new(),
+        })
+        .expect("trait def");
+    symbols
+        .insert_impl(TraitImpl {
+            parameters: 0,
+            head: TraitRef::new(eq.clone(), vec![Type::Integer]),
+            predicates: Vec::new(),
+            methods: IndexMap::new(),
+        })
+        .expect("impl eq int");
+    symbols
+        .insert_impl(TraitImpl {
+            parameters: 1,
+            head: TraitRef::new(eq.clone(), vec![list_of(Type::v(0))]),
+            predicates: vec![TraitRef::new(eq.clone(), vec![Type::v(0)])],
+            methods: IndexMap::new(),
+        })
+        .expect("impl eq list");
 
     let mut table = UnificationTable::default();
-    let unresolved = env
+    let unresolved = symbols
         .resolve_predicates(
             &mut table,
             &[TraitRef::new(eq.clone(), vec![list_of(Type::Integer)])],
@@ -387,18 +365,20 @@ fn resolve_trait_instance_with_context() {
 
 #[test]
 fn resolve_trait_unresolved_predicate_is_retained() {
-    let mut env = TraitEnv::new();
+    let mut symbols = SymbolTable::new();
     let show = Path::new("test", "Show");
-    env.insert_trait(TraitDef {
-        name: show.clone(),
-        parameters: 1,
-    })
-    .expect("trait def");
+    symbols
+        .insert_trait(TraitDef {
+            name: show.clone(),
+            parameters: 1,
+            methods: IndexMap::new(),
+        })
+        .expect("trait def");
 
     let mut table = UnificationTable::default();
     let meta = table.new_meta(0);
     let predicate = TraitRef::new(show.clone(), vec![meta.clone()]);
-    let unresolved = env
+    let unresolved = symbols
         .resolve_predicates(&mut table, std::slice::from_ref(&predicate))
         .expect("resolve");
     assert_eq!(unresolved, vec![predicate]);
@@ -406,47 +386,56 @@ fn resolve_trait_unresolved_predicate_is_retained() {
 
 #[test]
 fn resolve_trait_recursive_predicate_errors() {
-    let mut env = TraitEnv::new();
+    let mut symbols = SymbolTable::new();
     let eq = Path::new("test", "Eq");
-    env.insert_trait(TraitDef {
-        name: eq.clone(),
-        parameters: 1,
-    })
-    .expect("trait def");
-    env.insert_impl(TraitImpl {
-        parameters: 1,
-        head: TraitRef::new(eq.clone(), vec![Type::TypeVar(0)]),
-        predicates: vec![TraitRef::new(eq.clone(), vec![Type::TypeVar(0)])],
-    })
-    .expect("impl");
+    symbols
+        .insert_trait(TraitDef {
+            name: eq.clone(),
+            parameters: 1,
+            methods: IndexMap::new(),
+        })
+        .expect("trait def");
+    symbols
+        .insert_impl(TraitImpl {
+            parameters: 1,
+            head: TraitRef::new(eq.clone(), vec![Type::v(0)]),
+            predicates: vec![TraitRef::new(eq.clone(), vec![Type::v(0)])],
+            methods: IndexMap::new(),
+        })
+        .expect("impl");
 
     let mut table = UnificationTable::default();
     let meta = table.new_meta(0);
     let predicate = TraitRef::new(eq.clone(), vec![meta]);
-    let result = env.resolve_predicates(&mut table, &[predicate]);
+    let result = symbols.resolve_predicates(&mut table, &[predicate]);
     assert!(matches!(result, Err(TraitError::RecursivePredicate { .. })));
 }
 
 #[test]
 fn overlap_detection_rejects_conflicting_instances() {
-    let mut env = TraitEnv::new();
+    let mut symbols = SymbolTable::new();
     let eq = Path::new("test", "Eq");
-    env.insert_trait(TraitDef {
-        name: eq.clone(),
-        parameters: 1,
-    })
-    .expect("trait def");
-    env.insert_impl(TraitImpl {
-        parameters: 1,
-        head: TraitRef::new(eq.clone(), vec![list_of(Type::TypeVar(0))]),
-        predicates: Vec::new(),
-    })
-    .expect("impl list");
+    symbols
+        .insert_trait(TraitDef {
+            name: eq.clone(),
+            parameters: 1,
+            methods: IndexMap::new(),
+        })
+        .expect("trait def");
+    symbols
+        .insert_impl(TraitImpl {
+            parameters: 1,
+            head: TraitRef::new(eq.clone(), vec![list_of(Type::v(0))]),
+            predicates: Vec::new(),
+            methods: IndexMap::new(),
+        })
+        .expect("impl list");
 
-    let result = env.insert_impl(TraitImpl {
+    let result = symbols.insert_impl(TraitImpl {
         parameters: 0,
         head: TraitRef::new(eq.clone(), vec![list_of(Type::Integer)]),
         predicates: Vec::new(),
+        methods: IndexMap::new(),
     });
     assert!(matches!(
         result,

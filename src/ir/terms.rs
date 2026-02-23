@@ -1,4 +1,4 @@
-use crate::hc_core::CoreSymbols;
+use crate::hc_core::CoreTerm;
 use crate::operator::{
     BinaryOp,
     Operator,
@@ -6,6 +6,7 @@ use crate::operator::{
 };
 use crate::parse::ast::AstNode;
 use crate::types::Type;
+use crate::types::symbol_table::Symbol;
 use crate::{
     WithContext,
     WithSpan,
@@ -177,14 +178,10 @@ pub fn immediate(
 fn binary_op_path(kind: SyntaxKind) -> Option<Path> {
     Some(match kind {
         SyntaxKind::STAR => BinaryOp::Star.path(),
-        SyntaxKind::STAR_DOT => BinaryOp::StarDot.path(),
         SyntaxKind::SLASH => BinaryOp::Slash.path(),
-        SyntaxKind::SLASH_DOT => BinaryOp::SlashDot.path(),
         SyntaxKind::PERCENT => BinaryOp::Percent.path(),
         SyntaxKind::PLUS => BinaryOp::Plus.path(),
-        SyntaxKind::PLUS_DOT => BinaryOp::PlusDot.path(),
         SyntaxKind::MINUS => BinaryOp::Minus.path(),
-        SyntaxKind::MINUS_DOT => BinaryOp::MinusDot.path(),
         SyntaxKind::COMPOSE_LEFT => BinaryOp::ComposeLeft.path(),
         SyntaxKind::COMPOSE_RIGHT => BinaryOp::ComposeRight.path(),
         SyntaxKind::XOR_KW => BinaryOp::Xor.path(),
@@ -205,7 +202,6 @@ fn binary_op_path(kind: SyntaxKind) -> Option<Path> {
 fn unary_op_path(kind: SyntaxKind) -> Option<Path> {
     Some(match kind {
         SyntaxKind::MINUS => UnaryOp::Minus.path(),
-        SyntaxKind::MINUS_DOT => UnaryOp::MinusDot.path(),
         SyntaxKind::NOT_KW => UnaryOp::Not.path(),
         _ => return None,
     })
@@ -261,12 +257,12 @@ fn array_term(
     array_expr: ast::ArrayExpr,
 ) -> Option<UntypedTerm> {
     let span = array_expr.span();
-    let empty = CoreSymbols::EmptyArray.path();
+    let empty = CoreTerm::EmptyArray.path();
     let mut current = mk(TermKind::Identifier(empty), span);
 
     for child in array_expr.syntax().children() {
         if let Some(splat) = ast::ArraySplat::cast(child.clone()) {
-            let concat_path = CoreSymbols::ArrayConcat.path();
+            let concat_path = CoreTerm::ArrayConcat.path();
             let elem = term(scope, logger, splat.expr()?)?;
             let elem_span = elem.span;
             current = mk(
@@ -284,7 +280,7 @@ fn array_term(
                 elem_span,
             );
         } else if let Some(expr) = ast::Expr::cast(child) {
-            let push_path = CoreSymbols::ArrayPush.path();
+            let push_path = CoreTerm::ArrayPush.path();
             let elem = term(scope, logger, expr)?;
             let elem_span = elem.span;
             current = mk(

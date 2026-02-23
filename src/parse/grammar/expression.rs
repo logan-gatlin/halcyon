@@ -53,7 +53,6 @@ fn postfix_and_infix(
     min_bp: u8,
 ) {
     while let Some(kind) = p.current() {
-
         // Field access: `.ident`
         if kind == SyntaxKind::DOT {
             if min_bp > FIELD_BP {
@@ -99,7 +98,7 @@ const CALL_BP: u8 = 24;
 /// Returns the right binding power of a prefix (unary) operator.
 fn prefix_bp(kind: SyntaxKind) -> Option<u8> {
     match kind {
-        SyntaxKind::MINUS | SyntaxKind::MINUS_DOT | SyntaxKind::NOT_KW => Some(20),
+        SyntaxKind::MINUS | SyntaxKind::NOT_KW => Some(20),
         _ => None,
     }
 }
@@ -126,15 +125,9 @@ fn infix_bp(kind: SyntaxKind) -> Option<(u8, u8)> {
 
         SyntaxKind::COMPOSE_LEFT | SyntaxKind::COMPOSE_RIGHT | SyntaxKind::XOR_KW => Some((12, 13)),
 
-        SyntaxKind::PLUS | SyntaxKind::PLUS_DOT | SyntaxKind::MINUS | SyntaxKind::MINUS_DOT => {
-            Some((14, 15))
-        }
+        SyntaxKind::PLUS | SyntaxKind::MINUS => Some((14, 15)),
 
-        SyntaxKind::STAR
-        | SyntaxKind::STAR_DOT
-        | SyntaxKind::SLASH
-        | SyntaxKind::SLASH_DOT
-        | SyntaxKind::PERCENT => Some((16, 17)),
+        SyntaxKind::STAR | SyntaxKind::SLASH | SyntaxKind::PERCENT => Some((16, 17)),
 
         _ => None,
     }
@@ -180,7 +173,7 @@ fn primary(p: &mut Parser<'_, '_>) -> bool {
 
                 // Identifier or path
                 SyntaxKind::IDENT => {
-                    path_or_ident(p, SyntaxKind::IDENT_NODE, SyntaxKind::PATH);
+                    path_or_ident(p);
                     true
                 }
 
@@ -235,13 +228,9 @@ fn is_operator_kind(kind: SyntaxKind) -> bool {
     matches!(
         kind,
         SyntaxKind::PLUS
-            | SyntaxKind::PLUS_DOT
             | SyntaxKind::MINUS
-            | SyntaxKind::MINUS_DOT
             | SyntaxKind::STAR
-            | SyntaxKind::STAR_DOT
             | SyntaxKind::SLASH
-            | SyntaxKind::SLASH_DOT
             | SyntaxKind::PERCENT
             | SyntaxKind::PIPE_ARROW
             | SyntaxKind::COMPOSE_LEFT

@@ -63,13 +63,9 @@ pub enum TokenKind {
     Dot,
     DotDot,
     Plus,
-    PlusDot,
     Minus,
-    MinusDot,
     Slash,
-    SlashDot,
     Star,
-    StarDot,
     Percent,
     Arrow,
     DoubleArrow,
@@ -129,9 +125,9 @@ impl TokenKind {
             LeftParen | LeftBrace | LeftSquare => BeginGrouping,
             RightParen | RightBrace | RightSquare => EndGrouping,
             Dot | DotDot | DoubleColon | Comma => Delimeter,
-            Colon | Arrow | Semicolon | Plus | PlusDot | Minus | MinusDot | Slash | SlashDot
-            | Star | StarDot | Percent | Apply | ComposeLeft | ComposeRight | BangEqual | Equal
-            | DoubleEqual | Greater | GreaterEqual | Less | LessEqual => Operator,
+            Colon | Arrow | Semicolon | Plus | Minus | Slash | Star | Percent | Apply
+            | ComposeLeft | ComposeRight | BangEqual | Equal | DoubleEqual | Greater
+            | GreaterEqual | Less | LessEqual => Operator,
             Identifier(_) | StringLiteral(_) | GlyphLiteral(_) | IntegerLiteral(..)
             | RealLiteral(_) => Literal,
             Module | Import | Use | End | Match | With | Let | Type | Do | Of | In | If | Then
@@ -167,10 +163,6 @@ impl std::fmt::Display for TokenKind {
                 Minus => "-",
                 Slash => "/",
                 Star => "*",
-                PlusDot => "+.",
-                MinusDot => "-.",
-                SlashDot => "/.",
-                StarDot => "*.",
                 Percent => "%",
                 Apply => "|>",
                 ComposeLeft => "<<",
@@ -403,10 +395,6 @@ pub fn tokenize(
                 ('|', '>') => Apply,
                 ('<', '<') => ComposeLeft,
                 ('>', '>') => ComposeRight,
-                ('+', '.') => PlusDot,
-                ('-', '.') => MinusDot,
-                ('*', '.') => StarDot,
-                ('/', '.') => SlashDot,
                 _ => Error,
             };
             if kind != Error {
@@ -798,8 +786,7 @@ mod tests {
         // Updated expectation: The test string includes symbols.
         // We need to match the exact TokenKind variants produced by the tokenizer.
         use TokenKind::*;
-        let tokens =
-            lex("() {} [] , : :: ; . .. + - / * +. -. /. *. % |> << >> -> => != = == > >= < <= |");
+        let tokens = lex("() {} [] , : :: ; . .. + - / * % |> << >> -> => != = == > >= < <= |");
         let expected = vec![
             LeftParen,
             RightParen,
@@ -817,10 +804,6 @@ mod tests {
             Minus,
             Slash,
             Star,
-            PlusDot,
-            MinusDot,
-            SlashDot,
-            StarDot,
             Percent,
             Apply,
             ComposeLeft,

@@ -332,6 +332,7 @@ fn type_expr_precedence(type_expr: &ast::TypeExpr) -> u8 {
         ast::TypeExpr::Tuple(_)
         | ast::TypeExpr::Array(_)
         | ast::TypeExpr::Unit(_)
+        | ast::TypeExpr::Ident(_)
         | ast::TypeExpr::Path(_) => TYPE_PREC_ATOM,
     }
 }
@@ -386,6 +387,7 @@ fn format_type_expr_prec(
         ast::TypeExpr::Array(_) => "[]".to_string(),
         ast::TypeExpr::Unit(_) => "()".to_string(),
         ast::TypeExpr::Path(path) => format_path(path),
+        ast::TypeExpr::Ident(ident) => format_ident(ident),
     };
     if prec < parent_prec {
         format!("({inner})")
@@ -423,14 +425,8 @@ fn binary_op_precedence(kind: SyntaxKind) -> u8 {
         SyntaxKind::COMPOSE_LEFT | SyntaxKind::COMPOSE_RIGHT | SyntaxKind::XOR_KW => {
             EXPR_PREC_COMPOSE
         }
-        SyntaxKind::PLUS | SyntaxKind::PLUS_DOT | SyntaxKind::MINUS | SyntaxKind::MINUS_DOT => {
-            EXPR_PREC_ADD
-        }
-        SyntaxKind::STAR
-        | SyntaxKind::STAR_DOT
-        | SyntaxKind::SLASH
-        | SyntaxKind::SLASH_DOT
-        | SyntaxKind::PERCENT => EXPR_PREC_MUL,
+        SyntaxKind::PLUS | SyntaxKind::MINUS => EXPR_PREC_ADD,
+        SyntaxKind::STAR | SyntaxKind::SLASH | SyntaxKind::PERCENT => EXPR_PREC_MUL,
         _ => EXPR_PREC_LOWEST,
     }
 }

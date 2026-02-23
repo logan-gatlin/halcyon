@@ -39,12 +39,6 @@ pub mod operator;
 pub mod parse;
 pub mod token;
 pub mod types;
-/*pub use ir::{
-    PrettyPrint,
-    SymbolTable,
-    build_ir,
-};*/
-//pub use parse::parse;
 pub use token::tokenize;
 
 #[cfg(test)]
@@ -54,7 +48,7 @@ pub use indoc::*;
 pub use logging::*;
 pub use map::*;
 
-// Grab the version number from Cargo.toml at compile time
+/// Grabs the version number from Cargo.toml at compile time
 pub const COMPILER_VERSION_STRING: &str = env!("CARGO_PKG_VERSION");
 pub const WASM_MAGIC_NUMBER: [u8; 4] = [0, b'a', b's', b'm'];
 pub const CORE_MODULE_NAME: &str = "core";
@@ -63,17 +57,14 @@ pub fn compile_source(
     source: &str,
     logger: &mut FileLogger,
 ) -> Box<[ir::Module<types::Type>]> {
+    let mut symbols = types::SymbolTable::new();
     parse::parse(source, logger)
         .map(|m| m.modules())
         .unwrap_or_default()
         .into_iter()
-        .map(|m| {
-            println!("{m:#?}");
-            m
-        })
         .flat_map(|m| ir::module(m, logger))
         .collect::<Box<[_]>>()
         .into_iter()
-        .map(|m| types::resolve_module(m, logger))
+        .map(|m| types::resolve_module_with_symbols(&mut symbols, m, logger))
         .collect()
 }

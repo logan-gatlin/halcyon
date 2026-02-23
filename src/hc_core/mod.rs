@@ -5,47 +5,45 @@
 */
 
 mod terms;
+mod traits;
 mod types;
 
-pub use terms::CoreSymbols;
-pub use types::CoreTypes;
+pub use terms::CoreTerm;
+pub use traits::{
+    CoreImpl,
+    CoreTrait,
+};
+pub use types::CoreType;
+
+use crate::types::TypeScheme;
+use enum_iterator::all;
 
 use crate::ir::Path;
+use crate::operator::{
+    BinaryOp,
+    Operator,
+    UnaryOp,
+};
+use crate::types::symbol_table::{
+    Symbol,
+    SymbolKind,
+};
+use crate::types::{
+    SymbolTable,
+    TraitDef,
+    Type,
+};
 
 pub const CORE_MODULE_NAME: &str = "core";
 
-/*
-pub fn compile_core_module(
-    logger: &mut Logger,
-    symbols: &mut SymbolTable,
-) -> Option<Artifact> {
-    let mut syms = SymbolTable::new();
-    types::type_definitions(&mut syms);
-    let mut module = asm::Module::new(CORE_MODULE_NAME.into());
-    let init_name = core("[init]");
-    let mut init_func = module.new_function(init_name.clone());
-    terms::operator_definitions(&mut init_func, &mut syms);
-    terms::put_str_definition(&mut init_func, &mut syms);
-    module.start = init_name;
-    module.sig = TypeSignatureSection::new(CORE_MODULE_NAME, &syms);
-    link_binary("<core-module>", &asm::encode(module), logger, symbols)
+pub fn compile_core_module(symbols: &mut SymbolTable) {
+    all::<CoreTerm>().for_each(|s| {
+        symbols.insert(s);
+    });
+    all::<CoreType>().for_each(|s| {
+        symbols.insert(s);
+    });
+    all::<CoreTrait>().for_each(|s| {
+        symbols.insert(s);
+    });
 }
-
-#[cfg(test)]
-mod test {
-    #![allow(clippy::unwrap_used)]
-    use crate::{
-        Logger,
-        SymbolTable,
-    };
-
-    #[test]
-    fn core_validates() {
-        let mut logger = Logger::new();
-        let mut symbols = SymbolTable::new();
-        super::compile_core_module(&mut logger, &mut symbols);
-        logger.print_logs();
-        assert!(logger.is_ok());
-    }
-}
-*/

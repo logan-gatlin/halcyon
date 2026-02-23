@@ -1,5 +1,6 @@
-use crate::hc_core::CoreTypes;
 use crate::WithSpan;
+use crate::hc_core::CoreType;
+use crate::types::symbol_table::Symbol;
 
 use super::*;
 
@@ -76,7 +77,7 @@ pub fn typedef(
                                     Some(t) => type_expr(scope, t)?,
                                     None => {
                                         TypeExpr {
-                                            kind: TypeExprKind::alias(CoreTypes::Unit.path()),
+                                            kind: TypeExprKind::alias(CoreType::Unit.path()),
                                             comments: Default::default(),
                                             span: Default::default(),
                                         }
@@ -104,17 +105,20 @@ pub fn type_expr(
         kind: match expr {
             ast::TypeExpr::Unit(_) => TypeExprKind::alias(Path::core("unit")),
             ast::TypeExpr::Array(_) => {
-                TypeExprKind::Instantiation(CoreTypes::Array.path(), [].into())
+                TypeExprKind::Instantiation(CoreType::Array.path(), [].into())
             }
             ast::TypeExpr::Path(path_expr) => {
                 let span = path_expr.span();
-                let path: Path = path_expr.try_into().ok()?;
+                let path = Path::try_from(path_expr).ok()?;
                 scope.query_path(path.clone().with_span(span), NameSpace::Type);
                 TypeExprKind::alias(path)
             }
+            ast::TypeExpr::Ident(ident) => {
+                TypeExprKind::alias(scope.query_string(ident.name_text_spanned()?, NameSpace::Type))
+            }
             ast::TypeExpr::Function(function_type) => {
                 TypeExprKind::Instantiation(
-                    CoreTypes::Function.path(),
+                    CoreType::Function.path(),
                     [
                         type_expr(scope, function_type.param_type()?)?,
                         type_expr(scope, function_type.return_type()?)?,
@@ -134,9 +138,10 @@ pub fn type_expr(
             ast::TypeExpr::Application(type_application) => {
                 TypeExprKind::Instantiation(
                     match type_application.base()? {
-                        ast::TypeExpr::Array(_) => CoreTypes::Array.path(),
-                        ast::TypeExpr::Unit(_) => CoreTypes::Unit.path(),
+                        ast::TypeExpr::Array(_) => CoreType::Array.path(),
+                        ast::TypeExpr::Unit(_) => CoreType::Unit.path(),
                         ast::TypeExpr::Path(path_expr) => path_expr.try_into().ok()?,
+                        ast::TypeExpr::Ident(_) => todo!(),
                         ast::TypeExpr::Function(..)
                         | ast::TypeExpr::Application(..)
                         | ast::TypeExpr::Tuple(..) => {

@@ -1,13 +1,17 @@
-use std::collections::HashMap;
+use std::collections::{
+    HashMap,
+    HashSet,
+};
 
 use indexmap::IndexMap;
 
-use crate::hc_core::CoreSymbols;
 use crate::ir::{
+    Glob,
     Module,
     Path,
     Pattern,
     PatternKind,
+    ScopeKind,
     Statement,
     Term,
     TermKind,
@@ -21,18 +25,18 @@ use crate::{
     Span,
 };
 
-use super::catalog::{
-    TypeCatalog,
-    TypeDefinition,
-};
 use super::infer::{
     InferenceContext,
     TypeEnv,
     TypeError,
 };
 use super::{
+    SymbolTable,
+    TraitConstraint,
+    TraitError,
+    TraitRef,
     Type,
-    TypeName,
+    TypeDefinition,
     TypeScheme,
 };
 
@@ -46,31 +50,78 @@ pub fn resolve_module(
     module: Module<()>,
     logger: &mut FileLogger,
 ) -> Module<Type> {
+    let mut symbols = SymbolTable::new();
+    resolve_module_with_symbols(&mut symbols, module, logger)
+}
+
+pub fn resolve_module_with_symbols(
+    symbols: &mut SymbolTable,
+    module: Module<()>,
+    logger: &mut FileLogger,
+) -> Module<Type> {
     let Module { name, statements } = module;
     let statements = Vec::from(statements);
     let type_entries = collect_type_entries(&statements);
-    let mut catalog = build_type_catalog(&type_entries, logger);
+    let duplicate_types = type_entries
+        .keys()
+        .filter(|path| symbols.type_definitions().contains_key(*path))
+        .cloned()
+        .collect::<HashSet<_>>();
+    for (path, entry) in type_entries.iter() {
+        if duplicate_types.contains(path) {
+            log_duplicate_definition(logger, entry.def.span(), "type", path);
+        }
+    }
+    let mut term_definitions = collect_term_definitions(&statements);
+    term_definitions.extend(collect_constructor_definitions(
+        &type_entries,
+        &duplicate_types,
+    ));
+    log_term_duplicates(logger, symbols, &term_definitions);
+    let type_definitions =
+        build_type_definitions(symbols.type_definitions(), &type_entries, logger);
     let mut env = TypeEnv::new();
-    let constructors = build_sum_constructors(&type_entries, &mut catalog, logger);
+    env.extend(
+        symbols
+            .terms()
+            .iter()
+            .map(|(path, scheme)| (path.clone(), scheme.clone())),
+    );
+    let constructors = build_sum_constructors(&type_entries, &type_definitions, logger);
     env.extend(constructors);
-    env.extend(core_array_schemes());
+
+    for (path, entry) in type_entries.iter() {
+        if symbols.type_definitions().contains_key(path) {
+            continue;
+        }
+        if let Some(definition) = type_definitions.get(path) {
+            symbols.insert_type(path.clone(), definition.clone());
+        } else {
+            let definition = TypeDefinition {
+                parameters: entry.parameters.len(),
+                body: Type::Unit,
+            };
+            symbols.insert_type(path.clone(), definition);
+        }
+    }
 
     let mut ctx = InferenceContext::new();
-    ctx.set_type_catalog(catalog);
+    ctx.set_type_definitions(type_definitions.clone());
 
     let typed_statements = statements
         .into_iter()
         .map(|statement| {
             match statement {
                 Statement::Term(term) => {
-                    let typed = match ctx.infer_term(&mut env, &term) {
-                        Ok(typed) => typed,
+                    let output = match ctx.infer_term(&mut env, &term) {
+                        Ok(output) => output,
                         Err(error) => {
                             log_type_error(logger, term.span, error);
-                            fallback_term(&term)
+                            return Statement::Term(fallback_term(&term));
                         }
                     };
-                    Statement::Term(typed)
+                    solve_predicates(logger, &mut ctx, symbols, term.span, &output.predicates);
+                    Statement::Term(output.term)
                 }
                 Statement::Type {
                     path,
@@ -86,6 +137,26 @@ pub fn resolve_module(
             }
         })
         .collect::<Vec<_>>();
+
+    for (path, span) in term_definitions.iter() {
+        if symbols.terms().contains_key(path) {
+            continue;
+        }
+        match env.get(path).cloned() {
+            Some(scheme) => {
+                symbols.insert_term(path.clone(), scheme);
+            }
+            None => {
+                logger
+                    .error("Missing term definition")
+                    .primary(
+                        format!("`{}` was not assigned a type.", format_path(path)),
+                        *span,
+                    )
+                    .done();
+            }
+        }
+    }
 
     Module {
         name,
@@ -114,26 +185,94 @@ fn collect_type_entries(statements: &[Statement<()>]) -> HashMap<Path, TypeDefEn
     entries
 }
 
-fn build_type_catalog(
+fn collect_term_definitions(statements: &[Statement<()>]) -> Vec<(Path, Span)> {
+    let mut definitions = Vec::new();
+    for statement in statements {
+        let Statement::Term(term) = statement else {
+            continue;
+        };
+        let TermKind::Let {
+            assignee,
+            scope: ScopeKind::Global,
+            ..
+        } = &term.kind
+        else {
+            continue;
+        };
+        definitions.extend(collect_pattern_bindings(assignee));
+    }
+    definitions
+}
+
+fn collect_constructor_definitions(
+    entries: &HashMap<Path, TypeDefEntry>,
+    duplicates: &HashSet<Path>,
+) -> Vec<(Path, Span)> {
+    let mut definitions = Vec::new();
+    for (path, entry) in entries.iter() {
+        if duplicates.contains(path) {
+            continue;
+        }
+        let TypeDefKind::Sum(variants) = entry.def.kind() else {
+            continue;
+        };
+        for (variant, _) in variants.iter() {
+            definitions.push((
+                Path::new(path.major.clone(), variant.clone()),
+                entry.def.span(),
+            ));
+        }
+    }
+    definitions
+}
+
+fn collect_pattern_bindings(pattern: &Pattern<()>) -> Vec<(Path, Span)> {
+    match &pattern.kind {
+        PatternKind::Hole | PatternKind::Immediate(_) | PatternKind::ConstConstructor(_) => {
+            Vec::new()
+        }
+        PatternKind::Identifier(path) => vec![(path.clone(), pattern.span)],
+        PatternKind::Constructor(_, payload) => collect_pattern_bindings(payload),
+        PatternKind::Tuple(items) => items.iter().flat_map(collect_pattern_bindings).collect(),
+        PatternKind::Array {
+            starting,
+            glob,
+            ending,
+        } => {
+            let mut bindings = Vec::new();
+            bindings.extend(starting.iter().flat_map(collect_pattern_bindings));
+            bindings.extend(ending.iter().flat_map(collect_pattern_bindings));
+            if let Glob::Named(path) = glob {
+                bindings.push((path.clone(), pattern.span));
+            }
+            bindings
+        }
+        PatternKind::Struct(fields) => fields.values().flat_map(collect_pattern_bindings).collect(),
+        PatternKind::TypeHint(inner, _) => collect_pattern_bindings(inner),
+    }
+}
+
+fn build_type_definitions(
+    base_definitions: &HashMap<Path, TypeDefinition>,
     entries: &HashMap<Path, TypeDefEntry>,
     logger: &mut FileLogger,
-) -> TypeCatalog {
-    let mut catalog = TypeCatalog::new();
+) -> HashMap<Path, TypeDefinition> {
+    let mut definitions = base_definitions.clone();
     let mut stack = Vec::new();
     for path in entries.keys() {
-        let _ = resolve_type_definition(path, entries, &mut catalog, &mut stack, logger);
+        let _ = resolve_type_definition(path, entries, &mut definitions, &mut stack, logger);
     }
-    catalog
+    definitions
 }
 
 fn resolve_type_definition(
     path: &Path,
     entries: &HashMap<Path, TypeDefEntry>,
-    catalog: &mut TypeCatalog,
+    type_definitions: &mut HashMap<Path, TypeDefinition>,
     stack: &mut Vec<Path>,
     logger: &mut FileLogger,
 ) -> TypeDefinition {
-    if let Some(definition) = catalog.get(path) {
+    if let Some(definition) = type_definitions.get(path) {
         return definition.clone();
     }
     let Some(entry) = entries.get(path) else {
@@ -154,7 +293,7 @@ fn resolve_type_definition(
             parameters: entry.parameters.len(),
             body: Type::Unit,
         };
-        catalog.insert(path.clone(), definition.clone());
+        type_definitions.insert(path.clone(), definition.clone());
         return definition;
     }
 
@@ -164,16 +303,16 @@ fn resolve_type_definition(
         entry.def.kind(),
         &param_map,
         entries,
-        catalog,
+        type_definitions,
         stack,
         logger,
     );
-    let body = wrap_forall(body, entry.parameters.len());
+    let body = body.for_all(entry.parameters.len());
     let definition = TypeDefinition {
         parameters: entry.parameters.len(),
         body,
     };
-    catalog.insert(path.clone(), definition.clone());
+    type_definitions.insert(path.clone(), definition.clone());
     stack.pop();
     definition
 }
@@ -182,7 +321,7 @@ fn type_def_kind_to_type(
     kind: &TypeDefKind,
     param_map: &HashMap<Path, u32>,
     entries: &HashMap<Path, TypeDefEntry>,
-    catalog: &mut TypeCatalog,
+    type_definitions: &mut HashMap<Path, TypeDefinition>,
     stack: &mut Vec<Path>,
     logger: &mut FileLogger,
 ) -> Type {
@@ -190,8 +329,14 @@ fn type_def_kind_to_type(
         TypeDefKind::Struct(fields) => {
             let mut typed_fields = IndexMap::new();
             for (name, type_expr) in fields.iter() {
-                let field_type =
-                    type_expr_to_type_in_def(type_expr, param_map, entries, catalog, stack, logger);
+                let field_type = type_expr_to_type_in_def(
+                    type_expr,
+                    param_map,
+                    entries,
+                    type_definitions,
+                    stack,
+                    logger,
+                );
                 typed_fields.insert(name.clone(), field_type);
             }
             Type::Struct {
@@ -204,7 +349,12 @@ fn type_def_kind_to_type(
             for (name, type_expr) in variants.iter() {
                 variant_names.push(name.clone());
                 variant_types.push(type_expr_to_type_in_def(
-                    type_expr, param_map, entries, catalog, stack, logger,
+                    type_expr,
+                    param_map,
+                    entries,
+                    type_definitions,
+                    stack,
+                    logger,
                 ));
             }
             Type::Sum {
@@ -213,7 +363,14 @@ fn type_def_kind_to_type(
             }
         }
         TypeDefKind::Expr(type_expr) => {
-            type_expr_to_type_in_def(type_expr, param_map, entries, catalog, stack, logger)
+            type_expr_to_type_in_def(
+                type_expr,
+                param_map,
+                entries,
+                type_definitions,
+                stack,
+                logger,
+            )
         }
     }
 }
@@ -222,7 +379,7 @@ fn type_expr_to_type_in_def(
     expr: &TypeExpr,
     param_map: &HashMap<Path, u32>,
     entries: &HashMap<Path, TypeDefEntry>,
-    catalog: &mut TypeCatalog,
+    type_definitions: &mut HashMap<Path, TypeDefinition>,
     stack: &mut Vec<Path>,
     logger: &mut FileLogger,
 ) -> Type {
@@ -231,7 +388,14 @@ fn type_expr_to_type_in_def(
             let items = items
                 .iter()
                 .map(|item| {
-                    type_expr_to_type_in_def(item, param_map, entries, catalog, stack, logger)
+                    type_expr_to_type_in_def(
+                        item,
+                        param_map,
+                        entries,
+                        type_definitions,
+                        stack,
+                        logger,
+                    )
                 })
                 .collect();
             Type::Tuple(items)
@@ -250,13 +414,20 @@ fn type_expr_to_type_in_def(
                         )
                         .done();
                 }
-                return Type::TypeVar(*index);
+                return Type::v(*index);
             }
 
             let arguments = args
                 .iter()
                 .map(|arg| {
-                    type_expr_to_type_in_def(arg, param_map, entries, catalog, stack, logger)
+                    type_expr_to_type_in_def(
+                        arg,
+                        param_map,
+                        entries,
+                        type_definitions,
+                        stack,
+                        logger,
+                    )
                 })
                 .collect::<Vec<_>>();
 
@@ -264,8 +435,13 @@ fn type_expr_to_type_in_def(
                 return core_type_from_path(expr.span, path, &arguments, logger);
             }
 
-            let base = if entries.contains_key(path) {
-                let definition = resolve_type_definition(path, entries, catalog, stack, logger);
+            let definition = type_definitions.get(path).cloned().or_else(|| {
+                entries.contains_key(path).then(|| {
+                    resolve_type_definition(path, entries, type_definitions, stack, logger)
+                })
+            });
+
+            if let Some(definition) = definition {
                 if definition.parameters != arguments.len() {
                     logger
                         .error("Invalid type application")
@@ -280,17 +456,17 @@ fn type_expr_to_type_in_def(
                         )
                         .done();
                 }
-                Type::Named {
-                    name: TypeName::new(path.major.clone(), path.minor.clone()),
+                let base = Type::Named {
+                    name: path.clone(),
                     body: Box::new(definition.body),
-                }
-            } else {
-                Type::Named {
-                    name: TypeName::new(path.major.clone(), path.minor.clone()),
-                    body: Box::new(Type::Unit),
-                }
-            };
+                };
+                return apply_type_constructor(base, arguments);
+            }
 
+            let base = Type::Named {
+                name: path.clone(),
+                body: Box::new(Type::Unit),
+            };
             apply_type_constructor(base, arguments)
         }
     }
@@ -298,20 +474,26 @@ fn type_expr_to_type_in_def(
 
 fn build_sum_constructors(
     entries: &HashMap<Path, TypeDefEntry>,
-    catalog: &mut TypeCatalog,
+    type_definitions: &HashMap<Path, TypeDefinition>,
     logger: &mut FileLogger,
 ) -> Vec<(Path, TypeScheme)> {
     let mut constructors = Vec::new();
+    let mut type_definitions = type_definitions.clone();
     for (path, entry) in entries.iter() {
         let TypeDefKind::Sum(variants) = entry.def.kind() else {
             continue;
         };
 
         let param_map = param_index_map(&entry.parameters);
-        let mut stack = Vec::new();
-        let definition = resolve_type_definition(path, entries, catalog, &mut stack, logger);
+        let definition = type_definitions
+            .get(path)
+            .cloned()
+            .unwrap_or(TypeDefinition {
+                parameters: entry.parameters.len(),
+                body: Type::Unit,
+            });
         let base = Type::Named {
-            name: TypeName::new(path.major.clone(), path.minor.clone()),
+            name: path.clone(),
             body: Box::new(definition.body.clone()),
         };
         let args = type_vars_for_params(entry.parameters.len());
@@ -319,54 +501,29 @@ fn build_sum_constructors(
 
         for (variant, type_expr) in variants.iter() {
             let payload_type = type_expr_to_type_in_def(
-                type_expr, &param_map, entries, catalog, &mut stack, logger,
+                type_expr,
+                &param_map,
+                entries,
+                &mut type_definitions,
+                &mut Vec::new(),
+                logger,
             );
             let constructor_type = if matches!(payload_type, Type::Unit) {
                 result_type.clone()
             } else {
-                Type::Function(Box::new(payload_type), Box::new(result_type.clone()))
+                Type::func(payload_type, result_type.clone())
             };
-            let scheme_type = wrap_forall(constructor_type, entry.parameters.len());
+            let scheme_type = constructor_type.for_all(entry.parameters.len());
             constructors.push((
                 Path::new(path.major.clone(), variant.clone()),
-                TypeScheme::new(scheme_type),
+                scheme_type.scheme(),
             ));
         }
     }
     constructors
 }
 
-fn core_array_schemes() -> Vec<(Path, TypeScheme)> {
-    let array_var = Type::TypeVar(0);
-    let array_type = Type::Array(Box::new(array_var.clone()));
-    let empty = wrap_forall(array_type.clone(), 1);
-    let push = wrap_forall(
-        Type::Function(
-            Box::new(array_var.clone()),
-            Box::new(Type::Function(
-                Box::new(array_type.clone()),
-                Box::new(array_type.clone()),
-            )),
-        ),
-        1,
-    );
-    let concat = wrap_forall(
-        Type::Function(
-            Box::new(array_type.clone()),
-            Box::new(Type::Function(
-                Box::new(array_type.clone()),
-                Box::new(array_type.clone()),
-            )),
-        ),
-        1,
-    );
-    vec![
-        (CoreSymbols::EmptyArray.path(), TypeScheme::new(empty)),
-        (CoreSymbols::ArrayPush.path(), TypeScheme::new(push)),
-        (CoreSymbols::ArrayConcat.path(), TypeScheme::new(concat)),
-    ]
-}
-
+#[allow(clippy::missing_asserts_for_indexing)]
 fn core_type_from_path(
     span: Span,
     path: &Path,
@@ -405,14 +562,14 @@ fn core_type_from_path(
         }
         "function" => {
             if expect_core_arity(span, path, 2, args.len(), logger).is_ok() {
-                Type::Function(Box::new(args[0].clone()), Box::new(args[1].clone()))
+                Type::func(args[0].clone(), args[1].clone())
             } else {
-                Type::Function(Box::new(Type::Unit), Box::new(Type::Unit))
+                Type::func(Type::Unit, Type::Unit)
             }
         }
         _ => {
             let base = Type::Named {
-                name: TypeName::new(path.major.clone(), path.minor.clone()),
+                name: Path::new(path.major.clone(), path.minor.clone()),
                 body: Box::new(Type::Unit),
             };
             apply_type_constructor(base, args.to_vec())
@@ -446,13 +603,6 @@ fn expect_core_arity(
     }
 }
 
-fn wrap_forall(
-    type_: Type,
-    count: usize,
-) -> Type {
-    (0..count).fold(type_, |inner, _| Type::ForAll(Box::new(inner)))
-}
-
 fn apply_type_constructor(
     constructor: Type,
     arguments: Vec<Type>,
@@ -478,15 +628,212 @@ fn param_index_map(parameters: &[Path]) -> HashMap<Path, u32> {
 
 fn type_vars_for_params(count: usize) -> Vec<Type> {
     (0..count)
-        .map(|index| Type::TypeVar((count - 1 - index) as u32))
+        .map(|index| Type::v((count - 1 - index) as u32))
         .collect()
 }
 
+fn log_term_duplicates(
+    logger: &mut FileLogger,
+    symbols: &SymbolTable,
+    definitions: &[(Path, Span)],
+) {
+    let mut seen = HashSet::new();
+    for (path, span) in definitions.iter() {
+        if !seen.insert(path.clone()) {
+            continue;
+        }
+        if symbols.terms().contains_key(path) {
+            log_duplicate_definition(logger, *span, "term", path);
+        }
+    }
+}
+
+fn log_duplicate_definition(
+    logger: &mut FileLogger,
+    span: Span,
+    kind: &str,
+    path: &Path,
+) {
+    logger
+        .error(format!("Duplicate {kind} definition"))
+        .primary(format!("`{}` is already defined.", format_path(path)), span)
+        .done();
+}
+
 fn format_path(path: &Path) -> String {
-    if path.major.is_empty() {
-        path.minor.clone()
+    path.to_string()
+}
+
+fn format_trait_ref(trait_ref: &TraitRef) -> String {
+    if trait_ref.arguments.is_empty() {
+        trait_ref.trait_name.to_string()
     } else {
-        format!("{}::{}", path.major, path.minor)
+        let args = trait_ref
+            .arguments
+            .iter()
+            .map(Type::pretty)
+            .collect::<Vec<_>>()
+            .join(" ");
+        format!("{} {args}", trait_ref.trait_name)
+    }
+}
+
+fn solve_predicates(
+    logger: &mut FileLogger,
+    ctx: &mut InferenceContext,
+    symbols: &SymbolTable,
+    span: Span,
+    predicates: &[TraitConstraint],
+) {
+    if predicates.is_empty() {
+        return;
+    }
+    match symbols.resolve_predicates(ctx.table_mut(), predicates) {
+        Ok(unresolved) => {
+            for predicate in unresolved {
+                logger
+                    .error("Unresolved trait constraint")
+                    .primary(
+                        format!("`{}` is required here.", format_trait_ref(&predicate)),
+                        span,
+                    )
+                    .done();
+            }
+        }
+        Err(error) => log_trait_error(logger, span, error),
+    }
+}
+
+fn log_trait_error(
+    logger: &mut FileLogger,
+    span: Span,
+    error: TraitError,
+) {
+    match error {
+        TraitError::UnknownTrait(path) => {
+            logger
+                .error("Unknown trait")
+                .primary(format!("`{}` is not defined.", format_path(&path)), span)
+                .done();
+        }
+        TraitError::DuplicateTrait(path) => {
+            logger
+                .error("Duplicate trait definition")
+                .primary(
+                    format!("`{}` is already defined.", format_path(&path)),
+                    span,
+                )
+                .done();
+        }
+        TraitError::ArityMismatch {
+            trait_name,
+            expected,
+            found,
+        } => {
+            logger
+                .error("Invalid trait application")
+                .primary(
+                    format!(
+                        "`{}` expects {expected} type arguments but got {found}.",
+                        format_path(&trait_name)
+                    ),
+                    span,
+                )
+                .done();
+        }
+        TraitError::MissingMethod { trait_name, method } => {
+            logger
+                .error("Missing trait method")
+                .primary(
+                    format!(
+                        "`{}` is missing method `{}`.",
+                        format_path(&trait_name),
+                        format_path(&method)
+                    ),
+                    span,
+                )
+                .done();
+        }
+        TraitError::ExtraMethod { trait_name, method } => {
+            logger
+                .error("Unknown trait method")
+                .primary(
+                    format!(
+                        "`{}` does not declare method `{}`.",
+                        format_path(&trait_name),
+                        format_path(&method)
+                    ),
+                    span,
+                )
+                .done();
+        }
+        TraitError::MethodTypeMismatch {
+            method,
+            expected,
+            found,
+            ..
+        } => {
+            logger
+                .error("Trait method type mismatch")
+                .primary(
+                    format!(
+                        "`{}` expects `{}` but got `{}`.",
+                        format_path(&method),
+                        expected.type_.pretty(),
+                        found.type_.pretty()
+                    ),
+                    span,
+                )
+                .done();
+        }
+        TraitError::OverlappingInstance { trait_name, .. } => {
+            logger
+                .error("Overlapping trait instance")
+                .primary(
+                    format!("Instances for `{}` overlap.", format_path(&trait_name)),
+                    span,
+                )
+                .done();
+        }
+        TraitError::AmbiguousInstance { predicate } => {
+            logger
+                .error("Ambiguous trait instance")
+                .primary(
+                    format!(
+                        "Multiple instances match `{}`.",
+                        format_trait_ref(&predicate)
+                    ),
+                    span,
+                )
+                .done();
+        }
+        TraitError::RecursivePredicate { predicate } => {
+            logger
+                .error("Recursive trait constraint")
+                .primary(
+                    format!("`{}` depends on itself.", format_trait_ref(&predicate)),
+                    span,
+                )
+                .done();
+        }
+        TraitError::InvalidInstance { trait_name } => {
+            logger
+                .error("Invalid trait instance")
+                .primary(
+                    format!("Instance for `{}` is invalid.", format_path(&trait_name)),
+                    span,
+                )
+                .done();
+        }
+        TraitError::NoInstance { predicate } => {
+            logger
+                .error("Missing trait instance")
+                .primary(
+                    format!("No instance found for `{}`.", format_trait_ref(&predicate)),
+                    span,
+                )
+                .done();
+        }
     }
 }
 

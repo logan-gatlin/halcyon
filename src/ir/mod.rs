@@ -1,6 +1,5 @@
 mod names;
 mod patterns;
-mod pretty_print;
 mod terms;
 mod types;
 
@@ -9,13 +8,13 @@ pub use patterns::*;
 pub use terms::*;
 pub use types::*;
 
+use crate::parse::SyntaxKind;
 use crate::parse::ast::{
     self,
     AstNode,
     HasLeadingComments,
     HasName,
 };
-use crate::parse::SyntaxKind;
 use crate::{
     FileLogger,
     Span,

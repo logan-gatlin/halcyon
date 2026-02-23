@@ -1170,18 +1170,6 @@ fn precedence_compose_below_addition() {
     assert_root_op("a + b << c + d", "<<");
 }
 
-// ── Floating-point operator variants ────────────────────────────────
-
-#[test]
-fn precedence_float_mul_before_float_add() {
-    assert_root_op("a +. b *. c", "+.");
-}
-
-#[test]
-fn precedence_float_sub_before_comparison() {
-    assert_root_op("a -. b >= c", ">=");
-}
-
 // ── Complex mixed expressions ───────────────────────────────────────
 
 #[test]

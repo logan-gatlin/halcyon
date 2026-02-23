@@ -4,37 +4,6 @@ pub type TypeParameterIndex = u32;
 pub type RecursionIndex = u32;
 pub type MetaVarId = u32;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct TypeName {
-    pub module: String,
-    pub name: String,
-}
-
-impl TypeName {
-    pub fn new(
-        module: impl Into<String>,
-        name: impl Into<String>,
-    ) -> Self {
-        Self {
-            module: module.into(),
-            name: name.into(),
-        }
-    }
-}
-
-impl std::fmt::Display for TypeName {
-    fn fmt(
-        &self,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
-        if self.module.is_empty() {
-            write!(f, "{}", self.name)
-        } else {
-            write!(f, "{}::{}", self.module, self.name)
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StructMatch {
     Exact,
@@ -67,7 +36,7 @@ pub enum Type {
     /// Recursive type binder
     Mu(Box<Type>),
     /// Nominal type definition
-    Named { name: TypeName, body: Box<Type> },
+    Named { name: Path, body: Box<Type> },
     /// Structural constraint for named structs
     StructConstraint {
         fields: IndexMap<String, Type>,
@@ -171,6 +140,46 @@ impl Eq for Type {
 }
 
 impl Type {
+    pub fn for_all(
+        self,
+        count: usize,
+    ) -> Self {
+        (0..count).fold(self, |body, _| Type::ForAll(body.into()))
+    }
+    pub fn func(
+        t1: Self,
+        t2: Self,
+    ) -> Self {
+        Self::Function(t1.into(), t2.into())
+    }
+    pub fn v(id: u32) -> Self {
+        Self::TypeVar(id)
+    }
+    pub fn curry(types: &[Self]) -> Self {
+        match types {
+            [] => Self::Unit,
+            [t] => t.clone(),
+            [p, r @ ..] => Self::func(p.clone(), Self::curry(r)),
+        }
+    }
+    pub fn def(
+        self,
+        parameters: usize,
+    ) -> TypeDefinition {
+        TypeDefinition {
+            parameters,
+            body: self,
+        }
+    }
+    pub fn scheme(self) -> TypeScheme {
+        TypeScheme::new(self)
+    }
+    pub fn scheme_with_predicates(
+        self,
+        predicates: Vec<TraitConstraint>,
+    ) -> TypeScheme {
+        TypeScheme::with_predicates(self, predicates)
+    }
     pub fn shift_type_vars(
         &self,
         amount: i32,
@@ -300,7 +309,7 @@ impl Type {
             Type::Function(parameter, result) => {
                 let parameter = parameter.shift_type_vars_with_cutoff(amount, cutoff)?;
                 let result = result.shift_type_vars_with_cutoff(amount, cutoff)?;
-                Some(Type::Function(Box::new(parameter), Box::new(result)))
+                Some(Type::func(parameter, result))
             }
             Type::Apply {
                 constructor,
@@ -412,7 +421,7 @@ impl Type {
             Type::Function(parameter, result) => {
                 let parameter = parameter.shift_rec_vars_with_cutoff(amount, cutoff)?;
                 let result = result.shift_rec_vars_with_cutoff(amount, cutoff)?;
-                Some(Type::Function(Box::new(parameter), Box::new(result)))
+                Some(Type::func(parameter, result))
             }
             Type::Apply {
                 constructor,
@@ -522,7 +531,7 @@ impl Type {
                 let parameter =
                     parameter.substitute_type_var_with_depth(index, replacement, depth)?;
                 let result = result.substitute_type_var_with_depth(index, replacement, depth)?;
-                Some(Type::Function(Box::new(parameter), Box::new(result)))
+                Some(Type::func(parameter, result))
             }
             Type::Apply {
                 constructor,
@@ -637,7 +646,7 @@ impl Type {
                 let parameter =
                     parameter.substitute_rec_var_with_depth(index, replacement, depth)?;
                 let result = result.substitute_rec_var_with_depth(index, replacement, depth)?;
-                Some(Type::Function(Box::new(parameter), Box::new(result)))
+                Some(Type::func(parameter, result))
             }
             Type::Apply {
                 constructor,
@@ -676,7 +685,7 @@ impl Type {
             Type::String => "string".to_string(),
             Type::Glyph => "glyph".to_string(),
             Type::TypeVar(index) => lookup_name(param_names, *index, type_var_name),
-            Type::MetaVar(index) => format!("?t{index}"),
+            Type::MetaVar(index) => format!("v{index}"),
             Type::RecVar(index) => lookup_name(rec_names, *index, rec_var_name),
             Type::ForAll(body) => {
                 let name = type_var_name(param_names.len() as u32);
@@ -696,7 +705,7 @@ impl Type {
                     body.pretty_with_context(param_names, &next_recs)
                 )
             }
-            Type::Named { name, .. } => name.to_string(),
+            Type::Named { name, .. } => format!("{name}"),
             Type::StructConstraint { fields, mode } => {
                 let fields = fields
                     .iter()
@@ -728,7 +737,7 @@ impl Type {
                 format!("{{{fields}}}")
             }
             Type::Array(inner) => {
-                format!("[{}]", inner.pretty_with_context(param_names, rec_names))
+                format!("[] {}", inner.pretty_with_context(param_names, rec_names))
             }
             Type::Tuple(items) => {
                 let items = items
@@ -874,27 +883,31 @@ fn alpha_name(index: u32) -> String {
 }
 
 pub mod infer;
-pub mod catalog;
+pub mod resolve;
+pub mod symbol_table;
 pub mod traits;
 pub mod unify;
-pub mod resolve;
 
-pub use catalog::{
-    TypeCatalog,
+pub use symbol_table::{
+    SymbolTable,
     TypeDefinition,
 };
 
 pub use traits::{
     TraitConstraint,
     TraitDef,
-    TraitEnv,
     TraitError,
     TraitImpl,
     TraitRef,
     TypeScheme,
 };
 
-pub use resolve::resolve_module;
+pub use resolve::{
+    resolve_module,
+    resolve_module_with_symbols,
+};
+
+use crate::ir::Path;
 
 #[cfg(test)]
 mod tests;

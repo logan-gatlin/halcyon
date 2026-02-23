@@ -1,3 +1,3 @@
 module demo =
-	type foo = | A
+	let f = fn a => a
 end

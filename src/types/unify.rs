@@ -121,10 +121,7 @@ impl UnificationTable {
                 }
             }
             Type::Function(parameter, result) => {
-                Type::Function(
-                    Box::new(self.normalize(&parameter)),
-                    Box::new(self.normalize(&result)),
-                )
+                Type::func(self.normalize(&parameter), self.normalize(&result))
             }
             Type::Apply {
                 constructor,

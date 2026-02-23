@@ -83,7 +83,7 @@ fn pattern_primary(p: &mut Parser<'_, '_>) {
 /// Identifier, path (`Module::Ctor`), or constructor (`Ctor of pat`).
 fn ident_or_constructor(p: &mut Parser<'_, '_>) {
     let checkpoint = p.checkpoint();
-    path_or_ident(p, SyntaxKind::IDENT_NODE, SyntaxKind::PATH);
+    path_or_ident(p);
 
     // `of` pattern — constructor application
     if p.at(SyntaxKind::OF_KW) {

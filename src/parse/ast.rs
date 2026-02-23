@@ -813,6 +813,7 @@ pub enum TypeExpr {
     Array(ArrayType),
     Unit(Unit),
     Path(Path),
+    Ident(Ident),
 }
 
 impl AstNode for TypeExpr {
@@ -824,6 +825,7 @@ impl AstNode for TypeExpr {
             SyntaxKind::ARRAY_TYPE => ArrayType::cast(node).map(Self::Array),
             SyntaxKind::UNIT => Unit::cast(node).map(Self::Unit),
             SyntaxKind::PATH => Path::cast(node).map(Self::Path),
+            SyntaxKind::IDENT_NODE => Ident::cast(node).map(Self::Ident),
             _ => None,
         }
     }
@@ -835,6 +837,7 @@ impl AstNode for TypeExpr {
             Self::Array(n) => n.syntax(),
             Self::Unit(n) => n.syntax(),
             Self::Path(n) => n.syntax(),
+            Self::Ident(n) => n.syntax(),
         }
     }
 }

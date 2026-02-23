@@ -26,19 +26,15 @@ pub fn source_file(p: &mut Parser<'_, '_>) {
 /// Parse a simple `IDENT` or qualified `Module::Name` path.
 ///
 /// Uses `ident_kind` for simple identifiers and `path_kind` for qualified paths.
-pub(crate) fn path_or_ident(
-    p: &mut Parser<'_, '_>,
-    ident_kind: SyntaxKind,
-    path_kind: SyntaxKind,
-) {
+pub(crate) fn path_or_ident(p: &mut Parser<'_, '_>) {
     if p.nth(1) == Some(SyntaxKind::DOUBLE_COLON) {
-        let m = p.start_node(path_kind);
+        let m = p.start_node(SyntaxKind::PATH);
         p.bump(); // first ident
         p.bump(); // ::
         p.expect(SyntaxKind::IDENT);
         p.finish_node(m);
     } else {
-        let m = p.start_node(ident_kind);
+        let m = p.start_node(SyntaxKind::IDENT_NODE);
         p.bump();
         p.finish_node(m);
     }

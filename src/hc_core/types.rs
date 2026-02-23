@@ -1,12 +1,7 @@
-use crate::types::{
-    TraitDef,
-    Type,
-};
-
 use super::*;
 
-#[derive(Copy, Clone, enum_iterator::Sequence)]
-pub enum CoreTypes {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, enum_iterator::Sequence)]
+pub enum CoreType {
     Unit,
     Integer,
     Real,
@@ -17,71 +12,29 @@ pub enum CoreTypes {
     Function,
 }
 
-impl CoreTypes {
-    pub fn path(&self) -> Path {
+impl Symbol for CoreType {
+    fn path(&self) -> Path {
         Path::core(match self {
-            CoreTypes::Unit => "unit",
-            CoreTypes::Integer => "integer",
-            CoreTypes::Real => "real",
-            CoreTypes::Boolean => "boolean",
-            CoreTypes::String => "string",
-            CoreTypes::Glyph => "glyph",
-            CoreTypes::Array => "array",
-            CoreTypes::Function => "function",
+            CoreType::Unit => "unit",
+            CoreType::Integer => "integer",
+            CoreType::Real => "real",
+            CoreType::Boolean => "boolean",
+            CoreType::String => "string",
+            CoreType::Glyph => "glyph",
+            CoreType::Array => "array",
+            CoreType::Function => "function",
         })
     }
-    pub fn type_(&self) -> Type {
-        match self {
-            CoreTypes::Unit => Type::Unit,
-            CoreTypes::Integer => Type::Integer,
-            CoreTypes::Real => Type::Real,
-            CoreTypes::Boolean => Type::Boolean,
-            CoreTypes::String => Type::String,
-            CoreTypes::Glyph => Type::Glyph,
-            CoreTypes::Array => Type::ForAll(Type::Array(Type::TypeVar(0).into()).into()),
-            CoreTypes::Function => {
-                Type::ForAll(
-                    Type::ForAll(
-                        Type::Function(Type::TypeVar(1).into(), Type::TypeVar(0).into()).into(),
-                    )
-                    .into(),
-                )
-            }
-        }
-    }
-}
-
-#[derive(Copy, Clone, enum_iterator::Sequence)]
-pub enum CoreTraits {
-    Equal,
-    Compare,
-    Add,
-    Subtract,
-    Multiply,
-    Divide,
-    Remainder,
-}
-
-impl CoreTraits {
-    pub fn path(&self) -> Path {
-        Path::core(match self {
-            CoreTraits::Equal => "equal",
-            CoreTraits::Compare => "compare",
-            CoreTraits::Add => "add",
-            CoreTraits::Subtract => "subtract",
-            CoreTraits::Multiply => "multiply",
-            CoreTraits::Divide => "divide",
-            CoreTraits::Remainder => "remainder",
+    fn symbol_kind(&self) -> SymbolKind {
+        SymbolKind::Type(match self {
+            CoreType::Unit => Type::Unit.def(0),
+            CoreType::Integer => Type::Integer.def(0),
+            CoreType::Real => Type::Real.def(0),
+            CoreType::Boolean => Type::Boolean.def(0),
+            CoreType::String => Type::String.def(0),
+            CoreType::Glyph => Type::Glyph.def(0),
+            CoreType::Array => Type::Array(Type::v(0).into()).for_all(1).def(1),
+            CoreType::Function => Type::func(Type::v(1), Type::v(0)).for_all(2).def(2),
         })
-    }
-    pub fn parameters(&self) -> usize {
-        1
-    }
-
-    pub fn trait_(&self) -> TraitDef {
-        TraitDef {
-            name: self.path(),
-            parameters: self.parameters(),
-        }
     }
 }
