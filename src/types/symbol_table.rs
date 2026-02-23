@@ -15,11 +15,11 @@ use super::traits::{
 };
 use super::unify::UnificationTable;
 
+/// Classification of global symbols stored in the symbol table.
 pub enum SymbolKind {
     Term(TypeScheme),
     Type(TypeDefinition),
     TraitDef(TraitDef),
-    TraitImpl(TraitImpl),
 }
 
 impl From<TypeScheme> for SymbolKind {
@@ -40,17 +40,13 @@ impl From<TraitDef> for SymbolKind {
     }
 }
 
-impl From<TraitImpl> for SymbolKind {
-    fn from(value: TraitImpl) -> Self {
-        Self::TraitImpl(value)
-    }
-}
-
+/// Anything that can be registered in the global symbol table.
 pub trait Symbol {
     fn path(&self) -> Path;
     fn symbol_kind(&self) -> SymbolKind;
 }
 
+/// Global definitions shared across modules during typechecking.
 #[derive(Debug, Clone, Default)]
 pub struct SymbolTable {
     terms: IndexMap<Path, TypeScheme>,
@@ -72,10 +68,6 @@ impl SymbolTable {
             SymbolKind::Term(v) => self.terms.insert(s.path(), v).map(Into::into),
             SymbolKind::Type(v) => self.types.insert(s.path(), v).map(Into::into),
             SymbolKind::TraitDef(v) => self.trait_defs.insert(s.path(), v).map(Into::into),
-            SymbolKind::TraitImpl(v) => {
-                self.trait_impls.entry(s.path()).or_default().push(v);
-                None
-            }
         }
     }
 
@@ -141,7 +133,6 @@ impl SymbolTable {
                 found: impl_.head.arguments.len(),
             });
         }
-        validate_impl_methods(def, &impl_)?;
         let impls = self
             .trait_impls
             .entry(impl_.head.trait_name.clone())
@@ -193,7 +184,7 @@ impl SymbolTable {
         predicate: &TraitConstraint,
         stack: &mut Vec<TraitConstraint>,
     ) -> Result<Vec<TraitConstraint>, TraitError> {
-        let normalized = normalize_trait_ref(table, predicate);
+        let normalized = table.normalize_trait_ref(predicate);
         let def = self
             .trait_defs
             .get(&normalized.trait_name)
@@ -207,7 +198,7 @@ impl SymbolTable {
         }
         if stack
             .iter()
-            .any(|entry| normalize_trait_ref(table, entry) == normalized)
+            .any(|entry| table.normalize_trait_ref(entry) == normalized)
         {
             return Err(TraitError::RecursivePredicate {
                 predicate: normalized,
@@ -254,6 +245,7 @@ impl SymbolTable {
     }
 }
 
+/// Definition of a named type with its parameters and body.
 #[derive(Debug, Clone)]
 pub struct TypeDefinition {
     pub parameters: usize,
@@ -265,63 +257,12 @@ struct InstantiatedImpl {
     predicates: Vec<TraitConstraint>,
 }
 
-fn validate_impl_methods(
-    def: &TraitDef,
-    impl_: &TraitImpl,
-) -> Result<(), TraitError> {
-    let expected_methods = methods_by_name(&def.methods);
-    let impl_methods = methods_by_name(&impl_.methods);
-
-    for (name, (def_path, scheme)) in expected_methods.iter() {
-        let Some((impl_path, impl_scheme)) = impl_methods.get(name) else {
-            return Err(TraitError::MissingMethod {
-                trait_name: def.name.clone(),
-                method: def_path.clone(),
-            });
-        };
-        let expected = substitute_type_vars_in_scheme(scheme, &impl_.head.arguments, &def.name)?;
-        if *impl_scheme != expected {
-            return Err(TraitError::MethodTypeMismatch {
-                trait_name: def.name.clone(),
-                method: impl_path.clone(),
-                expected,
-                found: impl_scheme.clone(),
-            });
-        }
-    }
-
-    for (name, (impl_path, _)) in impl_methods.iter() {
-        if !expected_methods.contains_key(name) {
-            return Err(TraitError::ExtraMethod {
-                trait_name: def.name.clone(),
-                method: impl_path.clone(),
-            });
-        }
-    }
-
-    Ok(())
-}
-
-fn normalize_trait_ref(
-    table: &mut UnificationTable,
-    trait_ref: &TraitRef,
-) -> TraitRef {
-    TraitRef {
-        trait_name: trait_ref.trait_name.clone(),
-        arguments: trait_ref
-            .arguments
-            .iter()
-            .map(|arg| table.normalize(arg))
-            .collect(),
-    }
-}
-
 fn instantiate_trait_impl(
     table: &mut UnificationTable,
     impl_: &TraitImpl,
 ) -> Result<InstantiatedImpl, TraitError> {
     let replacements = std::iter::repeat_with(|| table.new_meta(0))
-        .take(impl_.parameters as usize)
+        .take(impl_.parameters)
         .collect::<Vec<_>>();
     let head = substitute_type_vars_in_trait_ref(&impl_.head, &replacements)?;
     let predicates = substitute_type_vars_in_predicates(&impl_.predicates, &replacements)?;
@@ -356,29 +297,6 @@ fn substitute_type_vars_in_predicates(
         .iter()
         .map(|predicate| substitute_type_vars_in_trait_ref(predicate, replacements))
         .collect()
-}
-
-fn substitute_type_vars_in_scheme(
-    scheme: &TypeScheme,
-    replacements: &[Type],
-    trait_name: &Path,
-) -> Result<TypeScheme, TraitError> {
-    let type_ = substitute_type_vars(&scheme.type_, replacements).ok_or_else(|| {
-        TraitError::InvalidInstance {
-            trait_name: trait_name.clone(),
-        }
-    })?;
-    let predicates = substitute_type_vars_in_predicates(&scheme.predicates, replacements)?;
-    Ok(TypeScheme { type_, predicates })
-}
-
-fn methods_by_name(methods: &IndexMap<Path, TypeScheme>) -> HashMap<String, (Path, TypeScheme)> {
-    let mut map = HashMap::new();
-    for (path, scheme) in methods.iter() {
-        map.entry(path.minor.clone())
-            .or_insert_with(|| (path.clone(), scheme.clone()));
-    }
-    map
 }
 
 fn substitute_type_vars(

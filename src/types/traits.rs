@@ -2,11 +2,9 @@ use indexmap::IndexMap;
 
 use crate::ir::Path;
 
-use super::{
-    Type,
-    TypeParameterIndex,
-};
+use super::Type;
 
+/// A trait constraint applied to type arguments.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TraitRef {
     pub trait_name: Path,
@@ -27,6 +25,7 @@ impl TraitRef {
 
 pub type TraitConstraint = TraitRef;
 
+/// A type scheme with attached trait predicates.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeScheme {
     pub predicates: Vec<TraitConstraint>,
@@ -55,6 +54,7 @@ impl From<Type> for TypeScheme {
     }
 }
 
+/// Definition of a trait and its method signatures.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TraitDef {
     pub name: Path,
@@ -84,14 +84,15 @@ impl TraitDef {
     }
 }
 
+/// A trait implementation head with its context predicates.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TraitImpl {
-    pub parameters: TypeParameterIndex,
+    pub parameters: usize,
     pub head: TraitRef,
     pub predicates: Vec<TraitConstraint>,
-    pub methods: IndexMap<Path, TypeScheme>,
 }
 
+/// Errors that can occur when defining or resolving traits.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TraitError {
     UnknownTrait(Path),
@@ -100,20 +101,6 @@ pub enum TraitError {
         trait_name: Path,
         expected: usize,
         found: usize,
-    },
-    MissingMethod {
-        trait_name: Path,
-        method: Path,
-    },
-    ExtraMethod {
-        trait_name: Path,
-        method: Path,
-    },
-    MethodTypeMismatch {
-        trait_name: Path,
-        method: Path,
-        expected: TypeScheme,
-        found: TypeScheme,
     },
     OverlappingInstance {
         trait_name: Path,

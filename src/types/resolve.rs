@@ -38,6 +38,9 @@ use super::{
     Type,
     TypeDefinition,
     TypeScheme,
+    core_type_arity,
+    core_type_fallback,
+    resolve_core_type,
 };
 
 #[derive(Debug, Clone)]
@@ -116,7 +119,7 @@ pub fn resolve_module_with_symbols(
                     let output = match ctx.infer_term(&mut env, &term) {
                         Ok(output) => output,
                         Err(error) => {
-                            log_type_error(logger, term.span, error);
+                            log_type_error(logger, error);
                             return Statement::Term(fallback_term(&term));
                         }
                     };
@@ -149,10 +152,7 @@ pub fn resolve_module_with_symbols(
             None => {
                 logger
                     .error("Missing term definition")
-                    .primary(
-                        format!("`{}` was not assigned a type.", format_path(path)),
-                        *span,
-                    )
+                    .primary(format!("`{path}` was not assigned a type."), *span)
                     .done();
             }
         }
@@ -285,7 +285,7 @@ fn resolve_type_definition(
         logger
             .error("Recursive type definitions are not supported yet")
             .primary(
-                format!("Type `{}` depends on itself.", format_path(path)),
+                format!("Type `{path}` depends on itself."),
                 entry.def.span(),
             )
             .done();
@@ -344,22 +344,20 @@ fn type_def_kind_to_type(
             }
         }
         TypeDefKind::Sum(variants) => {
-            let mut variant_names = Vec::with_capacity(variants.len());
-            let mut variant_types = Vec::with_capacity(variants.len());
+            let mut typed_variants = IndexMap::new();
             for (name, type_expr) in variants.iter() {
-                variant_names.push(name.clone());
-                variant_types.push(type_expr_to_type_in_def(
+                let variant_type = type_expr_to_type_in_def(
                     type_expr,
                     param_map,
                     entries,
                     type_definitions,
                     stack,
                     logger,
-                ));
+                );
+                typed_variants.insert(name.clone(), variant_type);
             }
             Type::Sum {
-                variant_names,
-                variant_types,
+                variants: typed_variants,
             }
         }
         TypeDefKind::Expr(type_expr) => {
@@ -408,7 +406,7 @@ fn type_expr_to_type_in_def(
                         .primary(
                             format!(
                                 "`{}` is a type parameter but is applied to arguments.",
-                                format_path(path)
+                                path
                             ),
                             expr.span,
                         )
@@ -448,7 +446,7 @@ fn type_expr_to_type_in_def(
                         .primary(
                             format!(
                                 "`{}` expects {} type arguments but got {}.",
-                                format_path(path),
+                                path,
                                 definition.parameters,
                                 arguments.len()
                             ),
@@ -460,14 +458,14 @@ fn type_expr_to_type_in_def(
                     name: path.clone(),
                     body: Box::new(definition.body),
                 };
-                return apply_type_constructor(base, arguments);
+                return base.apply(arguments);
             }
 
             let base = Type::Named {
                 name: path.clone(),
                 body: Box::new(Type::Unit),
             };
-            apply_type_constructor(base, arguments)
+            base.apply(arguments)
         }
     }
 }
@@ -497,7 +495,7 @@ fn build_sum_constructors(
             body: Box::new(definition.body.clone()),
         };
         let args = type_vars_for_params(entry.parameters.len());
-        let result_type = apply_type_constructor(base, args);
+        let result_type = base.apply(args);
 
         for (variant, type_expr) in variants.iter() {
             let payload_type = type_expr_to_type_in_def(
@@ -530,51 +528,21 @@ fn core_type_from_path(
     args: &[Type],
     logger: &mut FileLogger,
 ) -> Type {
-    match path.minor.as_str() {
-        "unit" => {
-            expect_core_arity(span, path, 0, args.len(), logger).map_or(Type::Unit, |_| Type::Unit)
+    let minor = path.minor.as_str();
+    if let Some(expected) = core_type_arity(minor) {
+        if expect_core_arity(span, path, expected, args.len(), logger).is_ok() {
+            return resolve_core_type(minor, args)
+                .or_else(|| core_type_fallback(minor))
+                .unwrap_or(Type::Unit);
         }
-        "integer" => {
-            expect_core_arity(span, path, 0, args.len(), logger)
-                .map_or(Type::Integer, |_| Type::Integer)
-        }
-        "real" => {
-            expect_core_arity(span, path, 0, args.len(), logger).map_or(Type::Real, |_| Type::Real)
-        }
-        "boolean" => {
-            expect_core_arity(span, path, 0, args.len(), logger)
-                .map_or(Type::Boolean, |_| Type::Boolean)
-        }
-        "string" => {
-            expect_core_arity(span, path, 0, args.len(), logger)
-                .map_or(Type::String, |_| Type::String)
-        }
-        "glyph" => {
-            expect_core_arity(span, path, 0, args.len(), logger)
-                .map_or(Type::Glyph, |_| Type::Glyph)
-        }
-        "array" => {
-            if expect_core_arity(span, path, 1, args.len(), logger).is_ok() {
-                Type::Array(Box::new(args[0].clone()))
-            } else {
-                Type::Array(Box::new(Type::Unit))
-            }
-        }
-        "function" => {
-            if expect_core_arity(span, path, 2, args.len(), logger).is_ok() {
-                Type::func(args[0].clone(), args[1].clone())
-            } else {
-                Type::func(Type::Unit, Type::Unit)
-            }
-        }
-        _ => {
-            let base = Type::Named {
-                name: Path::new(path.major.clone(), path.minor.clone()),
-                body: Box::new(Type::Unit),
-            };
-            apply_type_constructor(base, args.to_vec())
-        }
+        return core_type_fallback(minor).unwrap_or(Type::Unit);
     }
+
+    let base = Type::Named {
+        name: Path::new(path.major.clone(), path.minor.clone()),
+        body: Box::new(Type::Unit),
+    };
+    base.apply(args.to_vec())
 }
 
 fn expect_core_arity(
@@ -592,28 +560,12 @@ fn expect_core_arity(
             .primary(
                 format!(
                     "`{}` expects {} type arguments but got {}.",
-                    format_path(path),
-                    expected,
-                    found
+                    path, expected, found
                 ),
                 span,
             )
             .done();
         Err(())
-    }
-}
-
-fn apply_type_constructor(
-    constructor: Type,
-    arguments: Vec<Type>,
-) -> Type {
-    if arguments.is_empty() {
-        constructor
-    } else {
-        Type::Apply {
-            constructor: Box::new(constructor),
-            arguments,
-        }
     }
 }
 
@@ -656,12 +608,8 @@ fn log_duplicate_definition(
 ) {
     logger
         .error(format!("Duplicate {kind} definition"))
-        .primary(format!("`{}` is already defined.", format_path(path)), span)
+        .primary(format!("`{path}` is already defined."), span)
         .done();
-}
-
-fn format_path(path: &Path) -> String {
-    path.to_string()
 }
 
 fn format_trait_ref(trait_ref: &TraitRef) -> String {
@@ -713,16 +661,13 @@ fn log_trait_error(
         TraitError::UnknownTrait(path) => {
             logger
                 .error("Unknown trait")
-                .primary(format!("`{}` is not defined.", format_path(&path)), span)
+                .primary(format!("`{path}` is not defined."), span)
                 .done();
         }
         TraitError::DuplicateTrait(path) => {
             logger
                 .error("Duplicate trait definition")
-                .primary(
-                    format!("`{}` is already defined.", format_path(&path)),
-                    span,
-                )
+                .primary(format!("`{path}` is already defined."), span)
                 .done();
         }
         TraitError::ArityMismatch {
@@ -735,52 +680,7 @@ fn log_trait_error(
                 .primary(
                     format!(
                         "`{}` expects {expected} type arguments but got {found}.",
-                        format_path(&trait_name)
-                    ),
-                    span,
-                )
-                .done();
-        }
-        TraitError::MissingMethod { trait_name, method } => {
-            logger
-                .error("Missing trait method")
-                .primary(
-                    format!(
-                        "`{}` is missing method `{}`.",
-                        format_path(&trait_name),
-                        format_path(&method)
-                    ),
-                    span,
-                )
-                .done();
-        }
-        TraitError::ExtraMethod { trait_name, method } => {
-            logger
-                .error("Unknown trait method")
-                .primary(
-                    format!(
-                        "`{}` does not declare method `{}`.",
-                        format_path(&trait_name),
-                        format_path(&method)
-                    ),
-                    span,
-                )
-                .done();
-        }
-        TraitError::MethodTypeMismatch {
-            method,
-            expected,
-            found,
-            ..
-        } => {
-            logger
-                .error("Trait method type mismatch")
-                .primary(
-                    format!(
-                        "`{}` expects `{}` but got `{}`.",
-                        format_path(&method),
-                        expected.type_.pretty(),
-                        found.type_.pretty()
+                        trait_name
                     ),
                     span,
                 )
@@ -789,10 +689,7 @@ fn log_trait_error(
         TraitError::OverlappingInstance { trait_name, .. } => {
             logger
                 .error("Overlapping trait instance")
-                .primary(
-                    format!("Instances for `{}` overlap.", format_path(&trait_name)),
-                    span,
-                )
+                .primary(format!("Instances for `{trait_name}` overlap."), span)
                 .done();
         }
         TraitError::AmbiguousInstance { predicate } => {
@@ -819,10 +716,7 @@ fn log_trait_error(
         TraitError::InvalidInstance { trait_name } => {
             logger
                 .error("Invalid trait instance")
-                .primary(
-                    format!("Instance for `{}` is invalid.", format_path(&trait_name)),
-                    span,
-                )
+                .primary(format!("Instance for `{trait_name}` is invalid."), span)
                 .done();
         }
         TraitError::NoInstance { predicate } => {
@@ -839,26 +733,26 @@ fn log_trait_error(
 
 fn log_type_error(
     logger: &mut FileLogger,
-    span: Span,
     error: TypeError,
 ) {
     match error {
-        TypeError::UnknownIdentifier(path) => {
+        TypeError::UnknownIdentifier { path, span } => {
             logger
                 .error("Unknown identifier")
-                .primary(format!("`{}` is not defined.", format_path(&path)), span)
+                .primary(format!("`{path}` is not defined."), span)
                 .done();
         }
-        TypeError::UnknownConstructor(path) => {
+        TypeError::UnknownConstructor { path, span } => {
             logger
                 .error("Unknown constructor")
-                .primary(format!("`{}` is not defined.", format_path(&path)), span)
+                .primary(format!("`{path}` is not defined."), span)
                 .done();
         }
         TypeError::InvalidTypeApplication {
             name,
             expected,
             found,
+            span,
         } => {
             logger
                 .error("Invalid type application")
@@ -868,25 +762,29 @@ fn log_type_error(
                 )
                 .done();
         }
-        TypeError::MissingField { field, in_type } => {
+        TypeError::MissingField {
+            field,
+            in_type,
+            span,
+        } => {
             logger
                 .error("Missing field")
                 .primary(format!("Field `{field}` is missing in `{in_type}`."), span)
                 .done();
         }
-        TypeError::NotAFunction(type_) => {
+        TypeError::NotAFunction { type_, span } => {
             logger
                 .error("Not a function")
                 .primary(format!("`{type_}` is not callable."), span)
                 .done();
         }
-        TypeError::InvalidScheme => {
+        TypeError::InvalidScheme { span } => {
             logger
                 .error("Invalid type scheme")
                 .primary("A type scheme could not be instantiated.", span)
                 .done();
         }
-        TypeError::Unification(error) => {
+        TypeError::Unification { error, span } => {
             match error {
                 super::unify::UnifyError::Occurs { var, in_type } => {
                     logger

@@ -5,20 +5,25 @@ use indexmap::IndexMap;
 use super::{
     MetaVarId,
     StructMatch,
+    TraitConstraint,
+    TraitRef,
     Type,
 };
 
+/// State of a unification meta variable.
 #[derive(Debug, Clone)]
 pub enum MetaVarState {
     Unbound { level: u32 },
     Link(Type),
 }
 
+/// Unification table for inference meta variables.
 #[derive(Debug, Clone, Default)]
 pub struct UnificationTable {
     vars: Vec<MetaVarState>,
 }
 
+/// Errors that can arise during unification.
 #[derive(Debug, Clone)]
 pub enum UnifyError {
     Occurs { var: MetaVarId, in_type: Type },
@@ -108,15 +113,11 @@ impl UnificationTable {
                         .collect(),
                 )
             }
-            Type::Sum {
-                variant_names,
-                variant_types,
-            } => {
+            Type::Sum { variants } => {
                 Type::Sum {
-                    variant_names,
-                    variant_types: variant_types
+                    variants: variants
                         .into_iter()
-                        .map(|variant| self.normalize(&variant))
+                        .map(|(name, type_)| (name, self.normalize(&type_)))
                         .collect(),
                 }
             }
@@ -136,6 +137,30 @@ impl UnificationTable {
                 }
             }
         }
+    }
+
+    pub fn normalize_trait_ref(
+        &mut self,
+        trait_ref: &TraitRef,
+    ) -> TraitRef {
+        TraitRef {
+            trait_name: trait_ref.trait_name.clone(),
+            arguments: trait_ref
+                .arguments
+                .iter()
+                .map(|arg| self.normalize(arg))
+                .collect(),
+        }
+    }
+
+    pub fn normalize_predicates(
+        &mut self,
+        predicates: &[TraitConstraint],
+    ) -> Vec<TraitConstraint> {
+        predicates
+            .iter()
+            .map(|predicate| self.normalize_trait_ref(predicate))
+            .collect()
     }
 
     pub fn free_meta_vars(
@@ -230,31 +255,15 @@ impl UnificationTable {
                     .zip(right.iter())
                     .try_for_each(|(left, right)| self.unify(left, right))
             }
-            (
-                Type::Sum {
-                    variant_names: left_names,
-                    variant_types: left_types,
-                },
-                Type::Sum {
-                    variant_names: right_names,
-                    variant_types: right_types,
-                },
-            ) => {
-                if left_names != right_names || left_types.len() != right_types.len() {
+            (Type::Sum { variants: left }, Type::Sum { variants: right }) => {
+                if left.len() != right.len() || !left.keys().eq(right.keys()) {
                     return Err(UnifyError::Mismatch {
-                        left: Type::Sum {
-                            variant_names: left_names,
-                            variant_types: left_types,
-                        },
-                        right: Type::Sum {
-                            variant_names: right_names,
-                            variant_types: right_types,
-                        },
+                        left: Type::Sum { variants: left },
+                        right: Type::Sum { variants: right },
                     });
                 }
-                left_types
-                    .iter()
-                    .zip(right_types.iter())
+                left.values()
+                    .zip(right.values())
                     .try_for_each(|(left, right)| self.unify(left, right))
             }
             (
@@ -312,6 +321,9 @@ impl UnificationTable {
             (_, Some(MetaVarState::Unbound { .. })) => self.bind_meta(right, &Type::MetaVar(left)),
             (Some(MetaVarState::Link(left_link)), _) => {
                 self.unify_meta_with_type(right, &left_link)
+            }
+            (_, Some(MetaVarState::Link(right_link))) => {
+                self.unify_meta_with_type(left, &right_link)
             }
             _ => Ok(()),
         }
@@ -546,16 +558,7 @@ impl UnificationTable {
     ) -> bool {
         let pruned = self.prune(type_);
         match pruned {
-            Type::MetaVar(other_id) => {
-                if id == other_id {
-                    true
-                } else {
-                    match self.vars.get(other_id as usize).cloned() {
-                        Some(MetaVarState::Link(link)) => self.occurs(id, &link),
-                        _ => false,
-                    }
-                }
-            }
+            Type::MetaVar(other_id) => id == other_id,
             Type::ForAll(body) | Type::Mu(body) | Type::Array(body) => self.occurs(id, &body),
             Type::Function(parameter, result) => {
                 self.occurs(id, &parameter) || self.occurs(id, &result)
@@ -565,9 +568,7 @@ impl UnificationTable {
                 fields.values().any(|field| self.occurs(id, field))
             }
             Type::Struct { fields } => fields.values().any(|field| self.occurs(id, field)),
-            Type::Sum { variant_types, .. } => {
-                variant_types.iter().any(|variant| self.occurs(id, variant))
-            }
+            Type::Sum { variants } => variants.values().any(|variant| self.occurs(id, variant)),
             Type::Apply {
                 constructor,
                 arguments,
@@ -627,9 +628,9 @@ impl UnificationTable {
                     .values()
                     .try_for_each(|field| self.adjust_levels(level, field))
             }
-            Type::Sum { variant_types, .. } => {
-                variant_types
-                    .iter()
+            Type::Sum { variants } => {
+                variants
+                    .values()
                     .try_for_each(|variant| self.adjust_levels(level, variant))
             }
             Type::Apply {
@@ -666,8 +667,6 @@ impl UnificationTable {
                     Some(MetaVarState::Unbound { .. })
                 ) {
                     vars.insert(id);
-                } else if let Some(MetaVarState::Link(link)) = self.vars.get(id as usize).cloned() {
-                    self.collect_meta_vars(&link, vars);
                 }
             }
             Type::ForAll(body) | Type::Mu(body) | Type::Array(body) => {
@@ -692,9 +691,9 @@ impl UnificationTable {
                     .values()
                     .for_each(|field| self.collect_meta_vars(field, vars));
             }
-            Type::Sum { variant_types, .. } => {
-                variant_types
-                    .iter()
+            Type::Sum { variants } => {
+                variants
+                    .values()
                     .for_each(|variant| self.collect_meta_vars(variant, vars));
             }
             Type::Apply {
@@ -750,18 +749,10 @@ fn instantiate_named_body(
     let mut current = body.clone();
     for arg in arguments {
         if let Type::ForAll(inner) = current {
-            current = open_forall(&inner, arg)?;
+            current = inner.open_forall(arg)?;
         } else {
             return None;
         }
     }
     Some(current)
-}
-
-fn open_forall(
-    body: &Type,
-    replacement: &Type,
-) -> Option<Type> {
-    body.substitute_type_var(0, replacement)?
-        .shift_type_vars(-1, 0)
 }

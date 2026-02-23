@@ -5,9 +5,9 @@ use std::collections::{
 
 use crate::parse::ast;
 use crate::{
+    CORE_MODULE_NAME,
     Span,
     Spanned,
-    CORE_MODULE_NAME,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
@@ -72,6 +72,12 @@ pub struct ScopedString {
     pub namespace: NameSpace,
 }
 
+#[derive(Debug, Clone)]
+struct LocalBinding {
+    path: Path,
+    function_depth: usize,
+}
+
 impl std::fmt::Display for NameSpace {
     fn fmt(
         &self,
@@ -98,11 +104,11 @@ pub struct ModuleScope {
     /// Symbols defined globally in this module
     globals: HashSet<ScopedPath>,
     /// In-scope local names
-    locals: HashMap<ScopedString, Path>,
+    locals: HashMap<ScopedString, LocalBinding>,
     /// Symbols that could not be found in the current scope
     external: HashSet<ScopedPath>,
     /// Local variable introductions, used to rewind scope
-    history_buffer: Vec<(ScopedString, Option<Path>)>,
+    history_buffer: Vec<(ScopedString, Option<LocalBinding>)>,
     /// Function capture scopes
     capture_buffer: Vec<HashSet<Path>>,
     /// Definition(s) of items
@@ -199,18 +205,24 @@ impl Scope for ModuleScope {
             })
             .cloned()
         {
-            Some(path) => {
-                self.capture_buffer.iter_mut().for_each(|b| {
-                    b.insert(path.clone());
-                });
+            Some(binding) => {
+                if namespace == NameSpace::Term {
+                    let current_depth = self.capture_buffer.len();
+                    if current_depth > 0
+                        && binding.function_depth < current_depth
+                        && let Some(buffer) = self.capture_buffer.last_mut()
+                    {
+                        buffer.insert(binding.path.clone());
+                    }
+                }
                 self.usages
                     .entry(ScopedPath {
-                        path: path.clone(),
+                        path: binding.path.clone(),
                         namespace,
                     })
                     .or_default()
                     .push(string.span);
-                path
+                binding.path
             }
             None => {
                 let path = Path::new(&self.module_name, &string.inner);
@@ -267,10 +279,11 @@ impl<'a> Scope for LocalScope<'a> {
             string: name.inner,
             namespace,
         };
-        let old_value = self
-            .module
-            .locals
-            .insert(scoped_string.clone(), path.clone());
+        let binding = LocalBinding {
+            path: path.clone(),
+            function_depth: self.module.capture_buffer.len(),
+        };
+        let old_value = self.module.locals.insert(scoped_string.clone(), binding);
         self.module.history_buffer.push((scoped_string, old_value));
         self.module
             .definitions
@@ -360,8 +373,8 @@ impl<'a> Drop for LocalScope<'a> {
                 break;
             };
             match old_value {
-                Some(path) => {
-                    self.module.locals.insert(key, path);
+                Some(binding) => {
+                    self.module.locals.insert(key, binding);
                 }
                 None => {
                     self.module.locals.remove(&key);

@@ -9,10 +9,8 @@ mod traits;
 mod types;
 
 pub use terms::CoreTerm;
-pub use traits::{
-    CoreImpl,
-    CoreTrait,
-};
+pub use traits::CoreTrait;
+use traits::core_impls;
 pub use types::CoreType;
 
 use crate::types::TypeScheme;
@@ -46,4 +44,9 @@ pub fn compile_core_module(symbols: &mut SymbolTable) {
     all::<CoreTrait>().for_each(|s| {
         symbols.insert(s);
     });
+    core_impls().into_iter().for_each(|i| {
+        symbols
+            .insert_impl(i)
+            .unwrap_or_else(|e| unreachable!("{e:?}"))
+    })
 }

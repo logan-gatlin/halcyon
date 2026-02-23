@@ -1,3 +1,3 @@
 module demo =
-	let f = fn a => a
+	let f = fn a b => a + b
 end

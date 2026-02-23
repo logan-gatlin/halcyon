@@ -48,6 +48,8 @@ pub use indoc::*;
 pub use logging::*;
 pub use map::*;
 
+use crate::hc_core::compile_core_module;
+
 /// Grabs the version number from Cargo.toml at compile time
 pub const COMPILER_VERSION_STRING: &str = env!("CARGO_PKG_VERSION");
 pub const WASM_MAGIC_NUMBER: [u8; 4] = [0, b'a', b's', b'm'];
@@ -58,6 +60,7 @@ pub fn compile_source(
     logger: &mut FileLogger,
 ) -> Box<[ir::Module<types::Type>]> {
     let mut symbols = types::SymbolTable::new();
+    compile_core_module(&mut symbols);
     parse::parse(source, logger)
         .map(|m| m.modules())
         .unwrap_or_default()

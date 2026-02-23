@@ -140,8 +140,16 @@ pub fn type_expr(
                     match type_application.base()? {
                         ast::TypeExpr::Array(_) => CoreType::Array.path(),
                         ast::TypeExpr::Unit(_) => CoreType::Unit.path(),
-                        ast::TypeExpr::Path(path_expr) => path_expr.try_into().ok()?,
-                        ast::TypeExpr::Ident(_) => todo!(),
+                        ast::TypeExpr::Path(path_expr) => {
+                            let span = path_expr.span();
+                            scope.query_path(
+                                Path::try_from(path_expr).ok()?.with_span(span),
+                                NameSpace::Type,
+                            )
+                        }
+                        ast::TypeExpr::Ident(ident) => {
+                            scope.query_string(ident.name_text_spanned()?, NameSpace::Type)
+                        }
                         ast::TypeExpr::Function(..)
                         | ast::TypeExpr::Application(..)
                         | ast::TypeExpr::Tuple(..) => {

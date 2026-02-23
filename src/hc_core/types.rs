@@ -33,8 +33,8 @@ impl Symbol for CoreType {
             CoreType::Boolean => Type::Boolean.def(0),
             CoreType::String => Type::String.def(0),
             CoreType::Glyph => Type::Glyph.def(0),
-            CoreType::Array => Type::Array(Type::v(0).into()).for_all(1).def(1),
-            CoreType::Function => Type::func(Type::v(1), Type::v(0)).for_all(2).def(2),
+            CoreType::Array => Type::array().def(1),
+            CoreType::Function => Type::function().def(2),
         })
     }
 }

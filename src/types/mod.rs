@@ -1,15 +1,19 @@
 use indexmap::IndexMap;
 
+use crate::ir::Path;
+
 pub type TypeParameterIndex = u32;
 pub type RecursionIndex = u32;
 pub type MetaVarId = u32;
 
+/// Structural match mode for struct constraints.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StructMatch {
     Exact,
     AtLeast,
 }
 
+/// Core type representation used by inference and type checking.
 #[derive(Debug, Clone, Default)]
 pub enum Type {
     /// The empty type ()
@@ -49,10 +53,7 @@ pub enum Type {
     /// Product type
     Tuple(Vec<Type>),
     /// Variant
-    Sum {
-        variant_names: Vec<String>,
-        variant_types: Vec<Type>,
-    },
+    Sum { variants: IndexMap<String, Type> },
     /// Function type
     Function(Box<Type>, Box<Type>),
     /// Apply a polymorphic type to arguments
@@ -94,16 +95,7 @@ impl PartialEq for Type {
             (Struct { fields: left }, Struct { fields: right }) => left == right,
             (Array(left), Array(right)) => left == right,
             (Tuple(left), Tuple(right)) => left == right,
-            (
-                Sum {
-                    variant_names: left_names,
-                    variant_types: left_types,
-                },
-                Sum {
-                    variant_names: right_names,
-                    variant_types: right_types,
-                },
-            ) => left_names == right_names && left_types == right_types,
+            (Sum { variants: left }, Sum { variants: right }) => left == right,
             (Function(left_param, left_result), Function(right_param, right_result)) => {
                 left_param == right_param && left_result == right_result
             }
@@ -139,7 +131,251 @@ impl PartialEq for Type {
 impl Eq for Type {
 }
 
+pub(crate) trait TypeTransform {
+    fn type_var(
+        &mut self,
+        index: TypeParameterIndex,
+    ) -> Option<Type> {
+        Some(Type::TypeVar(index))
+    }
+
+    fn meta_var(
+        &mut self,
+        id: MetaVarId,
+    ) -> Option<Type> {
+        Some(Type::MetaVar(id))
+    }
+
+    fn rec_var(
+        &mut self,
+        index: RecursionIndex,
+    ) -> Option<Type> {
+        Some(Type::RecVar(index))
+    }
+
+    fn named(
+        &mut self,
+        name: &Path,
+        body: &Type,
+    ) -> Option<Type> {
+        Some(Type::Named {
+            name: name.clone(),
+            body: Box::new(body.clone()),
+        })
+    }
+
+    fn enter_forall(&mut self) {
+    }
+
+    fn leave_forall(&mut self) {
+    }
+
+    fn enter_mu(&mut self) {
+    }
+
+    fn leave_mu(&mut self) {
+    }
+
+    fn transform(
+        &mut self,
+        type_: &Type,
+    ) -> Option<Type> {
+        match type_ {
+            Type::Unit
+            | Type::Integer
+            | Type::Real
+            | Type::Boolean
+            | Type::String
+            | Type::Glyph => Some(type_.clone()),
+            Type::TypeVar(index) => self.type_var(*index),
+            Type::MetaVar(index) => self.meta_var(*index),
+            Type::RecVar(index) => self.rec_var(*index),
+            Type::ForAll(body) => {
+                self.enter_forall();
+                let body = self.transform(body)?;
+                self.leave_forall();
+                Some(Type::ForAll(Box::new(body)))
+            }
+            Type::Mu(body) => {
+                self.enter_mu();
+                let body = self.transform(body)?;
+                self.leave_mu();
+                Some(Type::Mu(Box::new(body)))
+            }
+            Type::Named { name, body } => self.named(name, body),
+            Type::StructConstraint { fields, mode } => {
+                let fields = fields
+                    .iter()
+                    .map(|(name, type_)| self.transform(type_).map(|type_| (name.clone(), type_)))
+                    .collect::<Option<IndexMap<_, _>>>()?;
+                Some(Type::StructConstraint {
+                    fields,
+                    mode: *mode,
+                })
+            }
+            Type::Struct { fields } => {
+                let fields = fields
+                    .iter()
+                    .map(|(name, type_)| self.transform(type_).map(|type_| (name.clone(), type_)))
+                    .collect::<Option<IndexMap<_, _>>>()?;
+                Some(Type::Struct { fields })
+            }
+            Type::Array(inner) => {
+                self.transform(inner)
+                    .map(|inner| Type::Array(Box::new(inner)))
+            }
+            Type::Tuple(items) => {
+                items
+                    .iter()
+                    .map(|item| self.transform(item))
+                    .collect::<Option<Vec<_>>>()
+                    .map(Type::Tuple)
+            }
+            Type::Sum { variants } => {
+                let variants = variants
+                    .iter()
+                    .map(|(name, type_)| self.transform(type_).map(|type_| (name.clone(), type_)))
+                    .collect::<Option<IndexMap<_, _>>>()?;
+                Some(Type::Sum { variants })
+            }
+            Type::Function(parameter, result) => {
+                let parameter = self.transform(parameter)?;
+                let result = self.transform(result)?;
+                Some(Type::func(parameter, result))
+            }
+            Type::Apply {
+                constructor,
+                arguments,
+            } => {
+                let constructor = self.transform(constructor)?;
+                let arguments = arguments
+                    .iter()
+                    .map(|arg| self.transform(arg))
+                    .collect::<Option<Vec<_>>>()?;
+                Some(Type::Apply {
+                    constructor: Box::new(constructor),
+                    arguments,
+                })
+            }
+        }
+    }
+}
+
+struct ShiftTypeVars {
+    amount: i32,
+    cutoff: TypeParameterIndex,
+}
+
+impl TypeTransform for ShiftTypeVars {
+    fn type_var(
+        &mut self,
+        index: TypeParameterIndex,
+    ) -> Option<Type> {
+        if index < self.cutoff {
+            Some(Type::TypeVar(index))
+        } else {
+            shift_index(index, self.amount).map(Type::TypeVar)
+        }
+    }
+
+    fn enter_forall(&mut self) {
+        self.cutoff += 1;
+    }
+
+    fn leave_forall(&mut self) {
+        self.cutoff -= 1;
+    }
+}
+
+struct ShiftRecVars {
+    amount: i32,
+    cutoff: RecursionIndex,
+}
+
+impl TypeTransform for ShiftRecVars {
+    fn rec_var(
+        &mut self,
+        index: RecursionIndex,
+    ) -> Option<Type> {
+        if index < self.cutoff {
+            Some(Type::RecVar(index))
+        } else {
+            shift_index(index, self.amount).map(Type::RecVar)
+        }
+    }
+
+    fn enter_mu(&mut self) {
+        self.cutoff += 1;
+    }
+
+    fn leave_mu(&mut self) {
+        self.cutoff -= 1;
+    }
+}
+
+struct SubstituteTypeVar<'a> {
+    index: TypeParameterIndex,
+    replacement: &'a Type,
+    depth: TypeParameterIndex,
+}
+
+impl TypeTransform for SubstituteTypeVar<'_> {
+    fn type_var(
+        &mut self,
+        var_index: TypeParameterIndex,
+    ) -> Option<Type> {
+        match self.index.checked_add(self.depth) {
+            Some(target) if var_index == target => {
+                self.replacement.shift_type_vars(self.depth as i32, 0)
+            }
+            _ => Some(Type::TypeVar(var_index)),
+        }
+    }
+
+    fn enter_forall(&mut self) {
+        self.depth += 1;
+    }
+
+    fn leave_forall(&mut self) {
+        self.depth -= 1;
+    }
+}
+
+struct SubstituteRecVar<'a> {
+    index: RecursionIndex,
+    replacement: &'a Type,
+    depth: RecursionIndex,
+}
+
+impl TypeTransform for SubstituteRecVar<'_> {
+    fn rec_var(
+        &mut self,
+        var_index: RecursionIndex,
+    ) -> Option<Type> {
+        match self.index.checked_add(self.depth) {
+            Some(target) if var_index == target => {
+                self.replacement.shift_rec_vars(self.depth as i32, 0)
+            }
+            _ => Some(Type::RecVar(var_index)),
+        }
+    }
+
+    fn enter_mu(&mut self) {
+        self.depth += 1;
+    }
+
+    fn leave_mu(&mut self) {
+        self.depth -= 1;
+    }
+}
+
 impl Type {
+    pub fn array() -> Self {
+        Type::Array(Type::v(0).into()).for_all(1)
+    }
+    pub fn function() -> Self {
+        Type::func(Type::v(1), Type::v(0)).for_all(2)
+    }
     pub fn for_all(
         self,
         count: usize,
@@ -185,7 +421,7 @@ impl Type {
         amount: i32,
         cutoff: TypeParameterIndex,
     ) -> Option<Self> {
-        self.shift_type_vars_with_cutoff(amount, cutoff)
+        ShiftTypeVars { amount, cutoff }.transform(self)
     }
 
     pub fn shift_rec_vars(
@@ -193,7 +429,7 @@ impl Type {
         amount: i32,
         cutoff: RecursionIndex,
     ) -> Option<Self> {
-        self.shift_rec_vars_with_cutoff(amount, cutoff)
+        ShiftRecVars { amount, cutoff }.transform(self)
     }
 
     pub fn substitute_type_var(
@@ -201,7 +437,12 @@ impl Type {
         index: TypeParameterIndex,
         replacement: &Type,
     ) -> Option<Self> {
-        self.substitute_type_var_with_depth(index, replacement, 0)
+        SubstituteTypeVar {
+            index,
+            replacement,
+            depth: 0,
+        }
+        .transform(self)
     }
 
     pub fn substitute_rec_var(
@@ -209,467 +450,38 @@ impl Type {
         index: RecursionIndex,
         replacement: &Type,
     ) -> Option<Self> {
-        self.substitute_rec_var_with_depth(index, replacement, 0)
+        SubstituteRecVar {
+            index,
+            replacement,
+            depth: 0,
+        }
+        .transform(self)
+    }
+
+    pub fn open_forall(
+        &self,
+        replacement: &Type,
+    ) -> Option<Self> {
+        self.substitute_type_var(0, replacement)?
+            .shift_type_vars(-1, 0)
+    }
+
+    pub fn apply(
+        self,
+        arguments: Vec<Type>,
+    ) -> Self {
+        if arguments.is_empty() {
+            self
+        } else {
+            Type::Apply {
+                constructor: Box::new(self),
+                arguments,
+            }
+        }
     }
 
     pub fn pretty(&self) -> String {
         self.pretty_with_context(&[], &[])
-    }
-
-    fn shift_type_vars_with_cutoff(
-        &self,
-        amount: i32,
-        cutoff: TypeParameterIndex,
-    ) -> Option<Self> {
-        let shift_index = |index: TypeParameterIndex| {
-            if index < cutoff {
-                Some(index)
-            } else {
-                shift_index(index, amount)
-            }
-        };
-        match self {
-            Type::Unit
-            | Type::Integer
-            | Type::Real
-            | Type::Boolean
-            | Type::String
-            | Type::Glyph => Some(self.clone()),
-            Type::TypeVar(index) => shift_index(*index).map(Type::TypeVar),
-            Type::MetaVar(index) => Some(Type::MetaVar(*index)),
-            Type::RecVar(index) => Some(Type::RecVar(*index)),
-            Type::ForAll(body) => {
-                body.shift_type_vars_with_cutoff(amount, cutoff + 1)
-                    .map(|body| Type::ForAll(Box::new(body)))
-            }
-            Type::Mu(body) => {
-                body.shift_type_vars_with_cutoff(amount, cutoff)
-                    .map(|body| Type::Mu(Box::new(body)))
-            }
-            Type::Named { name, body } => {
-                Some(Type::Named {
-                    name: name.clone(),
-                    body: body.clone(),
-                })
-            }
-            Type::StructConstraint { fields, mode } => {
-                fields
-                    .iter()
-                    .map(|(name, type_)| {
-                        type_
-                            .shift_type_vars_with_cutoff(amount, cutoff)
-                            .map(|type_| (name.clone(), type_))
-                    })
-                    .collect::<Option<IndexMap<_, _>>>()
-                    .map(|fields| {
-                        Type::StructConstraint {
-                            fields,
-                            mode: *mode,
-                        }
-                    })
-            }
-            Type::Struct { fields } => {
-                fields
-                    .iter()
-                    .map(|(name, type_)| {
-                        type_
-                            .shift_type_vars_with_cutoff(amount, cutoff)
-                            .map(|type_| (name.clone(), type_))
-                    })
-                    .collect::<Option<IndexMap<_, _>>>()
-                    .map(|fields| Type::Struct { fields })
-            }
-            Type::Array(inner) => {
-                inner
-                    .shift_type_vars_with_cutoff(amount, cutoff)
-                    .map(|inner| Type::Array(Box::new(inner)))
-            }
-            Type::Tuple(items) => {
-                items
-                    .iter()
-                    .map(|item| item.shift_type_vars_with_cutoff(amount, cutoff))
-                    .collect::<Option<Vec<_>>>()
-                    .map(Type::Tuple)
-            }
-            Type::Sum {
-                variant_names,
-                variant_types,
-            } => {
-                variant_types
-                    .iter()
-                    .map(|variant| variant.shift_type_vars_with_cutoff(amount, cutoff))
-                    .collect::<Option<Vec<_>>>()
-                    .map(|variant_types| {
-                        Type::Sum {
-                            variant_names: variant_names.clone(),
-                            variant_types,
-                        }
-                    })
-            }
-            Type::Function(parameter, result) => {
-                let parameter = parameter.shift_type_vars_with_cutoff(amount, cutoff)?;
-                let result = result.shift_type_vars_with_cutoff(amount, cutoff)?;
-                Some(Type::func(parameter, result))
-            }
-            Type::Apply {
-                constructor,
-                arguments,
-            } => {
-                let constructor = constructor.shift_type_vars_with_cutoff(amount, cutoff)?;
-                let arguments = arguments
-                    .iter()
-                    .map(|arg| arg.shift_type_vars_with_cutoff(amount, cutoff))
-                    .collect::<Option<Vec<_>>>()?;
-                Some(Type::Apply {
-                    constructor: Box::new(constructor),
-                    arguments,
-                })
-            }
-        }
-    }
-
-    fn shift_rec_vars_with_cutoff(
-        &self,
-        amount: i32,
-        cutoff: RecursionIndex,
-    ) -> Option<Self> {
-        let shift_index = |index: RecursionIndex| {
-            if index < cutoff {
-                Some(index)
-            } else {
-                shift_index(index, amount)
-            }
-        };
-        match self {
-            Type::Unit
-            | Type::Integer
-            | Type::Real
-            | Type::Boolean
-            | Type::String
-            | Type::Glyph => Some(self.clone()),
-            Type::TypeVar(index) => Some(Type::TypeVar(*index)),
-            Type::MetaVar(index) => Some(Type::MetaVar(*index)),
-            Type::RecVar(index) => shift_index(*index).map(Type::RecVar),
-            Type::ForAll(body) => {
-                body.shift_rec_vars_with_cutoff(amount, cutoff)
-                    .map(|body| Type::ForAll(Box::new(body)))
-            }
-            Type::Mu(body) => {
-                body.shift_rec_vars_with_cutoff(amount, cutoff + 1)
-                    .map(|body| Type::Mu(Box::new(body)))
-            }
-            Type::Named { name, body } => {
-                Some(Type::Named {
-                    name: name.clone(),
-                    body: body.clone(),
-                })
-            }
-            Type::StructConstraint { fields, mode } => {
-                fields
-                    .iter()
-                    .map(|(name, type_)| {
-                        type_
-                            .shift_rec_vars_with_cutoff(amount, cutoff)
-                            .map(|type_| (name.clone(), type_))
-                    })
-                    .collect::<Option<IndexMap<_, _>>>()
-                    .map(|fields| {
-                        Type::StructConstraint {
-                            fields,
-                            mode: *mode,
-                        }
-                    })
-            }
-            Type::Struct { fields } => {
-                fields
-                    .iter()
-                    .map(|(name, type_)| {
-                        type_
-                            .shift_rec_vars_with_cutoff(amount, cutoff)
-                            .map(|type_| (name.clone(), type_))
-                    })
-                    .collect::<Option<IndexMap<_, _>>>()
-                    .map(|fields| Type::Struct { fields })
-            }
-            Type::Array(inner) => {
-                inner
-                    .shift_rec_vars_with_cutoff(amount, cutoff)
-                    .map(|inner| Type::Array(Box::new(inner)))
-            }
-            Type::Tuple(items) => {
-                items
-                    .iter()
-                    .map(|item| item.shift_rec_vars_with_cutoff(amount, cutoff))
-                    .collect::<Option<Vec<_>>>()
-                    .map(Type::Tuple)
-            }
-            Type::Sum {
-                variant_names,
-                variant_types,
-            } => {
-                variant_types
-                    .iter()
-                    .map(|variant| variant.shift_rec_vars_with_cutoff(amount, cutoff))
-                    .collect::<Option<Vec<_>>>()
-                    .map(|variant_types| {
-                        Type::Sum {
-                            variant_names: variant_names.clone(),
-                            variant_types,
-                        }
-                    })
-            }
-            Type::Function(parameter, result) => {
-                let parameter = parameter.shift_rec_vars_with_cutoff(amount, cutoff)?;
-                let result = result.shift_rec_vars_with_cutoff(amount, cutoff)?;
-                Some(Type::func(parameter, result))
-            }
-            Type::Apply {
-                constructor,
-                arguments,
-            } => {
-                let constructor = constructor.shift_rec_vars_with_cutoff(amount, cutoff)?;
-                let arguments = arguments
-                    .iter()
-                    .map(|arg| arg.shift_rec_vars_with_cutoff(amount, cutoff))
-                    .collect::<Option<Vec<_>>>()?;
-                Some(Type::Apply {
-                    constructor: Box::new(constructor),
-                    arguments,
-                })
-            }
-        }
-    }
-
-    fn substitute_type_var_with_depth(
-        &self,
-        index: TypeParameterIndex,
-        replacement: &Type,
-        depth: TypeParameterIndex,
-    ) -> Option<Self> {
-        match self {
-            Type::TypeVar(var_index) => {
-                match index.checked_add(depth) {
-                    Some(target) if *var_index == target => {
-                        replacement.shift_type_vars(depth as i32, 0)
-                    }
-                    _ => Some(Type::TypeVar(*var_index)),
-                }
-            }
-            Type::MetaVar(index) => Some(Type::MetaVar(*index)),
-            Type::RecVar(index) => Some(Type::RecVar(*index)),
-            Type::ForAll(body) => {
-                body.substitute_type_var_with_depth(index, replacement, depth + 1)
-                    .map(|body| Type::ForAll(Box::new(body)))
-            }
-            Type::Mu(body) => {
-                body.substitute_type_var_with_depth(index, replacement, depth)
-                    .map(|body| Type::Mu(Box::new(body)))
-            }
-            Type::Named { name, body } => {
-                Some(Type::Named {
-                    name: name.clone(),
-                    body: body.clone(),
-                })
-            }
-            Type::StructConstraint { fields, mode } => {
-                fields
-                    .iter()
-                    .map(|(name, type_)| {
-                        type_
-                            .substitute_type_var_with_depth(index, replacement, depth)
-                            .map(|type_| (name.clone(), type_))
-                    })
-                    .collect::<Option<IndexMap<_, _>>>()
-                    .map(|fields| {
-                        Type::StructConstraint {
-                            fields,
-                            mode: *mode,
-                        }
-                    })
-            }
-            Type::Struct { fields } => {
-                fields
-                    .iter()
-                    .map(|(name, type_)| {
-                        type_
-                            .substitute_type_var_with_depth(index, replacement, depth)
-                            .map(|type_| (name.clone(), type_))
-                    })
-                    .collect::<Option<IndexMap<_, _>>>()
-                    .map(|fields| Type::Struct { fields })
-            }
-            Type::Array(inner) => {
-                inner
-                    .substitute_type_var_with_depth(index, replacement, depth)
-                    .map(|inner| Type::Array(Box::new(inner)))
-            }
-            Type::Tuple(items) => {
-                items
-                    .iter()
-                    .map(|item| item.substitute_type_var_with_depth(index, replacement, depth))
-                    .collect::<Option<Vec<_>>>()
-                    .map(Type::Tuple)
-            }
-            Type::Sum {
-                variant_names,
-                variant_types,
-            } => {
-                variant_types
-                    .iter()
-                    .map(|variant| {
-                        variant.substitute_type_var_with_depth(index, replacement, depth)
-                    })
-                    .collect::<Option<Vec<_>>>()
-                    .map(|variant_types| {
-                        Type::Sum {
-                            variant_names: variant_names.clone(),
-                            variant_types,
-                        }
-                    })
-            }
-            Type::Function(parameter, result) => {
-                let parameter =
-                    parameter.substitute_type_var_with_depth(index, replacement, depth)?;
-                let result = result.substitute_type_var_with_depth(index, replacement, depth)?;
-                Some(Type::func(parameter, result))
-            }
-            Type::Apply {
-                constructor,
-                arguments,
-            } => {
-                let constructor =
-                    constructor.substitute_type_var_with_depth(index, replacement, depth)?;
-                let arguments = arguments
-                    .iter()
-                    .map(|arg| arg.substitute_type_var_with_depth(index, replacement, depth))
-                    .collect::<Option<Vec<_>>>()?;
-                Some(Type::Apply {
-                    constructor: Box::new(constructor),
-                    arguments,
-                })
-            }
-            Type::Unit
-            | Type::Integer
-            | Type::Real
-            | Type::Boolean
-            | Type::String
-            | Type::Glyph => Some(self.clone()),
-        }
-    }
-
-    fn substitute_rec_var_with_depth(
-        &self,
-        index: RecursionIndex,
-        replacement: &Type,
-        depth: RecursionIndex,
-    ) -> Option<Self> {
-        match self {
-            Type::RecVar(var_index) => {
-                match index.checked_add(depth) {
-                    Some(target) if *var_index == target => {
-                        replacement.shift_rec_vars(depth as i32, 0)
-                    }
-                    _ => Some(Type::RecVar(*var_index)),
-                }
-            }
-            Type::TypeVar(index) => Some(Type::TypeVar(*index)),
-            Type::MetaVar(index) => Some(Type::MetaVar(*index)),
-            Type::ForAll(body) => {
-                body.substitute_rec_var_with_depth(index, replacement, depth)
-                    .map(|body| Type::ForAll(Box::new(body)))
-            }
-            Type::Mu(body) => {
-                body.substitute_rec_var_with_depth(index, replacement, depth + 1)
-                    .map(|body| Type::Mu(Box::new(body)))
-            }
-            Type::Named { name, body } => {
-                Some(Type::Named {
-                    name: name.clone(),
-                    body: body.clone(),
-                })
-            }
-            Type::StructConstraint { fields, mode } => {
-                fields
-                    .iter()
-                    .map(|(name, type_)| {
-                        type_
-                            .substitute_rec_var_with_depth(index, replacement, depth)
-                            .map(|type_| (name.clone(), type_))
-                    })
-                    .collect::<Option<IndexMap<_, _>>>()
-                    .map(|fields| {
-                        Type::StructConstraint {
-                            fields,
-                            mode: *mode,
-                        }
-                    })
-            }
-            Type::Struct { fields } => {
-                fields
-                    .iter()
-                    .map(|(name, type_)| {
-                        type_
-                            .substitute_rec_var_with_depth(index, replacement, depth)
-                            .map(|type_| (name.clone(), type_))
-                    })
-                    .collect::<Option<IndexMap<_, _>>>()
-                    .map(|fields| Type::Struct { fields })
-            }
-            Type::Array(inner) => {
-                inner
-                    .substitute_rec_var_with_depth(index, replacement, depth)
-                    .map(|inner| Type::Array(Box::new(inner)))
-            }
-            Type::Tuple(items) => {
-                items
-                    .iter()
-                    .map(|item| item.substitute_rec_var_with_depth(index, replacement, depth))
-                    .collect::<Option<Vec<_>>>()
-                    .map(Type::Tuple)
-            }
-            Type::Sum {
-                variant_names,
-                variant_types,
-            } => {
-                variant_types
-                    .iter()
-                    .map(|variant| variant.substitute_rec_var_with_depth(index, replacement, depth))
-                    .collect::<Option<Vec<_>>>()
-                    .map(|variant_types| {
-                        Type::Sum {
-                            variant_names: variant_names.clone(),
-                            variant_types,
-                        }
-                    })
-            }
-            Type::Function(parameter, result) => {
-                let parameter =
-                    parameter.substitute_rec_var_with_depth(index, replacement, depth)?;
-                let result = result.substitute_rec_var_with_depth(index, replacement, depth)?;
-                Some(Type::func(parameter, result))
-            }
-            Type::Apply {
-                constructor,
-                arguments,
-            } => {
-                let constructor =
-                    constructor.substitute_rec_var_with_depth(index, replacement, depth)?;
-                let arguments = arguments
-                    .iter()
-                    .map(|arg| arg.substitute_rec_var_with_depth(index, replacement, depth))
-                    .collect::<Option<Vec<_>>>()?;
-                Some(Type::Apply {
-                    constructor: Box::new(constructor),
-                    arguments,
-                })
-            }
-            Type::Unit
-            | Type::Integer
-            | Type::Real
-            | Type::Boolean
-            | Type::String
-            | Type::Glyph => Some(self.clone()),
-        }
     }
 
     fn pretty_with_context(
@@ -747,13 +559,9 @@ impl Type {
                     .join(", ");
                 format!("({items})")
             }
-            Type::Sum {
-                variant_names,
-                variant_types,
-            } => {
-                let items = variant_names
+            Type::Sum { variants } => {
+                let items = variants
                     .iter()
-                    .zip(variant_types)
                     .map(|(name, type_)| {
                         if matches!(type_, Type::Unit) {
                             name.clone()
@@ -849,6 +657,51 @@ fn shift_index(
     }
 }
 
+pub(crate) fn core_type_arity(minor: &str) -> Option<usize> {
+    match minor {
+        "unit" | "integer" | "real" | "boolean" | "string" | "glyph" => Some(0),
+        "array" => Some(1),
+        "function" => Some(2),
+        _ => None,
+    }
+}
+
+pub(crate) fn resolve_core_type(
+    minor: &str,
+    args: &[Type],
+) -> Option<Type> {
+    match minor {
+        "unit" if args.is_empty() => Some(Type::Unit),
+        "integer" if args.is_empty() => Some(Type::Integer),
+        "real" if args.is_empty() => Some(Type::Real),
+        "boolean" if args.is_empty() => Some(Type::Boolean),
+        "string" if args.is_empty() => Some(Type::String),
+        "glyph" if args.is_empty() => Some(Type::Glyph),
+        "array" if args.len() == 1 => args.first().map(|arg| Type::Array(Box::new(arg.clone()))),
+        "function" if args.len() == 2 => {
+            let [left, right] = args else {
+                return None;
+            };
+            Some(Type::func(left.clone(), right.clone()))
+        }
+        _ => None,
+    }
+}
+
+pub(crate) fn core_type_fallback(minor: &str) -> Option<Type> {
+    match minor {
+        "unit" => Some(Type::Unit),
+        "integer" => Some(Type::Integer),
+        "real" => Some(Type::Real),
+        "boolean" => Some(Type::Boolean),
+        "string" => Some(Type::String),
+        "glyph" => Some(Type::Glyph),
+        "array" => Some(Type::Array(Box::new(Type::Unit))),
+        "function" => Some(Type::func(Type::Unit, Type::Unit)),
+        _ => None,
+    }
+}
+
 fn lookup_name(
     names: &[String],
     index: u32,
@@ -906,8 +759,6 @@ pub use resolve::{
     resolve_module,
     resolve_module_with_symbols,
 };
-
-use crate::ir::Path;
 
 #[cfg(test)]
 mod tests;

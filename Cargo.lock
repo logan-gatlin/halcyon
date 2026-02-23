@@ -606,13 +606,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "format"
-version = "0.1.0"
-dependencies = [
- "halcyon-lib",
-]
-
-[[package]]
 name = "fs-set-times"
 version = "0.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -760,6 +753,7 @@ dependencies = [
  "enum-iterator",
  "indexmap",
  "indoc",
+ "itertools",
  "multipeek",
  "paste",
  "punycode",

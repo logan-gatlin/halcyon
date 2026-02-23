@@ -2,6 +2,8 @@ use super::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, enum_iterator::Sequence)]
 pub enum CoreTerm {
+    BinaryOp(BinaryOp),
+    UnaryOp(UnaryOp),
     EmptyArray,
     ArrayPush,
     ArrayConcat,
@@ -10,6 +12,8 @@ pub enum CoreTerm {
 impl Symbol for CoreTerm {
     fn path(&self) -> Path {
         match self {
+            CoreTerm::BinaryOp(b) => b.path(),
+            CoreTerm::UnaryOp(b) => b.path(),
             CoreTerm::EmptyArray => Path::core("array_empty"),
             CoreTerm::ArrayPush => Path::core("array_push"),
             CoreTerm::ArrayConcat => Path::core("array_concat"),
@@ -18,9 +22,27 @@ impl Symbol for CoreTerm {
 
     fn symbol_kind(&self) -> crate::types::symbol_table::SymbolKind {
         SymbolKind::Term(match self {
-            CoreTerm::EmptyArray => todo!(),
-            CoreTerm::ArrayPush => todo!(),
-            CoreTerm::ArrayConcat => todo!(),
+            CoreTerm::BinaryOp(b) => b.type_scheme(),
+            CoreTerm::UnaryOp(u) => u.type_scheme(),
+            CoreTerm::EmptyArray => Type::array().scheme(),
+            CoreTerm::ArrayPush => {
+                Type::curry(&[
+                    Type::v(0),
+                    Type::Array(Type::v(0).into()),
+                    Type::Array(Type::v(0).into()),
+                ])
+                .for_all(1)
+                .scheme()
+            }
+            CoreTerm::ArrayConcat => {
+                Type::curry(&[
+                    Type::Array(Type::v(0).into()),
+                    Type::Array(Type::v(0).into()),
+                    Type::Array(Type::v(0).into()),
+                ])
+                .for_all(1)
+                .scheme()
+            }
         })
     }
 }

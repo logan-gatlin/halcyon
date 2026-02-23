@@ -1,3 +1,10 @@
+use itertools::Itertools;
+
+use crate::types::{
+    TraitImpl,
+    TraitRef,
+};
+
 use super::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, enum_iterator::Sequence)]
@@ -88,8 +95,43 @@ impl Symbol for CoreTrait {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, enum_iterator::Sequence)]
-pub enum CoreImpl {
-    BinaryOp(BinaryOp),
-    UnaryOp(UnaryOp),
+fn implement<Tr: IntoIterator<Item = CoreTrait>, Ty: IntoIterator<Item = Type>>(
+    traits: Tr,
+    types: Ty,
+) -> Vec<TraitImpl>
+where
+    <Ty as std::iter::IntoIterator>::IntoIter: std::clone::Clone,
+{
+    traits
+        .into_iter()
+        .cartesian_product(types)
+        .map(|(tr, ty)| {
+            TraitImpl {
+                parameters: tr.parameters(),
+                head: TraitRef {
+                    trait_name: tr.path(),
+                    arguments: vec![ty],
+                },
+                predicates: vec![],
+            }
+        })
+        .collect()
+}
+
+pub fn core_impls() -> Vec<TraitImpl> {
+    use CoreTrait::*;
+    use Type::*;
+    let mut impls = vec![];
+    impls.extend(implement(
+        [Equal, Compare],
+        [Unit, Integer, Real, Boolean, String, Glyph],
+    ));
+    impls.extend(implement(
+        [Add, Subtract, Multiply, Divide],
+        [Integer, Real],
+    ));
+    impls.extend(implement([Add], [String, Type::array()]));
+    impls.extend(implement([Remainder], [Integer]));
+    impls.extend(implement([Bitwise], [Integer, Boolean]));
+    impls
 }

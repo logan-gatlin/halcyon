@@ -157,8 +157,15 @@ fn substitute_rec_var_shifts_replacement() {
 #[test]
 fn pretty_prints_forall_mu_sum() {
     let list_type = Type::Mu(Box::new(Type::Sum {
-        variant_names: vec!["Cons".to_string(), "Nil".to_string()],
-        variant_types: vec![Type::Tuple(vec![Type::v(0), Type::RecVar(0)]), Type::Unit],
+        variants: [
+            (
+                "Cons".to_string(),
+                Type::Tuple(vec![Type::v(0), Type::RecVar(0)]),
+            ),
+            ("Nil".to_string(), Type::Unit),
+        ]
+        .into_iter()
+        .collect(),
     }))
     .for_all(1);
     assert_eq!(
@@ -311,7 +318,6 @@ fn resolve_trait_instance() {
             parameters: 0,
             head: TraitRef::new(eq.clone(), vec![Type::Integer]),
             predicates: Vec::new(),
-            methods: IndexMap::new(),
         })
         .expect("impl");
 
@@ -341,7 +347,6 @@ fn resolve_trait_instance_with_context() {
             parameters: 0,
             head: TraitRef::new(eq.clone(), vec![Type::Integer]),
             predicates: Vec::new(),
-            methods: IndexMap::new(),
         })
         .expect("impl eq int");
     symbols
@@ -349,7 +354,6 @@ fn resolve_trait_instance_with_context() {
             parameters: 1,
             head: TraitRef::new(eq.clone(), vec![list_of(Type::v(0))]),
             predicates: vec![TraitRef::new(eq.clone(), vec![Type::v(0)])],
-            methods: IndexMap::new(),
         })
         .expect("impl eq list");
 
@@ -400,7 +404,6 @@ fn resolve_trait_recursive_predicate_errors() {
             parameters: 1,
             head: TraitRef::new(eq.clone(), vec![Type::v(0)]),
             predicates: vec![TraitRef::new(eq.clone(), vec![Type::v(0)])],
-            methods: IndexMap::new(),
         })
         .expect("impl");
 
@@ -427,7 +430,6 @@ fn overlap_detection_rejects_conflicting_instances() {
             parameters: 1,
             head: TraitRef::new(eq.clone(), vec![list_of(Type::v(0))]),
             predicates: Vec::new(),
-            methods: IndexMap::new(),
         })
         .expect("impl list");
 
@@ -435,7 +437,6 @@ fn overlap_detection_rejects_conflicting_instances() {
         parameters: 0,
         head: TraitRef::new(eq.clone(), vec![list_of(Type::Integer)]),
         predicates: Vec::new(),
-        methods: IndexMap::new(),
     });
     assert!(matches!(
         result,
