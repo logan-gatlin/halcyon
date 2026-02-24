@@ -1,10 +1,12 @@
 mod names;
 mod patterns;
+mod pretty_print;
 mod terms;
 mod types;
 
 pub use names::*;
 pub use patterns::*;
+pub use pretty_print::*;
 pub use terms::*;
 pub use types::*;
 

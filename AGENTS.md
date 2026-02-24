@@ -3,7 +3,6 @@
 ## Project setup
 - Rust 2024 workspace; build/test with latest stable `cargo`.
 - Main crate: `halcyon-lib` (library + `src/main.rs` demo binary).
-- Extra crate: `crates/format` (depends on `halcyon-lib`).
 - Compiler for the Halcyon language (`.hc`), OCaml-like syntax.
 - Strict scoping: nothing in scope by default, even primitives.
 - Paths are exactly `module::identifier` (two components, no nesting yet).

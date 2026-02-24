@@ -1,3 +1,4 @@
+use halcyon_lib::ir::pretty_typed_module;
 use halcyon_lib::{
     Logger,
     compile_source,
@@ -11,7 +12,7 @@ fn main() {
     let mut file_logger = logger.new_file("demo.hc", source);
     let modules = compile_source(source, &mut file_logger);
     for module in modules {
-        println!("{module:#?}");
+        println!("{}", pretty_typed_module(&module));
     }
     logger.consume_file(file_logger);
     logger.print_logs();
