@@ -1,12 +1,14 @@
 mod names;
 mod patterns;
 mod pretty_print;
+mod elaborate;
 mod terms;
 mod types;
 
 pub use names::*;
 pub use patterns::*;
 pub use pretty_print::*;
+pub use elaborate::*;
 pub use terms::*;
 pub use types::*;
 

@@ -1,91 +1,89 @@
-use crate::Visit;
 use crate::ir::{
-    Constructor,
     Glob,
-    IrNode,
+    ImmediateValue,
     Pattern,
+    PatternKind,
+    Specialization,
+    Term,
+    TermKind,
 };
-use crate::operator::BinaryOp;
-use crate::semantic::{
-    Typed,
-    WithType,
+use crate::operator::{
+    BinaryOp,
+    Operator,
+    UnaryOp,
+};
+use crate::types::{
+    Type as SemanticType,
+    TypeDefinition,
 };
 
 use super::*;
 
 pub fn lower_type(
-    type_: &semantic::Type,
+    type_: &SemanticType,
     symbols: &SymbolTable,
 ) -> Type {
-    use semantic::Type::*;
+    use SemanticType::*;
     match type_ {
-        Any | Variable(_) => Type::Any,
         Unit => Type::Struct([].into()),
         Integer => Type::Struct([Type::I64].into()),
         Real => Type::Struct([Type::F64].into()),
         Glyph | Boolean => Type::Struct([Type::I32].into()),
         String => Type::Array(Type::I8.into()),
-        Struct { fields, .. } => {
+        TypeVar(_) | MetaVar(_) | RecVar(_) => Type::Any,
+        ForAll(body) | Mu(body) => lower_type(body, symbols),
+        Named { name, body } => lower_type(&resolve_named_body(name, body, symbols), symbols),
+        StructConstraint { fields, .. } => {
+            Type::Struct(fields.values().map(|v| lower_type(v, symbols)).collect())
+        }
+        Struct { fields } => {
             Type::Struct(fields.values().map(|v| lower_type(v, symbols)).collect())
         }
         Array(t) => Type::Array(lower_type(t, symbols).into()),
         Tuple(items) => Type::Struct(items.iter().map(|i| lower_type(i, symbols)).collect()),
         Sum { .. } => Type::Struct([Type::I32, Type::Any].into()),
         Function(..) => Type::closure_type(),
-        Instantiation(path, items) => {
-            lower_type(
-                &symbols
-                    .get_type(path)
-                    .clone()
-                    .instantiate(items)
-                    .unwrap_or_else(|_| unreachable!()),
-                symbols,
-            )
+        Apply {
+            constructor,
+            arguments,
+        } => {
+            if let Some(applied) = apply_type(constructor, arguments, symbols) {
+                lower_type(&applied, symbols)
+            } else {
+                Type::Any
+            }
         }
     }
 }
 
-use Instruction as i;
 use indexmap::IndexMap;
+use Instruction as i;
 impl<'a> Encoder<'a> {
     /// Create a new closure, push a reference to it onto the stack
     pub fn create_closure(
         &mut self,
         symbols: &SymbolTable,
-        parameter: Typed<Path>,
-        captures: Vec<Typed<Path>>,
+        parameter: Path,
+        parameter_type: SemanticType,
+        captures: Vec<(Path, SemanticType)>,
         body: impl for<'b> FnOnce(&mut Encoder<'b>, &SymbolTable),
     ) -> Path {
-        let func_name = self.temporary_name("closure");
+        let id = self.module.closure_counter;
+        self.module.closure_counter += 1;
+        let func_name = Path::new("[temp]", format!("closure#{id}"));
         let mut new_enc = self.module.new_function(func_name.clone());
         let capture_array_name = new_enc.temporary_name("captured_symbols");
         new_enc.new_parameter(capture_array_name.clone(), Type::Array(Type::Any.into()));
-        let parameter_type = lower_type(&parameter.type_, symbols);
+        let parameter_type = lower_type(&parameter_type, symbols);
         let param_anyref_name = new_enc.temporary_name("parameter");
         new_enc.new_parameter(param_anyref_name.clone(), Type::Any);
         new_enc.new_return(Type::Any);
         // Cast the anyref parameter to the actual type and bind to the user's name
-        new_enc.new_register(
-            parameter.inner.clone(),
-            ScopeKind::Local,
-            parameter_type.clone(),
-        );
+        new_enc.new_register(parameter.clone(), ScopeKind::Local, parameter_type.clone());
         new_enc.push(i::Get(param_anyref_name));
-        match &parameter_type {
-            Type::Struct(fields) => new_enc.push(i::RefCastStruct(fields.clone())),
-            Type::Array(inner) => new_enc.push(i::RefCastArray(inner.clone())),
-            Type::Any => {} // No cast needed
-            _ => {}         // Primitives don't need casting (i32, i64, etc. shouldn't appear here)
-        }
-        new_enc.push(i::Set(parameter.inner));
-        for (
-            id,
-            Typed {
-                inner: capture_name,
-                type_: capture_type,
-            },
-        ) in captures.clone().into_iter().enumerate()
-        {
+        new_enc.ref_cast_if_needed(&parameter_type);
+        new_enc.push(i::Set(parameter));
+        for (id, (capture_name, capture_type)) in captures.clone().into_iter().enumerate() {
             let capture_type = lower_type(&capture_type, symbols);
             new_enc.new_register(capture_name.clone(), ScopeKind::Local, capture_type.clone());
             new_enc.extend([
@@ -94,18 +92,13 @@ impl<'a> Encoder<'a> {
                 i::ArrayGet(Type::Any),
             ]);
             // Cast anyref from array to the actual capture type
-            match &capture_type {
-                Type::Struct(fields) => new_enc.push(i::RefCastStruct(fields.clone())),
-                Type::Array(inner) => new_enc.push(i::RefCastArray(inner.clone())),
-                Type::Any => {} // No cast needed
-                _ => {}         // Primitives shouldn't appear here (captured in closures)
-            }
+            new_enc.ref_cast_if_needed(&capture_type);
             new_enc.push(i::Set(capture_name.clone()));
         }
         body(&mut new_enc, symbols);
         let num_captures = captures.len();
-        for capture in captures {
-            self.push(i::Get(capture.inner));
+        for (capture, _) in captures {
+            self.push(i::Get(capture));
         }
         self.extend([
             i::ArrayNewFixed {
@@ -117,91 +110,62 @@ impl<'a> Encoder<'a> {
         ]);
         func_name
     }
-    /// Like `create_closure`, but curries multiple parameters into nested closures.
-    /// For 0 parameters, an implicit unit parameter is used.
-    pub fn create_curried_closure(
-        &mut self,
-        symbols: &SymbolTable,
-        parameters: &[Typed<Path>],
-        captures: Vec<Typed<Path>>,
-        body: impl for<'b> FnOnce(&mut Encoder<'b>, &SymbolTable),
-    ) -> Path {
-        match parameters {
-            [] => {
-                let unit_param = self.temporary_name("unit");
-                self.create_closure(
-                    symbols,
-                    unit_param.with_type(semantic::Type::Unit),
-                    captures,
-                    body,
-                )
-            }
-            [param] => self.create_closure(symbols, param.clone(), captures, body),
-            [first, rest @ ..] => {
-                let mut inner_captures = captures.clone();
-                inner_captures.push(first.clone());
-                self.create_closure(symbols, first.clone(), captures, |enc, symbols| {
-                    enc.create_curried_closure(symbols, rest, inner_captures, body);
-                })
-            }
-        }
-    }
-
     // Preconditions:
     // * Predicate to be pattern-matched on is top of stack
     // * A br 0 instruction indicates pattern matching has failed
-    pub fn lower_pattern(
+    pub(crate) fn lower_pattern(
         &mut self,
-        pat: Pattern,
+        pat: Pattern<SemanticType>,
         scope: ScopeKind,
         symbols: &SymbolTable,
+        constructors: &ConstructorTable,
     ) {
-        use crate::ir::PatternKind as p;
-        let type_ = lower_type(&pat.type_, symbols);
-        match pat.inner.inner {
-            p::Hole => {
+        let Pattern { kind, type_, .. } = pat;
+        let lowered_type = lower_type(&type_, symbols);
+        match kind {
+            PatternKind::Hole => {
                 self.push(i::Drop);
             }
-            p::Identifier(path) => {
+            PatternKind::Identifier(path) => {
                 self.push(i::Set(path));
             }
-            p::Tuple(items) => {
+            PatternKind::Tuple(items) => {
                 let temporary = self.temporary_name("pattern");
-                let semantic::Type::Tuple(types) = &pat.type_ else {
+                let SemanticType::Tuple(types) = &type_ else {
                     unreachable!()
                 };
                 let types = types
                     .iter()
                     .map(|t| lower_type(t, symbols))
-                    .collect::<Box<_>>();
-                self.new_register(temporary.clone(), scope, type_.clone());
+                    .collect::<Box<[Type]>>();
+                self.new_register(temporary.clone(), scope, lowered_type.clone());
                 self.push(i::Set(temporary.clone()));
                 for (index, item) in items.into_iter().enumerate() {
                     self.extend([
                         i::Get(temporary.clone()),
                         i::StructGet(types.clone(), index),
                     ]);
-                    self.lower_pattern(item, scope, symbols);
+                    self.lower_pattern(item, scope, symbols, constructors);
                 }
             }
-            p::Array {
+            PatternKind::Array {
                 starting,
                 glob,
                 ending,
             } => {
-                let semantic::Type::Array(inner_type) = &pat.type_ else {
+                let SemanticType::Array(inner_type) = &type_ else {
                     unreachable!()
                 };
                 let inner_type_lowered = lower_type(inner_type, symbols);
                 let temporary = self.temporary_name("array_pattern");
-                self.new_register(temporary.clone(), scope, type_.clone());
+                self.new_register(temporary.clone(), scope, lowered_type.clone());
                 self.push(i::Set(temporary.clone()));
 
                 let start_len = starting.len() as i32;
                 let end_len = ending.len() as i32;
                 let min_len = start_len + end_len;
 
-                let cmp_op = if glob.is_exact() {
+                let cmp_op = if matches!(glob, Glob::None) {
                     NumberOperation::Ne
                 } else {
                     NumberOperation::Lt
@@ -219,11 +183,11 @@ impl<'a> Encoder<'a> {
                     self.push(i::Get(temporary.clone()));
                     self.push(i::I32Const(index as i32));
                     self.push(i::ArrayGet(inner_type_lowered.clone()));
-                    self.lower_pattern(pattern, scope, symbols);
+                    self.lower_pattern(pattern, scope, symbols, constructors);
                 }
 
                 // Compute middle_len and capture glob if needed
-                let middle_len_var = if glob.is_exact() {
+                let middle_len_var = if matches!(glob, Glob::None) {
                     None
                 } else {
                     let var = self.temporary_name("middle_len");
@@ -237,9 +201,9 @@ impl<'a> Encoder<'a> {
                     ]);
 
                     // Capture glob slice if named
-                    if let Glob::Named(glob_name) = glob {
+                    if let Glob::Named(glob_name) = &glob {
                         let new_array = self.temporary_name("slice");
-                        self.new_register(new_array.clone(), scope, type_.clone());
+                        self.new_register(new_array.clone(), scope, lowered_type.clone());
                         self.extend([
                             i::Get(var.clone()),
                             i::ArrayNewDefault(inner_type_lowered.clone()),
@@ -258,8 +222,8 @@ impl<'a> Encoder<'a> {
                             },
                         ]);
                         // Bind to glob name
-                        self.new_register(glob_name.clone(), scope, type_.clone());
-                        self.extend([i::Get(new_array), i::Set(glob_name)]);
+                        self.new_register(glob_name.clone(), scope, lowered_type.clone());
+                        self.extend([i::Get(new_array), i::Set(glob_name.clone())]);
                     }
 
                     Some(var)
@@ -282,24 +246,23 @@ impl<'a> Encoder<'a> {
                         self.push(i::I32Const(start_len + index as i32));
                     }
                     self.push(i::ArrayGet(inner_type_lowered.clone()));
-                    self.lower_pattern(pattern, scope, symbols);
+                    self.lower_pattern(pattern, scope, symbols, constructors);
                 }
             }
-            p::Struct(index_map) => {
+            PatternKind::Struct(index_map) => {
                 let temporary = self.temporary_name("pattern");
-                self.new_register(temporary.clone(), scope, type_.clone());
+                self.new_register(temporary.clone(), scope, lowered_type.clone());
                 self.push(i::Set(temporary.clone()));
-                let semantic::Type::Struct {
-                    fields: ordered_fields,
-                    ..
-                } = &pat.type_
-                else {
-                    unreachable!()
-                };
+                let ordered_fields = struct_fields_for_type(&type_, symbols).unwrap_or_else(|| {
+                    index_map
+                        .iter()
+                        .map(|(name, pattern)| (name.inner.clone(), pattern.type_.clone()))
+                        .collect()
+                });
                 let types = ordered_fields
                     .values()
                     .map(|t| lower_type(t, symbols))
-                    .collect::<Box<_>>();
+                    .collect::<Box<[Type]>>();
                 for (name, pattern) in index_map {
                     let index = ordered_fields
                         .get_index_of(&name.inner)
@@ -308,134 +271,205 @@ impl<'a> Encoder<'a> {
                         i::Get(temporary.clone()),
                         i::StructGet(types.clone(), index),
                     ]);
-                    self.lower_pattern(pattern, scope, symbols);
+                    self.lower_pattern(pattern, scope, symbols, constructors);
                 }
             }
-            p::Constructor(constructor, inner) => {
-                use crate::ir::Constructor;
-                match constructor {
-                    Constructor::Structure(_) => {
-                        // Structure constructor is just a type hint, match inner pattern
-                        self.lower_pattern(*inner, scope, symbols);
-                    }
-                    Constructor::SumConstant { tag, .. } | Constructor::SumFunction { tag, .. } => {
-                        // Sum type is Struct([I32, Any]) - tag at index 0, value at index 1
-                        let sum_type: Box<[Type]> = [Type::I32, Type::Any].into();
-
-                        let temporary = self.temporary_name("constructor_pattern");
-                        self.new_register(temporary.clone(), scope, type_.clone());
-                        self.push(i::Set(temporary.clone()));
-
-                        // Check if tag matches, break if not
-                        self.extend([
-                            i::Get(temporary.clone()),
-                            i::StructGet(sum_type.clone(), 0),
-                            i::I32Const(tag as i32),
-                            i::I32Op(NumberOperation::Ne),
-                            i::BreakIf(0),
-                        ]);
-
-                        // Get value and match inner pattern
-                        self.extend([i::Get(temporary), i::StructGet(sum_type, 1)]);
-                        // Cast anyref to the expected type
-                        let inner_type = lower_type(&inner.type_, symbols);
-                        match &inner_type {
-                            Type::Struct(fields) => self.push(i::RefCastStruct(fields.clone())),
-                            Type::Array(inner) => self.push(i::RefCastArray(inner.clone())),
-                            Type::Any => {}
-                            _ => {}
-                        }
-                        self.lower_pattern(*inner, scope, symbols);
-                    }
-                }
-            }
-            p::Immediate(const_value) => {
-                let double_equal_path = BinaryOp::DoubleEqual.path();
-                if double_equal_path.major != self.module.name {
-                    self.module
-                        .imports
-                        .entry(double_equal_path.clone())
-                        .or_insert_with(|| lower_type(&BinaryOp::DoubleEqual.get_type(), symbols));
-                }
-                let Type::Struct(inner_types) = lower_type(&const_value.type_of(), symbols) else {
-                    unreachable!()
-                };
+            PatternKind::ConstConstructor(path) => {
+                let info = constructors
+                    .get(&path)
+                    .unwrap_or_else(|| unreachable!("Unknown constructor: {path}"));
+                let sum_type: Box<[Type]> = [Type::I32, Type::Any].into();
+                let temporary = self.temporary_name("constructor_pattern");
+                self.new_register(temporary.clone(), scope, lowered_type.clone());
+                self.push(i::Set(temporary.clone()));
                 self.extend([
-                    i::Const(const_value),
-                    i::StructNew(inner_types),
-                    i::Get(double_equal_path),
-                ]);
-                self.call_closure();
-                self.call_closure();
-                let Type::Struct(bool_fields) = lower_type(&semantic::Type::Boolean, symbols)
-                else {
-                    unreachable!()
-                };
-                self.extend([
-                    i::RefCastStruct(bool_fields.clone()),
-                    i::StructGet(bool_fields, 0),
-                    i::I32Const(1),
-                    i::I32Op(NumberOperation::Xor),
+                    i::Get(temporary),
+                    i::StructGet(sum_type.clone(), 0),
+                    i::I32Const(info.tag as i32),
+                    i::I32Op(NumberOperation::Ne),
                     i::BreakIf(0),
                 ]);
             }
-            p::TypeHint(inner, _) => {
-                self.lower_pattern(*inner, scope, symbols);
+            PatternKind::Constructor(path, inner) => {
+                let info = constructors
+                    .get(&path)
+                    .unwrap_or_else(|| unreachable!("Unknown constructor: {path}"));
+                let sum_type: Box<[Type]> = [Type::I32, Type::Any].into();
+
+                let temporary = self.temporary_name("constructor_pattern");
+                self.new_register(temporary.clone(), scope, lowered_type.clone());
+                self.push(i::Set(temporary.clone()));
+
+                self.extend([
+                    i::Get(temporary.clone()),
+                    i::StructGet(sum_type.clone(), 0),
+                    i::I32Const(info.tag as i32),
+                    i::I32Op(NumberOperation::Ne),
+                    i::BreakIf(0),
+                ]);
+
+                self.extend([i::Get(temporary), i::StructGet(sum_type, 1)]);
+                let inner_type = lower_type(&inner.type_, symbols);
+                self.ref_cast_if_needed(&inner_type);
+                self.lower_pattern(*inner, scope, symbols, constructors);
+            }
+            PatternKind::Immediate(const_value) => {
+                match const_value {
+                    ImmediateValue::Unit => {
+                        self.push(i::Drop);
+                    }
+                    ImmediateValue::Integer(value) => {
+                        let temp = self.temporary_name("const_pattern");
+                        let fields = lowered_struct_fields(&SemanticType::Integer, symbols)
+                            .unwrap_or_else(|| unreachable!());
+                        self.new_register(temp.clone(), scope, lowered_type);
+                        self.push(i::Set(temp.clone()));
+                        self.extend([
+                            i::Get(temp),
+                            i::StructGet(fields.clone(), 0),
+                            i::Const(ImmediateValue::Integer(value)),
+                            i::I64Op(NumberOperation::Eq),
+                            i::I32Const(1),
+                            i::I32Op(NumberOperation::Xor),
+                            i::BreakIf(0),
+                        ]);
+                    }
+                    ImmediateValue::Real(value) => {
+                        let temp = self.temporary_name("const_pattern");
+                        let fields = lowered_struct_fields(&SemanticType::Real, symbols)
+                            .unwrap_or_else(|| unreachable!());
+                        self.new_register(temp.clone(), scope, lowered_type);
+                        self.push(i::Set(temp.clone()));
+                        self.extend([
+                            i::Get(temp),
+                            i::StructGet(fields.clone(), 0),
+                            i::Const(ImmediateValue::Real(value)),
+                            i::F64Op(NumberOperation::Eq),
+                            i::I32Const(1),
+                            i::I32Op(NumberOperation::Xor),
+                            i::BreakIf(0),
+                        ]);
+                    }
+                    ImmediateValue::Boolean(value) => {
+                        let temp = self.temporary_name("const_pattern");
+                        let fields = lowered_struct_fields(&SemanticType::Boolean, symbols)
+                            .unwrap_or_else(|| unreachable!());
+                        self.new_register(temp.clone(), scope, lowered_type);
+                        self.push(i::Set(temp.clone()));
+                        self.extend([
+                            i::Get(temp),
+                            i::StructGet(fields.clone(), 0),
+                            i::I32Const(i32::from(value)),
+                            i::I32Op(NumberOperation::Eq),
+                            i::I32Const(1),
+                            i::I32Op(NumberOperation::Xor),
+                            i::BreakIf(0),
+                        ]);
+                    }
+                    ImmediateValue::Glyph(value) => {
+                        let temp = self.temporary_name("const_pattern");
+                        let fields = lowered_struct_fields(&SemanticType::Glyph, symbols)
+                            .unwrap_or_else(|| unreachable!());
+                        self.new_register(temp.clone(), scope, lowered_type);
+                        self.push(i::Set(temp.clone()));
+                        self.extend([
+                            i::Get(temp),
+                            i::StructGet(fields.clone(), 0),
+                            i::I32Const(value as i32),
+                            i::I32Op(NumberOperation::Eq),
+                            i::I32Const(1),
+                            i::I32Op(NumberOperation::Xor),
+                            i::BreakIf(0),
+                        ]);
+                    }
+                    ImmediateValue::String(value) => {
+                        let temp = self.temporary_name("const_pattern");
+                        let const_string = self.temporary_name("const_string");
+                        let bool_fields = bool_fields(symbols);
+                        let array_type = lower_type(&SemanticType::String, symbols);
+                        self.new_register(temp.clone(), scope, lowered_type);
+                        self.new_register(const_string.clone(), scope, array_type);
+                        self.push(i::Set(temp.clone()));
+                        self.extend(value.bytes().map(|b| i::I32Const(b as i32)));
+                        self.push(i::ArrayNewFixed {
+                            inner_type: Type::I8,
+                            length: value.len(),
+                        });
+                        self.push(i::Set(const_string.clone()));
+                        emit_string_compare(
+                            self,
+                            &temp,
+                            &const_string,
+                            NumberOperation::Eq,
+                            bool_fields.clone(),
+                        );
+                        self.extend([
+                            i::StructGet(bool_fields.clone(), 0),
+                            i::I32Const(1),
+                            i::I32Op(NumberOperation::Xor),
+                            i::BreakIf(0),
+                        ]);
+                    }
+                }
+            }
+            PatternKind::TypeHint(inner, _) => {
+                self.lower_pattern(*inner, scope, symbols, constructors);
             }
         }
     }
-    pub fn lower_ir(
+    pub(crate) fn lower_ir(
         &mut self,
-        ir: IrNode,
+        term: Term<SemanticType>,
         symbols: &SymbolTable,
+        constructors: &ConstructorTable,
     ) {
-        use crate::ir::IrKind::*;
-        match ir.inner.inner {
-            Let {
-                mut assignee,
+        let Term { kind, type_, .. } = term;
+        match kind {
+            TermKind::Let {
+                assignee,
+                scope,
                 value,
                 then,
                 else_,
-                scope,
             } => {
-                let skip_pattern = !assignee.is_refutable() && assignee.introduced_names() == 0;
-                assignee.visit(|(path, type_)| {
-                    self.new_register(path.clone(), scope, lower_type(type_, symbols));
-                });
-                let result_type = lower_type(&ir.type_, symbols);
+                let skip_pattern =
+                    !pattern_is_refutable(&assignee) && pattern_introduced_names(&assignee) == 0;
+                for (path, type_) in collect_pattern_bindings(&assignee) {
+                    self.new_register(path, scope, lower_type(&type_, symbols));
+                }
+                let result_type = lower_type(&type_, symbols);
                 if !skip_pattern {
                     self.extend([i::Block(Some(result_type)), i::Block(None)]);
                 }
-                self.lower_ir(*value, symbols);
+                self.lower_ir(*value, symbols, constructors);
                 if !skip_pattern {
-                    self.lower_pattern(assignee, scope, symbols);
+                    self.lower_pattern(assignee, scope, symbols, constructors);
                 } else {
                     self.push(i::Drop);
                 }
-                self.lower_ir(*then, symbols);
+                self.lower_ir(*then, symbols, constructors);
                 if !skip_pattern {
                     self.extend([i::Break(1), i::End]);
-                    self.lower_ir(*else_, symbols);
+                    self.lower_ir(*else_, symbols, constructors);
                     self.push(i::End);
                 }
             }
-            Immediate(ConstValue::String(s)) => {
+            TermKind::Immediate(ImmediateValue::String(s)) => {
                 self.extend(s.bytes().map(|b| i::I32Const(b as i32)));
                 self.push(i::ArrayNewFixed {
                     inner_type: Type::I8,
                     length: s.len(),
                 })
             }
-            Immediate(const_value) => {
+            TermKind::Immediate(const_value) => {
                 let Type::Struct(inner_types) = lower_type(&const_value.type_of(), symbols) else {
                     unreachable!()
                 };
                 self.extend([i::Const(const_value), i::StructNew(inner_types)]);
             }
-            Identifier(path) => {
-                // If it is an imported symbol, add it to imports
+            TermKind::Identifier(path) => {
                 if path.major != self.module.name {
-                    let type_ = lower_type(&ir.type_, symbols);
+                    let type_ = lower_type(&type_, symbols);
                     self.module
                         .imports
                         .entry(path.clone())
@@ -443,163 +477,618 @@ impl<'a> Encoder<'a> {
                 }
                 self.push(i::Get(path));
             }
-            Tuple(items) => {
+            TermKind::Tuple(items) => {
                 let types = items
                     .iter()
                     .map(|i| lower_type(&i.type_, symbols))
-                    .collect::<Box<[_]>>();
-                items.into_iter().for_each(|i| {
-                    self.lower_ir(i, symbols);
-                });
+                    .collect::<Box<[Type]>>();
+                items
+                    .into_iter()
+                    .for_each(|i| self.lower_ir(i, symbols, constructors));
                 self.push(i::StructNew(types));
             }
-            Struct(index_map) => {
-                let semantic::Type::Struct { fields, .. } = &ir.type_ else {
-                    unreachable!()
-                };
-                // Evaluate fields in order and store in temporaries
+            TermKind::Struct(index_map) => {
+                let ordered_fields = struct_fields_for_type(&type_, symbols).unwrap_or_else(|| {
+                    index_map
+                        .iter()
+                        .map(|(name, value)| (name.inner.clone(), value.type_.clone()))
+                        .collect()
+                });
                 let mut field_temporaries = IndexMap::new();
                 for (field_name, field_ir) in index_map {
                     let temp_name = self.temporary_name(&field_name.inner);
                     let temp_type = lower_type(&field_ir.type_, symbols);
                     self.new_register(temp_name.clone(), ScopeKind::Local, temp_type);
-                    self.lower_ir(field_ir, symbols);
+                    self.lower_ir(field_ir, symbols, constructors);
                     self.push(i::Set(temp_name.clone()));
                     field_temporaries.insert(field_name.inner, temp_name);
                 }
-                // Re-order fields according to struct type and push onto stack
-                let ordered_types = fields
-                    .keys()
-                    .map(|k| lower_type(&fields[k], symbols))
-                    .collect::<Box<[_]>>();
-                for field_name in fields.keys() {
+                let ordered_types = ordered_fields
+                    .values()
+                    .map(|t| lower_type(t, symbols))
+                    .collect::<Box<[Type]>>();
+                for field_name in ordered_fields.keys() {
                     let temp_name = &field_temporaries[field_name];
                     self.push(i::Get(temp_name.clone()));
                 }
                 self.push(i::StructNew(ordered_types));
             }
-            Field { of, index } => {
-                let semantic::Type::Struct { fields, .. } = &of.type_ else {
-                    unreachable!()
-                };
-                let field_index = fields
+            TermKind::Field { of, index } => {
+                let ordered_fields =
+                    struct_fields_for_type(&of.type_, symbols).unwrap_or_else(|| {
+                        unreachable!("Missing fields are caught during typechecking")
+                    });
+                let field_index = ordered_fields
                     .keys()
                     .position(|k| k == &index.inner)
                     .unwrap_or_else(|| {
                         unreachable!("Missing fields are caught during typechecking")
                     });
-                let Type::Struct(inner_types) = lower_type(&of.type_, symbols) else {
-                    unreachable!()
-                };
-                self.lower_ir(*of, symbols);
+                let inner_types = ordered_fields
+                    .values()
+                    .map(|t| lower_type(t, symbols))
+                    .collect::<Box<[Type]>>();
+                self.lower_ir(*of, symbols, constructors);
                 self.push(i::StructGet(inner_types, field_index));
             }
-            Function {
+            TermKind::Function {
                 parameter_name,
                 captures,
                 body,
                 ..
             } => {
-                let semantic::Type::Function(parameter_type, ..) = ir.type_ else {
+                let SemanticType::Function(parameter_type, _) = type_ else {
                     unreachable!()
                 };
+                let captures = Vec::from(captures);
                 self.create_closure(
                     symbols,
-                    parameter_name.inner.clone().with_type(*parameter_type),
+                    parameter_name.inner.clone(),
+                    *parameter_type,
                     captures,
-                    |new_enc, symbols| {
-                        new_enc.lower_ir(*body, symbols);
+                    |new_enc: &mut Encoder<'_>, symbols: &SymbolTable| {
+                        new_enc.lower_ir(*body, symbols, constructors);
                     },
                 );
             }
-            Call { callee, argument } => {
+            TermKind::Call { callee, argument } => {
                 let callee_name = self.temporary_name("callee");
-                // Use Type::Any because call_closure returns anyref for polymorphism
                 self.new_register(callee_name.clone(), ScopeKind::Local, Type::Any);
-                self.lower_ir(*callee, symbols);
+                self.lower_ir(*callee, symbols, constructors);
                 self.push(i::Set(callee_name.clone()));
-                self.lower_ir(*argument, symbols);
+                self.lower_ir(*argument, symbols, constructors);
                 self.push(i::Get(callee_name));
                 self.call_closure();
-                // Cast the anyref result to the expected type
-                let result_type = lower_type(&ir.type_, symbols);
+                let result_type = lower_type(&type_, symbols);
                 match result_type {
                     Type::Struct(fields) => self.push(i::RefCastStruct(fields)),
                     Type::Array(inner) => self.push(i::RefCastArray(inner)),
-                    Type::Any => {} // No cast needed
+                    Type::Any => {}
                     _ => unreachable!(),
                 }
             }
-            Semicolon(a, b) => {
-                self.lower_ir(*a, symbols);
+            TermKind::Semicolon(a, b) => {
+                self.lower_ir(*a, symbols, constructors);
                 self.push(i::Drop);
-                self.lower_ir(*b, symbols);
+                self.lower_ir(*b, symbols, constructors);
             }
-            Unreachable => {
+            TermKind::Unreachable => {
                 self.push(i::Unreachable);
             }
         }
     }
 
-    pub fn lower_constructor(
+    pub(crate) fn lower_constructor(
         &mut self,
         path: Path,
-        cons: Constructor,
+        info: &ConstructorInfo,
         symbols: &SymbolTable,
     ) {
         let sum_struct_type: Box<[Type]> = [Type::I32, Type::Any].into();
-
-        match cons {
-            Constructor::SumConstant { tag, .. } => {
-                self.new_register(
-                    path.clone(),
-                    ScopeKind::Global,
-                    Type::Struct(sum_struct_type.clone()),
-                );
-                self.extend([
-                    i::I32Const(tag as i32),
-                    i::StructNew([].into()),       // Create unit value ()
-                    i::StructNew(sum_struct_type), // Create sum struct { tag, value }
-                    i::Set(path),
-                ]);
-            }
-            Constructor::SumFunction {
-                tag,
+        if info.payload.is_none() {
+            self.new_register(
+                path.clone(),
+                ScopeKind::Global,
+                Type::Struct(sum_struct_type.clone()),
+            );
+            self.extend([
+                i::I32Const(info.tag as i32),
+                i::StructNew([].into()),       // Create unit value ()
+                i::StructNew(sum_struct_type), // Create sum struct { tag, value }
+                i::Set(path),
+            ]);
+        } else {
+            let parameter_type = info.payload.clone().unwrap_or_else(|| SemanticType::Unit);
+            let parameter_name = self.temporary_name("cons_param");
+            self.create_closure(
+                symbols,
+                parameter_name.clone(),
                 parameter_type,
-                ..
-            } => {
-                let parameter_name = self.temporary_name("cons_param");
-                self.create_closure(
-                    symbols,
-                    parameter_name.clone().with_type(parameter_type),
-                    vec![],
-                    |inner_func, _| {
-                        inner_func.extend([
-                            i::I32Const(tag as i32),
-                            i::Get(parameter_name),
-                            i::StructNew(sum_struct_type.clone()),
-                        ]);
-                    },
-                );
+                vec![],
+                |inner_func: &mut Encoder<'_>, _symbols: &SymbolTable| {
+                    inner_func.extend([
+                        i::I32Const(info.tag as i32),
+                        i::Get(parameter_name),
+                        i::StructNew(sum_struct_type.clone()),
+                    ]);
+                },
+            );
 
-                self.new_register(path.clone(), ScopeKind::Global, Type::closure_type());
-                self.extend([i::Set(path)]);
-            }
-            Constructor::Structure(struct_type) => {
-                let parameter_name = self.temporary_name("cons_param");
-                self.create_closure(
-                    symbols,
-                    parameter_name.clone().with_type(struct_type),
-                    vec![],
-                    |inner_func, _| {
-                        inner_func.push(i::Get(parameter_name));
-                    },
-                );
-                // Create closure: { captures: [], func: inner_func }
-                self.new_register(path.clone(), ScopeKind::Global, Type::closure_type());
-                self.extend([i::Set(path)]);
-            }
+            self.new_register(path.clone(), ScopeKind::Global, Type::closure_type());
+            self.extend([i::Set(path)]);
         }
+    }
+
+    pub(crate) fn lower_specialization(
+        &mut self,
+        specialization: &Specialization,
+        symbols: &SymbolTable,
+    ) {
+        let Some(argument) = specialization.arguments.first().cloned() else {
+            self.lower_unreachable_specialization(
+                specialization.specialized_path.clone(),
+                SemanticType::Unit,
+                symbols,
+            );
+            return;
+        };
+
+        if let Some(op) = binary_op_for_path(&specialization.method_path) {
+            self.lower_binary_specialization(
+                specialization.specialized_path.clone(),
+                op,
+                argument,
+                symbols,
+            );
+            return;
+        }
+
+        if let Some(op) = unary_op_for_path(&specialization.method_path) {
+            self.lower_unary_specialization(
+                specialization.specialized_path.clone(),
+                op,
+                argument,
+                symbols,
+            );
+            return;
+        }
+
+        self.lower_unreachable_specialization(
+            specialization.specialized_path.clone(),
+            argument,
+            symbols,
+        );
+    }
+
+    fn lower_binary_specialization(
+        &mut self,
+        path: Path,
+        op: BinaryOp,
+        argument: SemanticType,
+        symbols: &SymbolTable,
+    ) {
+        match op {
+            BinaryOp::Plus => match argument {
+                SemanticType::Integer => self.lower_binary_numeric(
+                    path,
+                    argument,
+                    NumberOperation::Add,
+                    NumberOpKind::I64,
+                    symbols,
+                ),
+                SemanticType::Real => self.lower_binary_numeric(
+                    path,
+                    argument,
+                    NumberOperation::Add,
+                    NumberOpKind::F64,
+                    symbols,
+                ),
+                SemanticType::String => self.lower_string_concat(path, symbols),
+                SemanticType::Array(inner) => {
+                    self.lower_array_concat(path, *inner, symbols)
+                }
+                _ => self.lower_unreachable_specialization(path, argument, symbols),
+            },
+            BinaryOp::Minus => match argument {
+                SemanticType::Integer => self.lower_binary_numeric(
+                    path,
+                    argument,
+                    NumberOperation::Sub,
+                    NumberOpKind::I64,
+                    symbols,
+                ),
+                SemanticType::Real => self.lower_binary_numeric(
+                    path,
+                    argument,
+                    NumberOperation::Sub,
+                    NumberOpKind::F64,
+                    symbols,
+                ),
+                _ => self.lower_unreachable_specialization(path, argument, symbols),
+            },
+            BinaryOp::Star => match argument {
+                SemanticType::Integer => self.lower_binary_numeric(
+                    path,
+                    argument,
+                    NumberOperation::Mul,
+                    NumberOpKind::I64,
+                    symbols,
+                ),
+                SemanticType::Real => self.lower_binary_numeric(
+                    path,
+                    argument,
+                    NumberOperation::Mul,
+                    NumberOpKind::F64,
+                    symbols,
+                ),
+                _ => self.lower_unreachable_specialization(path, argument, symbols),
+            },
+            BinaryOp::Slash => match argument {
+                SemanticType::Integer => self.lower_binary_numeric(
+                    path,
+                    argument,
+                    NumberOperation::Div,
+                    NumberOpKind::I64,
+                    symbols,
+                ),
+                SemanticType::Real => self.lower_binary_numeric(
+                    path,
+                    argument,
+                    NumberOperation::Div,
+                    NumberOpKind::F64,
+                    symbols,
+                ),
+                _ => self.lower_unreachable_specialization(path, argument, symbols),
+            },
+            BinaryOp::Percent => match argument {
+                SemanticType::Integer => self.lower_binary_numeric(
+                    path,
+                    argument,
+                    NumberOperation::Rem,
+                    NumberOpKind::I64,
+                    symbols,
+                ),
+                _ => self.lower_unreachable_specialization(path, argument, symbols),
+            },
+            BinaryOp::And | BinaryOp::Or | BinaryOp::Xor => match argument {
+                SemanticType::Integer => self.lower_binary_numeric(
+                    path,
+                    argument,
+                    bitwise_op(op),
+                    NumberOpKind::I64,
+                    symbols,
+                ),
+                SemanticType::Boolean => self.lower_binary_numeric(
+                    path,
+                    argument,
+                    bitwise_op(op),
+                    NumberOpKind::I32,
+                    symbols,
+                ),
+                _ => self.lower_unreachable_specialization(path, argument, symbols),
+            },
+            BinaryOp::DoubleEqual | BinaryOp::BangEqual => {
+                self.lower_binary_compare(path, argument, equality_op(op), symbols)
+            }
+            BinaryOp::Less
+            | BinaryOp::Greater
+            | BinaryOp::LessEqual
+            | BinaryOp::GreaterEqual => {
+                self.lower_binary_compare(path, argument, compare_op(op), symbols)
+            }
+            _ => self.lower_unreachable_specialization(path, argument, symbols),
+        }
+    }
+
+    fn lower_unary_specialization(
+        &mut self,
+        path: Path,
+        op: UnaryOp,
+        argument: SemanticType,
+        symbols: &SymbolTable,
+    ) {
+        match op {
+            UnaryOp::Minus => match argument {
+                SemanticType::Integer => self.lower_unary_numeric(
+                    path,
+                    argument,
+                    NumberOpKind::I64,
+                    symbols,
+                    UnaryNumberOp::Negate,
+                ),
+                SemanticType::Real => self.lower_unary_numeric(
+                    path,
+                    argument,
+                    NumberOpKind::F64,
+                    symbols,
+                    UnaryNumberOp::Negate,
+                ),
+                _ => self.lower_unreachable_specialization(path, argument, symbols),
+            },
+            UnaryOp::Not => match argument {
+                SemanticType::Integer => self.lower_unary_numeric(
+                    path,
+                    argument,
+                    NumberOpKind::I64,
+                    symbols,
+                    UnaryNumberOp::BitwiseNot,
+                ),
+                SemanticType::Boolean => self.lower_unary_numeric(
+                    path,
+                    argument,
+                    NumberOpKind::I32,
+                    symbols,
+                    UnaryNumberOp::BitwiseNot,
+                ),
+                _ => self.lower_unreachable_specialization(path, argument, symbols),
+            },
+        }
+    }
+
+    fn lower_binary_numeric(
+        &mut self,
+        path: Path,
+        argument: SemanticType,
+        op: NumberOperation,
+        kind: NumberOpKind,
+        symbols: &SymbolTable,
+    ) {
+        let result_fields = match lowered_struct_fields(&argument, symbols) {
+            Some(fields) => fields,
+            None => {
+                self.lower_unreachable_specialization(path, argument, symbols);
+                return;
+            }
+        };
+        self.lower_binary_closure(
+            path,
+            argument,
+            symbols,
+            move |inner, _symbols, left, right| {
+                let operand_fields = result_fields.clone();
+                emit_binary_op(
+                    inner,
+                    left,
+                    right,
+                    operand_fields,
+                    op,
+                    kind,
+                    result_fields.clone(),
+                );
+            },
+        );
+    }
+
+    fn lower_binary_compare(
+        &mut self,
+        path: Path,
+        argument: SemanticType,
+        op: NumberOperation,
+        symbols: &SymbolTable,
+    ) {
+        match argument {
+            SemanticType::Unit => {
+                let value = matches!(op, NumberOperation::Eq | NumberOperation::Le | NumberOperation::Ge);
+                self.lower_unary_boolean_const(path, SemanticType::Unit, value, symbols);
+            }
+            SemanticType::Integer => self.lower_binary_compare_numeric(
+                path,
+                argument,
+                op,
+                NumberOpKind::I64,
+                symbols,
+            ),
+            SemanticType::Real => self.lower_binary_compare_numeric(
+                path,
+                argument,
+                op,
+                NumberOpKind::F64,
+                symbols,
+            ),
+            SemanticType::Boolean | SemanticType::Glyph => self.lower_binary_compare_numeric(
+                path,
+                argument,
+                op,
+                NumberOpKind::I32,
+                symbols,
+            ),
+            SemanticType::String => self.lower_string_compare(path, op, symbols),
+            _ => self.lower_unreachable_specialization(path, argument, symbols),
+        }
+    }
+
+    fn lower_binary_compare_numeric(
+        &mut self,
+        path: Path,
+        argument: SemanticType,
+        op: NumberOperation,
+        kind: NumberOpKind,
+        symbols: &SymbolTable,
+    ) {
+        let argument_fields = match lowered_struct_fields(&argument, symbols) {
+            Some(fields) => fields,
+            None => {
+                self.lower_unreachable_specialization(path, argument, symbols);
+                return;
+            }
+        };
+        let bool_fields = bool_fields(symbols);
+        self.lower_binary_closure(
+            path,
+            argument,
+            symbols,
+            move |inner, _symbols, left, right| {
+                emit_binary_op(
+                    inner,
+                    left,
+                    right,
+                    argument_fields.clone(),
+                    op,
+                    kind,
+                    bool_fields.clone(),
+                );
+            },
+        );
+    }
+
+    fn lower_unary_numeric(
+        &mut self,
+        path: Path,
+        argument: SemanticType,
+        kind: NumberOpKind,
+        symbols: &SymbolTable,
+        op: UnaryNumberOp,
+    ) {
+        let result_fields = match lowered_struct_fields(&argument, symbols) {
+            Some(fields) => fields,
+            None => {
+                self.lower_unreachable_specialization(path, argument, symbols);
+                return;
+            }
+        };
+        self.lower_unary_closure(
+            path,
+            argument,
+            symbols,
+            move |inner, _symbols, value| {
+                let operand_fields = result_fields.clone();
+                emit_unary_op(
+                    inner,
+                    value,
+                    operand_fields,
+                    op,
+                    kind,
+                    result_fields.clone(),
+                );
+            },
+        );
+    }
+
+    fn lower_unary_boolean_const(
+        &mut self,
+        path: Path,
+        argument: SemanticType,
+        value: bool,
+        symbols: &SymbolTable,
+    ) {
+        let bool_fields = bool_fields(symbols);
+        self.lower_unary_closure(
+            path,
+            argument,
+            symbols,
+            move |inner, _symbols, _value| {
+                emit_boolean_const(inner, value, bool_fields.clone());
+            },
+        );
+    }
+
+    fn lower_string_concat(
+        &mut self,
+        path: Path,
+        symbols: &SymbolTable,
+    ) {
+        let argument = SemanticType::String;
+        self.lower_binary_closure(
+            path,
+            argument,
+            symbols,
+            move |inner, symbols, left, right| {
+                emit_array_concat(inner, left, right, Type::I8, symbols);
+            },
+        );
+    }
+
+    fn lower_array_concat(
+        &mut self,
+        path: Path,
+        inner: SemanticType,
+        symbols: &SymbolTable,
+    ) {
+        let argument = SemanticType::Array(Box::new(inner.clone()));
+        let inner_lowered = lower_type(&inner, symbols);
+        self.lower_binary_closure(
+            path,
+            argument,
+            symbols,
+            move |inner_encoder, symbols, left, right| {
+                emit_array_concat(inner_encoder, left, right, inner_lowered.clone(), symbols);
+            },
+        );
+    }
+
+    fn lower_string_compare(
+        &mut self,
+        path: Path,
+        op: NumberOperation,
+        symbols: &SymbolTable,
+    ) {
+        let argument = SemanticType::String;
+        let bool_fields = bool_fields(symbols);
+        self.lower_binary_closure(
+            path,
+            argument,
+            symbols,
+            move |inner, _symbols, left, right| {
+                emit_string_compare(inner, left, right, op, bool_fields.clone());
+            },
+        );
+    }
+
+    fn lower_binary_closure(
+        &mut self,
+        path: Path,
+        argument: SemanticType,
+        symbols: &SymbolTable,
+        body: impl for<'b> FnOnce(&mut Encoder<'b>, &SymbolTable, &Path, &Path),
+    ) {
+        let left_name = self.temporary_name("left");
+        let outer_argument = argument.clone();
+        let inner_argument = argument.clone();
+        self.create_closure(symbols, left_name.clone(), outer_argument, vec![], {
+            let left_name = left_name.clone();
+            move |outer, symbols| {
+                let right_name = outer.temporary_name("right");
+                outer.create_closure(
+                    symbols,
+                    right_name.clone(),
+                    inner_argument.clone(),
+                    vec![(left_name.clone(), inner_argument.clone())],
+                    |inner, symbols| body(inner, symbols, &left_name, &right_name),
+                );
+            }
+        });
+        self.new_register(path.clone(), ScopeKind::Global, Type::closure_type());
+        self.push(i::Set(path));
+    }
+
+    fn lower_unary_closure(
+        &mut self,
+        path: Path,
+        argument: SemanticType,
+        symbols: &SymbolTable,
+        body: impl for<'b> FnOnce(&mut Encoder<'b>, &SymbolTable, &Path),
+    ) {
+        let value_name = self.temporary_name("value");
+        self.create_closure(
+            symbols,
+            value_name.clone(),
+            argument,
+            vec![],
+            |inner, symbols| body(inner, symbols, &value_name),
+        );
+        self.new_register(path.clone(), ScopeKind::Global, Type::closure_type());
+        self.push(i::Set(path));
+    }
+
+    fn lower_unreachable_specialization(
+        &mut self,
+        path: Path,
+        argument: SemanticType,
+        symbols: &SymbolTable,
+    ) {
+        self.lower_unary_closure(path, argument, symbols, |inner, _symbols, _value| {
+            inner.push(i::Unreachable);
+        });
     }
 
     /// [argument, closure] -> [result]
@@ -661,5 +1150,564 @@ impl<'a> Encoder<'a> {
             returns: func_returns,
         });
         // Stack: [result: anyref]
+    }
+
+    fn ref_cast_if_needed(
+        &mut self,
+        type_: &Type,
+    ) {
+        match type_ {
+            Type::Struct(fields) => self.push(i::RefCastStruct(fields.clone())),
+            Type::Array(inner) => self.push(i::RefCastArray(inner.clone())),
+            Type::Any => {}
+            _ => {}
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum NumberOpKind {
+    I32,
+    I64,
+    F64,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum UnaryNumberOp {
+    Negate,
+    BitwiseNot,
+}
+
+fn binary_op_for_path(path: &Path) -> Option<BinaryOp> {
+    let ops = [
+        BinaryOp::Star,
+        BinaryOp::Slash,
+        BinaryOp::Percent,
+        BinaryOp::Plus,
+        BinaryOp::Minus,
+        BinaryOp::DoubleEqual,
+        BinaryOp::BangEqual,
+        BinaryOp::Less,
+        BinaryOp::LessEqual,
+        BinaryOp::Greater,
+        BinaryOp::GreaterEqual,
+        BinaryOp::And,
+        BinaryOp::Or,
+        BinaryOp::Xor,
+    ];
+    ops.into_iter().find(|op| op.path() == *path)
+}
+
+fn unary_op_for_path(path: &Path) -> Option<UnaryOp> {
+    let ops = [UnaryOp::Minus, UnaryOp::Not];
+    ops.into_iter().find(|op| op.path() == *path)
+}
+
+fn bitwise_op(op: BinaryOp) -> NumberOperation {
+    match op {
+        BinaryOp::And => NumberOperation::And,
+        BinaryOp::Or => NumberOperation::Or,
+        BinaryOp::Xor => NumberOperation::Xor,
+        _ => unreachable!("Unexpected bitwise op: {op:?}"),
+    }
+}
+
+fn equality_op(op: BinaryOp) -> NumberOperation {
+    match op {
+        BinaryOp::DoubleEqual => NumberOperation::Eq,
+        BinaryOp::BangEqual => NumberOperation::Ne,
+        _ => unreachable!("Unexpected equality op: {op:?}"),
+    }
+}
+
+fn compare_op(op: BinaryOp) -> NumberOperation {
+    match op {
+        BinaryOp::Less => NumberOperation::Lt,
+        BinaryOp::LessEqual => NumberOperation::Le,
+        BinaryOp::Greater => NumberOperation::Gt,
+        BinaryOp::GreaterEqual => NumberOperation::Ge,
+        _ => unreachable!("Unexpected compare op: {op:?}"),
+    }
+}
+
+fn lowered_struct_fields(
+    type_: &SemanticType,
+    symbols: &SymbolTable,
+) -> Option<Box<[Type]>> {
+    match lower_type(type_, symbols) {
+        Type::Struct(fields) => Some(fields),
+        _ => None,
+    }
+}
+
+fn bool_fields(symbols: &SymbolTable) -> Box<[Type]> {
+    match lower_type(&SemanticType::Boolean, symbols) {
+        Type::Struct(fields) => fields,
+        _ => unreachable!(),
+    }
+}
+
+fn emit_binary_op(
+    encoder: &mut Encoder<'_>,
+    left: &Path,
+    right: &Path,
+    operand_fields: Box<[Type]>,
+    op: NumberOperation,
+    kind: NumberOpKind,
+    result_fields: Box<[Type]>,
+) {
+    encoder.extend([
+        i::Get(left.clone()),
+        i::StructGet(operand_fields.clone(), 0),
+        i::Get(right.clone()),
+        i::StructGet(operand_fields.clone(), 0),
+    ]);
+    match kind {
+        NumberOpKind::I32 => encoder.push(i::I32Op(op)),
+        NumberOpKind::I64 => encoder.push(i::I64Op(op)),
+        NumberOpKind::F64 => encoder.push(i::F64Op(op)),
+    }
+    encoder.push(i::StructNew(result_fields.clone()));
+}
+
+fn emit_unary_op(
+    encoder: &mut Encoder<'_>,
+    value: &Path,
+    operand_fields: Box<[Type]>,
+    op: UnaryNumberOp,
+    kind: NumberOpKind,
+    result_fields: Box<[Type]>,
+) {
+    match op {
+        UnaryNumberOp::Negate => match kind {
+            NumberOpKind::I32 => {
+                encoder.push(i::I32Const(0));
+                encoder.extend([
+                    i::Get(value.clone()),
+                    i::StructGet(operand_fields.clone(), 0),
+                ]);
+                encoder.push(i::I32Op(NumberOperation::Sub));
+            }
+            NumberOpKind::I64 => {
+                encoder.push(i::Const(ImmediateValue::Integer(0)));
+                encoder.extend([
+                    i::Get(value.clone()),
+                    i::StructGet(operand_fields.clone(), 0),
+                ]);
+                encoder.push(i::I64Op(NumberOperation::Sub));
+            }
+            NumberOpKind::F64 => {
+                encoder.push(i::Const(ImmediateValue::Real(0.0)));
+                encoder.extend([
+                    i::Get(value.clone()),
+                    i::StructGet(operand_fields.clone(), 0),
+                ]);
+                encoder.push(i::F64Op(NumberOperation::Sub));
+            }
+        },
+        UnaryNumberOp::BitwiseNot => match kind {
+            NumberOpKind::I32 => {
+                encoder.push(i::I32Const(1));
+                encoder.extend([
+                    i::Get(value.clone()),
+                    i::StructGet(operand_fields.clone(), 0),
+                ]);
+                encoder.push(i::I32Op(NumberOperation::Xor));
+            }
+            NumberOpKind::I64 => {
+                encoder.push(i::Const(ImmediateValue::Integer(-1)));
+                encoder.extend([
+                    i::Get(value.clone()),
+                    i::StructGet(operand_fields.clone(), 0),
+                ]);
+                encoder.push(i::I64Op(NumberOperation::Xor));
+            }
+            NumberOpKind::F64 => {
+                encoder.push(i::Unreachable);
+            }
+        },
+    }
+    encoder.push(i::StructNew(result_fields.clone()));
+}
+
+fn emit_boolean_const(
+    encoder: &mut Encoder<'_>,
+    value: bool,
+    bool_fields: Box<[Type]>,
+) {
+    encoder.push(i::I32Const(if value { 1 } else { 0 }));
+    encoder.push(i::StructNew(bool_fields.clone()));
+}
+
+fn emit_array_concat(
+    encoder: &mut Encoder<'_>,
+    left: &Path,
+    right: &Path,
+    inner_type: Type,
+    _symbols: &SymbolTable,
+) {
+    let left_len = encoder.temporary_name("left_len");
+    let right_len = encoder.temporary_name("right_len");
+    let result = encoder.temporary_name("concat");
+    let array_type = Type::Array(inner_type.clone().into());
+
+    encoder.new_register(left_len.clone(), ScopeKind::Local, Type::I32);
+    encoder.new_register(right_len.clone(), ScopeKind::Local, Type::I32);
+    encoder.new_register(result.clone(), ScopeKind::Local, array_type.clone());
+
+    encoder.extend([
+        i::Get(left.clone()),
+        i::ArrayLen,
+        i::Set(left_len.clone()),
+        i::Get(right.clone()),
+        i::ArrayLen,
+        i::Set(right_len.clone()),
+        i::Get(left_len.clone()),
+        i::Get(right_len.clone()),
+        i::I32Op(NumberOperation::Add),
+        i::ArrayNewDefault(inner_type.clone()),
+        i::Set(result.clone()),
+    ]);
+
+    encoder.extend([
+        i::Get(result.clone()),
+        i::I32Const(0),
+        i::Get(left.clone()),
+        i::I32Const(0),
+        i::Get(left_len.clone()),
+        i::ArrayCopy {
+            dst_type: inner_type.clone(),
+            src_type: inner_type.clone(),
+        },
+    ]);
+
+    encoder.extend([
+        i::Get(result.clone()),
+        i::Get(left_len),
+        i::Get(right.clone()),
+        i::I32Const(0),
+        i::Get(right_len),
+        i::ArrayCopy {
+            dst_type: inner_type.clone(),
+            src_type: inner_type,
+        },
+    ]);
+
+    encoder.push(i::Get(result));
+}
+
+fn emit_string_compare(
+    encoder: &mut Encoder<'_>,
+    left: &Path,
+    right: &Path,
+    op: NumberOperation,
+    bool_fields: Box<[Type]>,
+) {
+    let left_len = encoder.temporary_name("left_len");
+    let right_len = encoder.temporary_name("right_len");
+    let min_len = encoder.temporary_name("min_len");
+    let index = encoder.temporary_name("index");
+    let cmp = encoder.temporary_name("cmp");
+    let left_byte = encoder.temporary_name("left_byte");
+    let right_byte = encoder.temporary_name("right_byte");
+
+    encoder.new_register(left_len.clone(), ScopeKind::Local, Type::I32);
+    encoder.new_register(right_len.clone(), ScopeKind::Local, Type::I32);
+    encoder.new_register(min_len.clone(), ScopeKind::Local, Type::I32);
+    encoder.new_register(index.clone(), ScopeKind::Local, Type::I32);
+    encoder.new_register(cmp.clone(), ScopeKind::Local, Type::I32);
+    encoder.new_register(left_byte.clone(), ScopeKind::Local, Type::I32);
+    encoder.new_register(right_byte.clone(), ScopeKind::Local, Type::I32);
+
+    encoder.extend([
+        i::Get(left.clone()),
+        i::ArrayLen,
+        i::Set(left_len.clone()),
+        i::Get(right.clone()),
+        i::ArrayLen,
+        i::Set(right_len.clone()),
+        i::Get(left_len.clone()),
+        i::Set(min_len.clone()),
+        i::Get(right_len.clone()),
+        i::Get(left_len.clone()),
+        i::I32Op(NumberOperation::Lt),
+        i::If(None),
+        i::Get(right_len.clone()),
+        i::Set(min_len.clone()),
+        i::End,
+        i::I32Const(0),
+        i::Set(index.clone()),
+        i::I32Const(0),
+        i::Set(cmp.clone()),
+    ]);
+
+    encoder.extend([i::Block(None), i::Loop]);
+    encoder.extend([
+        i::Get(index.clone()),
+        i::Get(min_len.clone()),
+        i::I32Op(NumberOperation::Eq),
+        i::BreakIf(1),
+        i::Get(left.clone()),
+        i::Get(index.clone()),
+        i::ArrayGet(Type::I8),
+        i::Set(left_byte.clone()),
+        i::Get(right.clone()),
+        i::Get(index.clone()),
+        i::ArrayGet(Type::I8),
+        i::Set(right_byte.clone()),
+        i::Get(left_byte.clone()),
+        i::Get(right_byte.clone()),
+        i::I32Op(NumberOperation::Lt),
+        i::If(None),
+        i::I32Const(-1),
+        i::Set(cmp.clone()),
+        i::Break(2),
+        i::End,
+        i::Get(left_byte.clone()),
+        i::Get(right_byte.clone()),
+        i::I32Op(NumberOperation::Gt),
+        i::If(None),
+        i::I32Const(1),
+        i::Set(cmp.clone()),
+        i::Break(2),
+        i::End,
+        i::Get(index.clone()),
+        i::I32Const(1),
+        i::I32Op(NumberOperation::Add),
+        i::Set(index.clone()),
+        i::Break(0),
+    ]);
+    encoder.extend([i::End, i::End]);
+
+    encoder.extend([
+        i::Get(cmp.clone()),
+        i::I32Const(0),
+        i::I32Op(NumberOperation::Eq),
+        i::If(None),
+        i::Get(left_len.clone()),
+        i::Get(right_len.clone()),
+        i::I32Op(NumberOperation::Lt),
+        i::If(None),
+        i::I32Const(-1),
+        i::Set(cmp.clone()),
+        i::Else,
+        i::Get(left_len.clone()),
+        i::Get(right_len.clone()),
+        i::I32Op(NumberOperation::Gt),
+        i::If(None),
+        i::I32Const(1),
+        i::Set(cmp.clone()),
+        i::End,
+        i::End,
+        i::End,
+    ]);
+
+    encoder.extend([
+        i::Get(cmp),
+        i::I32Const(0),
+        i::I32Op(op),
+        i::StructNew(bool_fields.clone()),
+    ]);
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ConstructorInfo {
+    pub tag: usize,
+    pub payload: Option<SemanticType>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct ConstructorTable {
+    constructors: IndexMap<Path, ConstructorInfo>,
+}
+
+impl ConstructorTable {
+    pub(crate) fn from_symbols(symbols: &SymbolTable) -> Self {
+        let mut constructors = IndexMap::new();
+        for (path, definition) in symbols.type_definitions().iter() {
+            let Some(variants) = sum_variants(definition) else {
+                continue;
+            };
+            for (tag, (variant, payload_type)) in variants.iter().enumerate() {
+                let payload = if is_unit_type(payload_type, symbols) {
+                    None
+                } else {
+                    Some(payload_type.clone())
+                };
+                constructors.insert(
+                    Path::new(path.major.clone(), variant.clone()),
+                    ConstructorInfo { tag, payload },
+                );
+            }
+        }
+        Self { constructors }
+    }
+
+    pub(crate) fn get(&self, path: &Path) -> Option<&ConstructorInfo> {
+        self.constructors.get(path)
+    }
+
+    pub(crate) fn constructors_for_module(
+        &self,
+        module_name: &str,
+    ) -> Vec<(Path, ConstructorInfo)> {
+        self.constructors
+            .iter()
+            .filter(|(path, _)| path.major == module_name)
+            .map(|(path, info)| (path.clone(), info.clone()))
+            .collect()
+    }
+}
+
+fn sum_variants(definition: &TypeDefinition) -> Option<IndexMap<String, SemanticType>> {
+    let mut current = &definition.body;
+    loop {
+        match current {
+            SemanticType::ForAll(body) | SemanticType::Mu(body) => current = body,
+            SemanticType::Sum { variants } => return Some(variants.clone()),
+            _ => return None,
+        }
+    }
+}
+
+fn is_unit_type(
+    type_: &SemanticType,
+    symbols: &SymbolTable,
+) -> bool {
+    match type_ {
+        SemanticType::Unit => true,
+        SemanticType::Named { name, body } => {
+            matches!(resolve_named_body(name, body, symbols), SemanticType::Unit)
+        }
+        SemanticType::Apply {
+            constructor,
+            arguments,
+        } => apply_type(constructor, arguments, symbols)
+            .as_ref()
+            .is_some_and(|t| is_unit_type(t, symbols)),
+        _ => false,
+    }
+}
+
+fn resolve_named_body(
+    name: &Path,
+    body: &SemanticType,
+    symbols: &SymbolTable,
+) -> SemanticType {
+    if matches!(body, SemanticType::Unit)
+        && let Some(definition) = symbols.type_definitions().get(name)
+    {
+        definition.body.clone()
+    } else {
+        body.clone()
+    }
+}
+
+fn apply_type(
+    constructor: &SemanticType,
+    arguments: &[SemanticType],
+    symbols: &SymbolTable,
+) -> Option<SemanticType> {
+    let mut current = constructor.clone();
+    for arg in arguments {
+        current = match current {
+            SemanticType::ForAll(body) => body.open_forall(arg)?,
+            SemanticType::Named { name, body } => {
+                let resolved = resolve_named_body(&name, &body, symbols);
+                if let SemanticType::ForAll(inner) = resolved {
+                    inner.open_forall(arg)?
+                } else {
+                    return None;
+                }
+            }
+            _ => return None,
+        };
+    }
+    Some(current)
+}
+
+fn instantiate_named_body(
+    body: &SemanticType,
+    arguments: &[SemanticType],
+) -> Option<SemanticType> {
+    let mut current = body.clone();
+    for arg in arguments {
+        if let SemanticType::ForAll(inner) = current {
+            current = inner.open_forall(arg)?;
+        } else {
+            return None;
+        }
+    }
+    Some(current)
+}
+
+fn struct_fields_for_type(
+    type_: &SemanticType,
+    symbols: &SymbolTable,
+) -> Option<IndexMap<String, SemanticType>> {
+    match type_ {
+        SemanticType::Struct { fields } => Some(fields.clone()),
+        SemanticType::StructConstraint { fields, .. } => Some(fields.clone()),
+        SemanticType::Named { name, body } => {
+            let resolved = resolve_named_body(name, body, symbols);
+            struct_fields_for_type(&resolved, symbols)
+        }
+        SemanticType::Apply {
+            constructor,
+            arguments,
+        } => {
+            if let SemanticType::Named { name, body } = constructor.as_ref() {
+                let resolved = resolve_named_body(name, body, symbols);
+                let instantiated = instantiate_named_body(&resolved, arguments)?;
+                struct_fields_for_type(&instantiated, symbols)
+            } else {
+                let applied = apply_type(constructor, arguments, symbols)?;
+                struct_fields_for_type(&applied, symbols)
+            }
+        }
+        _ => None,
+    }
+}
+
+fn collect_pattern_bindings(pattern: &Pattern<SemanticType>) -> Vec<(Path, SemanticType)> {
+    match &pattern.kind {
+        PatternKind::Hole
+        | PatternKind::Immediate(_)
+        | PatternKind::ConstConstructor(_) => Vec::new(),
+        PatternKind::Identifier(path) => vec![(path.clone(), pattern.type_.clone())],
+        PatternKind::Constructor(_, payload) => collect_pattern_bindings(payload),
+        PatternKind::Tuple(items) => items.iter().flat_map(collect_pattern_bindings).collect(),
+        PatternKind::Array {
+            starting,
+            glob,
+            ending,
+        } => {
+            let mut bindings = Vec::new();
+            bindings.extend(starting.iter().flat_map(collect_pattern_bindings));
+            bindings.extend(ending.iter().flat_map(collect_pattern_bindings));
+            if let Glob::Named(path) = glob {
+                bindings.push((path.clone(), pattern.type_.clone()));
+            }
+            bindings
+        }
+        PatternKind::Struct(fields) => fields.values().flat_map(collect_pattern_bindings).collect(),
+        PatternKind::TypeHint(inner, _) => collect_pattern_bindings(inner),
+    }
+}
+
+fn pattern_introduced_names(pattern: &Pattern<SemanticType>) -> usize {
+    collect_pattern_bindings(pattern).len()
+}
+
+fn pattern_is_refutable(pattern: &Pattern<SemanticType>) -> bool {
+    match &pattern.kind {
+        PatternKind::Hole | PatternKind::Identifier(_) => false,
+        PatternKind::TypeHint(inner, _) => pattern_is_refutable(inner),
+        PatternKind::Tuple(items) => items.iter().any(pattern_is_refutable),
+        PatternKind::Struct(fields) => fields.values().any(pattern_is_refutable),
+        PatternKind::Array { .. }
+        | PatternKind::Immediate(_)
+        | PatternKind::ConstConstructor(_)
+        | PatternKind::Constructor(_, _) => true,
     }
 }

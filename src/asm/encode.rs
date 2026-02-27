@@ -4,6 +4,7 @@ use std::collections::{
 };
 
 use super::*;
+use crate::ir::ImmediateValue;
 use wasm_encoder::{
     self,
     ArrayType,
@@ -301,14 +302,8 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
     };
 
     for (_, f) in &asm_module.functions {
-        let type_id = type_section.new_function(
-            f.parameters
-                .values()
-                .cloned()
-                .collect::<Vec<_>>()
-                .as_slice(),
-            &f.returns,
-        );
+        let parameter_types = f.parameters.values().cloned().collect::<Vec<_>>();
+        let type_id = type_section.new_function(&parameter_types, &f.returns);
         function_section.function(type_id);
 
         let local_namespace = f
@@ -323,205 +318,136 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
             f.variables.iter().map(|(_, t)| type_section.valtype_of(t)),
         );
         // Instruction lowering
-        code_section.function(
-            f.ops
-                .iter()
-                .map(|o| {
-                    use {
-                        Instruction as i,
-                        NumberOperation as n,
-                    };
-                    match o {
-                        i::Set(path) => {
-                            if let Some(&idx) = local_namespace.get(path) {
-                                winstr::LocalSet(idx as u32)
-                            } else if let Some(&idx) = global_namespace.get(&path) {
-                                winstr::GlobalSet(idx)
-                            } else {
-                                unreachable!("Unknown variable: {}", &path)
-                            }
-                        }
-                        i::Get(path) => {
-                            if let Some(&idx) = local_namespace.get(path) {
-                                winstr::LocalGet(idx as u32)
-                            } else if let Some(&idx) = global_namespace.get(&path) {
-                                winstr::GlobalGet(idx)
-                            } else {
-                                unreachable!("Unknown variable: {path}")
-                            }
-                        }
-                        i::Const(const_value) => {
-                            match const_value {
-                                ConstValue::Unit => winstr::Nop,
-                                ConstValue::Integer(i) => winstr::I64Const(*i),
-                                ConstValue::Real(f) => winstr::F64Const((*f).into()),
-                                ConstValue::Boolean(b) => winstr::I32Const(if *b { 1 } else { 0 }),
-                                ConstValue::String(_) => {
-                                    unreachable!("String constants not yet supported")
-                                }
-                                ConstValue::Glyph(c) => winstr::I32Const(*c as i32),
-                            }
-                        }
-                        i::I32Const(i) => winstr::I32Const(*i),
-                        i::Func(path) => {
-                            let idx = func_namespace[path];
-                            referenced_funcs.insert(idx);
-                            winstr::RefFunc(idx)
-                        }
-                        i::StructNew(items) => winstr::StructNew(type_section.new_struct(items)),
-                        i::StructGet(t, field_index) => {
-                            winstr::StructGet {
-                                struct_type_index: type_section.new_struct(t),
-                                field_index: *field_index as u32,
-                            }
-                        }
-                        i::ArrayGet(t) => {
-                            let arr_idx = type_section.new_array(t);
-                            match t {
-                                Type::I8 | Type::I16 => winstr::ArrayGetU(arr_idx),
-                                _ => winstr::ArrayGet(arr_idx),
-                            }
-                        }
-                        i::ArrayNewFixed { inner_type, length } => {
-                            winstr::ArrayNewFixed {
-                                array_type_index: type_section.new_array(inner_type),
-                                array_size: *length as u32,
-                            }
-                        }
-                        i::ArrayNewDefault(t) => winstr::ArrayNewDefault(type_section.new_array(t)),
-                        i::ArrayLen => winstr::ArrayLen,
-                        i::ArrayCopy { dst_type, src_type } => {
-                            winstr::ArrayCopy {
-                                array_type_index_dst: type_section.new_array(dst_type),
-                                array_type_index_src: type_section.new_array(src_type),
-                            }
-                        }
-                        i::CallRef {
-                            parameters,
-                            returns,
-                        } => winstr::CallRef(type_section.new_function(parameters, returns)),
-                        i::Unreachable => winstr::Unreachable,
-                        i::Drop => winstr::Drop,
-                        i::If(result) => {
-                            winstr::If(match result {
-                                Some(r) => BlockType::Result(type_section.valtype_of(r)),
-                                None => BlockType::Empty,
-                            })
-                        }
-                        i::Else => winstr::Else,
-                        i::End => winstr::End,
-                        i::Loop => winstr::Loop(BlockType::Empty),
-                        i::Block(result) => {
-                            winstr::Block(match result {
-                                Some(r) => BlockType::Result(type_section.valtype_of(r)),
-                                None => BlockType::Empty,
-                            })
-                        }
-                        i::Break(target) => winstr::Br(*target as u32),
-                        i::BreakIf(target) => winstr::BrIf(*target as u32),
-                        i::I32Op(op) => {
-                            match op {
-                                n::Eq => winstr::I32Eq,
-                                n::Ne => winstr::I32Ne,
-                                n::Gt => winstr::I32GtS,
-                                n::Lt => winstr::I32LtS,
-                                n::Ge => winstr::I32GeS,
-                                n::Le => winstr::I32LeS,
-                                n::Add => winstr::I32Add,
-                                n::Sub => winstr::I32Sub,
-                                n::Mul => winstr::I32Mul,
-                                n::Div => winstr::I32DivS,
-                                n::And => winstr::I32And,
-                                n::Or => winstr::I32Or,
-                                n::Xor => winstr::I32Xor,
-                            }
-                        }
-                        i::I64Op(op) => {
-                            match op {
-                                n::Eq => winstr::I64Eq,
-                                n::Ne => winstr::I64Ne,
-                                n::Gt => winstr::I64GtS,
-                                n::Lt => winstr::I64LtS,
-                                n::Ge => winstr::I64GeS,
-                                n::Le => winstr::I64LeS,
-                                n::Add => winstr::I64Add,
-                                n::Sub => winstr::I64Sub,
-                                n::Mul => winstr::I64Mul,
-                                n::Div => winstr::I64DivS,
-                                n::And => winstr::I64And,
-                                n::Or => winstr::I64Or,
-                                n::Xor => winstr::I64Xor,
-                            }
-                        }
-                        i::F32Op(op) => {
-                            match op {
-                                n::Eq => winstr::F32Eq,
-                                n::Ne => winstr::F32Ne,
-                                n::Gt => winstr::F32Gt,
-                                n::Lt => winstr::F32Lt,
-                                n::Ge => winstr::F32Ge,
-                                n::Le => winstr::F32Le,
-                                n::Add => winstr::F32Add,
-                                n::Sub => winstr::F32Sub,
-                                n::Mul => winstr::F32Mul,
-                                n::Div => winstr::F32Div,
-                                n::And | n::Or | n::Xor => {
-                                    unreachable!("Bitwise operations not supported on F32")
-                                }
-                            }
-                        }
-                        i::F64Op(op) => {
-                            match op {
-                                n::Eq => winstr::F64Eq,
-                                n::Ne => winstr::F64Ne,
-                                n::Gt => winstr::F64Gt,
-                                n::Lt => winstr::F64Lt,
-                                n::Ge => winstr::F64Ge,
-                                n::Le => winstr::F64Le,
-                                n::Add => winstr::F64Add,
-                                n::Sub => winstr::F64Sub,
-                                n::Mul => winstr::F64Mul,
-                                n::Div => winstr::F64Div,
-                                n::And | n::Or | n::Xor => {
-                                    unreachable!("Bitwise operations not supported on F64")
-                                }
-                            }
-                        }
-                        i::RefCastFunc {
-                            parameters,
-                            returns,
-                        } => {
-                            let func_type_idx = type_section.new_function(parameters, returns);
-                            winstr::RefCastNullable(HeapType::Concrete(func_type_idx))
-                        }
-                        i::RefCastStruct(fields) => {
-                            let struct_type_idx = type_section.new_struct(fields);
-                            winstr::RefCastNullable(HeapType::Concrete(struct_type_idx))
-                        }
-                        i::RefCastArray(inner) => {
-                            let array_type_idx = type_section.new_array(inner);
-                            winstr::RefCastNullable(HeapType::Concrete(array_type_idx))
-                        }
-                        i::I32Store8 => {
-                            winstr::I32Store8(wasm_encoder::MemArg {
-                                offset: 0,
-                                align: 0,
-                                memory_index: 0,
-                            })
-                        }
-                        i::I32Store => {
-                            winstr::I32Store(wasm_encoder::MemArg {
-                                offset: 0,
-                                align: 2,
-                                memory_index: 0,
-                            })
-                        }
-                        i::Call(path) => winstr::Call(func_namespace[path]),
+        for instr in f.ops.iter().map(|o| {
+            use Instruction as i;
+            match o {
+                i::Set(path) => {
+                    if let Some(&idx) = local_namespace.get(path) {
+                        winstr::LocalSet(idx as u32)
+                    } else if let Some(&idx) = global_namespace.get(&path) {
+                        winstr::GlobalSet(idx)
+                    } else {
+                        unreachable!("Unknown variable: {}", &path)
                     }
-                })
-                .fold::<&mut _, _>(&mut function_body, |body, i| body.instruction(&i))
-                .instruction(&winstr::End),
-        );
+                }
+                i::Get(path) => {
+                    if let Some(&idx) = local_namespace.get(path) {
+                        winstr::LocalGet(idx as u32)
+                    } else if let Some(&idx) = global_namespace.get(&path) {
+                        winstr::GlobalGet(idx)
+                    } else {
+                        unreachable!("Unknown variable: {path}")
+                    }
+                }
+                i::Const(const_value) => {
+                    match const_value {
+                        ImmediateValue::Unit => winstr::Nop,
+                        ImmediateValue::Integer(i) => winstr::I64Const(*i),
+                        ImmediateValue::Real(f) => winstr::F64Const((*f).into()),
+                        ImmediateValue::Boolean(b) => winstr::I32Const(if *b { 1 } else { 0 }),
+                        ImmediateValue::String(_) => {
+                            unreachable!("String constants not yet supported")
+                        }
+                        ImmediateValue::Glyph(c) => winstr::I32Const(*c as i32),
+                    }
+                }
+                i::I32Const(i) => winstr::I32Const(*i),
+                i::Func(path) => {
+                    let idx = func_namespace[path];
+                    referenced_funcs.insert(idx);
+                    winstr::RefFunc(idx)
+                }
+                i::StructNew(items) => winstr::StructNew(type_section.new_struct(items)),
+                i::StructGet(t, field_index) => {
+                    winstr::StructGet {
+                        struct_type_index: type_section.new_struct(t),
+                        field_index: *field_index as u32,
+                    }
+                }
+                i::ArrayGet(t) => {
+                    let arr_idx = type_section.new_array(t);
+                    match t {
+                        Type::I8 | Type::I16 => winstr::ArrayGetU(arr_idx),
+                        _ => winstr::ArrayGet(arr_idx),
+                    }
+                }
+                i::ArrayNewFixed { inner_type, length } => {
+                    winstr::ArrayNewFixed {
+                        array_type_index: type_section.new_array(inner_type),
+                        array_size: *length as u32,
+                    }
+                }
+                i::ArrayNewDefault(t) => winstr::ArrayNewDefault(type_section.new_array(t)),
+                i::ArrayLen => winstr::ArrayLen,
+                i::ArrayCopy { dst_type, src_type } => {
+                    winstr::ArrayCopy {
+                        array_type_index_dst: type_section.new_array(dst_type),
+                        array_type_index_src: type_section.new_array(src_type),
+                    }
+                }
+                i::CallRef {
+                    parameters,
+                    returns,
+                } => winstr::CallRef(type_section.new_function(parameters, returns)),
+                i::Unreachable => winstr::Unreachable,
+                i::Drop => winstr::Drop,
+                i::If(result) => {
+                    winstr::If(match result {
+                        Some(r) => BlockType::Result(type_section.valtype_of(r)),
+                        None => BlockType::Empty,
+                    })
+                }
+                i::Else => winstr::Else,
+                i::End => winstr::End,
+                i::Loop => winstr::Loop(BlockType::Empty),
+                i::Block(result) => {
+                    winstr::Block(match result {
+                        Some(r) => BlockType::Result(type_section.valtype_of(r)),
+                        None => BlockType::Empty,
+                    })
+                }
+                i::Break(target) => winstr::Br(*target as u32),
+                i::BreakIf(target) => winstr::BrIf(*target as u32),
+                i::I32Op(op) => lower_i32_op(*op),
+                i::I64Op(op) => lower_i64_op(*op),
+                i::F32Op(op) => lower_f32_op(*op),
+                i::F64Op(op) => lower_f64_op(*op),
+                i::RefCastFunc {
+                    parameters,
+                    returns,
+                } => {
+                    let func_type_idx = type_section.new_function(parameters, returns);
+                    winstr::RefCastNullable(HeapType::Concrete(func_type_idx))
+                }
+                i::RefCastStruct(fields) => {
+                    let struct_type_idx = type_section.new_struct(fields);
+                    winstr::RefCastNullable(HeapType::Concrete(struct_type_idx))
+                }
+                i::RefCastArray(inner) => {
+                    let array_type_idx = type_section.new_array(inner);
+                    winstr::RefCastNullable(HeapType::Concrete(array_type_idx))
+                }
+                i::I32Store8 => {
+                    winstr::I32Store8(wasm_encoder::MemArg {
+                        offset: 0,
+                        align: 0,
+                        memory_index: 0,
+                    })
+                }
+                i::I32Store => {
+                    winstr::I32Store(wasm_encoder::MemArg {
+                        offset: 0,
+                        align: 2,
+                        memory_index: 0,
+                    })
+                }
+                i::Call(path) => winstr::Call(func_namespace[path]),
+            }
+        }) {
+            function_body.instruction(&instr);
+        }
+        function_body.instruction(&winstr::End);
+        code_section.function(&function_body);
     }
 
     // Declare all referenced functions in the element section
@@ -560,4 +486,84 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
         .section(&code_section)
         .section(&asm_module.sig);
     module.finish()
+}
+
+fn lower_i32_op(op: NumberOperation) -> winstr<'static> {
+    match op {
+        NumberOperation::Eq => winstr::I32Eq,
+        NumberOperation::Ne => winstr::I32Ne,
+        NumberOperation::Gt => winstr::I32GtS,
+        NumberOperation::Lt => winstr::I32LtS,
+        NumberOperation::Ge => winstr::I32GeS,
+        NumberOperation::Le => winstr::I32LeS,
+        NumberOperation::Add => winstr::I32Add,
+        NumberOperation::Sub => winstr::I32Sub,
+        NumberOperation::Mul => winstr::I32Mul,
+        NumberOperation::Div => winstr::I32DivS,
+        NumberOperation::Rem => winstr::I32RemS,
+        NumberOperation::And => winstr::I32And,
+        NumberOperation::Or => winstr::I32Or,
+        NumberOperation::Xor => winstr::I32Xor,
+    }
+}
+
+fn lower_i64_op(op: NumberOperation) -> winstr<'static> {
+    match op {
+        NumberOperation::Eq => winstr::I64Eq,
+        NumberOperation::Ne => winstr::I64Ne,
+        NumberOperation::Gt => winstr::I64GtS,
+        NumberOperation::Lt => winstr::I64LtS,
+        NumberOperation::Ge => winstr::I64GeS,
+        NumberOperation::Le => winstr::I64LeS,
+        NumberOperation::Add => winstr::I64Add,
+        NumberOperation::Sub => winstr::I64Sub,
+        NumberOperation::Mul => winstr::I64Mul,
+        NumberOperation::Div => winstr::I64DivS,
+        NumberOperation::Rem => winstr::I64RemS,
+        NumberOperation::And => winstr::I64And,
+        NumberOperation::Or => winstr::I64Or,
+        NumberOperation::Xor => winstr::I64Xor,
+    }
+}
+
+fn lower_f32_op(op: NumberOperation) -> winstr<'static> {
+    match op {
+        NumberOperation::Eq => winstr::F32Eq,
+        NumberOperation::Ne => winstr::F32Ne,
+        NumberOperation::Gt => winstr::F32Gt,
+        NumberOperation::Lt => winstr::F32Lt,
+        NumberOperation::Ge => winstr::F32Ge,
+        NumberOperation::Le => winstr::F32Le,
+        NumberOperation::Add => winstr::F32Add,
+        NumberOperation::Sub => winstr::F32Sub,
+        NumberOperation::Mul => winstr::F32Mul,
+        NumberOperation::Div => winstr::F32Div,
+        NumberOperation::And
+        | NumberOperation::Or
+        | NumberOperation::Xor
+        | NumberOperation::Rem => {
+            unreachable!("Bitwise operations not supported on F32")
+        }
+    }
+}
+
+fn lower_f64_op(op: NumberOperation) -> winstr<'static> {
+    match op {
+        NumberOperation::Eq => winstr::F64Eq,
+        NumberOperation::Ne => winstr::F64Ne,
+        NumberOperation::Gt => winstr::F64Gt,
+        NumberOperation::Lt => winstr::F64Lt,
+        NumberOperation::Ge => winstr::F64Ge,
+        NumberOperation::Le => winstr::F64Le,
+        NumberOperation::Add => winstr::F64Add,
+        NumberOperation::Sub => winstr::F64Sub,
+        NumberOperation::Mul => winstr::F64Mul,
+        NumberOperation::Div => winstr::F64Div,
+        NumberOperation::And
+        | NumberOperation::Or
+        | NumberOperation::Xor
+        | NumberOperation::Rem => {
+            unreachable!("Bitwise operations not supported on F64")
+        }
+    }
 }

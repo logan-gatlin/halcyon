@@ -6,8 +6,8 @@ use super::ast::{
     HasName,
 };
 use super::{
-    SyntaxKind,
     parse,
+    SyntaxKind,
 };
 use crate::logging::Logger;
 
@@ -122,6 +122,16 @@ fn parse_module_structure() {
     );
     assert!(tree_str.contains("END_KW"), "Should contain end keyword");
     assert!(tree_str.contains("Foo"), "Should contain module name");
+}
+
+#[test]
+fn parse_top_level_statement_is_error() {
+    assert_has_errors("let x = 1");
+}
+
+#[test]
+fn parse_top_level_end_is_error() {
+    assert_has_errors("end");
 }
 
 #[test]
@@ -868,6 +878,19 @@ fn blank_line_separates_comment_from_statement() {
         comments.len(),
         0,
         "Comment separated by blank line should not attach"
+    );
+}
+
+#[test]
+fn blank_line_with_spaces_separates_comment_from_statement() {
+    let src = "module M =\n  -- detached\n  \n  let x = 1\nend";
+    let sf = parse_source_file(src);
+    let stmts = sf.modules()[0].statements();
+    let comments = stmts[0].leading_comments();
+    assert_eq!(
+        comments.len(),
+        0,
+        "Comment separated by blank line with whitespace should not attach"
     );
 }
 

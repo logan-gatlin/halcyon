@@ -702,6 +702,29 @@ pub(crate) fn core_type_fallback(minor: &str) -> Option<Type> {
     }
 }
 
+pub(crate) enum CoreTypeResolution {
+    Known {
+        expected: usize,
+        resolved: Option<Type>,
+        fallback: Option<Type>,
+    },
+    Unknown,
+}
+
+pub(crate) fn core_type_resolution(
+    minor: &str,
+    args: &[Type],
+) -> CoreTypeResolution {
+    match core_type_arity(minor) {
+        Some(expected) => CoreTypeResolution::Known {
+            expected,
+            resolved: resolve_core_type(minor, args),
+            fallback: core_type_fallback(minor),
+        },
+        None => CoreTypeResolution::Unknown,
+    }
+}
+
 fn lookup_name(
     names: &[String],
     index: u32,
@@ -758,6 +781,8 @@ pub use traits::{
 pub use resolve::{
     resolve_module,
     resolve_module_with_symbols,
+    resolve_module_with_symbols_and_schemes,
+    ResolvedModule,
 };
 
 #[cfg(test)]

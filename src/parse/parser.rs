@@ -269,22 +269,31 @@ impl<'src, 'log> Parser<'src, 'log> {
     /// A "blank line" is two consecutive newlines in the source.
     /// Because line-comment tokens include their trailing `\n`, a blank
     /// line can span a token boundary: the `\n` at the end of a
-    /// LINE_COMMENT followed by a WHITESPACE that starts with `\n`.
-    /// We track this with `prev_ended_with_newline`.
+    /// LINE_COMMENT followed by a WHITESPACE that contains another `\n`.
+    /// We track this with `prev_ended_with_newline` and only scan
+    /// whitespace tokens for blank-line boundaries.
     fn leading_comment_split(&self) -> usize {
         let mut split = self.pos;
         let mut prev_ended_with_newline = false;
 
         for i in self.pos..self.tokens.len() {
-            if !self.tokens[i].kind.is_trivia() {
+            let tok = &self.tokens[i];
+            if !tok.kind.is_trivia() {
                 break;
             }
-            let text = self.tokens[i].text;
-            // A blank line occurs when:
-            // (a) this token alone contains two newlines, OR
-            // (b) previous token ended with \n and this one starts with \n
-            if contains_blank_line(text) || (text.starts_with('\n') && prev_ended_with_newline) {
-                split = i + 1;
+            let text = tok.text;
+            match tok.kind {
+                SyntaxKind::WHITESPACE => {
+                    // A blank line occurs when:
+                    // (a) this whitespace token alone contains two newlines, OR
+                    // (b) previous token ended with \n and this whitespace has any \n.
+                    if contains_blank_line(text) || (prev_ended_with_newline && text.contains('\n'))
+                    {
+                        split = i + 1;
+                    }
+                }
+                SyntaxKind::LINE_COMMENT | SyntaxKind::BLOCK_COMMENT => {}
+                _ => {}
             }
 
             prev_ended_with_newline = text.ends_with('\n');

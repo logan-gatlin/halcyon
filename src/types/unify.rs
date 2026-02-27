@@ -559,29 +559,15 @@ impl UnificationTable {
         let pruned = self.prune(type_);
         match pruned {
             Type::MetaVar(other_id) => id == other_id,
-            Type::ForAll(body) | Type::Mu(body) | Type::Array(body) => self.occurs(id, &body),
-            Type::Function(parameter, result) => {
-                self.occurs(id, &parameter) || self.occurs(id, &result)
+            _ => {
+                let mut found = false;
+                for_each_child_type(&pruned, |child| {
+                    if !found && self.occurs(id, child) {
+                        found = true;
+                    }
+                });
+                found
             }
-            Type::Tuple(items) => items.iter().any(|item| self.occurs(id, item)),
-            Type::StructConstraint { fields, .. } => {
-                fields.values().any(|field| self.occurs(id, field))
-            }
-            Type::Struct { fields } => fields.values().any(|field| self.occurs(id, field)),
-            Type::Sum { variants } => variants.values().any(|variant| self.occurs(id, variant)),
-            Type::Apply {
-                constructor,
-                arguments,
-            } => self.occurs(id, &constructor) || arguments.iter().any(|arg| self.occurs(id, arg)),
-            Type::Named { .. }
-            | Type::Unit
-            | Type::Integer
-            | Type::Real
-            | Type::Boolean
-            | Type::String
-            | Type::Glyph
-            | Type::TypeVar(_)
-            | Type::RecVar(_) => false,
         }
     }
 
@@ -606,51 +592,15 @@ impl UnificationTable {
                     None => Ok(()),
                 }
             }
-            Type::ForAll(body) | Type::Mu(body) | Type::Array(body) => {
-                self.adjust_levels(level, &body)
+            _ => {
+                let mut result = Ok(());
+                for_each_child_type(&pruned, |child| {
+                    if result.is_ok() {
+                        result = self.adjust_levels(level, child);
+                    }
+                });
+                result
             }
-            Type::Function(parameter, result) => {
-                self.adjust_levels(level, &parameter)?;
-                self.adjust_levels(level, &result)
-            }
-            Type::Tuple(items) => {
-                items
-                    .iter()
-                    .try_for_each(|item| self.adjust_levels(level, item))
-            }
-            Type::StructConstraint { fields, .. } => {
-                fields
-                    .values()
-                    .try_for_each(|field| self.adjust_levels(level, field))
-            }
-            Type::Struct { fields } => {
-                fields
-                    .values()
-                    .try_for_each(|field| self.adjust_levels(level, field))
-            }
-            Type::Sum { variants } => {
-                variants
-                    .values()
-                    .try_for_each(|variant| self.adjust_levels(level, variant))
-            }
-            Type::Apply {
-                constructor,
-                arguments,
-            } => {
-                self.adjust_levels(level, &constructor)?;
-                arguments
-                    .iter()
-                    .try_for_each(|arg| self.adjust_levels(level, arg))
-            }
-            Type::Named { .. }
-            | Type::Unit
-            | Type::Integer
-            | Type::Real
-            | Type::Boolean
-            | Type::String
-            | Type::Glyph
-            | Type::TypeVar(_)
-            | Type::RecVar(_) => Ok(()),
         }
     }
 
@@ -669,52 +619,54 @@ impl UnificationTable {
                     vars.insert(id);
                 }
             }
-            Type::ForAll(body) | Type::Mu(body) | Type::Array(body) => {
-                self.collect_meta_vars(&body, vars)
+            _ => {
+                for_each_child_type(&pruned, |child| self.collect_meta_vars(child, vars));
             }
-            Type::Function(parameter, result) => {
-                self.collect_meta_vars(&parameter, vars);
-                self.collect_meta_vars(&result, vars);
-            }
-            Type::Tuple(items) => {
-                items
-                    .iter()
-                    .for_each(|item| self.collect_meta_vars(item, vars));
-            }
-            Type::StructConstraint { fields, .. } => {
-                fields
-                    .values()
-                    .for_each(|field| self.collect_meta_vars(field, vars));
-            }
-            Type::Struct { fields } => {
-                fields
-                    .values()
-                    .for_each(|field| self.collect_meta_vars(field, vars));
-            }
-            Type::Sum { variants } => {
-                variants
-                    .values()
-                    .for_each(|variant| self.collect_meta_vars(variant, vars));
-            }
-            Type::Apply {
-                constructor,
-                arguments,
-            } => {
-                self.collect_meta_vars(&constructor, vars);
-                arguments
-                    .iter()
-                    .for_each(|arg| self.collect_meta_vars(arg, vars));
-            }
-            Type::Named { .. }
-            | Type::Unit
-            | Type::Integer
-            | Type::Real
-            | Type::Boolean
-            | Type::String
-            | Type::Glyph
-            | Type::TypeVar(_)
-            | Type::RecVar(_) => {}
         }
+    }
+}
+
+fn for_each_child_type(
+    type_: &Type,
+    mut visit: impl FnMut(&Type),
+) {
+    match type_ {
+        Type::ForAll(body) | Type::Mu(body) | Type::Array(body) => {
+            visit(body);
+        }
+        Type::Function(parameter, result) => {
+            visit(parameter);
+            visit(result);
+        }
+        Type::Tuple(items) => {
+            items.iter().for_each(&mut visit);
+        }
+        Type::StructConstraint { fields, .. } => {
+            fields.values().for_each(&mut visit);
+        }
+        Type::Struct { fields } => {
+            fields.values().for_each(&mut visit);
+        }
+        Type::Sum { variants } => {
+            variants.values().for_each(&mut visit);
+        }
+        Type::Apply {
+            constructor,
+            arguments,
+        } => {
+            visit(constructor);
+            arguments.iter().for_each(visit);
+        }
+        Type::Named { .. }
+        | Type::Unit
+        | Type::Integer
+        | Type::Real
+        | Type::Boolean
+        | Type::String
+        | Type::Glyph
+        | Type::TypeVar(_)
+        | Type::MetaVar(_)
+        | Type::RecVar(_) => {}
     }
 }
 

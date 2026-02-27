@@ -2,7 +2,6 @@ use std::collections::HashMap;
 
 use indexmap::IndexMap;
 
-use crate::Span;
 use crate::ir::{
     Glob,
     Path,
@@ -14,8 +13,11 @@ use crate::ir::{
     TypeExpr,
     TypeExprKind,
 };
+use crate::Span;
 
 use super::{
+    core_type_resolution,
+    CoreTypeResolution,
     MetaVarId,
     StructMatch,
     TraitConstraint,
@@ -24,8 +26,6 @@ use super::{
     TypeDefinition,
     TypeScheme,
     TypeTransform,
-    core_type_arity,
-    resolve_core_type,
 };
 
 use super::unify::{
@@ -158,7 +158,7 @@ impl TypeEnv {
 pub struct InferenceContext {
     table: UnificationTable,
     level: u32,
-    type_definitions: HashMap<Path, TypeDefinition>,
+    type_definitions: IndexMap<Path, TypeDefinition>,
 }
 
 /// Instantiated scheme paired with its trait predicates.
@@ -175,6 +175,16 @@ pub struct InferenceOutput {
     pub predicates: Vec<TraitConstraint>,
 }
 
+struct InferredTermItems {
+    items: Box<[Term<Type>]>,
+    predicates: Vec<TraitConstraint>,
+}
+
+struct InferredPatternItems {
+    items: Box<[Pattern<Type>]>,
+    types: Vec<Type>,
+}
+
 impl InferenceContext {
     pub fn new() -> Self {
         Self::default()
@@ -182,7 +192,7 @@ impl InferenceContext {
 
     pub fn set_type_definitions(
         &mut self,
-        definitions: HashMap<Path, TypeDefinition>,
+        definitions: IndexMap<Path, TypeDefinition>,
     ) {
         self.type_definitions = definitions;
     }
@@ -284,8 +294,9 @@ impl InferenceContext {
         &mut self,
         env: &mut TypeEnv,
         term: &Term<()>,
+        schemes: &mut IndexMap<Path, TypeScheme>,
     ) -> Result<InferenceOutput, TypeError> {
-        infer_term(self, env, term)
+        infer_term(self, env, term, schemes)
     }
 }
 
@@ -293,6 +304,7 @@ pub fn infer_term(
     ctx: &mut InferenceContext,
     env: &mut TypeEnv,
     term: &Term<()>,
+    schemes: &mut IndexMap<Path, TypeScheme>,
 ) -> Result<InferenceOutput, TypeError> {
     let (kind, type_, predicates) = match &term.kind {
         TermKind::Immediate(value) => {
@@ -317,23 +329,23 @@ pub fn infer_term(
             )
         }
         TermKind::Tuple(items) => {
-            let mut typed_items = Vec::with_capacity(items.len());
-            let mut types = Vec::with_capacity(items.len());
-            let mut predicates = Vec::new();
-            for item in items {
-                let typed = infer_term(ctx, env, item)?;
-                types.push(typed.term.type_.clone());
-                predicates.extend(typed.predicates);
-                typed_items.push(typed.term);
-            }
-            (TermKind::Tuple(typed_items), Type::Tuple(types), predicates)
+            let InferredTermItems {
+                items: typed_items,
+                predicates,
+            } = infer_term_items(ctx, env, items, schemes)?;
+            let types = typed_items.iter().map(|item| item.type_.clone()).collect();
+            (
+                TermKind::Tuple(Vec::from(typed_items)),
+                Type::Tuple(types),
+                predicates,
+            )
         }
         TermKind::Struct(fields) => {
             let mut typed_fields = IndexMap::new();
             let mut field_types = IndexMap::new();
             let mut predicates = Vec::new();
             for (name, value) in fields {
-                let typed = infer_term(ctx, env, value)?;
+                let typed = infer_term(ctx, env, value, schemes)?;
                 field_types.insert(name.inner.clone(), typed.term.type_.clone());
                 predicates.extend(typed.predicates);
                 typed_fields.insert(name.clone(), typed.term);
@@ -348,7 +360,7 @@ pub fn infer_term(
             )
         }
         TermKind::Field { of, index } => {
-            let typed_of = infer_term(ctx, env, of)?;
+            let typed_of = infer_term(ctx, env, of, schemes)?;
             let field_name = index.inner.clone();
             let field_type = field_access_type(ctx, &typed_of.term.type_, &field_name, index.span)?;
             (
@@ -372,7 +384,7 @@ pub fn infer_term(
             };
             let mut env_with_param =
                 env.with_binding(parameter_name.inner.clone(), param_type.clone());
-            let typed_body = infer_term(ctx, &mut env_with_param, body)?;
+            let typed_body = infer_term(ctx, &mut env_with_param, body, schemes)?;
             let typed_captures = captures
                 .iter()
                 .map(|(path, _)| {
@@ -398,8 +410,8 @@ pub fn infer_term(
             )
         }
         TermKind::Call { callee, argument } => {
-            let typed_callee = infer_term(ctx, env, callee)?;
-            let typed_argument = infer_term(ctx, env, argument)?;
+            let typed_callee = infer_term(ctx, env, callee, schemes)?;
+            let typed_argument = infer_term(ctx, env, argument, schemes)?;
             let result_type = ctx.fresh_meta();
             let function_type = Type::func(typed_argument.term.type_.clone(), result_type.clone());
             unify_with_span(
@@ -428,7 +440,7 @@ pub fn infer_term(
         } => {
             let outer_level = ctx.level;
             ctx.level += 1;
-            let typed_value = infer_term(ctx, env, value)?;
+            let typed_value = infer_term(ctx, env, value, schemes)?;
             let mut bindings = Vec::new();
             let typed_pattern =
                 infer_pattern(ctx, env, assignee, &typed_value.term.type_, &mut bindings)?;
@@ -447,9 +459,10 @@ pub fn infer_term(
                     )
                 })
                 .collect::<Vec<_>>();
+            schemes.extend(generalized.iter().cloned());
             let mut env_with = env.with_bindings(generalized.clone());
-            let typed_then = infer_term(ctx, &mut env_with, then)?;
-            let typed_else = infer_term(ctx, env, else_)?;
+            let typed_then = infer_term(ctx, &mut env_with, then, schemes)?;
+            let typed_else = infer_term(ctx, env, else_, schemes)?;
             unify_with_span(
                 &mut ctx.table,
                 &typed_then.term.type_,
@@ -475,8 +488,8 @@ pub fn infer_term(
             )
         }
         TermKind::Semicolon(left, right) => {
-            let typed_left = infer_term(ctx, env, left)?;
-            let typed_right = infer_term(ctx, env, right)?;
+            let typed_left = infer_term(ctx, env, left, schemes)?;
+            let typed_right = infer_term(ctx, env, right, schemes)?;
             unify_with_span(
                 &mut ctx.table,
                 &typed_left.term.type_,
@@ -544,19 +557,15 @@ fn infer_pattern(
             })
         }
         PatternKind::Tuple(items) => {
-            let mut typed_items = Vec::with_capacity(items.len());
-            let mut item_types = Vec::with_capacity(items.len());
-            for item in items.iter() {
-                let item_type = ctx.fresh_meta();
-                let typed_item = infer_pattern(ctx, env, item, &item_type, bindings)?;
-                item_types.push(item_type);
-                typed_items.push(typed_item);
-            }
+            let InferredPatternItems {
+                items: typed_items,
+                types: item_types,
+            } = infer_pattern_items(ctx, env, items, bindings)?;
             let tuple_type = Type::Tuple(item_types);
             unify_with_span(&mut ctx.table, expected, &tuple_type, pattern.span)?;
             Ok(Pattern {
                 comments: pattern.comments.clone(),
-                kind: PatternKind::Tuple(typed_items.into_boxed_slice()),
+                kind: PatternKind::Tuple(typed_items),
                 span: pattern.span,
                 type_: ctx.table.normalize(expected),
             })
@@ -738,16 +747,17 @@ fn core_type_from_path(
     args: &[Type],
     span: Span,
 ) -> Result<Type, TypeError> {
-    if let Some(expected) = core_type_arity(path.minor.as_str()) {
+    if let CoreTypeResolution::Known {
+        expected, resolved, ..
+    } = core_type_resolution(path.minor.as_str(), args)
+    {
         expect_arity(path.clone(), expected, args.len(), span)?;
-        return resolve_core_type(path.minor.as_str(), args).ok_or(
-            TypeError::InvalidTypeApplication {
-                name: path,
-                expected,
-                found: args.len(),
-                span,
-            },
-        );
+        return resolved.ok_or(TypeError::InvalidTypeApplication {
+            name: path,
+            expected,
+            found: args.len(),
+            span,
+        });
     }
 
     let base = Type::Named {
@@ -755,6 +765,60 @@ fn core_type_from_path(
         body: Box::new(Type::Unit),
     };
     Ok(base.apply(args.to_vec()))
+}
+
+fn infer_term_items(
+    ctx: &mut InferenceContext,
+    env: &mut TypeEnv,
+    items: &[Term<()>],
+    schemes: &mut IndexMap<Path, TypeScheme>,
+) -> Result<InferredTermItems, TypeError> {
+    items
+        .iter()
+        .try_fold(
+            (Vec::with_capacity(items.len()), Vec::new()),
+            |(mut typed_items, mut predicates), item| {
+                let typed = infer_term(ctx, env, item, schemes)?;
+                predicates.extend(typed.predicates);
+                typed_items.push(typed.term);
+                Ok((typed_items, predicates))
+            },
+        )
+        .map(|(items, predicates)| {
+            InferredTermItems {
+                items: items.into_boxed_slice(),
+                predicates,
+            }
+        })
+}
+
+fn infer_pattern_items(
+    ctx: &mut InferenceContext,
+    env: &TypeEnv,
+    items: &[Pattern<()>],
+    bindings: &mut Vec<(Path, Type)>,
+) -> Result<InferredPatternItems, TypeError> {
+    items
+        .iter()
+        .try_fold(
+            (
+                Vec::with_capacity(items.len()),
+                Vec::with_capacity(items.len()),
+            ),
+            |(mut typed_items, mut item_types), item| {
+                let item_type = ctx.fresh_meta();
+                let typed_item = infer_pattern(ctx, env, item, &item_type, bindings)?;
+                item_types.push(item_type);
+                typed_items.push(typed_item);
+                Ok((typed_items, item_types))
+            },
+        )
+        .map(|(items, types)| {
+            InferredPatternItems {
+                items: items.into_boxed_slice(),
+                types,
+            }
+        })
 }
 
 fn expect_arity(
@@ -912,7 +976,10 @@ mod tests {
             else_: term(TermKind::Unreachable).into(),
         });
 
-        let typed = ctx.infer_term(&mut env, &let_term).expect("infer");
+        let mut schemes = IndexMap::new();
+        let typed = ctx
+            .infer_term(&mut env, &let_term, &mut schemes)
+            .expect("infer");
         assert_eq!(
             typed.term.type_,
             Type::Tuple(vec![Type::Integer, Type::Boolean])
@@ -929,7 +996,10 @@ mod tests {
             term(TermKind::Immediate(ImmediateValue::Integer(1))),
         );
         let literal = term(TermKind::Struct(fields));
-        let typed = ctx.infer_term(&mut env, &literal).expect("infer");
+        let mut schemes = IndexMap::new();
+        let typed = ctx
+            .infer_term(&mut env, &literal, &mut schemes)
+            .expect("infer");
         let Type::StructConstraint { fields, mode } = typed.term.type_ else {
             panic!("expected struct constraint");
         };
@@ -958,7 +1028,10 @@ mod tests {
             index: "x".to_string().with_span(Span::Generated),
         });
 
-        let typed = ctx.infer_term(&mut env, &field_term).expect("infer");
+        let mut schemes = IndexMap::new();
+        let typed = ctx
+            .infer_term(&mut env, &field_term, &mut schemes)
+            .expect("infer");
         assert_eq!(typed.term.type_, Type::Integer);
     }
 }

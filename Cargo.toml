@@ -44,6 +44,36 @@ codegen-units = 1
 [lib]
 crate-type = ["cdylib", "lib"]
 
+[lints.rust]
+mismatched_lifetime_syntaxes = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+exit = "deny"
+empty_structs_with_brackets = "deny"
+if_then_some_else_none = "deny"
+infinite_loop = "deny"
+map_with_unused_argument_over_ranges = "deny"
+missing_assert_message = "deny"
+missing_asserts_for_indexing = "deny"
+mutex_atomic = "deny"
+mutex_integer = "deny"
+panic = "deny"
+rc_buffer = "deny"
+rc_mutex = "deny"
+return_and_then = "deny"
+self_named_module_files = "deny"
+string_lit_chars_any = "deny"
+string_lit_as_bytes = "deny"
+string_slice = "deny"
+try_err = "deny"
+large_enum_variant = "allow"
+result_large_err = "allow"
+print_stdout = "warn"
+print_stderr = "warn"
+todo = "warn"
+unwrap_used = "warn"
+
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = ["--enable-bulk-memory", "-O2"]
 

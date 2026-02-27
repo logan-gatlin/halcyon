@@ -1,10 +1,31 @@
 use super::*;
-use crate::ir::{
-    left_pad,
-    PrettyPrint,
-};
+use crate::ir::ImmediateValue;
 
 use colored::Colorize;
+
+trait PrettyPrint {
+    fn pretty(&self) -> String;
+}
+
+fn left_pad(text: impl AsRef<str>) -> String {
+    text.as_ref()
+        .lines()
+        .map(|line| format!("  {line}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+impl PrettyPrint for Path {
+    fn pretty(&self) -> String {
+        self.to_string()
+    }
+}
+
+impl PrettyPrint for ImmediateValue {
+    fn pretty(&self) -> String {
+        self.to_string()
+    }
+}
 
 impl PrettyPrint for Module {
     fn pretty(&self) -> String {

@@ -7,10 +7,15 @@ use super::*;
 const INDENT_WIDTH: usize = 2;
 const LINE_LIMIT: usize = 96;
 
-pub fn pretty_typed_module(module: &Module<Type>) -> String {
-    let mut printer = Printer::new(Some(module.name.clone()));
-    printer.module(module);
-    printer.finish()
+impl std::fmt::Display for Module<Type> {
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        let mut printer = Printer::new(Some(self.name.clone()));
+        printer.module(self);
+        write!(f, "{}", printer.finish())
+    }
 }
 
 pub fn pretty_typed_term(term: &Term<Type>) -> String {

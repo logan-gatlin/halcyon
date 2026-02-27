@@ -31,6 +31,8 @@ use super::infer::{
     TypeError,
 };
 use super::{
+    core_type_resolution,
+    CoreTypeResolution,
     SymbolTable,
     TraitConstraint,
     TraitError,
@@ -38,15 +40,18 @@ use super::{
     Type,
     TypeDefinition,
     TypeScheme,
-    core_type_arity,
-    core_type_fallback,
-    resolve_core_type,
 };
 
 #[derive(Debug, Clone)]
 struct TypeDefEntry {
     parameters: Vec<Path>,
     def: crate::ir::TypeDef,
+}
+
+#[derive(Debug, Clone)]
+pub struct ResolvedModule {
+    pub module: Module<Type>,
+    pub schemes: IndexMap<Path, TypeScheme>,
 }
 
 pub fn resolve_module(
@@ -62,6 +67,14 @@ pub fn resolve_module_with_symbols(
     module: Module<()>,
     logger: &mut FileLogger,
 ) -> Module<Type> {
+    resolve_module_with_symbols_and_schemes(symbols, module, logger).module
+}
+
+pub fn resolve_module_with_symbols_and_schemes(
+    symbols: &mut SymbolTable,
+    module: Module<()>,
+    logger: &mut FileLogger,
+) -> ResolvedModule {
     let Module { name, statements } = module;
     let statements = Vec::from(statements);
     let type_entries = collect_type_entries(&statements);
@@ -109,14 +122,20 @@ pub fn resolve_module_with_symbols(
     }
 
     let mut ctx = InferenceContext::new();
-    ctx.set_type_definitions(type_definitions.clone());
+    let mut schemes = IndexMap::new();
+    ctx.set_type_definitions(
+        type_definitions
+            .iter()
+            .map(|(path, def)| (path.clone(), def.clone()))
+            .collect::<IndexMap<_, _>>(),
+    );
 
     let typed_statements = statements
         .into_iter()
         .map(|statement| {
             match statement {
                 Statement::Term(term) => {
-                    let output = match ctx.infer_term(&mut env, &term) {
+                    let output = match ctx.infer_term(&mut env, &term, &mut schemes) {
                         Ok(output) => output,
                         Err(error) => {
                             log_type_error(logger, error);
@@ -158,31 +177,36 @@ pub fn resolve_module_with_symbols(
         }
     }
 
-    Module {
-        name,
-        statements: typed_statements.into_boxed_slice(),
+    ResolvedModule {
+        module: Module {
+            name,
+            statements: typed_statements.into_boxed_slice(),
+        },
+        schemes,
     }
 }
 
-fn collect_type_entries(statements: &[Statement<()>]) -> HashMap<Path, TypeDefEntry> {
-    let mut entries = HashMap::new();
-    for statement in statements {
-        if let Statement::Type {
-            path,
-            parameters,
-            def,
-        } = statement
-        {
-            entries.insert(
+fn collect_type_entries(statements: &[Statement<()>]) -> IndexMap<Path, TypeDefEntry> {
+    statements
+        .iter()
+        .filter_map(|statement| {
+            let Statement::Type {
+                path,
+                parameters,
+                def,
+            } = statement
+            else {
+                return None;
+            };
+            Some((
                 path.clone(),
                 TypeDefEntry {
                     parameters: parameters.to_vec(),
                     def: def.clone(),
                 },
-            );
-        }
-    }
-    entries
+            ))
+        })
+        .collect()
 }
 
 fn collect_term_definitions(statements: &[Statement<()>]) -> Vec<(Path, Span)> {
@@ -205,25 +229,24 @@ fn collect_term_definitions(statements: &[Statement<()>]) -> Vec<(Path, Span)> {
 }
 
 fn collect_constructor_definitions(
-    entries: &HashMap<Path, TypeDefEntry>,
+    entries: &IndexMap<Path, TypeDefEntry>,
     duplicates: &HashSet<Path>,
 ) -> Vec<(Path, Span)> {
-    let mut definitions = Vec::new();
-    for (path, entry) in entries.iter() {
-        if duplicates.contains(path) {
-            continue;
-        }
-        let TypeDefKind::Sum(variants) = entry.def.kind() else {
-            continue;
-        };
-        for (variant, _) in variants.iter() {
-            definitions.push((
-                Path::new(path.major.clone(), variant.clone()),
-                entry.def.span(),
-            ));
-        }
-    }
-    definitions
+    entries
+        .iter()
+        .filter(|(path, _)| !duplicates.contains(*path))
+        .filter_map(|(path, entry)| {
+            let TypeDefKind::Sum(variants) = entry.def.kind() else {
+                return None;
+            };
+            Some((path, variants, entry.def.span()))
+        })
+        .flat_map(|(path, variants, span)| {
+            variants
+                .iter()
+                .map(move |(variant, _)| (Path::new(path.major.clone(), variant.clone()), span))
+        })
+        .collect()
 }
 
 fn collect_pattern_bindings(pattern: &Pattern<()>) -> Vec<(Path, Span)> {
@@ -253,10 +276,10 @@ fn collect_pattern_bindings(pattern: &Pattern<()>) -> Vec<(Path, Span)> {
 }
 
 fn build_type_definitions(
-    base_definitions: &HashMap<Path, TypeDefinition>,
-    entries: &HashMap<Path, TypeDefEntry>,
+    base_definitions: &IndexMap<Path, TypeDefinition>,
+    entries: &IndexMap<Path, TypeDefEntry>,
     logger: &mut FileLogger,
-) -> HashMap<Path, TypeDefinition> {
+) -> IndexMap<Path, TypeDefinition> {
     let mut definitions = base_definitions.clone();
     let mut stack = Vec::new();
     for path in entries.keys() {
@@ -267,8 +290,8 @@ fn build_type_definitions(
 
 fn resolve_type_definition(
     path: &Path,
-    entries: &HashMap<Path, TypeDefEntry>,
-    type_definitions: &mut HashMap<Path, TypeDefinition>,
+    entries: &IndexMap<Path, TypeDefEntry>,
+    type_definitions: &mut IndexMap<Path, TypeDefinition>,
     stack: &mut Vec<Path>,
     logger: &mut FileLogger,
 ) -> TypeDefinition {
@@ -320,8 +343,8 @@ fn resolve_type_definition(
 fn type_def_kind_to_type(
     kind: &TypeDefKind,
     param_map: &HashMap<Path, u32>,
-    entries: &HashMap<Path, TypeDefEntry>,
-    type_definitions: &mut HashMap<Path, TypeDefinition>,
+    entries: &IndexMap<Path, TypeDefEntry>,
+    type_definitions: &mut IndexMap<Path, TypeDefinition>,
     stack: &mut Vec<Path>,
     logger: &mut FileLogger,
 ) -> Type {
@@ -376,8 +399,8 @@ fn type_def_kind_to_type(
 fn type_expr_to_type_in_def(
     expr: &TypeExpr,
     param_map: &HashMap<Path, u32>,
-    entries: &HashMap<Path, TypeDefEntry>,
-    type_definitions: &mut HashMap<Path, TypeDefinition>,
+    entries: &IndexMap<Path, TypeDefEntry>,
+    type_definitions: &mut IndexMap<Path, TypeDefinition>,
     stack: &mut Vec<Path>,
     logger: &mut FileLogger,
 ) -> Type {
@@ -471,10 +494,10 @@ fn type_expr_to_type_in_def(
 }
 
 fn build_sum_constructors(
-    entries: &HashMap<Path, TypeDefEntry>,
-    type_definitions: &HashMap<Path, TypeDefinition>,
+    entries: &IndexMap<Path, TypeDefEntry>,
+    type_definitions: &IndexMap<Path, TypeDefinition>,
     logger: &mut FileLogger,
-) -> Vec<(Path, TypeScheme)> {
+) -> Box<[(Path, TypeScheme)]> {
     let mut constructors = Vec::new();
     let mut type_definitions = type_definitions.clone();
     for (path, entry) in entries.iter() {
@@ -518,7 +541,7 @@ fn build_sum_constructors(
             ));
         }
     }
-    constructors
+    constructors.into_boxed_slice()
 }
 
 #[allow(clippy::missing_asserts_for_indexing)]
@@ -529,13 +552,16 @@ fn core_type_from_path(
     logger: &mut FileLogger,
 ) -> Type {
     let minor = path.minor.as_str();
-    if let Some(expected) = core_type_arity(minor) {
+    if let CoreTypeResolution::Known {
+        expected,
+        resolved,
+        fallback,
+    } = core_type_resolution(minor, args)
+    {
         if expect_core_arity(span, path, expected, args.len(), logger).is_ok() {
-            return resolve_core_type(minor, args)
-                .or_else(|| core_type_fallback(minor))
-                .unwrap_or(Type::Unit);
+            return resolved.or(fallback).unwrap_or(Type::Unit);
         }
-        return core_type_fallback(minor).unwrap_or(Type::Unit);
+        return fallback.unwrap_or(Type::Unit);
     }
 
     let base = Type::Named {

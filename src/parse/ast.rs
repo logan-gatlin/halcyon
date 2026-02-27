@@ -31,7 +31,7 @@ pub trait AstNode: Sized {
     fn span(&self) -> Span {
         let mut tokens = self
             .syntax()
-            .children_with_tokens()
+            .descendants_with_tokens()
             .filter_map(|el| el.into_token())
             .filter(|t| !t.kind().is_trivia());
         let Some(first) = tokens.next() else {

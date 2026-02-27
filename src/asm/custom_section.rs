@@ -5,10 +5,17 @@ use wasm_encoder::{
     Encode,
 };
 
-use crate::map::*;
-use crate::semantic::AbstractType;
+use indexmap::IndexMap;
 
 use super::*;
+use crate::types::{
+    StructMatch,
+    TraitConstraint,
+    TraitRef,
+    Type as SemanticType,
+    TypeDefinition,
+    TypeScheme,
+};
 
 /// A cursor for decoding LEB128-encoded data
 struct Decoder<'a> {
@@ -38,6 +45,7 @@ impl<'a> Decoder<'a> {
         }
     }
 
+    #[cfg(test)]
     fn decode_u64(&mut self) -> Option<u64> {
         let mut result = 0u64;
         let mut shift = 0;
@@ -50,6 +58,23 @@ impl<'a> Decoder<'a> {
             }
             shift += 7;
             if shift >= u64::BITS {
+                return None;
+            }
+        }
+    }
+
+    fn decode_u32(&mut self) -> Option<u32> {
+        let mut result = 0u32;
+        let mut shift = 0;
+        loop {
+            let byte = *self.data.get(self.pos)?;
+            self.pos += 1;
+            result |= ((byte & 0x7F) as u32) << shift;
+            if byte & 0x80 == 0 {
+                return Some(result);
+            }
+            shift += 7;
+            if shift >= u32::BITS {
                 return None;
             }
         }
@@ -90,8 +115,8 @@ pub struct TypeSignatureSection {
     /// Types referenced in this module, but defined elsewhere
     pub imported_types: Vec<Path>,
     /// An ordered map of type declarations from this module
-    pub defined_types: IndexMap<Path, AbstractType>,
-    pub defined_terms: IndexMap<Path, semantic::Type>,
+    pub defined_types: IndexMap<Path, TypeDefinition>,
+    pub defined_terms: IndexMap<Path, TypeScheme>,
     /// The index of each referenced type in this section
     index_map: HashMap<Path, usize>,
 }
@@ -106,32 +131,26 @@ impl TypeSignatureSection {
         let mut defined_types = IndexMap::new();
         let mut defined_terms = IndexMap::new();
 
-        // PERFORMANCE:
-        // This is O(n^2) because it iterates over every type, and is called for
-        // every module in the symbol table. To fix, the symbol table will need
-        // to be changed to a doubly nested indexmap.
-        for (path, t) in &symbols.types {
+        for (path, definition) in symbols.type_definitions().iter() {
             if path.major == module_name {
-                defined_types.insert(path.clone(), t.clone());
-                t.clone().visit(|t: &mut semantic::Type| {
-                    if let semantic::Type::Instantiation(path, _) = t
-                        && !defined_types.contains_key(path)
-                    {
-                        imported_types.push(path.clone());
-                    }
-                });
+                defined_types.insert(path.clone(), definition.clone());
             }
         }
-        for (path, t) in &symbols.terms {
+        for (path, scheme) in symbols.terms().iter() {
             if path.major == module_name {
-                defined_terms.insert(path.clone(), t.clone());
-                t.clone().visit(|t: &mut semantic::Type| {
-                    if let semantic::Type::Instantiation(path, _) = t
-                        && !defined_types.contains_key(path)
-                    {
-                        imported_types.push(path.clone());
-                    }
-                });
+                defined_terms.insert(path.clone(), scheme.clone());
+            }
+        }
+
+        for definition in defined_types.values() {
+            collect_imported_types(&definition.body, &defined_types, &mut imported_types);
+        }
+        for scheme in defined_terms.values() {
+            collect_imported_types(&scheme.type_, &defined_types, &mut imported_types);
+            for predicate in scheme.predicates.iter() {
+                for arg in predicate.arguments.iter() {
+                    collect_imported_types(arg, &defined_types, &mut imported_types);
+                }
             }
         }
         let mut index_map = HashMap::new();
@@ -157,75 +176,149 @@ impl TypeSignatureSection {
     /// * Boolean: '3'
     /// * String: '4'
     /// * Glyph: '5'
-    /// * Variable: '6' uint
-    /// * Struct: '7' [(str, Type)]
-    /// * Array: '8' Type
-    /// * Tuple: '9' [Type]
-    /// * Sum: '10' [(str, Type)]
-    /// * Function: '11' (Type, Type)
-    /// * Instantiation: '12' uint [Type]
+    /// * TypeVar: '6' u32
+    /// * MetaVar: '7' u32
+    /// * RecVar: '8' u32
+    /// * ForAll: '9' Type
+    /// * Mu: '10' Type
+    /// * Named: '11' uint Type
+    /// * StructConstraint: '12' (match_mode, [(str, Type)])
+    /// * Struct: '13' [(str, Type)]
+    /// * Array: '14' Type
+    /// * Tuple: '15' [Type]
+    /// * Sum: '16' [(str, Type)]
+    /// * Function: '17' (Type, Type)
+    /// * Apply: '18' Type [Type]
     fn encode_type(
         &self,
-        type_: &semantic::Type,
+        type_: &SemanticType,
         sink: &mut Vec<u8>,
     ) {
-        use semantic::Type::*;
+        use SemanticType::*;
         match type_ {
-            Any => unreachable!(),
             Unit => 0usize.encode(sink),
             Integer => 1usize.encode(sink),
             Real => 2usize.encode(sink),
             Boolean => 3usize.encode(sink),
             String => 4usize.encode(sink),
             Glyph => 5usize.encode(sink),
-            Variable(id) => {
+            TypeVar(id) => {
                 6usize.encode(sink);
                 id.encode(sink);
             }
-            Struct { fields, .. } => {
+            MetaVar(id) => {
                 7usize.encode(sink);
+                id.encode(sink);
+            }
+            RecVar(id) => {
+                8usize.encode(sink);
+                id.encode(sink);
+            }
+            ForAll(body) => {
+                9usize.encode(sink);
+                self.encode_type(body, sink);
+            }
+            Mu(body) => {
+                10usize.encode(sink);
+                self.encode_type(body, sink);
+            }
+            Named { name, body } => {
+                11usize.encode(sink);
+                self.index_map[name].encode(sink);
+                self.encode_type(body, sink);
+            }
+            StructConstraint { fields, mode } => {
+                12usize.encode(sink);
+                match mode {
+                    StructMatch::Exact => 0usize.encode(sink),
+                    StructMatch::AtLeast => 1usize.encode(sink),
+                }
                 fields.len().encode(sink);
-                for f in fields {
-                    f.0.encode(sink);
-                    self.encode_type(f.1, sink);
+                for (name, type_) in fields.iter() {
+                    name.encode(sink);
+                    self.encode_type(type_, sink);
+                }
+            }
+            Struct { fields } => {
+                13usize.encode(sink);
+                fields.len().encode(sink);
+                for (name, type_) in fields.iter() {
+                    name.encode(sink);
+                    self.encode_type(type_, sink);
                 }
             }
             Array(t) => {
-                8usize.encode(sink);
+                14usize.encode(sink);
                 self.encode_type(t, sink);
             }
             Tuple(items) => {
-                9usize.encode(sink);
+                15usize.encode(sink);
                 items.len().encode(sink);
                 for i in items {
                     self.encode_type(i, sink);
                 }
             }
-            Sum {
-                variant_names,
-                variant_types,
-                ..
-            } => {
-                10usize.encode(sink);
-                variant_names.len().encode(sink);
-                for (name, type_) in variant_names.iter().zip(variant_types) {
+            Sum { variants } => {
+                16usize.encode(sink);
+                variants.len().encode(sink);
+                for (name, type_) in variants.iter() {
                     name.encode(sink);
                     self.encode_type(type_, sink);
                 }
             }
             Function(param, result) => {
-                11usize.encode(sink);
+                17usize.encode(sink);
                 self.encode_type(param, sink);
                 self.encode_type(result, sink);
             }
-            Instantiation(path, items) => {
-                12usize.encode(sink);
-                self.index_map[path].encode(sink);
-                items.len().encode(sink);
-                for item in items {
-                    self.encode_type(item, sink);
+            Apply {
+                constructor,
+                arguments,
+            } => {
+                18usize.encode(sink);
+                self.encode_type(constructor, sink);
+                arguments.len().encode(sink);
+                for arg in arguments {
+                    self.encode_type(arg, sink);
                 }
             }
+        }
+    }
+
+    fn encode_scheme(
+        &self,
+        scheme: &TypeScheme,
+        sink: &mut Vec<u8>,
+    ) {
+        self.encode_type(&scheme.type_, sink);
+        scheme.predicates.len().encode(sink);
+        for predicate in scheme.predicates.iter() {
+            self.encode_predicate(predicate, sink);
+        }
+    }
+
+    fn encode_predicate(
+        &self,
+        predicate: &TraitConstraint,
+        sink: &mut Vec<u8>,
+    ) {
+        predicate.trait_name.encode(sink);
+        predicate.arguments.len().encode(sink);
+        for arg in predicate.arguments.iter() {
+            self.encode_type(arg, sink);
+        }
+    }
+
+    #[cfg(test)]
+    fn rebuild_index_map(&mut self) {
+        self.index_map.clear();
+        for (id, path) in self
+            .imported_types
+            .iter()
+            .chain(self.defined_types.keys())
+            .enumerate()
+        {
+            self.index_map.insert(path.clone(), id);
         }
     }
 
@@ -248,46 +341,32 @@ impl TypeSignatureSection {
     }
 
     fn decode_data(dec: &mut Decoder) -> Option<Self> {
-        // Decode imported types
         let import_count = dec.decode_usize()?;
         let mut imported_types = Vec::with_capacity(import_count);
         for _ in 0..import_count {
             imported_types.push(dec.decode_path()?);
         }
 
-        // Build reverse index for decoding Instantiation references
         let mut reverse_index: Vec<Path> = imported_types.clone();
 
-        // Decode defined types
         let defined_count = dec.decode_usize()?;
         let mut defined_types = IndexMap::new();
         for _ in 0..defined_count {
             let path = dec.decode_path()?;
             reverse_index.push(path.clone());
-            let base = Self::decode_type(dec, &path, &reverse_index)?;
-            let var_count = dec.decode_usize()?;
-            let mut variables = Vec::with_capacity(var_count);
-            for _ in 0..var_count {
-                variables.push(dec.decode_u64()?);
-            }
-            defined_types.insert(
-                path,
-                AbstractType {
-                    variables: variables.into_boxed_slice(),
-                    base,
-                },
-            );
+            let parameters = dec.decode_usize()?;
+            let body = Self::decode_type(dec, &reverse_index)?;
+            defined_types.insert(path, TypeDefinition { parameters, body });
         }
 
         let defined_count = dec.decode_usize()?;
         let mut defined_terms = IndexMap::new();
         for _ in 0..defined_count {
             let path = dec.decode_path()?;
-            let type_ = Self::decode_type(dec, &path, &reverse_index)?;
-            defined_terms.insert(path, type_);
+            let scheme = Self::decode_scheme(dec, &reverse_index)?;
+            defined_terms.insert(path, scheme);
         }
 
-        // Rebuild index_map
         let mut index_map = HashMap::new();
         for (id, path) in imported_types.iter().enumerate() {
             index_map.insert(path.clone(), id);
@@ -306,10 +385,9 @@ impl TypeSignatureSection {
 
     fn decode_type(
         dec: &mut Decoder,
-        this_path: &Path,
         reverse_index: &[Path],
-    ) -> Option<semantic::Type> {
-        use semantic::Type::*;
+    ) -> Option<SemanticType> {
+        use SemanticType::*;
         Some(match dec.decode_usize()? {
             0 => Unit,
             1 => Integer,
@@ -317,60 +395,105 @@ impl TypeSignatureSection {
             3 => Boolean,
             4 => String,
             5 => Glyph,
-            6 => Variable(dec.decode_u64()?),
-            7 => {
+            6 => TypeVar(dec.decode_u32()?),
+            7 => MetaVar(dec.decode_u32()?),
+            8 => RecVar(dec.decode_u32()?),
+            9 => ForAll(Box::new(Self::decode_type(dec, reverse_index)?)),
+            10 => Mu(Box::new(Self::decode_type(dec, reverse_index)?)),
+            11 => {
+                let idx = dec.decode_usize()?;
+                let name = reverse_index.get(idx)?.clone();
+                let body = Self::decode_type(dec, reverse_index)?;
+                Named {
+                    name,
+                    body: Box::new(body),
+                }
+            }
+            12 => {
+                let mode = match dec.decode_usize()? {
+                    0 => StructMatch::Exact,
+                    1 => StructMatch::AtLeast,
+                    _ => return None,
+                };
                 let field_count = dec.decode_usize()?;
                 let mut fields = IndexMap::new();
                 for _ in 0..field_count {
                     let name = dec.decode_string()?;
-                    let type_ = Self::decode_type(dec, this_path, reverse_index)?;
+                    let type_ = Self::decode_type(dec, reverse_index)?;
                     fields.insert(name, type_);
                 }
-                Struct {
-                    name: this_path.clone(),
-                    fields,
-                }
+                StructConstraint { fields, mode }
             }
-            8 => Array(Box::new(Self::decode_type(dec, this_path, reverse_index)?)),
-            9 => {
+            13 => {
+                let field_count = dec.decode_usize()?;
+                let mut fields = IndexMap::new();
+                for _ in 0..field_count {
+                    let name = dec.decode_string()?;
+                    let type_ = Self::decode_type(dec, reverse_index)?;
+                    fields.insert(name, type_);
+                }
+                Struct { fields }
+            }
+            14 => Array(Box::new(Self::decode_type(dec, reverse_index)?)),
+            15 => {
                 let item_count = dec.decode_usize()?;
                 let mut items = Vec::with_capacity(item_count);
                 for _ in 0..item_count {
-                    items.push(Self::decode_type(dec, this_path, reverse_index)?);
+                    items.push(Self::decode_type(dec, reverse_index)?);
                 }
                 Tuple(items)
             }
-            10 => {
+            16 => {
                 let variant_count = dec.decode_usize()?;
-                let mut variant_names = Vec::with_capacity(variant_count);
-                let mut variant_types = Vec::with_capacity(variant_count);
+                let mut variants = IndexMap::new();
                 for _ in 0..variant_count {
-                    variant_names.push(dec.decode_string()?);
-                    variant_types.push(Self::decode_type(dec, this_path, reverse_index)?);
+                    let name = dec.decode_string()?;
+                    let type_ = Self::decode_type(dec, reverse_index)?;
+                    variants.insert(name, type_);
                 }
-                Sum {
-                    name: Path::default(),
-                    variant_names,
-                    variant_types,
-                }
+                Sum { variants }
             }
-            11 => {
-                let param = Self::decode_type(dec, this_path, reverse_index)?;
-                let result = Self::decode_type(dec, this_path, reverse_index)?;
+            17 => {
+                let param = Self::decode_type(dec, reverse_index)?;
+                let result = Self::decode_type(dec, reverse_index)?;
                 Function(Box::new(param), Box::new(result))
             }
-            12 => {
-                let idx = dec.decode_usize()?;
-                let path = reverse_index.get(idx)?.clone();
-                let item_count = dec.decode_usize()?;
-                let mut items = Vec::with_capacity(item_count);
-                for _ in 0..item_count {
-                    items.push(Self::decode_type(dec, this_path, reverse_index)?);
+            18 => {
+                let constructor = Self::decode_type(dec, reverse_index)?;
+                let arg_count = dec.decode_usize()?;
+                let mut arguments = Vec::with_capacity(arg_count);
+                for _ in 0..arg_count {
+                    arguments.push(Self::decode_type(dec, reverse_index)?);
                 }
-                Instantiation(path, items)
+                Apply {
+                    constructor: Box::new(constructor),
+                    arguments,
+                }
             }
             _ => return None,
         })
+    }
+
+    fn decode_scheme(
+        dec: &mut Decoder,
+        reverse_index: &[Path],
+    ) -> Option<TypeScheme> {
+        let type_ = Self::decode_type(dec, reverse_index)?;
+        let predicate_count = dec.decode_usize()?;
+        let mut predicates = Vec::with_capacity(predicate_count);
+        for _ in 0..predicate_count {
+            let trait_name = dec.decode_path()?;
+            let arg_count = dec.decode_usize()?;
+            let mut arguments = Vec::with_capacity(arg_count);
+            for _ in 0..arg_count {
+                arguments.push(Self::decode_type(dec, reverse_index)?);
+            }
+            predicates.push(TraitRef {
+                trait_name,
+                arguments,
+            });
+        }
+        Some(TypeScheme { predicates, type_ })
     }
 }
 
@@ -382,7 +505,8 @@ impl wasm_encoder::Section for TypeSignatureSection {
 
 /// Section layout:
 /// [Path] (imported type paths)
-/// [(Path, Type, [uint])] (Type definitions)
+/// [(Path, parameters, Type)] (type definitions)
+/// [(Path, TypeScheme)] (term definitions)
 impl Encode for TypeSignatureSection {
     fn encode(
         &self,
@@ -393,13 +517,13 @@ impl Encode for TypeSignatureSection {
         self.defined_types.len().encode(&mut data);
         for (path, t) in &self.defined_types {
             path.encode(&mut data);
-            self.encode_type(&t.base, &mut data);
-            t.variables.encode(&mut data);
+            t.parameters.encode(&mut data);
+            self.encode_type(&t.body, &mut data);
         }
         self.defined_terms.len().encode(&mut data);
         for (path, t) in &self.defined_terms {
             path.encode(&mut data);
-            self.encode_type(t, &mut data);
+            self.encode_scheme(t, &mut data);
         }
         CustomSection {
             name: Self::NAME.into(),
@@ -409,130 +533,196 @@ impl Encode for TypeSignatureSection {
     }
 }
 
+fn collect_imported_types(
+    type_: &SemanticType,
+    defined_types: &IndexMap<Path, TypeDefinition>,
+    imported_types: &mut Vec<Path>,
+) {
+    match type_ {
+        SemanticType::Named { name, body } => {
+            if !defined_types.contains_key(name) {
+                imported_types.push(name.clone());
+            }
+            collect_imported_types(body, defined_types, imported_types);
+        }
+        SemanticType::ForAll(body) | SemanticType::Mu(body) | SemanticType::Array(body) => {
+            collect_imported_types(body, defined_types, imported_types);
+        }
+        SemanticType::StructConstraint { fields, .. } | SemanticType::Struct { fields } => {
+            for field in fields.values() {
+                collect_imported_types(field, defined_types, imported_types);
+            }
+        }
+        SemanticType::Tuple(items) => {
+            for item in items {
+                collect_imported_types(item, defined_types, imported_types);
+            }
+        }
+        SemanticType::Sum { variants } => {
+            for variant in variants.values() {
+                collect_imported_types(variant, defined_types, imported_types);
+            }
+        }
+        SemanticType::Function(parameter, result) => {
+            collect_imported_types(parameter, defined_types, imported_types);
+            collect_imported_types(result, defined_types, imported_types);
+        }
+        SemanticType::Apply {
+            constructor,
+            arguments,
+        } => {
+            collect_imported_types(constructor, defined_types, imported_types);
+            for arg in arguments {
+                collect_imported_types(arg, defined_types, imported_types);
+            }
+        }
+        SemanticType::Unit
+        | SemanticType::Integer
+        | SemanticType::Real
+        | SemanticType::Boolean
+        | SemanticType::String
+        | SemanticType::Glyph
+        | SemanticType::TypeVar(_)
+        | SemanticType::MetaVar(_)
+        | SemanticType::RecVar(_) => {}
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
     use super::*;
 
-    fn roundtrip_type(type_: semantic::Type) {
-        let path = Path {
-            major: "test".into(),
-            minor: "MyType".into(),
-        };
-        let mut section = TypeSignatureSection::default();
-        section.defined_types.insert(
-            path.clone(),
-            AbstractType {
-                variables: Box::new([]),
-                base: type_.clone(),
-            },
-        );
-        section.index_map.insert(path, 0);
-
-        let mut encoded = vec![];
-        section.encode(&mut encoded);
-
-        // Skip the LEB128 length prefix
+    fn decode_section(encoded: &[u8]) -> TypeSignatureSection {
         let mut pos = 0;
         while encoded[pos] & 0x80 != 0 {
             pos += 1;
         }
         pos += 1;
+        TypeSignatureSection::decode(&encoded[pos..]).unwrap()
+    }
 
-        let decoded = TypeSignatureSection::decode(&encoded[pos..]).unwrap();
-        assert_eq!(section.defined_types.len(), decoded.defined_types.len());
+    fn roundtrip_type(type_: SemanticType) {
+        let path = Path::new("test", "MyType");
+        let mut section = TypeSignatureSection::default();
+        section.defined_types.insert(
+            path.clone(),
+            TypeDefinition {
+                parameters: 0,
+                body: type_.clone(),
+            },
+        );
+        section.rebuild_index_map();
 
-        let original_type = &section.defined_types.values().next().unwrap().base;
-        let decoded_type = &decoded.defined_types.values().next().unwrap().base;
+        let mut encoded = vec![];
+        section.encode(&mut encoded);
+        let decoded = decode_section(&encoded);
+
+        let original_type = &section.defined_types.values().next().unwrap().body;
+        let decoded_type = &decoded.defined_types.values().next().unwrap().body;
         assert_eq!(format!("{original_type:?}"), format!("{decoded_type:?}"));
     }
 
     #[test]
-    fn roundtrip_unit() {
-        roundtrip_type(semantic::Type::Unit);
+    fn roundtrip_primitives() {
+        roundtrip_type(SemanticType::Unit);
+        roundtrip_type(SemanticType::Integer);
+        roundtrip_type(SemanticType::Real);
+        roundtrip_type(SemanticType::Boolean);
+        roundtrip_type(SemanticType::String);
+        roundtrip_type(SemanticType::Glyph);
     }
 
     #[test]
-    fn roundtrip_integer() {
-        roundtrip_type(semantic::Type::Integer);
+    fn roundtrip_vars_and_binders() {
+        roundtrip_type(SemanticType::TypeVar(2));
+        roundtrip_type(SemanticType::MetaVar(3));
+        roundtrip_type(SemanticType::RecVar(1));
+        roundtrip_type(SemanticType::ForAll(Box::new(SemanticType::TypeVar(0))));
+        roundtrip_type(SemanticType::Mu(Box::new(SemanticType::RecVar(0))));
     }
 
     #[test]
-    fn roundtrip_real() {
-        roundtrip_type(semantic::Type::Real);
-    }
-
-    #[test]
-    fn roundtrip_boolean() {
-        roundtrip_type(semantic::Type::Boolean);
-    }
-
-    #[test]
-    fn roundtrip_string() {
-        roundtrip_type(semantic::Type::String);
-    }
-
-    #[test]
-    fn roundtrip_glyph() {
-        roundtrip_type(semantic::Type::Glyph);
-    }
-
-    #[test]
-    fn roundtrip_variable() {
-        roundtrip_type(semantic::Type::Variable(42));
-    }
-
-    #[test]
-    fn roundtrip_struct() {
+    fn roundtrip_struct_and_constraint() {
         let mut fields = IndexMap::new();
-        fields.insert("x".into(), semantic::Type::Integer);
-        fields.insert("y".into(), semantic::Type::Real);
-        roundtrip_type(semantic::Type::Struct {
-            name: Path::new("test", "MyType"),
+        fields.insert("x".into(), SemanticType::Integer);
+        fields.insert("y".into(), SemanticType::Real);
+        roundtrip_type(SemanticType::Struct {
+            fields: fields.clone(),
+        });
+        roundtrip_type(SemanticType::StructConstraint {
             fields,
+            mode: StructMatch::AtLeast,
         });
     }
 
     #[test]
-    fn roundtrip_array() {
-        roundtrip_type(semantic::Type::Array(Box::new(semantic::Type::Integer)));
-    }
-
-    #[test]
-    fn roundtrip_tuple() {
-        roundtrip_type(semantic::Type::Tuple(vec![
-            semantic::Type::Integer,
-            semantic::Type::String,
-            semantic::Type::Boolean,
+    fn roundtrip_compound() {
+        roundtrip_type(SemanticType::Array(Box::new(SemanticType::Integer)));
+        roundtrip_type(SemanticType::Tuple(vec![
+            SemanticType::Integer,
+            SemanticType::String,
+            SemanticType::Boolean,
         ]));
-    }
-
-    #[test]
-    fn roundtrip_sum() {
-        roundtrip_type(semantic::Type::Sum {
-            name: Path::default(),
-            variant_names: vec!["None".into(), "Some".into()],
-            variant_types: vec![semantic::Type::Unit, semantic::Type::Integer],
+        roundtrip_type(SemanticType::Sum {
+            variants: {
+                let mut variants = IndexMap::new();
+                variants.insert("None".into(), SemanticType::Unit);
+                variants.insert("Some".into(), SemanticType::Integer);
+                variants
+            },
         });
-    }
-
-    #[test]
-    fn roundtrip_function() {
-        roundtrip_type(semantic::Type::Function(
-            Box::new(semantic::Type::Integer),
-            Box::new(semantic::Type::String),
+        roundtrip_type(SemanticType::Function(
+            Box::new(SemanticType::Integer),
+            Box::new(SemanticType::String),
         ));
     }
 
     #[test]
-    fn roundtrip_nested() {
-        roundtrip_type(semantic::Type::Function(
-            Box::new(semantic::Type::Tuple(vec![
-                semantic::Type::Integer,
-                semantic::Type::Array(Box::new(semantic::Type::String)),
-            ])),
-            Box::new(semantic::Type::Boolean),
-        ));
+    fn roundtrip_named_apply_and_scheme() {
+        let path = Path::new("test", "Box");
+        let body = SemanticType::ForAll(Box::new(SemanticType::Struct {
+            fields: {
+                let mut fields = IndexMap::new();
+                fields.insert("value".into(), SemanticType::TypeVar(0));
+                fields
+            },
+        }));
+        let applied = SemanticType::Apply {
+            constructor: Box::new(SemanticType::Named {
+                name: path.clone(),
+                body: Box::new(body.clone()),
+            }),
+            arguments: vec![SemanticType::Integer],
+        };
+
+        let mut section = TypeSignatureSection::default();
+        section.defined_types.insert(
+            path.clone(),
+            TypeDefinition {
+                parameters: 1,
+                body: body.clone(),
+            },
+        );
+        section.defined_terms.insert(
+            Path::new("test", "make"),
+            TypeScheme::with_predicates(
+                applied,
+                vec![TraitRef {
+                    trait_name: Path::core("equal"),
+                    arguments: vec![SemanticType::Integer],
+                }],
+            ),
+        );
+        section.rebuild_index_map();
+
+        let mut encoded = vec![];
+        section.encode(&mut encoded);
+        let decoded = decode_section(&encoded);
+
+        let orig_term = section.defined_terms.values().next().unwrap();
+        let dec_term = decoded.defined_terms.values().next().unwrap();
+        assert_eq!(format!("{orig_term:?}"), format!("{dec_term:?}"));
     }
 
     #[test]
@@ -551,19 +741,16 @@ mod tests {
     fn decode_truncated_after_name_returns_none() {
         let mut data = vec![];
         TypeSignatureSection::NAME.encode(&mut data);
-        // No import count follows — truncated
         assert!(TypeSignatureSection::decode(&data).is_none());
     }
 
     #[test]
     fn decode_truncated_leb128_returns_none() {
-        // A continuation byte (high bit set) with no following byte
         assert!(TypeSignatureSection::decode(&[0x80]).is_none());
     }
 
     #[test]
     fn decode_oversized_leb128_returns_none() {
-        // 10 continuation bytes exceeds the 64-bit shift limit
         let data: Vec<u8> = std::iter::repeat_n(0x80, 10).chain([0x01]).collect();
         let mut dec = Decoder::new(&data);
         assert!(dec.decode_u64().is_none());
@@ -571,7 +758,6 @@ mod tests {
 
     #[test]
     fn decode_invalid_utf8_returns_none() {
-        // Length prefix = 2, then two invalid UTF-8 bytes
         let data = [0x02, 0xFF, 0xFE];
         let mut dec = Decoder::new(&data);
         assert!(dec.decode_string().is_none());
@@ -579,7 +765,6 @@ mod tests {
 
     #[test]
     fn decode_string_length_overflow_returns_none() {
-        // Length prefix claims 255 bytes, but only 2 bytes follow
         let data = [0xFF, 0x01, 0x41, 0x42];
         let mut dec = Decoder::new(&data);
         assert!(dec.decode_string().is_none());
@@ -593,157 +778,26 @@ mod tests {
         1usize.encode(&mut data); // 1 defined type
         "test".encode(&mut data); // path.major
         "T".encode(&mut data); // path.minor
+        0usize.encode(&mut data); // 0 parameters
         99usize.encode(&mut data); // invalid type tag
-        0usize.encode(&mut data); // 0 variables
         0usize.encode(&mut data); // 0 defined terms
         assert!(TypeSignatureSection::decode(&data).is_none());
     }
 
     #[test]
-    fn decode_out_of_bounds_instantiation_index_returns_none() {
+    fn decode_out_of_bounds_named_index_returns_none() {
         let mut data = vec![];
         TypeSignatureSection::NAME.encode(&mut data);
         0usize.encode(&mut data); // 0 imports
         1usize.encode(&mut data); // 1 defined type
         "test".encode(&mut data); // path.major
         "T".encode(&mut data); // path.minor
-        12usize.encode(&mut data); // Instantiation tag
+        11usize.encode(&mut data); // Named tag
         999usize.encode(&mut data); // out-of-bounds index into reverse_index
-        0usize.encode(&mut data); // 0 type args
-        0usize.encode(&mut data); // 0 variables
+        0usize.encode(&mut data); // body tag: unit
+        0usize.encode(&mut data); // 0 parameters
         0usize.encode(&mut data); // 0 defined terms
         assert!(TypeSignatureSection::decode(&data).is_none());
-    }
-
-    #[test]
-    fn roundtrip_with_type_variables() {
-        let path = Path {
-            major: "test".into(),
-            minor: "Generic".into(),
-        };
-        let mut section = TypeSignatureSection::default();
-        section.defined_types.insert(
-            path.clone(),
-            AbstractType {
-                variables: Box::new([1, 2, 3]),
-                base: semantic::Type::Tuple(vec![
-                    semantic::Type::Variable(1),
-                    semantic::Type::Variable(2),
-                    semantic::Type::Variable(3),
-                ]),
-            },
-        );
-        section.index_map.insert(path, 0);
-
-        let mut encoded = vec![];
-        section.encode(&mut encoded);
-
-        let mut pos = 0;
-        while encoded[pos] & 0x80 != 0 {
-            pos += 1;
-        }
-        pos += 1;
-
-        let decoded = TypeSignatureSection::decode(&encoded[pos..]).unwrap();
-        let original = section.defined_types.values().next().unwrap();
-        let decoded_val = decoded.defined_types.values().next().unwrap();
-        assert_eq!(original.variables.len(), decoded_val.variables.len());
-        assert_eq!(
-            format!("{:?}", original.base),
-            format!("{:?}", decoded_val.base)
-        );
-    }
-
-    #[test]
-    fn roundtrip_term() {
-        let path = Path {
-            major: "test".into(),
-            minor: "my_fn".into(),
-        };
-        let mut section = TypeSignatureSection::default();
-        section.defined_terms.insert(
-            path,
-            semantic::Type::Function(
-                Box::new(semantic::Type::Integer),
-                Box::new(semantic::Type::String),
-            ),
-        );
-
-        let mut encoded = vec![];
-        section.encode(&mut encoded);
-
-        let mut pos = 0;
-        while encoded[pos] & 0x80 != 0 {
-            pos += 1;
-        }
-        pos += 1;
-
-        let decoded = TypeSignatureSection::decode(&encoded[pos..]).unwrap();
-        assert_eq!(section.defined_terms.len(), decoded.defined_terms.len());
-        let original = section.defined_terms.values().next().unwrap();
-        let decoded_val = decoded.defined_terms.values().next().unwrap();
-        assert_eq!(format!("{original:?}"), format!("{decoded_val:?}"));
-    }
-
-    #[test]
-    fn roundtrip_types_and_terms() {
-        let type_path = Path {
-            major: "test".into(),
-            minor: "MyType".into(),
-        };
-        let term_path = Path {
-            major: "test".into(),
-            minor: "make".into(),
-        };
-
-        let mut section = TypeSignatureSection::default();
-        section.defined_types.insert(
-            type_path.clone(),
-            AbstractType {
-                variables: Box::new([1]),
-                base: semantic::Type::Struct {
-                    name: Path::new("test", "MyType"),
-                    fields: {
-                        let mut f = IndexMap::new();
-                        f.insert("value".into(), semantic::Type::Variable(1));
-                        f
-                    },
-                },
-            },
-        );
-        section.index_map.insert(type_path.clone(), 0);
-
-        section.defined_terms.insert(
-            term_path,
-            semantic::Type::Function(
-                Box::new(semantic::Type::Variable(1)),
-                Box::new(semantic::Type::Instantiation(
-                    type_path,
-                    vec![semantic::Type::Variable(1)],
-                )),
-            ),
-        );
-
-        let mut encoded = vec![];
-        section.encode(&mut encoded);
-
-        let mut pos = 0;
-        while encoded[pos] & 0x80 != 0 {
-            pos += 1;
-        }
-        pos += 1;
-
-        let decoded = TypeSignatureSection::decode(&encoded[pos..]).unwrap();
-        assert_eq!(section.defined_types.len(), decoded.defined_types.len());
-        assert_eq!(section.defined_terms.len(), decoded.defined_terms.len());
-
-        let orig_type = &section.defined_types.values().next().unwrap().base;
-        let dec_type = &decoded.defined_types.values().next().unwrap().base;
-        assert_eq!(format!("{orig_type:?}"), format!("{dec_type:?}"));
-
-        let orig_term = section.defined_terms.values().next().unwrap();
-        let dec_term = decoded.defined_terms.values().next().unwrap();
-        assert_eq!(format!("{orig_term:?}"), format!("{dec_term:?}"));
     }
 
     #[test]

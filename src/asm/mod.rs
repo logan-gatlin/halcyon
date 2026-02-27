@@ -14,25 +14,25 @@ mod encode;
 mod lower;
 pub mod pretty_print;
 
+#[cfg(test)]
+mod tests;
+
 use custom_section::*;
 use indexmap::IndexMap;
 pub use wasm_encoder::ValType;
 
+use crate::Artifact;
 use crate::ir::{
-    ConstValue,
+    ElaborationResult,
+    ImmediateValue,
     Path,
     ScopeKind,
+    Statement,
 };
-use crate::{
-    FileLogger,
-    Logger,
-    Span,
-    SymbolTable,
-    WithContext,
-    semantic,
-};
+use crate::types::SymbolTable;
 
 pub use encode::encode;
+use lower::ConstructorTable;
 pub use lower::lower_type;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -107,6 +107,11 @@ pub enum NumberOperation {
     /// Available for: integers and floats
     Div,
 
+    /// Arithmetic remainder: left % right.
+    ///
+    /// Available for: integers only
+    Rem,
+
     /// Bitwise AND: left & right.
     ///
     /// Available for: integers only
@@ -141,7 +146,7 @@ pub enum Instruction {
     /// Push a constant value onto the stack.
     ///
     /// Stack: `[] -> [const_value]`
-    Const(ConstValue),
+    Const(ImmediateValue),
 
     I32Const(i32),
 
@@ -342,6 +347,8 @@ pub struct Module {
     pub has_memory: bool,
     pub sig: TypeSignatureSection,
     pub start: Path,
+    #[doc(hidden)]
+    pub closure_counter: usize,
 }
 
 impl Type {
@@ -368,25 +375,50 @@ impl Function {
 }
 
 pub fn lower_module(
-    ir_module: crate::ir::Module,
+    elaborated: ElaborationResult,
     symbols: &SymbolTable,
 ) -> Module {
+    let ElaborationResult {
+        module: ir_module,
+        specializations,
+    } = elaborated;
     let mut module = Module::new(ir_module.name.clone());
     let init_name = Path::new(&ir_module.name, "[init]");
     let mut init_func = module.new_function(init_name.clone());
+    let constructor_table = ConstructorTable::from_symbols(symbols);
 
-    // Lower constructors first so they're available as globals
-    for (path, cons) in ir_module.constructors {
-        init_func.lower_constructor(path, cons, symbols);
+    for specialization in &specializations {
+        init_func.lower_specialization(specialization, symbols);
     }
 
-    for code in ir_module.code {
-        init_func.lower_ir(code, symbols);
-        init_func.push(Instruction::Drop);
+    for (path, info) in constructor_table.constructors_for_module(&ir_module.name) {
+        init_func.lower_constructor(path, &info, symbols);
+    }
+
+    for statement in ir_module.statements {
+        if let Statement::Term(term) = statement {
+            init_func.lower_ir(term, symbols, &constructor_table);
+            init_func.push(Instruction::Drop);
+        }
     }
     module.start = init_name;
     module.sig = TypeSignatureSection::new(&ir_module.name, symbols);
     module
+}
+
+pub fn compile_module(
+    elaborated: ElaborationResult,
+    symbols: &SymbolTable,
+) -> Artifact {
+    let ir_module = elaborated.module.clone();
+    let module_name = ir_module.name.clone();
+    let module = lower_module(elaborated, symbols);
+    let binary = encode(module);
+    Artifact {
+        module_name,
+        ir_module: Some(ir_module),
+        binary,
+    }
 }
 
 impl Module {
@@ -476,66 +508,4 @@ impl<'a> Encoder<'a> {
     ) {
         self.current_func().returns.push(type_);
     }
-}
-
-// This uses the existing codespan-reporting system to report WASM validation
-// errors with their decompiled WAT syntax
-pub fn validate_wasm(
-    file_name: &str,
-    bin: &[u8],
-    logger: &mut Logger,
-) -> FileLogger {
-    /// Find the WAT line number (1-indexed) for a given binary offset.
-    /// Returns the line whose binary offset is the largest that doesn't exceed `target_offset`.
-    fn find_wat_line_for_offset(
-        offset_map: &[(usize, Option<usize>)],
-        target_offset: usize,
-    ) -> usize {
-        let mut best_line = 1;
-        for &(line, offset) in offset_map {
-            if let Some(off) = offset
-                && off <= target_offset
-            {
-                best_line = line;
-            }
-        }
-        best_line
-    }
-
-    /// Compute the byte offset in the WAT string for the start of a given line (1-indexed).
-    fn wat_line_byte_offset(
-        wat: &str,
-        line: usize,
-    ) -> usize {
-        wat.lines()
-            .take(line.saturating_sub(1))
-            .map(|l| l.len() + 1) // +1 for newline
-            .sum()
-    }
-
-    // Generate WAT with offset mapping for validation error reporting
-    let mut wat_storage = String::new();
-    let offset_map: Vec<(usize, Option<usize>)> = wasmprinter::Config::new()
-        .offsets_and_lines(bin, &mut wat_storage)
-        .map(|iter| {
-            iter.enumerate()
-                .map(|(idx, (offset, _text))| (idx + 1, offset)) // 1-indexed lines
-                .collect()
-        })
-        .unwrap_or_default();
-    let mut file_logger = logger.new_file(file_name, wat_storage.clone());
-    if let Err(e) = wasmparser::validate(bin) {
-        let error_offset = e.offset();
-        let wat_line = find_wat_line_for_offset(&offset_map, error_offset);
-        let byte_start = wat_line_byte_offset(&wat_storage, wat_line);
-        let byte_end = wat_line_byte_offset(&wat_storage, wat_line + 1).min(wat_storage.len());
-
-        let span = Span::new(byte_start, byte_end);
-
-        file_logger
-            .bug(e.message())
-            .primary("Failed validation here", span)
-            .done();
-    }
-    file_logger
 }

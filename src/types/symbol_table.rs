@@ -1,10 +1,7 @@
-use std::collections::HashMap;
-
 use indexmap::IndexMap;
 
 use crate::ir::Path;
 
-use super::Type;
 use super::traits::{
     TraitConstraint,
     TraitDef,
@@ -14,6 +11,7 @@ use super::traits::{
     TypeScheme,
 };
 use super::unify::UnificationTable;
+use super::Type;
 
 /// Classification of global symbols stored in the symbol table.
 pub enum SymbolKind {
@@ -50,9 +48,9 @@ pub trait Symbol {
 #[derive(Debug, Clone, Default)]
 pub struct SymbolTable {
     terms: IndexMap<Path, TypeScheme>,
-    types: HashMap<Path, TypeDefinition>,
-    trait_defs: HashMap<Path, TraitDef>,
-    trait_impls: HashMap<Path, Vec<TraitImpl>>,
+    types: IndexMap<Path, TypeDefinition>,
+    trait_defs: IndexMap<Path, TraitDef>,
+    trait_impls: IndexMap<Path, Vec<TraitImpl>>,
 }
 
 impl SymbolTable {
@@ -87,6 +85,14 @@ impl SymbolTable {
         &self.terms
     }
 
+    pub fn trait_defs(&self) -> &IndexMap<Path, TraitDef> {
+        &self.trait_defs
+    }
+
+    pub fn trait_impls(&self) -> &IndexMap<Path, Vec<TraitImpl>> {
+        &self.trait_impls
+    }
+
     pub fn insert_term(
         &mut self,
         path: Path,
@@ -95,7 +101,7 @@ impl SymbolTable {
         self.terms.insert(path, scheme.into())
     }
 
-    pub fn type_definitions(&self) -> &HashMap<Path, TypeDefinition> {
+    pub fn type_definitions(&self) -> &IndexMap<Path, TypeDefinition> {
         &self.types
     }
 

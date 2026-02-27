@@ -13,7 +13,7 @@ pub fn source_file(p: &mut Parser<'_, '_>) {
         if p.at(SyntaxKind::MODULE_KW) {
             module::module(p);
         } else {
-            module::statement(p);
+            p.error_recover("expected `module`", &[SyntaxKind::MODULE_KW]);
         }
     }
     // Attach any trailing trivia to the root node.
