@@ -1,10 +1,11 @@
 use super::{
     expression,
     pattern,
+    sexpr,
     type_expr,
 };
-use crate::parse::SyntaxKind;
 use crate::parse::parser::Parser;
+use crate::parse::SyntaxKind;
 
 /// Recovery set at the module-body level: we can resume parsing at any
 /// statement-starting keyword or at `end`.
@@ -12,6 +13,7 @@ const STATEMENT_RECOVERY: &[SyntaxKind] = &[
     SyntaxKind::LET_KW,
     SyntaxKind::TYPE_KW,
     SyntaxKind::END_KW,
+    SyntaxKind::WASM_KW,
     SyntaxKind::MODULE_KW,
 ];
 
@@ -19,6 +21,7 @@ pub fn statement(p: &mut Parser<'_, '_>) {
     match p.current() {
         Some(SyntaxKind::LET_KW) => let_statement(p),
         Some(SyntaxKind::TYPE_KW) => type_statement(p),
+        Some(SyntaxKind::WASM_KW) => inline_wasm(p),
         _ => {
             if p.at(SyntaxKind::MODULE_KW) {
                 p.error_recover("nested modules are not supported", &[SyntaxKind::END_KW]);
@@ -72,5 +75,16 @@ fn type_statement(p: &mut Parser<'_, '_>) {
     }
     p.expect(SyntaxKind::EQUAL);
     type_expr::type_def(p);
+    p.finish_node(m);
+}
+
+/// ```bnf
+/// <inline_wasm> ::= "wasm" "=>" <sexpr>
+/// ```
+fn inline_wasm(p: &mut Parser<'_, '_>) {
+    let m = p.start_node_with_leading_comments(SyntaxKind::WASM_STATEMENT);
+    p.expect(SyntaxKind::WASM_KW);
+    p.expect(SyntaxKind::DOUBLE_ARROW);
+    sexpr::parse(p);
     p.finish_node(m);
 }

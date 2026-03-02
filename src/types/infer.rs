@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use indexmap::IndexMap;
 
+use crate::Span;
 use crate::ir::{
     Glob,
     Path,
@@ -13,11 +14,8 @@ use crate::ir::{
     TypeExpr,
     TypeExprKind,
 };
-use crate::Span;
 
 use super::{
-    core_type_resolution,
-    CoreTypeResolution,
     MetaVarId,
     StructMatch,
     TraitConstraint,
@@ -713,9 +711,6 @@ fn type_expr_to_type(
                 .iter()
                 .map(|arg| type_expr_to_type(ctx, arg))
                 .collect::<Result<Vec<_>, _>>()?;
-            if path.major == "core" {
-                return core_type_from_path(path.clone(), &arguments, expr.span);
-            }
             let definition = ctx.type_definitions.get(path);
             if let Some(definition) = definition {
                 if definition.parameters != arguments.len() {
@@ -739,32 +734,6 @@ fn type_expr_to_type(
             Ok(base.apply(arguments))
         }
     }
-}
-
-#[allow(clippy::missing_asserts_for_indexing)]
-fn core_type_from_path(
-    path: Path,
-    args: &[Type],
-    span: Span,
-) -> Result<Type, TypeError> {
-    if let CoreTypeResolution::Known {
-        expected, resolved, ..
-    } = core_type_resolution(path.minor.as_str(), args)
-    {
-        expect_arity(path.clone(), expected, args.len(), span)?;
-        return resolved.ok_or(TypeError::InvalidTypeApplication {
-            name: path,
-            expected,
-            found: args.len(),
-            span,
-        });
-    }
-
-    let base = Type::Named {
-        name: path.clone(),
-        body: Box::new(Type::Unit),
-    };
-    Ok(base.apply(args.to_vec()))
 }
 
 fn infer_term_items(
@@ -819,24 +788,6 @@ fn infer_pattern_items(
                 types,
             }
         })
-}
-
-fn expect_arity(
-    name: Path,
-    expected: usize,
-    found: usize,
-    span: Span,
-) -> Result<(), TypeError> {
-    if expected == found {
-        Ok(())
-    } else {
-        Err(TypeError::InvalidTypeApplication {
-            name,
-            expected,
-            found,
-            span,
-        })
-    }
 }
 
 struct ReplaceMetaVars<'a> {

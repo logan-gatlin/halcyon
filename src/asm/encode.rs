@@ -352,6 +352,7 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
                     }
                 }
                 i::I32Const(i) => winstr::I32Const(*i),
+                i::F32Const(f) => winstr::F32Const((*f).into()),
                 i::Func(path) => {
                     let idx = func_namespace[path];
                     referenced_funcs.insert(idx);

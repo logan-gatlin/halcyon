@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use super::*;
 use crate::ir::ImmediateValue;
 
@@ -126,6 +127,7 @@ impl PrettyPrint for Instruction {
             Get(path) => format!("get {}", path.pretty()),
             Const(const_value) => format!("const {}", const_value.pretty()),
             I32Const(i) => format!("i32.const {i}"),
+            F32Const(f) => format!("f32.const {f}"),
             Func(path) => format!("func {}", path.pretty()),
             StructNew(items) => {
                 format!(

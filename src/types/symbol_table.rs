@@ -2,6 +2,7 @@ use indexmap::IndexMap;
 
 use crate::ir::Path;
 
+use super::Type;
 use super::traits::{
     TraitConstraint,
     TraitDef,
@@ -11,7 +12,6 @@ use super::traits::{
     TypeScheme,
 };
 use super::unify::UnificationTable;
-use super::Type;
 
 /// Classification of global symbols stored in the symbol table.
 pub enum SymbolKind {
@@ -182,6 +182,42 @@ impl SymbolTable {
         } else {
             Ok(())
         }
+    }
+
+    pub fn select_impl(
+        &self,
+        predicate: &TraitConstraint,
+    ) -> Result<Option<TraitImpl>, TraitError> {
+        let mut table = UnificationTable::default();
+        let normalized = table.normalize_trait_ref(predicate);
+        let def = self
+            .trait_defs
+            .get(&normalized.trait_name)
+            .ok_or_else(|| TraitError::UnknownTrait(normalized.trait_name.clone()))?;
+        if def.parameters != normalized.arguments.len() {
+            return Err(TraitError::ArityMismatch {
+                trait_name: normalized.trait_name.clone(),
+                expected: def.parameters,
+                found: normalized.arguments.len(),
+            });
+        }
+
+        let mut matched: Option<TraitImpl> = None;
+        if let Some(candidates) = self.trait_impls.get(&normalized.trait_name) {
+            for candidate in candidates {
+                let mut local_table = UnificationTable::default();
+                let instantiated = instantiate_trait_impl(&mut local_table, candidate)?;
+                if matches_trait_ref(&mut local_table, &normalized, &instantiated.head) {
+                    if matched.is_some() {
+                        return Err(TraitError::AmbiguousInstance {
+                            predicate: normalized,
+                        });
+                    }
+                    matched = Some(candidate.clone());
+                }
+            }
+        }
+        Ok(matched)
     }
 
     fn resolve_predicate(

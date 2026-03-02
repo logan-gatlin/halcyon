@@ -1,9 +1,9 @@
 use halcyon_lib::types::SymbolTable;
 use halcyon_lib::{
+    Logger,
     compile_core_module,
     compile_source,
     validate_artifact,
-    Logger,
 };
 
 extern crate halcyon_lib;
@@ -14,8 +14,9 @@ fn main() {
     let mut logger = Logger::new();
     let mut file_logger = logger.new_file("demo.hc", source);
     let mut symbol_table = SymbolTable::new();
-    compile_core_module(&mut symbol_table);
+    let core = compile_core_module(&mut symbol_table);
     let modules = compile_source(source, &mut file_logger, &mut symbol_table);
+    validate_artifact(core, &mut logger);
     modules
         .into_iter()
         .map(|a| validate_artifact(a, &mut logger))

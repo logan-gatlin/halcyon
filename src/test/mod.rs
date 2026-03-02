@@ -40,11 +40,49 @@ fn exec_file(artifacts: &[Artifact]) {
 fn demo() {
     let source = include_str!("demo.hc");
     let mut symbols = SymbolTable::new();
-    compile_core_module(&mut symbols);
+    let core = compile_core_module(&mut symbols);
     let mut logger = Logger::new();
     let mut file_logger = logger.new_file("demo.hc", source);
     let artifacts = compile_source(source, &mut file_logger, &mut symbols);
     logger.consume_file(file_logger);
     assert!(logger.is_ok(), "Compilation failed");
-    exec_file(&artifacts);
+    let mut linked = vec![core];
+    linked.extend(artifacts.into_vec());
+    exec_file(&linked);
+}
+
+#[test]
+fn wasm_type_alias_requires_symbol_name() {
+    let source = "module demo =\n\twasm => (\n\t\t(type integer (struct i64))\n\t\t(global $asdf integer)\n\t)\nend\n";
+    let mut symbols = SymbolTable::new();
+    let _core = compile_core_module(&mut symbols);
+    let mut logger = Logger::new();
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let _ = compile_source(source, &mut file_logger, &mut symbols);
+    logger.consume_file(file_logger);
+    assert!(!logger.is_ok(), "Compilation should fail");
+}
+
+#[test]
+fn wasm_function_name_requires_symbol_name() {
+    let source = "module demo =\n\tlet foo = fn x => x\n\twasm => (\n\t\t(func foo)\n\t)\nend\n";
+    let mut symbols = SymbolTable::new();
+    let _core = compile_core_module(&mut symbols);
+    let mut logger = Logger::new();
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let _ = compile_source(source, &mut file_logger, &mut symbols);
+    logger.consume_file(file_logger);
+    assert!(!logger.is_ok(), "Compilation should fail");
+}
+
+#[test]
+fn wasm_function_name_accepts_symbol_name() {
+    let source = "module demo =\n\twasm => (\n\t\t(func $foo)\n\t)\nend\n";
+    let mut symbols = SymbolTable::new();
+    let _core = compile_core_module(&mut symbols);
+    let mut logger = Logger::new();
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let _ = compile_source(source, &mut file_logger, &mut symbols);
+    logger.consume_file(file_logger);
+    assert!(logger.is_ok(), "Compilation failed");
 }

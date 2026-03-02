@@ -4,12 +4,12 @@ use super::*;
 
 use crate::hc_core::compile_core_module;
 use crate::types::{
-    resolve_module_with_symbols_and_schemes,
     SymbolTable,
+    resolve_module_with_symbols_and_schemes,
 };
 use crate::{
-    parse,
     Logger,
+    parse,
 };
 use wasmparser::Payload;
 
@@ -17,7 +17,7 @@ fn compile_modules(source: &str) -> (Vec<crate::ir::ElaborationResult>, SymbolTa
     let mut logger = Logger::new();
     let mut file_logger = logger.new_file("test.hc", source);
     let mut symbols = SymbolTable::new();
-    compile_core_module(&mut symbols);
+    let _ = compile_core_module(&mut symbols);
 
     let modules = parse::parse(source, &mut file_logger)
         .map(|m| m.modules())

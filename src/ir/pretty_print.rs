@@ -1,8 +1,16 @@
 use crate::types::Type;
 
+use crate::asm::{
+    Instruction as WasmInstruction,
+    NumberOperation,
+    Type as WasmType,
+};
 use indexmap::IndexMap;
 
-use super::*;
+use super::{
+    wasm,
+    *,
+};
 
 const INDENT_WIDTH: usize = 2;
 const LINE_LIMIT: usize = 96;
@@ -111,6 +119,430 @@ impl Printer {
                 parameters,
                 def,
             } => self.type_statement(path, parameters, def),
+            Statement::Wasm(declarations) => self.wasm_statement(declarations),
+        }
+    }
+
+    fn wasm_statement(
+        &mut self,
+        declarations: &[wasm::Declaration],
+    ) {
+        if declarations.is_empty() {
+            self.line("wasm => ()");
+            return;
+        }
+        if declarations.len() == 1 {
+            self.line("wasm =>");
+            self.indented(|printer| {
+                printer.wasm_declaration(&declarations[0]);
+            });
+            return;
+        }
+        self.line("wasm => (");
+        self.indented(|printer| {
+            for declaration in declarations {
+                printer.wasm_declaration(declaration);
+            }
+        });
+        self.line(")");
+    }
+
+    fn wasm_declaration(
+        &mut self,
+        declaration: &wasm::Declaration,
+    ) {
+        match declaration {
+            wasm::Declaration::Type(type_def) => self.wasm_type_definition(type_def),
+            wasm::Declaration::Global(global) => self.wasm_global(global),
+            wasm::Declaration::Function(function) => self.wasm_function(function),
+            wasm::Declaration::Memory(memory) => self.wasm_memory(memory),
+        }
+    }
+
+    fn wasm_type_definition(
+        &mut self,
+        type_def: &wasm::TypeDefinition,
+    ) {
+        let name = self.format_wasm_name(&type_def.name);
+        let type_expr = self.format_wasm_type(&type_def.type_);
+        self.line(format!("(type {name} {type_expr})"));
+    }
+
+    fn wasm_global(
+        &mut self,
+        global: &wasm::Global,
+    ) {
+        let name = self.format_wasm_global_name(&global.name);
+        let type_expr = self.format_wasm_type(&global.type_);
+        self.line(format!("(global {name} {type_expr})"));
+    }
+
+    fn wasm_function(
+        &mut self,
+        function: &wasm::Function,
+    ) {
+        let name = self.format_wasm_name(&function.name);
+        self.line(format!("(func {name}"));
+        self.indented(|printer| {
+            for line in printer.wasm_named_types_lines("param", &function.parameters) {
+                printer.line(line);
+            }
+            for line in printer.wasm_result_lines(&function.results) {
+                printer.line(line);
+            }
+            for line in printer.wasm_named_types_lines("local", &function.locals) {
+                printer.line(line);
+            }
+            for instruction in function.body.iter() {
+                printer.line(printer.format_wasm_instruction(instruction));
+            }
+        });
+        self.line(")");
+    }
+
+    fn wasm_memory(
+        &mut self,
+        memory: &wasm::Memory,
+    ) {
+        let name = self.format_wasm_name(&memory.name);
+        let line = match memory.maximum_size {
+            Some(max) => format!("(memory {name} {} {max})", memory.initial_size),
+            None => format!("(memory {name} {})", memory.initial_size),
+        };
+        self.line(line);
+    }
+
+    fn wasm_named_types_lines(
+        &self,
+        keyword: &str,
+        items: &IndexMap<Path, WasmType>,
+    ) -> Vec<String> {
+        if items.is_empty() {
+            return Vec::new();
+        }
+        let inline = format!(
+            "({keyword} {})",
+            items
+                .iter()
+                .map(|(name, ty)| {
+                    format!(
+                        "{} {}",
+                        self.format_wasm_local_name(name),
+                        self.format_wasm_type(ty)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
+        if inline.len() <= LINE_LIMIT {
+            return vec![inline];
+        }
+        items
+            .iter()
+            .map(|(name, ty)| {
+                format!(
+                    "({keyword} {} {})",
+                    self.format_wasm_local_name(name),
+                    self.format_wasm_type(ty)
+                )
+            })
+            .collect()
+    }
+
+    fn wasm_result_lines(
+        &self,
+        results: &[WasmType],
+    ) -> Vec<String> {
+        if results.is_empty() {
+            return Vec::new();
+        }
+        let inline = format!(
+            "(result {})",
+            results
+                .iter()
+                .map(|ty| self.format_wasm_type(ty))
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
+        if inline.len() <= LINE_LIMIT {
+            return vec![inline];
+        }
+        results
+            .iter()
+            .map(|ty| format!("(result {})", self.format_wasm_type(ty)))
+            .collect()
+    }
+
+    fn format_wasm_instruction(
+        &self,
+        instruction: &WasmInstruction,
+    ) -> String {
+        match instruction {
+            WasmInstruction::Set(path) => format!("set {}", self.format_wasm_path(path)),
+            WasmInstruction::Get(path) => format!("get {}", self.format_wasm_path(path)),
+            WasmInstruction::Const(value) => {
+                format!("const {}", self.format_wasm_immediate(value))
+            }
+            WasmInstruction::I32Const(value) => format!("i32.const {value}"),
+            WasmInstruction::F32Const(value) => format!("f32.const {value}"),
+            WasmInstruction::Func(path) => format!("func {}", self.format_wasm_path(path)),
+            WasmInstruction::StructNew(fields) => {
+                format!("struct.new {}", self.format_wasm_struct_type(fields))
+            }
+            WasmInstruction::StructGet(fields, index) => {
+                format!(
+                    "struct.get {} {index}",
+                    self.format_wasm_struct_type(fields)
+                )
+            }
+            WasmInstruction::ArrayGet(inner) => {
+                format!("array.get {}", self.format_wasm_type(inner))
+            }
+            WasmInstruction::ArrayNewFixed { inner_type, length } => {
+                format!(
+                    "array.new_fixed {} {length}",
+                    self.format_wasm_type(inner_type)
+                )
+            }
+            WasmInstruction::ArrayNewDefault(inner) => {
+                format!("array.new_default {}", self.format_wasm_type(inner))
+            }
+            WasmInstruction::ArrayLen => "array.len".to_string(),
+            WasmInstruction::ArrayCopy { dst_type, src_type } => {
+                format!(
+                    "array.copy {} {}",
+                    self.format_wasm_type(dst_type),
+                    self.format_wasm_type(src_type)
+                )
+            }
+            WasmInstruction::CallRef {
+                parameters,
+                returns,
+            } => {
+                let func_type = WasmType::Function {
+                    parameters: parameters.clone(),
+                    results: returns.clone(),
+                };
+                format!("call.ref {}", self.format_wasm_type(&func_type))
+            }
+            WasmInstruction::Call(path) => format!("call {}", self.format_wasm_path(path)),
+            WasmInstruction::Unreachable => "unreachable".to_string(),
+            WasmInstruction::Drop => "drop".to_string(),
+            WasmInstruction::If(type_) => {
+                match type_ {
+                    Some(type_) => format!("if {}", self.format_wasm_type(type_)),
+                    None => "if".to_string(),
+                }
+            }
+            WasmInstruction::Else => "else".to_string(),
+            WasmInstruction::End => "end".to_string(),
+            WasmInstruction::Loop => "loop".to_string(),
+            WasmInstruction::Block(type_) => {
+                match type_ {
+                    Some(type_) => format!("block {}", self.format_wasm_type(type_)),
+                    None => "block".to_string(),
+                }
+            }
+            WasmInstruction::Break(depth) => format!("break {depth}"),
+            WasmInstruction::BreakIf(depth) => format!("break.if {depth}"),
+            WasmInstruction::I32Op(op) => {
+                format!("i32.{}", self.format_wasm_number_op(*op))
+            }
+            WasmInstruction::I64Op(op) => {
+                format!("i64.{}", self.format_wasm_number_op(*op))
+            }
+            WasmInstruction::F32Op(op) => {
+                format!("f32.{}", self.format_wasm_number_op(*op))
+            }
+            WasmInstruction::F64Op(op) => {
+                format!("f64.{}", self.format_wasm_number_op(*op))
+            }
+            WasmInstruction::RefCastFunc {
+                parameters,
+                returns,
+            } => {
+                let func_type = WasmType::Function {
+                    parameters: parameters.clone(),
+                    results: returns.clone(),
+                };
+                format!("ref.cast.func {}", self.format_wasm_type(&func_type))
+            }
+            WasmInstruction::RefCastStruct(fields) => {
+                format!("ref.cast.struct {}", self.format_wasm_struct_type(fields))
+            }
+            WasmInstruction::RefCastArray(inner) => {
+                format!("ref.cast.array {}", self.format_wasm_type(inner))
+            }
+            WasmInstruction::I32Store8 => "i32.store8".to_string(),
+            WasmInstruction::I32Store => "i32.store".to_string(),
+        }
+    }
+
+    fn format_wasm_type(
+        &self,
+        ty: &WasmType,
+    ) -> String {
+        match ty {
+            WasmType::Any => "any".to_string(),
+            WasmType::I8 => "i8".to_string(),
+            WasmType::I16 => "i16".to_string(),
+            WasmType::I32 => "i32".to_string(),
+            WasmType::I64 => "i64".to_string(),
+            WasmType::F32 => "f32".to_string(),
+            WasmType::F64 => "f64".to_string(),
+            WasmType::Struct(fields) => self.format_wasm_struct_type(fields),
+            WasmType::Array(inner) => {
+                format!("(array {})", self.format_wasm_type(inner))
+            }
+            WasmType::Function {
+                parameters,
+                results,
+            } => {
+                let mut parts = Vec::new();
+                if !parameters.is_empty() {
+                    parts.push(format!(
+                        "(param {})",
+                        parameters
+                            .iter()
+                            .map(|ty| self.format_wasm_type(ty))
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    ));
+                }
+                if !results.is_empty() {
+                    parts.push(format!(
+                        "(result {})",
+                        results
+                            .iter()
+                            .map(|ty| self.format_wasm_type(ty))
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    ));
+                }
+                if parts.is_empty() {
+                    return "(func)".to_string();
+                }
+                format!("(func {})", parts.join(" "))
+            }
+        }
+    }
+
+    fn format_wasm_struct_type(
+        &self,
+        fields: &[WasmType],
+    ) -> String {
+        let fields = fields
+            .iter()
+            .map(|ty| self.format_wasm_type(ty))
+            .collect::<Vec<_>>()
+            .join(" ");
+        if fields.is_empty() {
+            "(struct)".to_string()
+        } else {
+            format!("(struct {fields})")
+        }
+    }
+
+    fn format_wasm_number_op(
+        &self,
+        op: NumberOperation,
+    ) -> String {
+        match op {
+            NumberOperation::Eq => "eq".to_string(),
+            NumberOperation::Ne => "ne".to_string(),
+            NumberOperation::Gt => "gt".to_string(),
+            NumberOperation::Lt => "lt".to_string(),
+            NumberOperation::Ge => "ge".to_string(),
+            NumberOperation::Le => "le".to_string(),
+            NumberOperation::Add => "add".to_string(),
+            NumberOperation::Sub => "sub".to_string(),
+            NumberOperation::Mul => "mul".to_string(),
+            NumberOperation::Div => "div".to_string(),
+            NumberOperation::Rem => "rem".to_string(),
+            NumberOperation::And => "and".to_string(),
+            NumberOperation::Or => "or".to_string(),
+            NumberOperation::Xor => "xor".to_string(),
+        }
+    }
+
+    fn format_wasm_immediate(
+        &self,
+        value: &ImmediateValue,
+    ) -> String {
+        match value {
+            ImmediateValue::Unit => "()".to_string(),
+            ImmediateValue::Integer(value) => value.to_string(),
+            ImmediateValue::Real(value) => value.to_string(),
+            ImmediateValue::Boolean(value) => value.to_string(),
+            ImmediateValue::String(value) => {
+                format!("\"{}\"", escape_sexpr_string(value))
+            }
+            ImmediateValue::Glyph(value) => {
+                format!("'{}'", escape_sexpr_glyph(*value))
+            }
+        }
+    }
+
+    fn format_wasm_path(
+        &self,
+        path: &Path,
+    ) -> String {
+        if path.major == "[local]" {
+            return self.format_wasm_symbol_name(&path.minor);
+        }
+        if path.major.is_empty() {
+            return self.format_wasm_symbol_name(&path.minor);
+        }
+        if is_sexpr_ident(&path.major) && is_sexpr_ident(&path.minor) {
+            return format!("${}::{}", path.major, path.minor);
+        }
+        let escaped = escape_sexpr_string(&format!("{}::{}", path.major, path.minor));
+        format!("$\"{escaped}\"")
+    }
+
+    fn format_wasm_global_name(
+        &self,
+        path: &Path,
+    ) -> String {
+        if self
+            .module_name
+            .as_ref()
+            .is_some_and(|name| name == &path.major)
+        {
+            return self.format_wasm_symbol_name(&path.minor);
+        }
+        self.format_wasm_path(path)
+    }
+
+    fn format_wasm_local_name(
+        &self,
+        path: &Path,
+    ) -> String {
+        if path.major == "[local]" || path.major.is_empty() {
+            return self.format_wasm_symbol_name(&path.minor);
+        }
+        self.format_wasm_path(path)
+    }
+
+    fn format_wasm_symbol_name(
+        &self,
+        name: &str,
+    ) -> String {
+        if is_sexpr_ident(name) {
+            format!("${name}")
+        } else {
+            format!("$\"{}\"", escape_sexpr_string(name))
+        }
+    }
+
+    fn format_wasm_name(
+        &self,
+        name: &str,
+    ) -> String {
+        if is_sexpr_ident(name) {
+            name.to_string()
+        } else {
+            format!("\"{}\"", escape_sexpr_string(name))
         }
     }
 
@@ -764,4 +1196,57 @@ fn is_inline_atom(expr: &str) -> bool {
             || ch == '\''
             || ch == '"'
     })
+}
+
+fn is_sexpr_ident(value: &str) -> bool {
+    let mut chars = value.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !is_sexpr_ident_start(first) {
+        return false;
+    }
+    chars.all(is_sexpr_ident_continue)
+}
+
+fn is_sexpr_ident_start(ch: char) -> bool {
+    (!ch.is_ascii_punctuation() || ch == '_') && !ch.is_whitespace()
+}
+
+fn is_sexpr_ident_continue(ch: char) -> bool {
+    (!ch.is_ascii_punctuation() || ch == '_' || ch == '-') && !ch.is_whitespace()
+}
+
+fn escape_sexpr_string(value: &str) -> String {
+    let mut escaped = String::new();
+    for ch in value.chars() {
+        match ch {
+            '\\' => escaped.push_str("\\\\"),
+            '"' => escaped.push_str("\\\""),
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            '\t' => escaped.push_str("\\t"),
+            '\x08' => escaped.push_str("\\b"),
+            '\0' => escaped.push_str("\\0"),
+            c if c.is_control() => {
+                escaped.push_str(&format!("\\x{code:02x}", code = c as u32));
+            }
+            c => escaped.push(c),
+        }
+    }
+    escaped
+}
+
+fn escape_sexpr_glyph(value: char) -> String {
+    match value {
+        '\\' => "\\\\".to_string(),
+        '\'' => "\\'".to_string(),
+        '\n' => "\\n".to_string(),
+        '\r' => "\\r".to_string(),
+        '\t' => "\\t".to_string(),
+        '\x08' => "\\b".to_string(),
+        '\0' => "\\0".to_string(),
+        c if c.is_control() => format!("\\x{code:02x}", code = c as u32),
+        c => c.to_string(),
+    }
 }

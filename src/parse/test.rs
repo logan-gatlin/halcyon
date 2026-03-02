@@ -5,11 +5,174 @@ use super::ast::{
     HasLeadingComments,
     HasName,
 };
+use super::lexer::tokenize;
 use super::{
     parse,
     SyntaxKind,
 };
 use crate::logging::Logger;
+
+// ═══════════════════════════════════════════════════════════════════════
+// Lexer tests
+// ═══════════════════════════════════════════════════════════════════════
+
+fn lex(input: &str) -> Vec<SyntaxKind> {
+    let mut logger = crate::logging::FileLogger::new(0);
+    let tokens = tokenize(input.chars(), &mut logger);
+    assert!(logger.is_ok(), "Tokenizer produced errors: {:?}", logger);
+    tokens
+        .into_iter()
+        .map(|t| t.inner)
+        .filter(|k| !k.is_trivia())
+        .collect()
+}
+
+fn lex_with_text(input: &str) -> Vec<(SyntaxKind, &str)> {
+    let mut logger = crate::logging::FileLogger::new(0);
+    let tokens = tokenize(input.chars(), &mut logger);
+    assert!(logger.is_ok(), "Tokenizer produced errors: {:?}", logger);
+    tokens
+        .into_iter()
+        .filter(|t| !matches!(t.inner, SyntaxKind::WHITESPACE))
+        .map(|t| {
+            use crate::Span;
+            let text = match t.span {
+                Span::Source { start, width } => {
+                    input.get(start..start + width).unwrap_or_default()
+                }
+                Span::Generated => "",
+            };
+            (t.inner, text)
+        })
+        .collect()
+}
+
+#[test]
+fn lex_symbols() {
+    use SyntaxKind::*;
+    let tokens = lex("() {} [] , : :: ; . .. + - / * % |> << >> -> => != = == > >= < <= |");
+    let expected = vec![
+        L_PAREN,
+        R_PAREN,
+        L_BRACE,
+        R_BRACE,
+        L_SQUARE,
+        R_SQUARE,
+        COMMA,
+        COLON,
+        DOUBLE_COLON,
+        SEMICOLON,
+        DOT,
+        DOT_DOT,
+        PLUS,
+        MINUS,
+        SLASH,
+        STAR,
+        PERCENT,
+        PIPE_ARROW,
+        COMPOSE_LEFT,
+        COMPOSE_RIGHT,
+        ARROW,
+        DOUBLE_ARROW,
+        BANG_EQUAL,
+        EQUAL,
+        DOUBLE_EQUAL,
+        GREATER,
+        GREATER_EQUAL,
+        LESS,
+        LESS_EQUAL,
+        PIPE,
+    ];
+    assert_eq!(tokens, expected);
+}
+
+#[test]
+fn lex_keywords() {
+    use SyntaxKind::*;
+    let tokens = lex(
+        "module import use end match with let type do of in if then else and or xor not true false fn",
+    );
+    let expected = vec![
+        MODULE_KW, IMPORT_KW, USE_KW, END_KW, MATCH_KW, WITH_KW, LET_KW, TYPE_KW, DO_KW, OF_KW,
+        IN_KW, IF_KW, THEN_KW, ELSE_KW, AND_KW, OR_KW, XOR_KW, NOT_KW, TRUE_KW, FALSE_KW, FN_KW,
+    ];
+    assert_eq!(tokens, expected);
+}
+
+#[test]
+fn lex_identifiers() {
+    let tokens = lex_with_text("foo bar_baz _qux");
+    assert_eq!(
+        tokens.iter().map(|(_, t)| *t).collect::<Vec<_>>(),
+        vec!["foo", "bar_baz", "_qux"]
+    );
+}
+
+#[test]
+fn lex_identifiers_with_hyphens() {
+    let tokens = lex_with_text("foo-bar foo-");
+    assert_eq!(
+        tokens.iter().map(|(_, t)| *t).collect::<Vec<_>>(),
+        vec!["foo-bar", "foo", "-"]
+    );
+}
+
+#[test]
+fn lex_integers() {
+    let tokens = lex_with_text("123 0xff 0o77 0b101");
+    assert_eq!(
+        tokens.iter().map(|(_, t)| *t).collect::<Vec<_>>(),
+        vec!["123", "0xff", "0o77", "0b101"]
+    );
+    assert!(tokens.iter().all(|(k, _)| *k == SyntaxKind::INTEGER));
+}
+
+#[test]
+fn lex_floats() {
+    let tokens = lex_with_text("1.0 0.5 1e10 1.2e-5");
+    assert_eq!(
+        tokens.iter().map(|(_, t)| *t).collect::<Vec<_>>(),
+        vec!["1.0", "0.5", "1e10", "1.2e-5"]
+    );
+    assert!(tokens.iter().all(|(k, _)| *k == SyntaxKind::REAL));
+}
+
+#[test]
+fn lex_strings() {
+    let tokens = lex_with_text(r#""hello" "world""#);
+    assert_eq!(
+        tokens.iter().map(|(_, t)| *t).collect::<Vec<_>>(),
+        vec![r#""hello""#, r#""world""#]
+    );
+}
+
+#[test]
+fn lex_glyphs() {
+    let tokens = lex_with_text(r#"'a' 'b' 'c'"#);
+    assert_eq!(
+        tokens.iter().map(|(_, t)| *t).collect::<Vec<_>>(),
+        vec!["'a'", "'b'", "'c'"]
+    );
+}
+
+#[test]
+fn lex_comments() {
+    let tokens = lex_with_text("1 -- comment\n2 (* block comment *) 3");
+    assert_eq!(tokens[0].0, SyntaxKind::INTEGER);
+    assert_eq!(tokens[0].1, "1");
+    assert_eq!(tokens[1].0, SyntaxKind::LINE_COMMENT);
+    assert_eq!(tokens[1].1, "-- comment\n");
+    assert_eq!(tokens[2].0, SyntaxKind::INTEGER);
+    assert_eq!(tokens[2].1, "2");
+    assert_eq!(tokens[3].0, SyntaxKind::BLOCK_COMMENT);
+    assert_eq!(tokens[3].1, "(* block comment *)");
+    assert_eq!(tokens[4].0, SyntaxKind::INTEGER);
+    assert_eq!(tokens[4].1, "3");
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Parser tests
+// ═══════════════════════════════════════════════════════════════════════
 
 /// Helper: parse source and return the debug-printed syntax tree.
 fn parse_to_string(source: &str) -> String {
@@ -354,6 +517,51 @@ fn ast_module_statements() {
         matches!(stmts[1], ast::Statement::Type(_)),
         "Second should be Type"
     );
+}
+
+#[test]
+fn ast_wasm_keyword_head_is_ident_atom() {
+    let sf = parse_source_file("module M =\n  wasm => ((type integer i64))\nend");
+    let ast::Statement::Wasm(ref wasm_stmt) = sf.modules()[0].statements()[0] else {
+        panic!("expected wasm statement");
+    };
+    let Some(ast::SexprItem::List(list)) = wasm_stmt
+        .sexpr()
+        .and_then(|sexpr| sexpr.items().into_iter().next())
+    else {
+        panic!("expected wasm declaration list");
+    };
+    let Some(ast::SexprItem::Atom(ast::SexprAtom::Ident(token))) = list.items().into_iter().next()
+    else {
+        panic!("expected keyword as ident atom");
+    };
+    assert_eq!(token.text(), "type");
+}
+
+#[test]
+fn ast_wasm_symbol_keyword_is_symbol_ident_atom() {
+    let sf = parse_source_file("module M =\n  wasm => ((global $type i64))\nend");
+    let ast::Statement::Wasm(ref wasm_stmt) = sf.modules()[0].statements()[0] else {
+        panic!("expected wasm statement");
+    };
+    let Some(ast::SexprItem::List(list)) = wasm_stmt
+        .sexpr()
+        .and_then(|sexpr| sexpr.items().into_iter().next())
+    else {
+        panic!("expected wasm declaration list");
+    };
+    let Some(ast::SexprItem::Atom(ast::SexprAtom::SymbolIdent(token))) =
+        list.items().into_iter().nth(1)
+    else {
+        panic!("expected `$` keyword as symbol ident atom");
+    };
+    assert_eq!(token.text(), "type");
+}
+
+#[test]
+fn parse_wasm_requires_fat_arrow() {
+    assert_has_errors("module M =\n  wasm ((func $foo))\nend");
+    assert_no_errors("module M =\n  wasm => ((func $foo))\nend");
 }
 
 #[test]

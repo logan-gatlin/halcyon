@@ -256,6 +256,16 @@ impl TypeStatement {
     }
 }
 
+ast_node!(WasmStatement, WASM_STATEMENT);
+impl HasLeadingComments for WasmStatement {
+}
+
+impl WasmStatement {
+    pub fn sexpr(&self) -> Option<Sexpr> {
+        self.syntax.children().find_map(Sexpr::cast)
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // Type definitions
 // ═══════════════════════════════════════════════════════════════════════
@@ -615,6 +625,13 @@ impl Path {
     pub fn name_text(&self) -> Option<String> {
         self.segments().last().map(|t| t.text().to_string())
     }
+
+    pub fn has_dollar_prefix(&self) -> bool {
+        self.syntax
+            .children_with_tokens()
+            .filter_map(|el| el.into_token())
+            .any(|t| t.kind() == SyntaxKind::DOLLAR)
+    }
 }
 
 ast_node!(ArraySplat, ARRAY_SPLAT);
@@ -757,6 +774,7 @@ impl PathOrIdent {
 pub enum Statement {
     Let(LetStatement),
     Type(TypeStatement),
+    Wasm(WasmStatement),
 }
 
 impl AstNode for Statement {
@@ -764,6 +782,7 @@ impl AstNode for Statement {
         match node.kind() {
             SyntaxKind::LET_STATEMENT => LetStatement::cast(node).map(Self::Let),
             SyntaxKind::TYPE_STATEMENT => TypeStatement::cast(node).map(Self::Type),
+            SyntaxKind::WASM_STATEMENT => WasmStatement::cast(node).map(Self::Wasm),
             _ => None,
         }
     }
@@ -771,6 +790,7 @@ impl AstNode for Statement {
         match self {
             Self::Let(n) => n.syntax(),
             Self::Type(n) => n.syntax(),
+            Self::Wasm(n) => n.syntax(),
         }
     }
 }
@@ -952,4 +972,151 @@ impl AstNode for Pattern {
             Self::Path(n) => n.syntax(),
         }
     }
+}
+
+ast_node!(Sexpr, SEXPR);
+ast_node!(SexprField, SEXPR_FIELD);
+
+impl Sexpr {
+    pub fn items(&self) -> Vec<SexprItem> {
+        self.syntax
+            .children()
+            .filter_map(sexpr_item_from_node)
+            .collect()
+    }
+}
+
+impl SexprField {
+    pub fn lhs_token(&self) -> Option<SyntaxToken> {
+        self.ident_tokens().first().cloned()
+    }
+    pub fn rhs_token(&self) -> Option<SyntaxToken> {
+        self.ident_tokens().get(1).cloned()
+    }
+    fn ident_tokens(&self) -> Vec<SyntaxToken> {
+        self.syntax
+            .children_with_tokens()
+            .filter_map(|el| el.into_token())
+            .filter(|t| !t.kind().is_trivia())
+            .filter(|t| is_sexpr_ident_token(t.kind()))
+            .collect()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum SexprItem {
+    List(Sexpr),
+    Path(Path),
+    Field(SexprField),
+    Atom(SexprAtom),
+}
+
+impl SexprItem {
+    pub fn span(&self) -> Span {
+        match self {
+            SexprItem::List(sexpr) => sexpr.span(),
+            SexprItem::Path(path) => path.span(),
+            SexprItem::Field(field) => field.span(),
+            SexprItem::Atom(atom) => atom.token().text_range().into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum SexprAtom {
+    Ident(SyntaxToken),
+    SymbolIdent(SyntaxToken),
+    String(SyntaxToken),
+    Integer(SyntaxToken),
+    Float(SyntaxToken),
+    Bool(SyntaxToken, bool),
+}
+
+impl SexprAtom {
+    pub fn token(&self) -> &SyntaxToken {
+        match self {
+            SexprAtom::Ident(token)
+            | SexprAtom::SymbolIdent(token)
+            | SexprAtom::String(token)
+            | SexprAtom::Integer(token)
+            | SexprAtom::Float(token)
+            | SexprAtom::Bool(token, _) => token,
+        }
+    }
+    pub fn bool_value(&self) -> Option<bool> {
+        match self {
+            SexprAtom::Bool(_, value) => Some(*value),
+            _ => None,
+        }
+    }
+}
+
+fn sexpr_item_from_node(node: SyntaxNode) -> Option<SexprItem> {
+    match node.kind() {
+        SyntaxKind::SEXPR => Sexpr::cast(node).map(SexprItem::List),
+        SyntaxKind::PATH => Path::cast(node).map(SexprItem::Path),
+        SyntaxKind::SEXPR_FIELD => SexprField::cast(node).map(SexprItem::Field),
+        _ => sexpr_atom_from_node(node).map(SexprItem::Atom),
+    }
+}
+
+fn sexpr_atom_from_node(node: SyntaxNode) -> Option<SexprAtom> {
+    let kind = node.kind();
+    let token = if kind == SyntaxKind::IDENT {
+        first_token_where(&node, is_sexpr_ident_token)?
+    } else {
+        child_token(&node, kind)?
+    };
+    match kind {
+        SyntaxKind::IDENT => {
+            if node_has_token(&node, SyntaxKind::DOLLAR) {
+                Some(SexprAtom::SymbolIdent(token))
+            } else {
+                Some(SexprAtom::Ident(token))
+            }
+        }
+        SyntaxKind::STRING => Some(SexprAtom::String(token)),
+        SyntaxKind::INTEGER => Some(SexprAtom::Integer(token)),
+        SyntaxKind::REAL => Some(SexprAtom::Float(token)),
+        SyntaxKind::TRUE_KW => Some(SexprAtom::Bool(token, true)),
+        SyntaxKind::FALSE_KW => Some(SexprAtom::Bool(token, false)),
+        _ => None,
+    }
+}
+
+fn node_has_token(
+    node: &SyntaxNode,
+    kind: SyntaxKind,
+) -> bool {
+    node
+        .children_with_tokens()
+        .filter_map(|el| el.into_token())
+        .any(|token| token.kind() == kind)
+}
+
+fn is_sexpr_ident_token(kind: SyntaxKind) -> bool {
+    matches!(
+        kind,
+        SyntaxKind::IDENT
+            | SyntaxKind::MODULE_KW
+            | SyntaxKind::IMPORT_KW
+            | SyntaxKind::USE_KW
+            | SyntaxKind::END_KW
+            | SyntaxKind::MATCH_KW
+            | SyntaxKind::WITH_KW
+            | SyntaxKind::LET_KW
+            | SyntaxKind::TYPE_KW
+            | SyntaxKind::DO_KW
+            | SyntaxKind::OF_KW
+            | SyntaxKind::IN_KW
+            | SyntaxKind::IF_KW
+            | SyntaxKind::THEN_KW
+            | SyntaxKind::ELSE_KW
+            | SyntaxKind::AND_KW
+            | SyntaxKind::OR_KW
+            | SyntaxKind::XOR_KW
+            | SyntaxKind::NOT_KW
+            | SyntaxKind::FN_KW
+            | SyntaxKind::WASM_KW
+    )
 }

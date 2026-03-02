@@ -657,74 +657,6 @@ fn shift_index(
     }
 }
 
-pub(crate) fn core_type_arity(minor: &str) -> Option<usize> {
-    match minor {
-        "unit" | "integer" | "real" | "boolean" | "string" | "glyph" => Some(0),
-        "array" => Some(1),
-        "function" => Some(2),
-        _ => None,
-    }
-}
-
-pub(crate) fn resolve_core_type(
-    minor: &str,
-    args: &[Type],
-) -> Option<Type> {
-    match minor {
-        "unit" if args.is_empty() => Some(Type::Unit),
-        "integer" if args.is_empty() => Some(Type::Integer),
-        "real" if args.is_empty() => Some(Type::Real),
-        "boolean" if args.is_empty() => Some(Type::Boolean),
-        "string" if args.is_empty() => Some(Type::String),
-        "glyph" if args.is_empty() => Some(Type::Glyph),
-        "array" if args.len() == 1 => args.first().map(|arg| Type::Array(Box::new(arg.clone()))),
-        "function" if args.len() == 2 => {
-            let [left, right] = args else {
-                return None;
-            };
-            Some(Type::func(left.clone(), right.clone()))
-        }
-        _ => None,
-    }
-}
-
-pub(crate) fn core_type_fallback(minor: &str) -> Option<Type> {
-    match minor {
-        "unit" => Some(Type::Unit),
-        "integer" => Some(Type::Integer),
-        "real" => Some(Type::Real),
-        "boolean" => Some(Type::Boolean),
-        "string" => Some(Type::String),
-        "glyph" => Some(Type::Glyph),
-        "array" => Some(Type::Array(Box::new(Type::Unit))),
-        "function" => Some(Type::func(Type::Unit, Type::Unit)),
-        _ => None,
-    }
-}
-
-pub(crate) enum CoreTypeResolution {
-    Known {
-        expected: usize,
-        resolved: Option<Type>,
-        fallback: Option<Type>,
-    },
-    Unknown,
-}
-
-pub(crate) fn core_type_resolution(
-    minor: &str,
-    args: &[Type],
-) -> CoreTypeResolution {
-    match core_type_arity(minor) {
-        Some(expected) => CoreTypeResolution::Known {
-            expected,
-            resolved: resolve_core_type(minor, args),
-            fallback: core_type_fallback(minor),
-        },
-        None => CoreTypeResolution::Unknown,
-    }
-}
-
 fn lookup_name(
     names: &[String],
     index: u32,
@@ -779,10 +711,10 @@ pub use traits::{
 };
 
 pub use resolve::{
+    ResolvedModule,
     resolve_module,
     resolve_module_with_symbols,
     resolve_module_with_symbols_and_schemes,
-    ResolvedModule,
 };
 
 #[cfg(test)]

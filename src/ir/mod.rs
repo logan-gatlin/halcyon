@@ -1,14 +1,15 @@
+mod elaborate;
 mod names;
 mod patterns;
 mod pretty_print;
-mod elaborate;
 mod terms;
 mod types;
+mod wasm;
 
+pub use elaborate::*;
 pub use names::*;
 pub use patterns::*;
 pub use pretty_print::*;
-pub use elaborate::*;
 pub use terms::*;
 pub use types::*;
 
@@ -56,6 +57,7 @@ pub enum Statement<T> {
         parameters: Box<[Path]>,
         def: TypeDef,
     },
+    Wasm(Box<[wasm::Declaration]>),
 }
 
 #[derive(Debug, Clone, Default)]
@@ -78,6 +80,7 @@ pub fn module(
     logger: &mut FileLogger,
 ) -> Option<Module<()>> {
     let name = module_node.name_text()?;
+    let module_name = name.clone();
     let mut module_scope = ModuleScope::new(name.clone());
     Some(Module {
         name,
@@ -119,6 +122,14 @@ pub fn module(
                                 .collect(),
                             def: typedef(&mut parameter_scope, type_statement.type_def()?)?,
                         })
+                    }
+                    ast::Statement::Wasm(wasm_statement) => {
+                        Some(Statement::Wasm(wasm::build_toplevel(
+                            &wasm_statement.sexpr()?,
+                            &module_name,
+                            logger,
+                            &mut module_scope,
+                        )))
                     }
                 }
             })

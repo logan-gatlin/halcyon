@@ -19,6 +19,7 @@ impl TypeExprKind {
 
 #[derive(Debug, Clone)]
 pub struct TypeExpr {
+    #[allow(dead_code)]
     pub comments: String,
     pub kind: TypeExprKind,
     pub span: Span,
@@ -33,6 +34,7 @@ pub enum TypeDefKind {
 
 #[derive(Debug, Clone)]
 pub struct TypeDef {
+    #[allow(dead_code)]
     comments: String,
     kind: TypeDefKind,
     span: Span,

@@ -1,5 +1,9 @@
 use indexmap::IndexMap;
 
+use crate::hc_core::{
+    core_impl_arguments,
+    core_impl_path,
+};
 use crate::ir::{
     Module,
     Path,
@@ -9,10 +13,6 @@ use crate::ir::{
     Statement,
     Term,
     TermKind,
-};
-use crate::operator::{
-    BinaryOp,
-    Operator,
 };
 use crate::types::{
     ResolvedModule,
@@ -37,7 +37,6 @@ pub struct Specialization {
 #[derive(Debug, Clone)]
 pub struct ElaborationResult {
     pub module: Module<Type>,
-    pub specializations: Vec<Specialization>,
 }
 
 #[derive(Debug, Clone)]
@@ -60,68 +59,27 @@ struct TraitMethodInfo {
     parameters: usize,
 }
 
-#[derive(Debug, Clone)]
-struct TraitMethodIndex {
-    methods: IndexMap<Path, TraitMethodInfo>,
-}
-
 struct ElaborationContext<'a> {
-    method_index: &'a TraitMethodIndex,
     symbols: &'a SymbolTable,
     scheme_env: &'a IndexMap<Path, TypeScheme>,
     module_name: &'a str,
     dict_types: IndexMap<Path, Type>,
     dict_salt: usize,
-    specializations: IndexMap<Path, Specialization>,
 }
 
 impl<'a> ElaborationContext<'a> {
     fn new(
-        method_index: &'a TraitMethodIndex,
         symbols: &'a SymbolTable,
         scheme_env: &'a IndexMap<Path, TypeScheme>,
         module_name: &'a str,
     ) -> Self {
         Self {
-            method_index,
             symbols,
             scheme_env,
             module_name,
             dict_types: IndexMap::new(),
             dict_salt: 0,
-            specializations: IndexMap::new(),
         }
-    }
-}
-
-impl TraitMethodIndex {
-    fn new(symbols: &SymbolTable) -> Self {
-        let mut methods = IndexMap::new();
-        for (trait_path, def) in symbols.trait_defs().iter() {
-            for method_path in def.methods.keys() {
-                methods.insert(
-                    method_path.clone(),
-                    TraitMethodInfo {
-                        trait_name: Some(trait_path.clone()),
-                        parameters: def.parameters,
-                    },
-                );
-            }
-        }
-        for op in [BinaryOp::LessEqual, BinaryOp::GreaterEqual] {
-            methods.entry(op.path()).or_insert(TraitMethodInfo {
-                trait_name: None,
-                parameters: 1,
-            });
-        }
-        Self { methods }
-    }
-
-    fn method_info(
-        &self,
-        path: &Path,
-    ) -> Option<&TraitMethodInfo> {
-        self.methods.get(path)
     }
 }
 
@@ -129,10 +87,9 @@ pub fn elaborate_module(
     resolved: ResolvedModule,
     symbols: &SymbolTable,
 ) -> ElaborationResult {
-    let method_index = TraitMethodIndex::new(symbols);
     let scheme_env = build_scheme_env(symbols, &resolved.schemes);
     let module_name = resolved.module.name.clone();
-    let mut context = ElaborationContext::new(&method_index, symbols, &scheme_env, &module_name);
+    let mut context = ElaborationContext::new(symbols, &scheme_env, &module_name);
     let statements = Vec::from(resolved.module.statements)
         .into_iter()
         .map(|statement| {
@@ -152,6 +109,7 @@ pub fn elaborate_module(
                         def,
                     }
                 }
+                Statement::Wasm(sexpr) => Statement::Wasm(sexpr),
             }
         })
         .collect::<Vec<_>>()
@@ -162,7 +120,6 @@ pub fn elaborate_module(
             name: resolved.module.name,
             statements,
         },
-        specializations: context.specializations.into_values().collect(),
     }
 }
 
@@ -267,7 +224,12 @@ fn elaborate_term(
             }
         }
         TermKind::Tuple(items) => {
-            TermKind::Tuple(items.into_iter().map(|item| elaborate_term(context, item, dict_env)).collect())
+            TermKind::Tuple(
+                items
+                    .into_iter()
+                    .map(|item| elaborate_term(context, item, dict_env))
+                    .collect(),
+            )
         }
         TermKind::Struct(fields) => {
             TermKind::Struct(
@@ -299,14 +261,8 @@ fn elaborate_term(
         TermKind::Call { callee, argument } => {
             let callee = elaborate_term(context, *callee, dict_env);
             let argument = elaborate_term(context, *argument, dict_env);
-            let callee = apply_dictionary_args(
-                context,
-                callee,
-                &argument,
-                &type_,
-                dict_env,
-            )
-            .unwrap_or_else(|callee| callee);
+            let callee = apply_dictionary_args(context, callee, &argument, &type_, dict_env)
+                .unwrap_or_else(|callee| callee);
             TermKind::Call {
                 callee: callee.into(),
                 argument: argument.into(),
@@ -337,51 +293,95 @@ fn elaborate_identifier(
     type_: Type,
     dict_env: &DictEnv,
 ) -> Option<Term<Type>> {
-    let method_info = context.method_index.method_info(&path)?;
-    if let Some(spec) =
-        specialize_method(&path, &type_, method_info, context.symbols, context.module_name)
-    {
-        context
-            .specializations
-            .entry(spec.specialized_path.clone())
-            .or_insert_with(|| spec.clone());
-        return Some(Term {
-            comments,
-            kind: TermKind::Identifier(spec.specialized_path),
-            span,
-            type_,
-        });
+    if let Some(method_info) = method_info_for_path(context.symbols, &path) {
+        if let Some(arguments) =
+            specialize_method_arguments(&path, &type_, &method_info, context.symbols)
+        {
+            return Some(Term {
+                comments,
+                kind: TermKind::Identifier(core_impl_path(&path, &arguments)),
+                span,
+                type_,
+            });
+        }
+
+        let scheme = context.scheme_env.get(&path)?;
+        let predicates = instantiate_predicates_for_scheme(scheme, &type_)?;
+        if let Some(field) = method_field_from_dict(&path, &method_info, &predicates, dict_env) {
+            return Some(Term {
+                comments,
+                kind: field,
+                span,
+                type_,
+            });
+        }
+
+        if is_compare_operator(&path) {
+            let lambda = compare_lambda_from_dict(
+                &path,
+                &type_,
+                &predicates,
+                dict_env,
+                context.symbols,
+                context.module_name,
+                &mut context.dict_salt,
+            )?;
+            return Some(lambda);
+        }
+
+        return None;
     }
 
     let scheme = context.scheme_env.get(&path)?;
-    let predicates = instantiate_predicates_for_scheme(scheme, &type_)?;
-    if let Some(field) = method_field_from_dict(&path, method_info, &predicates, dict_env) {
-        return Some(Term {
-            comments,
-            kind: field,
-            span,
-            type_,
+    let args = dictionary_args_for_type(scheme, &type_, dict_env, context.symbols)?;
+    if args.is_empty() {
+        return None;
+    }
+    let callee = Term {
+        comments,
+        kind: TermKind::Identifier(path),
+        span,
+        type_: type_.clone(),
+    };
+    Some(args.into_iter().fold(callee, |current, arg| {
+        let current_type = current.type_.clone();
+        Term {
+            comments: String::new(),
+            kind: TermKind::Call {
+                callee: current.into(),
+                argument: arg.into(),
+            },
+            span: Span::Generated,
+            type_: current_type,
+        }
+    }))
+}
+
+fn method_info_for_path(
+    symbols: &SymbolTable,
+    path: &Path,
+) -> Option<TraitMethodInfo> {
+    for (trait_path, def) in symbols.trait_defs() {
+        if def.methods.contains_key(path) {
+            return Some(TraitMethodInfo {
+                trait_name: Some(trait_path.clone()),
+                parameters: def.parameters,
+            });
+        }
+    }
+    let less_equal = Path::core("(<=)");
+    let greater_equal = Path::core("(>=)");
+    if path == &less_equal || path == &greater_equal {
+        return Some(TraitMethodInfo {
+            trait_name: None,
+            parameters: 1,
         });
     }
-
-    if is_compare_operator(&path) {
-        let lambda = compare_lambda_from_dict(
-            &path,
-            &type_,
-            &predicates,
-            dict_env,
-            context.symbols,
-            context.module_name,
-            &mut context.dict_salt,
-        )?;
-        return Some(lambda);
-    }
-
     None
 }
 
 fn is_compare_operator(path: &Path) -> bool {
-    path == &BinaryOp::LessEqual.path() || path == &BinaryOp::GreaterEqual.path()
+    path == &Path::core("(<=)") || path == &Path::core("(>=)")
 }
 
 fn find_dict_binding<'a>(
@@ -444,16 +444,15 @@ fn compare_lambda_from_dict(
         return None;
     }
 
-    let compare_method = match path {
-        _ if path == &BinaryOp::LessEqual.path() => BinaryOp::Less,
-        _ if path == &BinaryOp::GreaterEqual.path() => BinaryOp::Greater,
+    let compare_method = match path.minor.as_str() {
+        "(<=)" => Path::core("(<)"),
+        "(>=)" => Path::core("(>)"),
         _ => return None,
     };
 
-    let compare_method_type =
-        method_type_for_predicate(symbols, compare_pred, &compare_method.path())?;
-    let equal_method_type =
-        method_type_for_predicate(symbols, equal_pred, &BinaryOp::DoubleEqual.path())?;
+    let compare_method_type = method_type_for_predicate(symbols, compare_pred, &compare_method)?;
+    let equal_method_path = Path::core("(==)");
+    let equal_method_type = method_type_for_predicate(symbols, equal_pred, &equal_method_path)?;
 
     let left_path = temp_path(module_name, dict_salt, "left");
     let right_path = temp_path(module_name, dict_salt, "right");
@@ -462,7 +461,7 @@ fn compare_lambda_from_dict(
         comments: String::new(),
         kind: TermKind::Field {
             of: term_identifier(compare_dict.path.clone(), compare_dict.type_.clone()).into(),
-            index: compare_method.path().minor.with_span(Span::Generated),
+            index: compare_method.minor.clone().with_span(Span::Generated),
         },
         span: Span::Generated,
         type_: compare_method_type,
@@ -472,10 +471,7 @@ fn compare_lambda_from_dict(
         comments: String::new(),
         kind: TermKind::Field {
             of: term_identifier(equal_dict.path.clone(), equal_dict.type_.clone()).into(),
-            index: BinaryOp::DoubleEqual
-                .path()
-                .minor
-                .with_span(Span::Generated),
+            index: equal_method_path.minor.clone().with_span(Span::Generated),
         },
         span: Span::Generated,
         type_: equal_method_type,
@@ -537,6 +533,50 @@ fn compare_lambda_from_dict(
     })
 }
 
+fn method_type_for_predicate(
+    symbols: &SymbolTable,
+    predicate: &TraitConstraint,
+    method_path: &Path,
+) -> Option<Type> {
+    let def = symbols.trait_defs().get(&predicate.trait_name)?;
+    let scheme = def.methods.get(method_path)?;
+    substitute_type_vars(&scheme.type_, &predicate.arguments)
+}
+
+fn call2(
+    callee: Term<Type>,
+    left: Term<Type>,
+    right: Term<Type>,
+) -> Term<Type> {
+    let inner_type = call_result_type(&callee.type_).unwrap_or(Type::Unit);
+    let inner = Term {
+        comments: String::new(),
+        kind: TermKind::Call {
+            callee: callee.into(),
+            argument: left.into(),
+        },
+        span: Span::Generated,
+        type_: inner_type,
+    };
+    let outer_type = call_result_type(&inner.type_).unwrap_or(Type::Unit);
+    Term {
+        comments: String::new(),
+        kind: TermKind::Call {
+            callee: inner.into(),
+            argument: right.into(),
+        },
+        span: Span::Generated,
+        type_: outer_type,
+    }
+}
+
+fn call_result_type(type_: &Type) -> Option<Type> {
+    match type_ {
+        Type::Function(_, result) => Some(result.as_ref().clone()),
+        _ => None,
+    }
+}
+
 fn function_pair_types(type_: &Type) -> Option<(Type, Type, Type)> {
     let Type::Function(left, rest) = type_ else {
         return None;
@@ -549,6 +589,53 @@ fn function_pair_types(type_: &Type) -> Option<(Type, Type, Type)> {
         right.as_ref().clone(),
         result.as_ref().clone(),
     ))
+}
+
+fn temp_path(
+    module_name: &str,
+    dict_salt: &mut usize,
+    label: &str,
+) -> Path {
+    let path = Path::new(module_name, format!("[elab] {label} #{}", *dict_salt));
+    *dict_salt += 1;
+    path
+}
+
+fn specialize_method_arguments(
+    method_path: &Path,
+    concrete_type: &Type,
+    method_info: &TraitMethodInfo,
+    symbols: &SymbolTable,
+) -> Option<Vec<Type>> {
+    let scheme = symbols.terms().get(method_path)?;
+    let (scheme_body, var_count) = peel_forall(&scheme.type_);
+    if var_count < method_info.parameters {
+        return None;
+    }
+    let mut bindings = vec![None; var_count];
+    if !match_scheme_to_concrete(&scheme_body, concrete_type, &mut bindings) {
+        return None;
+    }
+    let mut arguments = Vec::with_capacity(method_info.parameters);
+    for index in 0..method_info.parameters {
+        let binding = bindings.get(index).and_then(|binding| binding.clone())?;
+        if !is_concrete_type(&binding) {
+            return None;
+        }
+        arguments.push(binding);
+    }
+
+    if let Some(trait_name) = &method_info.trait_name {
+        let predicate = TraitConstraint {
+            trait_name: trait_name.clone(),
+            arguments: arguments.clone(),
+        };
+        if let Some(selected_impl) = symbols.select_impl(&predicate).ok().flatten() {
+            return Some(core_impl_arguments(&selected_impl.head.arguments));
+        }
+    }
+
+    Some(arguments)
 }
 
 fn wrap_with_dict_params(
@@ -584,15 +671,8 @@ fn apply_dictionary_args(
     };
     let scheme = context.scheme_env.get(path).ok_or(callee.clone())?;
     let call_type = Type::func(argument.type_.clone(), result_type.clone());
-    let args = dictionary_args_for_call(
-        scheme,
-        &call_type,
-        dict_env,
-        context.symbols,
-        context.module_name,
-        &mut context.specializations,
-    )
-    .ok_or(callee.clone())?;
+    let args = dictionary_args_for_type(scheme, &call_type, dict_env, context.symbols)
+        .ok_or(callee.clone())?;
 
     let callee_with_args = args.into_iter().fold(callee, |current, arg| {
         let current_type = current.type_.clone();
@@ -610,20 +690,18 @@ fn apply_dictionary_args(
     Ok(callee_with_args)
 }
 
-fn dictionary_args_for_call(
+fn dictionary_args_for_type(
     scheme: &TypeScheme,
-    call_type: &Type,
+    type_: &Type,
     dict_env: &DictEnv,
     symbols: &SymbolTable,
-    module_name: &str,
-    specializations: &mut IndexMap<Path, Specialization>,
 ) -> Option<Vec<Term<Type>>> {
     if scheme.predicates.is_empty() {
-        return None;
+        return Some(vec![]);
     }
     let (scheme_body, var_count) = peel_forall(&scheme.type_);
     let mut bindings = vec![None; var_count];
-    if !match_scheme_to_type_relaxed(&scheme_body, call_type, &mut bindings) {
+    if !match_scheme_to_type_relaxed(&scheme_body, type_, &mut bindings) {
         return None;
     }
     let predicates = instantiate_predicates(&scheme.predicates, &bindings)?;
@@ -633,12 +711,7 @@ fn dictionary_args_for_call(
         if let Some(binding) = find_dict_binding(dict_env, &predicate) {
             args.push(term_identifier(binding.path.clone(), binding.type_.clone()));
         } else if predicate_is_concrete(&predicate) {
-            args.push(dictionary_term_for_predicate(
-                &predicate,
-                symbols,
-                module_name,
-                specializations,
-            ));
+            args.push(dictionary_term_for_predicate(&predicate, symbols));
         } else {
             return None;
         }
@@ -697,8 +770,6 @@ fn dictionary_type_for_predicate(
 fn dictionary_term_for_predicate(
     predicate: &TraitConstraint,
     symbols: &SymbolTable,
-    module_name: &str,
-    specializations: &mut IndexMap<Path, Specialization>,
 ) -> Term<Type> {
     let Some(def) = symbols.trait_defs().get(&predicate.trait_name) else {
         return generated_term(
@@ -709,22 +780,20 @@ fn dictionary_term_for_predicate(
         );
     };
     let methods = ordered_trait_methods(def);
+    let selected_impl = symbols.select_impl(predicate).ok().flatten();
+    let impl_arguments = selected_impl
+        .as_ref()
+        .map(|impl_| core_impl_arguments(&impl_.head.arguments));
     let mut fields = IndexMap::new();
     let mut field_types = IndexMap::new();
     for (method_path, scheme) in methods {
         let Some(method_type) = substitute_type_vars(&scheme.type_, &predicate.arguments) else {
             continue;
         };
-        let specialized_path = specialized_path(module_name, &method_path, &predicate.arguments);
-        specializations
-            .entry(specialized_path.clone())
-            .or_insert_with(|| {
-                Specialization {
-                    method_path: method_path.clone(),
-                    arguments: predicate.arguments.clone(),
-                    specialized_path: specialized_path.clone(),
-                }
-            });
+        let specialized_path = match &impl_arguments {
+            Some(arguments) => core_impl_path(&method_path, arguments),
+            None => core_impl_path(&method_path, &predicate.arguments),
+        };
         fields.insert(
             method_path.minor.clone().with_span(Span::Generated),
             Term {
@@ -906,50 +975,6 @@ fn substitute_type_vars_in_type(
     }
 }
 
-fn method_type_for_predicate(
-    symbols: &SymbolTable,
-    predicate: &TraitConstraint,
-    method_path: &Path,
-) -> Option<Type> {
-    let def = symbols.trait_defs().get(&predicate.trait_name)?;
-    let scheme = def.methods.get(method_path)?;
-    substitute_type_vars(&scheme.type_, &predicate.arguments)
-}
-
-fn call2(
-    callee: Term<Type>,
-    left: Term<Type>,
-    right: Term<Type>,
-) -> Term<Type> {
-    let inner_type = call_result_type(&callee.type_).unwrap_or(Type::Unit);
-    let inner = Term {
-        comments: String::new(),
-        kind: TermKind::Call {
-            callee: callee.into(),
-            argument: left.into(),
-        },
-        span: Span::Generated,
-        type_: inner_type,
-    };
-    let outer_type = call_result_type(&inner.type_).unwrap_or(Type::Unit);
-    Term {
-        comments: String::new(),
-        kind: TermKind::Call {
-            callee: inner.into(),
-            argument: right.into(),
-        },
-        span: Span::Generated,
-        type_: outer_type,
-    }
-}
-
-fn call_result_type(type_: &Type) -> Option<Type> {
-    match type_ {
-        Type::Function(_, result) => Some(result.as_ref().clone()),
-        _ => None,
-    }
-}
-
 fn term_identifier(
     path: Path,
     type_: Type,
@@ -972,16 +997,6 @@ fn generated_term(
         span: Span::Generated,
         type_,
     }
-}
-
-fn temp_path(
-    module_name: &str,
-    dict_salt: &mut usize,
-    label: &str,
-) -> Path {
-    let path = Path::new(module_name, format!("[elab] {label} #{}", *dict_salt));
-    *dict_salt += 1;
-    path
 }
 
 fn pattern_bindings(pattern: &Pattern<Type>) -> Vec<Path> {
@@ -1153,52 +1168,20 @@ fn collect_dict_uses(
             uses.extend(collect_dict_uses(right, dict_types));
             uses
         }
-        TermKind::Function { captures, .. } => captures
-            .iter()
-            .filter_map(|(path, type_)| {
-                dict_types
-                    .get(path)
-                    .map(|_| (path.clone(), type_.clone()))
-            })
-            .collect(),
+        TermKind::Function { captures, .. } => {
+            captures
+                .iter()
+                .filter_map(|(path, type_)| {
+                    dict_types.get(path).map(|_| (path.clone(), type_.clone()))
+                })
+                .collect()
+        }
         _ => IndexMap::new(),
     }
 }
 
 fn path_key(path: &Path) -> String {
     format!("{path}")
-}
-
-fn specialize_method(
-    method_path: &Path,
-    concrete_type: &Type,
-    method_info: &TraitMethodInfo,
-    symbols: &SymbolTable,
-    module_name: &str,
-) -> Option<Specialization> {
-    let scheme = symbols.terms().get(method_path)?;
-    let (scheme_body, var_count) = peel_forall(&scheme.type_);
-    if var_count < method_info.parameters {
-        return None;
-    }
-    let mut bindings = vec![None; var_count];
-    if !match_scheme_to_concrete(&scheme_body, concrete_type, &mut bindings) {
-        return None;
-    }
-    let mut arguments = Vec::with_capacity(method_info.parameters);
-    for index in 0..method_info.parameters {
-        let binding = bindings.get(index).and_then(|binding| binding.clone())?;
-        if !is_concrete_type(&binding) {
-            return None;
-        }
-        arguments.push(binding);
-    }
-    let specialized_path = specialized_path(module_name, method_path, &arguments);
-    Some(Specialization {
-        method_path: method_path.clone(),
-        arguments,
-        specialized_path,
-    })
 }
 
 fn peel_forall(type_: &Type) -> (Type, usize) {
@@ -1487,23 +1470,6 @@ fn is_concrete_type(type_: &Type) -> bool {
     }
 }
 
-fn specialized_path(
-    module_name: &str,
-    method_path: &Path,
-    arguments: &[Type],
-) -> Path {
-    let arg_key = arguments.iter().map(type_key).collect::<Vec<_>>().join("_");
-    let minor = if arg_key.is_empty() {
-        format!("[impl] {} {}", method_path.major, method_path.minor)
-    } else {
-        format!(
-            "[impl] {} {} {}",
-            method_path.major, method_path.minor, arg_key
-        )
-    };
-    Path::new(module_name, minor)
-}
-
 fn type_key(type_: &Type) -> String {
     type_
         .pretty()
@@ -1517,6 +1483,7 @@ mod tests {
     use super::*;
 
     use crate::hc_core::compile_core_module;
+    use crate::ir::ScopeKind;
     use crate::types::resolve_module_with_symbols_and_schemes;
     use crate::{
         Logger,
@@ -1527,7 +1494,7 @@ mod tests {
         let mut logger = Logger::new();
         let mut file_logger = logger.new_file("test.hc", source);
         let mut symbols = SymbolTable::new();
-        compile_core_module(&mut symbols);
+        let _ = compile_core_module(&mut symbols);
 
         let modules = parse::parse(source, &mut file_logger)
             .map(|m| m.modules())

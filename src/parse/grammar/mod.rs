@@ -1,6 +1,7 @@
 mod expression;
 mod module;
 mod pattern;
+mod sexpr;
 mod type_expr;
 
 use super::SyntaxKind;

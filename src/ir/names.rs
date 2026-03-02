@@ -58,6 +58,7 @@ pub enum NameSpace {
     Constructor,
     Type,
     Term,
+    Wasm,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -90,6 +91,7 @@ impl std::fmt::Display for NameSpace {
                 NameSpace::Constructor => "constructor",
                 NameSpace::Type => "type",
                 NameSpace::Term => "term",
+                NameSpace::Wasm => "register",
             }
         )
     }
@@ -106,6 +108,7 @@ pub struct ModuleScope {
     /// In-scope local names
     locals: HashMap<ScopedString, LocalBinding>,
     /// Symbols that could not be found in the current scope
+    #[allow(dead_code)]
     external: HashSet<ScopedPath>,
     /// Local variable introductions, used to rewind scope
     history_buffer: Vec<(ScopedString, Option<LocalBinding>)>,

@@ -56,8 +56,8 @@ pub fn lower_type(
     }
 }
 
-use indexmap::IndexMap;
 use Instruction as i;
+use indexmap::IndexMap;
 impl<'a> Encoder<'a> {
     /// Create a new closure, push a reference to it onto the stack
     pub fn create_closure(
@@ -468,14 +468,20 @@ impl<'a> Encoder<'a> {
                 self.extend([i::Const(const_value), i::StructNew(inner_types)]);
             }
             TermKind::Identifier(path) => {
+                let result_type = lower_type(&type_, symbols);
                 if path.major != self.module.name {
-                    let type_ = lower_type(&type_, symbols);
+                    let import_type = symbols
+                        .terms()
+                        .get(&path)
+                        .map(|scheme| lower_type(&scheme.type_, symbols))
+                        .unwrap_or_else(|| result_type.clone());
                     self.module
                         .imports
                         .entry(path.clone())
-                        .or_insert_with(|| type_.clone());
+                        .or_insert_with(|| import_type);
                 }
                 self.push(i::Get(path));
+                self.ref_cast_if_needed(&result_type);
             }
             TermKind::Tuple(items) => {
                 let types = items
@@ -668,112 +674,141 @@ impl<'a> Encoder<'a> {
         symbols: &SymbolTable,
     ) {
         match op {
-            BinaryOp::Plus => match argument {
-                SemanticType::Integer => self.lower_binary_numeric(
-                    path,
-                    argument,
-                    NumberOperation::Add,
-                    NumberOpKind::I64,
-                    symbols,
-                ),
-                SemanticType::Real => self.lower_binary_numeric(
-                    path,
-                    argument,
-                    NumberOperation::Add,
-                    NumberOpKind::F64,
-                    symbols,
-                ),
-                SemanticType::String => self.lower_string_concat(path, symbols),
-                SemanticType::Array(inner) => {
-                    self.lower_array_concat(path, *inner, symbols)
+            BinaryOp::Plus => {
+                match argument {
+                    SemanticType::Integer => {
+                        self.lower_binary_numeric(
+                            path,
+                            argument,
+                            NumberOperation::Add,
+                            NumberOpKind::I64,
+                            symbols,
+                        )
+                    }
+                    SemanticType::Real => {
+                        self.lower_binary_numeric(
+                            path,
+                            argument,
+                            NumberOperation::Add,
+                            NumberOpKind::F64,
+                            symbols,
+                        )
+                    }
+                    SemanticType::String => self.lower_string_concat(path, symbols),
+                    SemanticType::Array(inner) => self.lower_array_concat(path, *inner, symbols),
+                    _ => self.lower_unreachable_specialization(path, argument, symbols),
                 }
-                _ => self.lower_unreachable_specialization(path, argument, symbols),
-            },
-            BinaryOp::Minus => match argument {
-                SemanticType::Integer => self.lower_binary_numeric(
-                    path,
-                    argument,
-                    NumberOperation::Sub,
-                    NumberOpKind::I64,
-                    symbols,
-                ),
-                SemanticType::Real => self.lower_binary_numeric(
-                    path,
-                    argument,
-                    NumberOperation::Sub,
-                    NumberOpKind::F64,
-                    symbols,
-                ),
-                _ => self.lower_unreachable_specialization(path, argument, symbols),
-            },
-            BinaryOp::Star => match argument {
-                SemanticType::Integer => self.lower_binary_numeric(
-                    path,
-                    argument,
-                    NumberOperation::Mul,
-                    NumberOpKind::I64,
-                    symbols,
-                ),
-                SemanticType::Real => self.lower_binary_numeric(
-                    path,
-                    argument,
-                    NumberOperation::Mul,
-                    NumberOpKind::F64,
-                    symbols,
-                ),
-                _ => self.lower_unreachable_specialization(path, argument, symbols),
-            },
-            BinaryOp::Slash => match argument {
-                SemanticType::Integer => self.lower_binary_numeric(
-                    path,
-                    argument,
-                    NumberOperation::Div,
-                    NumberOpKind::I64,
-                    symbols,
-                ),
-                SemanticType::Real => self.lower_binary_numeric(
-                    path,
-                    argument,
-                    NumberOperation::Div,
-                    NumberOpKind::F64,
-                    symbols,
-                ),
-                _ => self.lower_unreachable_specialization(path, argument, symbols),
-            },
-            BinaryOp::Percent => match argument {
-                SemanticType::Integer => self.lower_binary_numeric(
-                    path,
-                    argument,
-                    NumberOperation::Rem,
-                    NumberOpKind::I64,
-                    symbols,
-                ),
-                _ => self.lower_unreachable_specialization(path, argument, symbols),
-            },
-            BinaryOp::And | BinaryOp::Or | BinaryOp::Xor => match argument {
-                SemanticType::Integer => self.lower_binary_numeric(
-                    path,
-                    argument,
-                    bitwise_op(op),
-                    NumberOpKind::I64,
-                    symbols,
-                ),
-                SemanticType::Boolean => self.lower_binary_numeric(
-                    path,
-                    argument,
-                    bitwise_op(op),
-                    NumberOpKind::I32,
-                    symbols,
-                ),
-                _ => self.lower_unreachable_specialization(path, argument, symbols),
-            },
+            }
+            BinaryOp::Minus => {
+                match argument {
+                    SemanticType::Integer => {
+                        self.lower_binary_numeric(
+                            path,
+                            argument,
+                            NumberOperation::Sub,
+                            NumberOpKind::I64,
+                            symbols,
+                        )
+                    }
+                    SemanticType::Real => {
+                        self.lower_binary_numeric(
+                            path,
+                            argument,
+                            NumberOperation::Sub,
+                            NumberOpKind::F64,
+                            symbols,
+                        )
+                    }
+                    _ => self.lower_unreachable_specialization(path, argument, symbols),
+                }
+            }
+            BinaryOp::Star => {
+                match argument {
+                    SemanticType::Integer => {
+                        self.lower_binary_numeric(
+                            path,
+                            argument,
+                            NumberOperation::Mul,
+                            NumberOpKind::I64,
+                            symbols,
+                        )
+                    }
+                    SemanticType::Real => {
+                        self.lower_binary_numeric(
+                            path,
+                            argument,
+                            NumberOperation::Mul,
+                            NumberOpKind::F64,
+                            symbols,
+                        )
+                    }
+                    _ => self.lower_unreachable_specialization(path, argument, symbols),
+                }
+            }
+            BinaryOp::Slash => {
+                match argument {
+                    SemanticType::Integer => {
+                        self.lower_binary_numeric(
+                            path,
+                            argument,
+                            NumberOperation::Div,
+                            NumberOpKind::I64,
+                            symbols,
+                        )
+                    }
+                    SemanticType::Real => {
+                        self.lower_binary_numeric(
+                            path,
+                            argument,
+                            NumberOperation::Div,
+                            NumberOpKind::F64,
+                            symbols,
+                        )
+                    }
+                    _ => self.lower_unreachable_specialization(path, argument, symbols),
+                }
+            }
+            BinaryOp::Percent => {
+                match argument {
+                    SemanticType::Integer => {
+                        self.lower_binary_numeric(
+                            path,
+                            argument,
+                            NumberOperation::Rem,
+                            NumberOpKind::I64,
+                            symbols,
+                        )
+                    }
+                    _ => self.lower_unreachable_specialization(path, argument, symbols),
+                }
+            }
+            BinaryOp::And | BinaryOp::Or | BinaryOp::Xor => {
+                match argument {
+                    SemanticType::Integer => {
+                        self.lower_binary_numeric(
+                            path,
+                            argument,
+                            bitwise_op(op),
+                            NumberOpKind::I64,
+                            symbols,
+                        )
+                    }
+                    SemanticType::Boolean => {
+                        self.lower_binary_numeric(
+                            path,
+                            argument,
+                            bitwise_op(op),
+                            NumberOpKind::I32,
+                            symbols,
+                        )
+                    }
+                    _ => self.lower_unreachable_specialization(path, argument, symbols),
+                }
+            }
             BinaryOp::DoubleEqual | BinaryOp::BangEqual => {
                 self.lower_binary_compare(path, argument, equality_op(op), symbols)
             }
-            BinaryOp::Less
-            | BinaryOp::Greater
-            | BinaryOp::LessEqual
-            | BinaryOp::GreaterEqual => {
+            BinaryOp::Less | BinaryOp::Greater | BinaryOp::LessEqual | BinaryOp::GreaterEqual => {
                 self.lower_binary_compare(path, argument, compare_op(op), symbols)
             }
             _ => self.lower_unreachable_specialization(path, argument, symbols),
@@ -788,40 +823,52 @@ impl<'a> Encoder<'a> {
         symbols: &SymbolTable,
     ) {
         match op {
-            UnaryOp::Minus => match argument {
-                SemanticType::Integer => self.lower_unary_numeric(
-                    path,
-                    argument,
-                    NumberOpKind::I64,
-                    symbols,
-                    UnaryNumberOp::Negate,
-                ),
-                SemanticType::Real => self.lower_unary_numeric(
-                    path,
-                    argument,
-                    NumberOpKind::F64,
-                    symbols,
-                    UnaryNumberOp::Negate,
-                ),
-                _ => self.lower_unreachable_specialization(path, argument, symbols),
-            },
-            UnaryOp::Not => match argument {
-                SemanticType::Integer => self.lower_unary_numeric(
-                    path,
-                    argument,
-                    NumberOpKind::I64,
-                    symbols,
-                    UnaryNumberOp::BitwiseNot,
-                ),
-                SemanticType::Boolean => self.lower_unary_numeric(
-                    path,
-                    argument,
-                    NumberOpKind::I32,
-                    symbols,
-                    UnaryNumberOp::BitwiseNot,
-                ),
-                _ => self.lower_unreachable_specialization(path, argument, symbols),
-            },
+            UnaryOp::Minus => {
+                match argument {
+                    SemanticType::Integer => {
+                        self.lower_unary_numeric(
+                            path,
+                            argument,
+                            NumberOpKind::I64,
+                            symbols,
+                            UnaryNumberOp::Negate,
+                        )
+                    }
+                    SemanticType::Real => {
+                        self.lower_unary_numeric(
+                            path,
+                            argument,
+                            NumberOpKind::F64,
+                            symbols,
+                            UnaryNumberOp::Negate,
+                        )
+                    }
+                    _ => self.lower_unreachable_specialization(path, argument, symbols),
+                }
+            }
+            UnaryOp::Not => {
+                match argument {
+                    SemanticType::Integer => {
+                        self.lower_unary_numeric(
+                            path,
+                            argument,
+                            NumberOpKind::I64,
+                            symbols,
+                            UnaryNumberOp::BitwiseNot,
+                        )
+                    }
+                    SemanticType::Boolean => {
+                        self.lower_unary_numeric(
+                            path,
+                            argument,
+                            NumberOpKind::I32,
+                            symbols,
+                            UnaryNumberOp::BitwiseNot,
+                        )
+                    }
+                    _ => self.lower_unreachable_specialization(path, argument, symbols),
+                }
+            }
         }
     }
 
@@ -868,30 +915,21 @@ impl<'a> Encoder<'a> {
     ) {
         match argument {
             SemanticType::Unit => {
-                let value = matches!(op, NumberOperation::Eq | NumberOperation::Le | NumberOperation::Ge);
+                let value = matches!(
+                    op,
+                    NumberOperation::Eq | NumberOperation::Le | NumberOperation::Ge
+                );
                 self.lower_unary_boolean_const(path, SemanticType::Unit, value, symbols);
             }
-            SemanticType::Integer => self.lower_binary_compare_numeric(
-                path,
-                argument,
-                op,
-                NumberOpKind::I64,
-                symbols,
-            ),
-            SemanticType::Real => self.lower_binary_compare_numeric(
-                path,
-                argument,
-                op,
-                NumberOpKind::F64,
-                symbols,
-            ),
-            SemanticType::Boolean | SemanticType::Glyph => self.lower_binary_compare_numeric(
-                path,
-                argument,
-                op,
-                NumberOpKind::I32,
-                symbols,
-            ),
+            SemanticType::Integer => {
+                self.lower_binary_compare_numeric(path, argument, op, NumberOpKind::I64, symbols)
+            }
+            SemanticType::Real => {
+                self.lower_binary_compare_numeric(path, argument, op, NumberOpKind::F64, symbols)
+            }
+            SemanticType::Boolean | SemanticType::Glyph => {
+                self.lower_binary_compare_numeric(path, argument, op, NumberOpKind::I32, symbols)
+            }
             SemanticType::String => self.lower_string_compare(path, op, symbols),
             _ => self.lower_unreachable_specialization(path, argument, symbols),
         }
@@ -946,22 +984,17 @@ impl<'a> Encoder<'a> {
                 return;
             }
         };
-        self.lower_unary_closure(
-            path,
-            argument,
-            symbols,
-            move |inner, _symbols, value| {
-                let operand_fields = result_fields.clone();
-                emit_unary_op(
-                    inner,
-                    value,
-                    operand_fields,
-                    op,
-                    kind,
-                    result_fields.clone(),
-                );
-            },
-        );
+        self.lower_unary_closure(path, argument, symbols, move |inner, _symbols, value| {
+            let operand_fields = result_fields.clone();
+            emit_unary_op(
+                inner,
+                value,
+                operand_fields,
+                op,
+                kind,
+                result_fields.clone(),
+            );
+        });
     }
 
     fn lower_unary_boolean_const(
@@ -972,14 +1005,9 @@ impl<'a> Encoder<'a> {
         symbols: &SymbolTable,
     ) {
         let bool_fields = bool_fields(symbols);
-        self.lower_unary_closure(
-            path,
-            argument,
-            symbols,
-            move |inner, _symbols, _value| {
-                emit_boolean_const(inner, value, bool_fields.clone());
-            },
-        );
+        self.lower_unary_closure(path, argument, symbols, move |inner, _symbols, _value| {
+            emit_boolean_const(inner, value, bool_fields.clone());
+        });
     }
 
     fn lower_string_concat(
@@ -992,8 +1020,8 @@ impl<'a> Encoder<'a> {
             path,
             argument,
             symbols,
-            move |inner, symbols, left, right| {
-                emit_array_concat(inner, left, right, Type::I8, symbols);
+            move |inner, _symbols, left, right| {
+                emit_array_concat(inner, left, right, Type::I8);
             },
         );
     }
@@ -1010,8 +1038,8 @@ impl<'a> Encoder<'a> {
             path,
             argument,
             symbols,
-            move |inner_encoder, symbols, left, right| {
-                emit_array_concat(inner_encoder, left, right, inner_lowered.clone(), symbols);
+            move |inner_encoder, _symbols, left, right| {
+                emit_array_concat(inner_encoder, left, right, inner_lowered.clone());
             },
         );
     }
@@ -1279,53 +1307,57 @@ fn emit_unary_op(
     result_fields: Box<[Type]>,
 ) {
     match op {
-        UnaryNumberOp::Negate => match kind {
-            NumberOpKind::I32 => {
-                encoder.push(i::I32Const(0));
-                encoder.extend([
-                    i::Get(value.clone()),
-                    i::StructGet(operand_fields.clone(), 0),
-                ]);
-                encoder.push(i::I32Op(NumberOperation::Sub));
+        UnaryNumberOp::Negate => {
+            match kind {
+                NumberOpKind::I32 => {
+                    encoder.push(i::I32Const(0));
+                    encoder.extend([
+                        i::Get(value.clone()),
+                        i::StructGet(operand_fields.clone(), 0),
+                    ]);
+                    encoder.push(i::I32Op(NumberOperation::Sub));
+                }
+                NumberOpKind::I64 => {
+                    encoder.push(i::Const(ImmediateValue::Integer(0)));
+                    encoder.extend([
+                        i::Get(value.clone()),
+                        i::StructGet(operand_fields.clone(), 0),
+                    ]);
+                    encoder.push(i::I64Op(NumberOperation::Sub));
+                }
+                NumberOpKind::F64 => {
+                    encoder.push(i::Const(ImmediateValue::Real(0.0)));
+                    encoder.extend([
+                        i::Get(value.clone()),
+                        i::StructGet(operand_fields.clone(), 0),
+                    ]);
+                    encoder.push(i::F64Op(NumberOperation::Sub));
+                }
             }
-            NumberOpKind::I64 => {
-                encoder.push(i::Const(ImmediateValue::Integer(0)));
-                encoder.extend([
-                    i::Get(value.clone()),
-                    i::StructGet(operand_fields.clone(), 0),
-                ]);
-                encoder.push(i::I64Op(NumberOperation::Sub));
+        }
+        UnaryNumberOp::BitwiseNot => {
+            match kind {
+                NumberOpKind::I32 => {
+                    encoder.push(i::I32Const(1));
+                    encoder.extend([
+                        i::Get(value.clone()),
+                        i::StructGet(operand_fields.clone(), 0),
+                    ]);
+                    encoder.push(i::I32Op(NumberOperation::Xor));
+                }
+                NumberOpKind::I64 => {
+                    encoder.push(i::Const(ImmediateValue::Integer(-1)));
+                    encoder.extend([
+                        i::Get(value.clone()),
+                        i::StructGet(operand_fields.clone(), 0),
+                    ]);
+                    encoder.push(i::I64Op(NumberOperation::Xor));
+                }
+                NumberOpKind::F64 => {
+                    encoder.push(i::Unreachable);
+                }
             }
-            NumberOpKind::F64 => {
-                encoder.push(i::Const(ImmediateValue::Real(0.0)));
-                encoder.extend([
-                    i::Get(value.clone()),
-                    i::StructGet(operand_fields.clone(), 0),
-                ]);
-                encoder.push(i::F64Op(NumberOperation::Sub));
-            }
-        },
-        UnaryNumberOp::BitwiseNot => match kind {
-            NumberOpKind::I32 => {
-                encoder.push(i::I32Const(1));
-                encoder.extend([
-                    i::Get(value.clone()),
-                    i::StructGet(operand_fields.clone(), 0),
-                ]);
-                encoder.push(i::I32Op(NumberOperation::Xor));
-            }
-            NumberOpKind::I64 => {
-                encoder.push(i::Const(ImmediateValue::Integer(-1)));
-                encoder.extend([
-                    i::Get(value.clone()),
-                    i::StructGet(operand_fields.clone(), 0),
-                ]);
-                encoder.push(i::I64Op(NumberOperation::Xor));
-            }
-            NumberOpKind::F64 => {
-                encoder.push(i::Unreachable);
-            }
-        },
+        }
     }
     encoder.push(i::StructNew(result_fields.clone()));
 }
@@ -1337,63 +1369,6 @@ fn emit_boolean_const(
 ) {
     encoder.push(i::I32Const(if value { 1 } else { 0 }));
     encoder.push(i::StructNew(bool_fields.clone()));
-}
-
-fn emit_array_concat(
-    encoder: &mut Encoder<'_>,
-    left: &Path,
-    right: &Path,
-    inner_type: Type,
-    _symbols: &SymbolTable,
-) {
-    let left_len = encoder.temporary_name("left_len");
-    let right_len = encoder.temporary_name("right_len");
-    let result = encoder.temporary_name("concat");
-    let array_type = Type::Array(inner_type.clone().into());
-
-    encoder.new_register(left_len.clone(), ScopeKind::Local, Type::I32);
-    encoder.new_register(right_len.clone(), ScopeKind::Local, Type::I32);
-    encoder.new_register(result.clone(), ScopeKind::Local, array_type.clone());
-
-    encoder.extend([
-        i::Get(left.clone()),
-        i::ArrayLen,
-        i::Set(left_len.clone()),
-        i::Get(right.clone()),
-        i::ArrayLen,
-        i::Set(right_len.clone()),
-        i::Get(left_len.clone()),
-        i::Get(right_len.clone()),
-        i::I32Op(NumberOperation::Add),
-        i::ArrayNewDefault(inner_type.clone()),
-        i::Set(result.clone()),
-    ]);
-
-    encoder.extend([
-        i::Get(result.clone()),
-        i::I32Const(0),
-        i::Get(left.clone()),
-        i::I32Const(0),
-        i::Get(left_len.clone()),
-        i::ArrayCopy {
-            dst_type: inner_type.clone(),
-            src_type: inner_type.clone(),
-        },
-    ]);
-
-    encoder.extend([
-        i::Get(result.clone()),
-        i::Get(left_len),
-        i::Get(right.clone()),
-        i::I32Const(0),
-        i::Get(right_len),
-        i::ArrayCopy {
-            dst_type: inner_type.clone(),
-            src_type: inner_type,
-        },
-    ]);
-
-    encoder.push(i::Get(result));
 }
 
 fn emit_string_compare(
@@ -1543,7 +1518,10 @@ impl ConstructorTable {
         Self { constructors }
     }
 
-    pub(crate) fn get(&self, path: &Path) -> Option<&ConstructorInfo> {
+    pub(crate) fn get(
+        &self,
+        path: &Path,
+    ) -> Option<&ConstructorInfo> {
         self.constructors.get(path)
     }
 
@@ -1582,9 +1560,11 @@ fn is_unit_type(
         SemanticType::Apply {
             constructor,
             arguments,
-        } => apply_type(constructor, arguments, symbols)
-            .as_ref()
-            .is_some_and(|t| is_unit_type(t, symbols)),
+        } => {
+            apply_type(constructor, arguments, symbols)
+                .as_ref()
+                .is_some_and(|t| is_unit_type(t, symbols))
+        }
         _ => false,
     }
 }
@@ -1671,9 +1651,9 @@ fn struct_fields_for_type(
 
 fn collect_pattern_bindings(pattern: &Pattern<SemanticType>) -> Vec<(Path, SemanticType)> {
     match &pattern.kind {
-        PatternKind::Hole
-        | PatternKind::Immediate(_)
-        | PatternKind::ConstConstructor(_) => Vec::new(),
+        PatternKind::Hole | PatternKind::Immediate(_) | PatternKind::ConstConstructor(_) => {
+            Vec::new()
+        }
         PatternKind::Identifier(path) => vec![(path.clone(), pattern.type_.clone())],
         PatternKind::Constructor(_, payload) => collect_pattern_bindings(payload),
         PatternKind::Tuple(items) => items.iter().flat_map(collect_pattern_bindings).collect(),
@@ -1708,6 +1688,6 @@ fn pattern_is_refutable(pattern: &Pattern<SemanticType>) -> bool {
         PatternKind::Array { .. }
         | PatternKind::Immediate(_)
         | PatternKind::ConstConstructor(_)
-        | PatternKind::Constructor(_, _) => true,
+        | PatternKind::Constructor(..) => true,
     }
 }

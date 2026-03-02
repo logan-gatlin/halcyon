@@ -13,6 +13,7 @@ pub mod custom_section;
 mod encode;
 mod lower;
 pub mod pretty_print;
+mod snippets;
 
 #[cfg(test)]
 mod tests;
@@ -34,6 +35,7 @@ use crate::types::SymbolTable;
 pub use encode::encode;
 use lower::ConstructorTable;
 pub use lower::lower_type;
+pub(crate) use snippets::emit_array_concat;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Type {
@@ -50,6 +52,107 @@ pub enum Type {
         parameters: Box<[Type]>,
         results: Box<[Type]>,
     },
+}
+
+impl std::fmt::Display for Type {
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        match self {
+            Type::Any => write!(f, "any"),
+            Type::I8 => write!(f, "i8"),
+            Type::I16 => write!(f, "i16"),
+            Type::I32 => write!(f, "i32"),
+            Type::I64 => write!(f, "i64"),
+            Type::F32 => write!(f, "f32"),
+            Type::F64 => write!(f, "f64"),
+            Type::Struct(items) => {
+                write!(
+                    f,
+                    "(struct {})",
+                    items
+                        .iter()
+                        .map(|i| i.to_string())
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                )
+            }
+            Type::Array(t) => write!(f, "(array {t})"),
+            Type::Function {
+                parameters,
+                results,
+            } => {
+                write!(
+                    f,
+                    "(func {} {})",
+                    parameters
+                        .into_iter()
+                        .map(|p| format!("(param {p})"))
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                    results
+                        .into_iter()
+                        .map(|p| format!("(result {p})"))
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                )
+            }
+        }
+    }
+}
+
+impl Type {
+    pub fn is_reftype(&self) -> bool {
+        matches!(
+            self,
+            Type::Struct(_) | Type::Array(_) | Type::Function { .. } | Type::Any
+        )
+    }
+    pub fn is_packed(&self) -> bool {
+        matches!(self, Type::I8 | Type::I16)
+    }
+    pub fn unpack(self) -> Self {
+        fn unpack(
+            this: Type,
+            in_ref: bool,
+        ) -> Type {
+            match this {
+                Type::I8 | Type::I16 if !in_ref => Type::I32,
+                Type::Struct(t) => Type::Struct(t.into_iter().map(|t| unpack(t, true)).collect()),
+                Type::Array(t) => Type::Array(unpack(*t, true).into()),
+                Type::Function {
+                    parameters,
+                    results,
+                } => {
+                    Type::Function {
+                        parameters: parameters.into_iter().map(|t| unpack(t, false)).collect(),
+                        results: results.into_iter().map(|t| unpack(t, false)).collect(),
+                    }
+                }
+                t => t,
+            }
+        }
+        unpack(self, false)
+    }
+    pub fn structural_eq(
+        &self,
+        other: &Self,
+    ) -> bool {
+        match (self, other) {
+            (t1, t2) if t1 == t2 => true,
+            (Self::Any, t) | (t, Self::Any) if t.is_reftype() => true,
+            (Self::Struct(t1), Self::Struct(t2)) => {
+                t1.iter()
+                    .zip(t2.iter())
+                    .all(|(t1, t2)| t1.structural_eq(t2))
+            }
+            (Self::Array(t1), Self::Array(t2)) => t1.structural_eq(t2),
+            // There is no structural equality for functions because of
+            // contravariance rules
+            _ => false,
+        }
+    }
 }
 
 /// Arithmetic and bitwise operations on numbers.
@@ -149,6 +252,8 @@ pub enum Instruction {
     Const(ImmediateValue),
 
     I32Const(i32),
+
+    F32Const(f32),
 
     /// Push a function reference onto the stack.
     ///
@@ -378,18 +483,11 @@ pub fn lower_module(
     elaborated: ElaborationResult,
     symbols: &SymbolTable,
 ) -> Module {
-    let ElaborationResult {
-        module: ir_module,
-        specializations,
-    } = elaborated;
+    let ir_module = elaborated.module;
     let mut module = Module::new(ir_module.name.clone());
     let init_name = Path::new(&ir_module.name, "[init]");
     let mut init_func = module.new_function(init_name.clone());
     let constructor_table = ConstructorTable::from_symbols(symbols);
-
-    for specialization in &specializations {
-        init_func.lower_specialization(specialization, symbols);
-    }
 
     for (path, info) in constructor_table.constructors_for_module(&ir_module.name) {
         init_func.lower_constructor(path, &info, symbols);

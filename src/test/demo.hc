@@ -1,4 +1,12 @@
 module demo =
-	let f = fn a b => a + b
-	let a = f 1 2
+	let i = 1
+	wasm => (
+		(type $integer (struct i64))
+		(global $asdf $integer)
+		(func $foo
+			get i
+			get $asdf
+			struct.get $integer 0
+		)
+	)
 end

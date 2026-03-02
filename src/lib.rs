@@ -6,9 +6,8 @@ pub mod logging;
 pub mod map;
 pub mod operator;
 pub mod parse;
-pub mod token;
 pub mod types;
-pub use token::tokenize;
+pub use parse::tokenize;
 
 #[cfg(test)]
 mod test;

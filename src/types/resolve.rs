@@ -31,8 +31,6 @@ use super::infer::{
     TypeError,
 };
 use super::{
-    core_type_resolution,
-    CoreTypeResolution,
     SymbolTable,
     TraitConstraint,
     TraitError,
@@ -156,6 +154,7 @@ pub fn resolve_module_with_symbols_and_schemes(
                         def,
                     }
                 }
+                Statement::Wasm(sexpr) => Statement::Wasm(sexpr),
             }
         })
         .collect::<Vec<_>>();
@@ -452,10 +451,6 @@ fn type_expr_to_type_in_def(
                 })
                 .collect::<Vec<_>>();
 
-            if path.major == "core" {
-                return core_type_from_path(expr.span, path, &arguments, logger);
-            }
-
             let definition = type_definitions.get(path).cloned().or_else(|| {
                 entries.contains_key(path).then(|| {
                     resolve_type_definition(path, entries, type_definitions, stack, logger)
@@ -542,57 +537,6 @@ fn build_sum_constructors(
         }
     }
     constructors.into_boxed_slice()
-}
-
-#[allow(clippy::missing_asserts_for_indexing)]
-fn core_type_from_path(
-    span: Span,
-    path: &Path,
-    args: &[Type],
-    logger: &mut FileLogger,
-) -> Type {
-    let minor = path.minor.as_str();
-    if let CoreTypeResolution::Known {
-        expected,
-        resolved,
-        fallback,
-    } = core_type_resolution(minor, args)
-    {
-        if expect_core_arity(span, path, expected, args.len(), logger).is_ok() {
-            return resolved.or(fallback).unwrap_or(Type::Unit);
-        }
-        return fallback.unwrap_or(Type::Unit);
-    }
-
-    let base = Type::Named {
-        name: Path::new(path.major.clone(), path.minor.clone()),
-        body: Box::new(Type::Unit),
-    };
-    base.apply(args.to_vec())
-}
-
-fn expect_core_arity(
-    span: Span,
-    path: &Path,
-    expected: usize,
-    found: usize,
-    logger: &mut FileLogger,
-) -> Result<(), ()> {
-    if expected == found {
-        Ok(())
-    } else {
-        logger
-            .error("Invalid type application")
-            .primary(
-                format!(
-                    "`{}` expects {} type arguments but got {}.",
-                    path, expected, found
-                ),
-                span,
-            )
-            .done();
-        Err(())
-    }
 }
 
 fn param_index_map(parameters: &[Path]) -> HashMap<Path, u32> {
