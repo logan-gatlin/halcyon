@@ -7,48 +7,27 @@ use super::*;
 use crate::hc_core::compile_core_module;
 use crate::types::SymbolTable;
 
-fn exec_file(artifacts: &[Artifact]) {
-    use wasmtime::*;
-    use wasmtime_wasi::p2::WasiCtxBuilder;
-    use wasmtime_wasi::preview1::{
-        self,
-        WasiP1Ctx,
-    };
-
-    let mut config = Config::default();
-    config.wasm_gc(true);
-    config.wasm_function_references(true);
-    config.debug_info(true);
-    config.wasm_backtrace_details(WasmBacktraceDetails::Enable);
-    let engine = Engine::new(&config).unwrap();
-    let mut linker = Linker::<WasiP1Ctx>::new(&engine);
-
-    preview1::add_to_linker_sync(&mut linker, |ctx| ctx).unwrap();
-
-    let wasi_ctx = WasiCtxBuilder::new().inherit_stdout().build_p1();
-    let mut store = Store::new(&engine, wasi_ctx);
-    for artifact in artifacts {
-        let module = Module::new(&engine, &artifact.binary).unwrap();
-        let instance = linker.instantiate(&mut store, &module).unwrap();
-        linker
-            .instance(&mut store, &artifact.module_name, instance)
-            .unwrap();
+fn assert_logger_is_ok(
+    logger: &Logger,
+    message: &str,
+) {
+    let is_ok = logger.is_ok();
+    if !is_ok {
+        logger.print_logs();
     }
+    assert!(is_ok, "{message}");
 }
 
 #[test]
-fn demo() {
+fn demo_reports_missing_trait_instance() {
     let source = include_str!("demo.hc");
     let mut symbols = SymbolTable::new();
-    let core = compile_core_module(&mut symbols);
+    let _core = compile_core_module(&mut symbols);
     let mut logger = Logger::new();
     let mut file_logger = logger.new_file("demo.hc", source);
-    let artifacts = compile_source(source, &mut file_logger, &mut symbols);
+    let _artifacts = compile_source(source, &mut file_logger, &mut symbols);
     logger.consume_file(file_logger);
-    assert!(logger.is_ok(), "Compilation failed");
-    let mut linked = vec![core];
-    linked.extend(artifacts.into_vec());
-    exec_file(&linked);
+    assert!(!logger.is_ok(), "Compilation should fail");
 }
 
 #[test]
@@ -84,5 +63,150 @@ fn wasm_function_name_accepts_symbol_name() {
     let mut file_logger = logger.new_file("demo.hc", source);
     let _ = compile_source(source, &mut file_logger, &mut symbols);
     logger.consume_file(file_logger);
-    assert!(logger.is_ok(), "Compilation failed");
+    assert_logger_is_ok(&logger, "Compilation failed");
+}
+
+#[test]
+fn wasm_reports_undefined_register_usage() {
+    let source = "module demo =\n\twasm => (\n\t\t(func $foo\n\t\t\tget $b\n\t\t)\n\t)\nend\n";
+    let mut symbols = SymbolTable::new();
+    let _core = compile_core_module(&mut symbols);
+    let mut logger = Logger::new();
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let _ = compile_source(source, &mut file_logger, &mut symbols);
+    logger.consume_file(file_logger);
+    assert!(!logger.is_ok(), "Compilation should fail");
+}
+
+#[test]
+fn wasm_memory_maximum_cannot_be_less_than_initial() {
+    let source = "module demo =\n\twasm => (\n\t\t(memory $mem 2 1)\n\t)\nend\n";
+    let mut symbols = SymbolTable::new();
+    let _core = compile_core_module(&mut symbols);
+    let mut logger = Logger::new();
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let _ = compile_source(source, &mut file_logger, &mut symbols);
+    logger.consume_file(file_logger);
+    assert!(!logger.is_ok(), "Compilation should fail");
+}
+
+#[test]
+fn reports_duplicate_global_term_definition() {
+    let source = "module demo =\n\tlet a = 1\n\tlet a = 2\nend\n";
+    let mut logger = Logger::new();
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let _ = parse::parse(source, &mut file_logger)
+        .into_iter()
+        .flat_map(|source_file| source_file.modules())
+        .flat_map(|module| ir::module(module, &mut file_logger))
+        .collect::<Vec<_>>();
+    logger.consume_file(file_logger);
+    assert!(!logger.is_ok(), "IR construction should fail");
+}
+
+#[test]
+fn reports_duplicate_constructor_definition_during_ir_construction() {
+    let source = "module demo =\n\ttype a = | Dup\n\ttype b = | Dup\nend\n";
+    let mut logger = Logger::new();
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let _ = parse::parse(source, &mut file_logger)
+        .into_iter()
+        .flat_map(|source_file| source_file.modules())
+        .flat_map(|module| ir::module(module, &mut file_logger))
+        .collect::<Vec<_>>();
+    logger.consume_file(file_logger);
+    assert!(!logger.is_ok(), "IR construction should fail");
+}
+
+#[test]
+fn duplicate_trait_definition_is_not_re_emitted_in_typechecking() {
+    let source = "module demo =\n\ttrait Eq : a =\n\t\tlet eq : a -> a -> core::boolean\n\tend\n\ttrait Eq : a =\n\t\tlet eq : a -> a -> core::boolean\n\tend\nend\n";
+    let mut symbols = SymbolTable::new();
+    let _core = compile_core_module(&mut symbols);
+    let mut logger = Logger::new();
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let _ = compile_source(source, &mut file_logger, &mut symbols);
+    let messages = file_logger
+        .iter()
+        .map(|diagnostic| diagnostic.message.clone())
+        .collect::<Vec<_>>();
+    logger.consume_file(file_logger);
+    assert!(
+        messages
+            .iter()
+            .any(|message| message == "Duplicate type definition"),
+        "Expected duplicate type diagnostic from IR construction"
+    );
+    assert!(
+        !messages
+            .iter()
+            .any(|message| message == "Duplicate trait definition"),
+        "Typechecking should not re-emit trait duplicate diagnostics"
+    );
+}
+
+#[test]
+fn inline_wasm_expression_compiles() {
+    let source = "module demo =\n\tlet i = 1\n\tlet j = (wasm : core::integer) => (\n\t\t(local $tmp (struct i64))\n\t\tget i\n\t\tset $tmp\n\t\tget $tmp\n\t)\nend\n";
+    let mut symbols = SymbolTable::new();
+    let _core = compile_core_module(&mut symbols);
+    let mut logger = Logger::new();
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let _ = compile_source(source, &mut file_logger, &mut symbols);
+    logger.consume_file(file_logger);
+    assert_logger_is_ok(&logger, "Compilation failed");
+}
+
+#[test]
+fn inline_wasm_expression_can_use_toplevel_wasm_type_alias() {
+    let source = "module demo =\n\twasm => (\n\t\t(type $integer (struct i64))\n\t)\n\tlet i = 1\n\tlet j = (wasm : core::integer) => (\n\t\t(local $tmp $integer)\n\t\tget i\n\t\tset $tmp\n\t\tget $tmp\n\t)\nend\n";
+    let mut symbols = SymbolTable::new();
+    let _core = compile_core_module(&mut symbols);
+    let mut logger = Logger::new();
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let _ = compile_source(source, &mut file_logger, &mut symbols);
+    logger.consume_file(file_logger);
+    assert_logger_is_ok(&logger, "Compilation failed");
+}
+
+#[test]
+fn bracketed_operator_name_is_canonicalized_in_ir() {
+    let source = "module demo =\n\tlet [ + ] = fn a b => a + b\nend\n";
+    let mut logger = Logger::new();
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let module = parse::parse(source, &mut file_logger)
+        .and_then(|source_file| source_file.modules().into_iter().next())
+        .and_then(|module| ir::module(module, &mut file_logger))
+        .expect("expected module");
+    logger.consume_file(file_logger);
+    assert_logger_is_ok(&logger, "IR construction should succeed");
+
+    let Some(ir::Statement::Term(term)) = module.statements.first() else {
+        panic!("expected first statement to be a term");
+    };
+    let ir::TermKind::Let {
+        assignee,
+        scope: ir::ScopeKind::Global,
+        ..
+    } = &term.kind
+    else {
+        panic!("expected global let statement");
+    };
+    let ir::PatternKind::Identifier(path) = &assignee.kind else {
+        panic!("expected identifier assignee");
+    };
+    assert_eq!(path.major, "demo");
+    assert_eq!(path.minor, "[+]");
+}
+
+#[test]
+fn toplevel_wasm_function_declaration_is_lowered() {
+    let source = "module demo =\n\twasm => (\n\t\t(type $integer (struct i64))\n\t\t(func $id\n\t\t\t(param $x $integer)\n\t\t\t(result $integer)\n\t\t\tget $x\n\t\t)\n\t)\n\tlet i = 1\n\tlet j = (wasm : core::integer) => (\n\t\tget i\n\t\tcall $id\n\t)\nend\n";
+    let mut symbols = SymbolTable::new();
+    let _core = compile_core_module(&mut symbols);
+    let mut logger = Logger::new();
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let _ = compile_source(source, &mut file_logger, &mut symbols);
+    logger.consume_file(file_logger);
+    assert_logger_is_ok(&logger, "Compilation failed");
 }

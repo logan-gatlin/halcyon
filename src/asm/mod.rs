@@ -29,11 +29,13 @@ use crate::ir::{
     Path,
     ScopeKind,
     Statement,
+    wasm,
 };
 use crate::types::SymbolTable;
 
 pub use encode::encode;
 use lower::ConstructorTable;
+pub(crate) use lower::emit_string_compare;
 pub use lower::lower_type;
 pub(crate) use snippets::emit_array_concat;
 
@@ -485,23 +487,88 @@ pub fn lower_module(
 ) -> Module {
     let ir_module = elaborated.module;
     let mut module = Module::new(ir_module.name.clone());
+    let constructor_table = ConstructorTable::from_symbols(symbols);
+
     let init_name = Path::new(&ir_module.name, "[init]");
     let mut init_func = module.new_function(init_name.clone());
-    let constructor_table = ConstructorTable::from_symbols(symbols);
 
     for (path, info) in constructor_table.constructors_for_module(&ir_module.name) {
         init_func.lower_constructor(path, &info, symbols);
     }
 
+    for trait_def in symbols
+        .trait_defs()
+        .values()
+        .filter(|trait_def| trait_def.name.major == ir_module.name)
+    {
+        let mut method_paths = trait_def.methods.keys().cloned().collect::<Vec<_>>();
+        method_paths.sort_by(|left, right| {
+            (left.major.clone(), left.minor.clone())
+                .cmp(&(right.major.clone(), right.minor.clone()))
+        });
+        for method_path in method_paths {
+            init_func.lower_trait_method_dispatch(method_path, symbols);
+        }
+    }
+
     for statement in ir_module.statements {
-        if let Statement::Term(term) = statement {
-            init_func.lower_ir(term, symbols, &constructor_table);
-            init_func.push(Instruction::Drop);
+        match statement {
+            Statement::Term(term) => {
+                init_func.lower_ir(term, symbols, &constructor_table);
+                init_func.push(Instruction::Drop);
+            }
+            Statement::Wasm(declarations) => {
+                lower_wasm_declarations(init_func.module, &ir_module.name, declarations);
+            }
+            Statement::Type { .. } | Statement::Trait { .. } | Statement::Impl { .. } => {}
         }
     }
     module.start = init_name;
     module.sig = TypeSignatureSection::new(&ir_module.name, symbols);
     module
+}
+
+fn lower_wasm_declarations(
+    module: &mut Module,
+    module_name: &str,
+    declarations: Box<[wasm::Declaration]>,
+) {
+    for declaration in declarations {
+        match declaration {
+            wasm::Declaration::Type(_) => {}
+            wasm::Declaration::Global(global) => {
+                assert!(
+                    module
+                        .globals
+                        .insert(global.name.clone(), global.type_.clone())
+                        .is_none(),
+                    "Redefinition of global symbol {}",
+                    global.name
+                );
+            }
+            wasm::Declaration::Function(function) => {
+                let function_path = Path::new(module_name, function.name);
+                assert!(
+                    module
+                        .functions
+                        .insert(
+                            function_path.clone(),
+                            Function {
+                                parameters: function.parameters,
+                                returns: function.results.into_vec(),
+                                variables: function.locals,
+                                ops: function.body.into_vec(),
+                            },
+                        )
+                        .is_none(),
+                    "Redefinition of function symbol {function_path}"
+                );
+            }
+            wasm::Declaration::Memory(_) => {
+                module.has_memory = true;
+            }
+        }
+    }
 }
 
 pub fn compile_module(

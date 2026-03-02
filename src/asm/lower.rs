@@ -7,14 +7,10 @@ use crate::ir::{
     Term,
     TermKind,
 };
-use crate::operator::{
-    BinaryOp,
-    Operator,
-    UnaryOp,
-};
 use crate::types::{
     Type as SemanticType,
     TypeDefinition,
+    TypeScheme,
 };
 
 use super::*;
@@ -557,6 +553,16 @@ impl<'a> Encoder<'a> {
                     },
                 );
             }
+            TermKind::InlineWasm {
+                definitions,
+                instructions,
+                ..
+            } => {
+                for (name, type_) in definitions {
+                    self.new_register(name, ScopeKind::Local, type_);
+                }
+                self.extend(instructions);
+            }
             TermKind::Call { callee, argument } => {
                 let callee_name = self.temporary_name("callee");
                 self.new_register(callee_name.clone(), ScopeKind::Local, Type::Any);
@@ -625,468 +631,85 @@ impl<'a> Encoder<'a> {
         }
     }
 
+    pub(crate) fn lower_trait_method_dispatch(
+        &mut self,
+        method_path: Path,
+        symbols: &SymbolTable,
+    ) {
+        let Some((methods, method_index)) = ordered_trait_methods_for_path(symbols, &method_path)
+        else {
+            return;
+        };
+        let dict_type = SemanticType::Struct {
+            fields: methods
+                .iter()
+                .map(|(path, scheme)| (path.minor.clone(), scheme.type_.clone()))
+                .collect(),
+        };
+        let dict_fields = match lower_type(&dict_type, symbols) {
+            Type::Struct(fields) => fields,
+            _ => unreachable!(),
+        };
+        let dict_name = self.temporary_name("dict");
+        self.create_closure(
+            symbols,
+            dict_name.clone(),
+            dict_type,
+            vec![],
+            move |inner, _symbols| {
+                inner.extend([
+                    i::Get(dict_name.clone()),
+                    i::StructGet(dict_fields.clone(), method_index),
+                ]);
+            },
+        );
+        self.new_register(method_path.clone(), ScopeKind::Global, Type::closure_type());
+        self.push(i::Set(method_path));
+    }
+
     pub(crate) fn lower_specialization(
         &mut self,
         specialization: &Specialization,
         symbols: &SymbolTable,
     ) {
-        let Some(argument) = specialization.arguments.first().cloned() else {
+        let specialization_target = symbols
+            .resolve_method_specialization(&specialization.method_path, &specialization.arguments)
+            .ok()
+            .flatten();
+        let Some(target) = specialization_target else {
+            let fallback_argument = specialization
+                .arguments
+                .first()
+                .cloned()
+                .unwrap_or(SemanticType::Unit);
             self.lower_unreachable_specialization(
                 specialization.specialized_path.clone(),
-                SemanticType::Unit,
+                fallback_argument,
                 symbols,
             );
             return;
         };
 
-        if let Some(op) = binary_op_for_path(&specialization.method_path) {
-            self.lower_binary_specialization(
-                specialization.specialized_path.clone(),
-                op,
-                argument,
-                symbols,
-            );
-            return;
+        let target_type = symbols
+            .terms()
+            .get(&target.impl_method_path)
+            .map(|scheme| lower_type(&scheme.type_, symbols))
+            .unwrap_or_else(Type::closure_type);
+        if target.impl_method_path.major != self.module.name {
+            self.module
+                .imports
+                .entry(target.impl_method_path.clone())
+                .or_insert_with(|| target_type.clone());
         }
-
-        if let Some(op) = unary_op_for_path(&specialization.method_path) {
-            self.lower_unary_specialization(
-                specialization.specialized_path.clone(),
-                op,
-                argument,
-                symbols,
-            );
-            return;
-        }
-
-        self.lower_unreachable_specialization(
+        self.new_register(
             specialization.specialized_path.clone(),
-            argument,
-            symbols,
+            ScopeKind::Global,
+            target_type,
         );
-    }
-
-    fn lower_binary_specialization(
-        &mut self,
-        path: Path,
-        op: BinaryOp,
-        argument: SemanticType,
-        symbols: &SymbolTable,
-    ) {
-        match op {
-            BinaryOp::Plus => {
-                match argument {
-                    SemanticType::Integer => {
-                        self.lower_binary_numeric(
-                            path,
-                            argument,
-                            NumberOperation::Add,
-                            NumberOpKind::I64,
-                            symbols,
-                        )
-                    }
-                    SemanticType::Real => {
-                        self.lower_binary_numeric(
-                            path,
-                            argument,
-                            NumberOperation::Add,
-                            NumberOpKind::F64,
-                            symbols,
-                        )
-                    }
-                    SemanticType::String => self.lower_string_concat(path, symbols),
-                    SemanticType::Array(inner) => self.lower_array_concat(path, *inner, symbols),
-                    _ => self.lower_unreachable_specialization(path, argument, symbols),
-                }
-            }
-            BinaryOp::Minus => {
-                match argument {
-                    SemanticType::Integer => {
-                        self.lower_binary_numeric(
-                            path,
-                            argument,
-                            NumberOperation::Sub,
-                            NumberOpKind::I64,
-                            symbols,
-                        )
-                    }
-                    SemanticType::Real => {
-                        self.lower_binary_numeric(
-                            path,
-                            argument,
-                            NumberOperation::Sub,
-                            NumberOpKind::F64,
-                            symbols,
-                        )
-                    }
-                    _ => self.lower_unreachable_specialization(path, argument, symbols),
-                }
-            }
-            BinaryOp::Star => {
-                match argument {
-                    SemanticType::Integer => {
-                        self.lower_binary_numeric(
-                            path,
-                            argument,
-                            NumberOperation::Mul,
-                            NumberOpKind::I64,
-                            symbols,
-                        )
-                    }
-                    SemanticType::Real => {
-                        self.lower_binary_numeric(
-                            path,
-                            argument,
-                            NumberOperation::Mul,
-                            NumberOpKind::F64,
-                            symbols,
-                        )
-                    }
-                    _ => self.lower_unreachable_specialization(path, argument, symbols),
-                }
-            }
-            BinaryOp::Slash => {
-                match argument {
-                    SemanticType::Integer => {
-                        self.lower_binary_numeric(
-                            path,
-                            argument,
-                            NumberOperation::Div,
-                            NumberOpKind::I64,
-                            symbols,
-                        )
-                    }
-                    SemanticType::Real => {
-                        self.lower_binary_numeric(
-                            path,
-                            argument,
-                            NumberOperation::Div,
-                            NumberOpKind::F64,
-                            symbols,
-                        )
-                    }
-                    _ => self.lower_unreachable_specialization(path, argument, symbols),
-                }
-            }
-            BinaryOp::Percent => {
-                match argument {
-                    SemanticType::Integer => {
-                        self.lower_binary_numeric(
-                            path,
-                            argument,
-                            NumberOperation::Rem,
-                            NumberOpKind::I64,
-                            symbols,
-                        )
-                    }
-                    _ => self.lower_unreachable_specialization(path, argument, symbols),
-                }
-            }
-            BinaryOp::And | BinaryOp::Or | BinaryOp::Xor => {
-                match argument {
-                    SemanticType::Integer => {
-                        self.lower_binary_numeric(
-                            path,
-                            argument,
-                            bitwise_op(op),
-                            NumberOpKind::I64,
-                            symbols,
-                        )
-                    }
-                    SemanticType::Boolean => {
-                        self.lower_binary_numeric(
-                            path,
-                            argument,
-                            bitwise_op(op),
-                            NumberOpKind::I32,
-                            symbols,
-                        )
-                    }
-                    _ => self.lower_unreachable_specialization(path, argument, symbols),
-                }
-            }
-            BinaryOp::DoubleEqual | BinaryOp::BangEqual => {
-                self.lower_binary_compare(path, argument, equality_op(op), symbols)
-            }
-            BinaryOp::Less | BinaryOp::Greater | BinaryOp::LessEqual | BinaryOp::GreaterEqual => {
-                self.lower_binary_compare(path, argument, compare_op(op), symbols)
-            }
-            _ => self.lower_unreachable_specialization(path, argument, symbols),
-        }
-    }
-
-    fn lower_unary_specialization(
-        &mut self,
-        path: Path,
-        op: UnaryOp,
-        argument: SemanticType,
-        symbols: &SymbolTable,
-    ) {
-        match op {
-            UnaryOp::Minus => {
-                match argument {
-                    SemanticType::Integer => {
-                        self.lower_unary_numeric(
-                            path,
-                            argument,
-                            NumberOpKind::I64,
-                            symbols,
-                            UnaryNumberOp::Negate,
-                        )
-                    }
-                    SemanticType::Real => {
-                        self.lower_unary_numeric(
-                            path,
-                            argument,
-                            NumberOpKind::F64,
-                            symbols,
-                            UnaryNumberOp::Negate,
-                        )
-                    }
-                    _ => self.lower_unreachable_specialization(path, argument, symbols),
-                }
-            }
-            UnaryOp::Not => {
-                match argument {
-                    SemanticType::Integer => {
-                        self.lower_unary_numeric(
-                            path,
-                            argument,
-                            NumberOpKind::I64,
-                            symbols,
-                            UnaryNumberOp::BitwiseNot,
-                        )
-                    }
-                    SemanticType::Boolean => {
-                        self.lower_unary_numeric(
-                            path,
-                            argument,
-                            NumberOpKind::I32,
-                            symbols,
-                            UnaryNumberOp::BitwiseNot,
-                        )
-                    }
-                    _ => self.lower_unreachable_specialization(path, argument, symbols),
-                }
-            }
-        }
-    }
-
-    fn lower_binary_numeric(
-        &mut self,
-        path: Path,
-        argument: SemanticType,
-        op: NumberOperation,
-        kind: NumberOpKind,
-        symbols: &SymbolTable,
-    ) {
-        let result_fields = match lowered_struct_fields(&argument, symbols) {
-            Some(fields) => fields,
-            None => {
-                self.lower_unreachable_specialization(path, argument, symbols);
-                return;
-            }
-        };
-        self.lower_binary_closure(
-            path,
-            argument,
-            symbols,
-            move |inner, _symbols, left, right| {
-                let operand_fields = result_fields.clone();
-                emit_binary_op(
-                    inner,
-                    left,
-                    right,
-                    operand_fields,
-                    op,
-                    kind,
-                    result_fields.clone(),
-                );
-            },
-        );
-    }
-
-    fn lower_binary_compare(
-        &mut self,
-        path: Path,
-        argument: SemanticType,
-        op: NumberOperation,
-        symbols: &SymbolTable,
-    ) {
-        match argument {
-            SemanticType::Unit => {
-                let value = matches!(
-                    op,
-                    NumberOperation::Eq | NumberOperation::Le | NumberOperation::Ge
-                );
-                self.lower_unary_boolean_const(path, SemanticType::Unit, value, symbols);
-            }
-            SemanticType::Integer => {
-                self.lower_binary_compare_numeric(path, argument, op, NumberOpKind::I64, symbols)
-            }
-            SemanticType::Real => {
-                self.lower_binary_compare_numeric(path, argument, op, NumberOpKind::F64, symbols)
-            }
-            SemanticType::Boolean | SemanticType::Glyph => {
-                self.lower_binary_compare_numeric(path, argument, op, NumberOpKind::I32, symbols)
-            }
-            SemanticType::String => self.lower_string_compare(path, op, symbols),
-            _ => self.lower_unreachable_specialization(path, argument, symbols),
-        }
-    }
-
-    fn lower_binary_compare_numeric(
-        &mut self,
-        path: Path,
-        argument: SemanticType,
-        op: NumberOperation,
-        kind: NumberOpKind,
-        symbols: &SymbolTable,
-    ) {
-        let argument_fields = match lowered_struct_fields(&argument, symbols) {
-            Some(fields) => fields,
-            None => {
-                self.lower_unreachable_specialization(path, argument, symbols);
-                return;
-            }
-        };
-        let bool_fields = bool_fields(symbols);
-        self.lower_binary_closure(
-            path,
-            argument,
-            symbols,
-            move |inner, _symbols, left, right| {
-                emit_binary_op(
-                    inner,
-                    left,
-                    right,
-                    argument_fields.clone(),
-                    op,
-                    kind,
-                    bool_fields.clone(),
-                );
-            },
-        );
-    }
-
-    fn lower_unary_numeric(
-        &mut self,
-        path: Path,
-        argument: SemanticType,
-        kind: NumberOpKind,
-        symbols: &SymbolTable,
-        op: UnaryNumberOp,
-    ) {
-        let result_fields = match lowered_struct_fields(&argument, symbols) {
-            Some(fields) => fields,
-            None => {
-                self.lower_unreachable_specialization(path, argument, symbols);
-                return;
-            }
-        };
-        self.lower_unary_closure(path, argument, symbols, move |inner, _symbols, value| {
-            let operand_fields = result_fields.clone();
-            emit_unary_op(
-                inner,
-                value,
-                operand_fields,
-                op,
-                kind,
-                result_fields.clone(),
-            );
-        });
-    }
-
-    fn lower_unary_boolean_const(
-        &mut self,
-        path: Path,
-        argument: SemanticType,
-        value: bool,
-        symbols: &SymbolTable,
-    ) {
-        let bool_fields = bool_fields(symbols);
-        self.lower_unary_closure(path, argument, symbols, move |inner, _symbols, _value| {
-            emit_boolean_const(inner, value, bool_fields.clone());
-        });
-    }
-
-    fn lower_string_concat(
-        &mut self,
-        path: Path,
-        symbols: &SymbolTable,
-    ) {
-        let argument = SemanticType::String;
-        self.lower_binary_closure(
-            path,
-            argument,
-            symbols,
-            move |inner, _symbols, left, right| {
-                emit_array_concat(inner, left, right, Type::I8);
-            },
-        );
-    }
-
-    fn lower_array_concat(
-        &mut self,
-        path: Path,
-        inner: SemanticType,
-        symbols: &SymbolTable,
-    ) {
-        let argument = SemanticType::Array(Box::new(inner.clone()));
-        let inner_lowered = lower_type(&inner, symbols);
-        self.lower_binary_closure(
-            path,
-            argument,
-            symbols,
-            move |inner_encoder, _symbols, left, right| {
-                emit_array_concat(inner_encoder, left, right, inner_lowered.clone());
-            },
-        );
-    }
-
-    fn lower_string_compare(
-        &mut self,
-        path: Path,
-        op: NumberOperation,
-        symbols: &SymbolTable,
-    ) {
-        let argument = SemanticType::String;
-        let bool_fields = bool_fields(symbols);
-        self.lower_binary_closure(
-            path,
-            argument,
-            symbols,
-            move |inner, _symbols, left, right| {
-                emit_string_compare(inner, left, right, op, bool_fields.clone());
-            },
-        );
-    }
-
-    fn lower_binary_closure(
-        &mut self,
-        path: Path,
-        argument: SemanticType,
-        symbols: &SymbolTable,
-        body: impl for<'b> FnOnce(&mut Encoder<'b>, &SymbolTable, &Path, &Path),
-    ) {
-        let left_name = self.temporary_name("left");
-        let outer_argument = argument.clone();
-        let inner_argument = argument.clone();
-        self.create_closure(symbols, left_name.clone(), outer_argument, vec![], {
-            let left_name = left_name.clone();
-            move |outer, symbols| {
-                let right_name = outer.temporary_name("right");
-                outer.create_closure(
-                    symbols,
-                    right_name.clone(),
-                    inner_argument.clone(),
-                    vec![(left_name.clone(), inner_argument.clone())],
-                    |inner, symbols| body(inner, symbols, &left_name, &right_name),
-                );
-            }
-        });
-        self.new_register(path.clone(), ScopeKind::Global, Type::closure_type());
-        self.push(i::Set(path));
+        self.extend([
+            i::Get(target.impl_method_path),
+            i::Set(specialization.specialized_path.clone()),
+        ]);
     }
 
     fn lower_unary_closure(
@@ -1193,71 +816,6 @@ impl<'a> Encoder<'a> {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-enum NumberOpKind {
-    I32,
-    I64,
-    F64,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum UnaryNumberOp {
-    Negate,
-    BitwiseNot,
-}
-
-fn binary_op_for_path(path: &Path) -> Option<BinaryOp> {
-    let ops = [
-        BinaryOp::Star,
-        BinaryOp::Slash,
-        BinaryOp::Percent,
-        BinaryOp::Plus,
-        BinaryOp::Minus,
-        BinaryOp::DoubleEqual,
-        BinaryOp::BangEqual,
-        BinaryOp::Less,
-        BinaryOp::LessEqual,
-        BinaryOp::Greater,
-        BinaryOp::GreaterEqual,
-        BinaryOp::And,
-        BinaryOp::Or,
-        BinaryOp::Xor,
-    ];
-    ops.into_iter().find(|op| op.path() == *path)
-}
-
-fn unary_op_for_path(path: &Path) -> Option<UnaryOp> {
-    let ops = [UnaryOp::Minus, UnaryOp::Not];
-    ops.into_iter().find(|op| op.path() == *path)
-}
-
-fn bitwise_op(op: BinaryOp) -> NumberOperation {
-    match op {
-        BinaryOp::And => NumberOperation::And,
-        BinaryOp::Or => NumberOperation::Or,
-        BinaryOp::Xor => NumberOperation::Xor,
-        _ => unreachable!("Unexpected bitwise op: {op:?}"),
-    }
-}
-
-fn equality_op(op: BinaryOp) -> NumberOperation {
-    match op {
-        BinaryOp::DoubleEqual => NumberOperation::Eq,
-        BinaryOp::BangEqual => NumberOperation::Ne,
-        _ => unreachable!("Unexpected equality op: {op:?}"),
-    }
-}
-
-fn compare_op(op: BinaryOp) -> NumberOperation {
-    match op {
-        BinaryOp::Less => NumberOperation::Lt,
-        BinaryOp::LessEqual => NumberOperation::Le,
-        BinaryOp::Greater => NumberOperation::Gt,
-        BinaryOp::GreaterEqual => NumberOperation::Ge,
-        _ => unreachable!("Unexpected compare op: {op:?}"),
-    }
-}
-
 fn lowered_struct_fields(
     type_: &SemanticType,
     symbols: &SymbolTable,
@@ -1275,103 +833,7 @@ fn bool_fields(symbols: &SymbolTable) -> Box<[Type]> {
     }
 }
 
-fn emit_binary_op(
-    encoder: &mut Encoder<'_>,
-    left: &Path,
-    right: &Path,
-    operand_fields: Box<[Type]>,
-    op: NumberOperation,
-    kind: NumberOpKind,
-    result_fields: Box<[Type]>,
-) {
-    encoder.extend([
-        i::Get(left.clone()),
-        i::StructGet(operand_fields.clone(), 0),
-        i::Get(right.clone()),
-        i::StructGet(operand_fields.clone(), 0),
-    ]);
-    match kind {
-        NumberOpKind::I32 => encoder.push(i::I32Op(op)),
-        NumberOpKind::I64 => encoder.push(i::I64Op(op)),
-        NumberOpKind::F64 => encoder.push(i::F64Op(op)),
-    }
-    encoder.push(i::StructNew(result_fields.clone()));
-}
-
-fn emit_unary_op(
-    encoder: &mut Encoder<'_>,
-    value: &Path,
-    operand_fields: Box<[Type]>,
-    op: UnaryNumberOp,
-    kind: NumberOpKind,
-    result_fields: Box<[Type]>,
-) {
-    match op {
-        UnaryNumberOp::Negate => {
-            match kind {
-                NumberOpKind::I32 => {
-                    encoder.push(i::I32Const(0));
-                    encoder.extend([
-                        i::Get(value.clone()),
-                        i::StructGet(operand_fields.clone(), 0),
-                    ]);
-                    encoder.push(i::I32Op(NumberOperation::Sub));
-                }
-                NumberOpKind::I64 => {
-                    encoder.push(i::Const(ImmediateValue::Integer(0)));
-                    encoder.extend([
-                        i::Get(value.clone()),
-                        i::StructGet(operand_fields.clone(), 0),
-                    ]);
-                    encoder.push(i::I64Op(NumberOperation::Sub));
-                }
-                NumberOpKind::F64 => {
-                    encoder.push(i::Const(ImmediateValue::Real(0.0)));
-                    encoder.extend([
-                        i::Get(value.clone()),
-                        i::StructGet(operand_fields.clone(), 0),
-                    ]);
-                    encoder.push(i::F64Op(NumberOperation::Sub));
-                }
-            }
-        }
-        UnaryNumberOp::BitwiseNot => {
-            match kind {
-                NumberOpKind::I32 => {
-                    encoder.push(i::I32Const(1));
-                    encoder.extend([
-                        i::Get(value.clone()),
-                        i::StructGet(operand_fields.clone(), 0),
-                    ]);
-                    encoder.push(i::I32Op(NumberOperation::Xor));
-                }
-                NumberOpKind::I64 => {
-                    encoder.push(i::Const(ImmediateValue::Integer(-1)));
-                    encoder.extend([
-                        i::Get(value.clone()),
-                        i::StructGet(operand_fields.clone(), 0),
-                    ]);
-                    encoder.push(i::I64Op(NumberOperation::Xor));
-                }
-                NumberOpKind::F64 => {
-                    encoder.push(i::Unreachable);
-                }
-            }
-        }
-    }
-    encoder.push(i::StructNew(result_fields.clone()));
-}
-
-fn emit_boolean_const(
-    encoder: &mut Encoder<'_>,
-    value: bool,
-    bool_fields: Box<[Type]>,
-) {
-    encoder.push(i::I32Const(if value { 1 } else { 0 }));
-    encoder.push(i::StructNew(bool_fields.clone()));
-}
-
-fn emit_string_compare(
+pub(crate) fn emit_string_compare(
     encoder: &mut Encoder<'_>,
     left: &Path,
     right: &Path,
@@ -1647,6 +1109,33 @@ fn struct_fields_for_type(
         }
         _ => None,
     }
+}
+
+fn ordered_trait_methods_for_path(
+    symbols: &SymbolTable,
+    method_path: &Path,
+) -> Option<(Vec<(Path, TypeScheme)>, usize)> {
+    symbols.trait_defs().values().find_map(|def| {
+        let methods = ordered_trait_methods(def);
+        methods
+            .iter()
+            .position(|(path, _)| path == method_path)
+            .map(|index| (methods, index))
+    })
+}
+
+fn ordered_trait_methods(def: &crate::types::TraitDef) -> Vec<(Path, TypeScheme)> {
+    let mut methods = def
+        .methods
+        .iter()
+        .map(|(path, scheme)| (path.clone(), scheme.clone()))
+        .collect::<Vec<_>>();
+    methods.sort_by(|(left, _), (right, _)| method_key(left).cmp(&method_key(right)));
+    methods
+}
+
+fn method_key(path: &Path) -> (String, String) {
+    (path.major.clone(), path.minor.clone())
 }
 
 fn collect_pattern_bindings(pattern: &Pattern<SemanticType>) -> Vec<(Path, SemanticType)> {

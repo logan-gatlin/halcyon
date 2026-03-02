@@ -5,7 +5,10 @@ use wasm_encoder::{
     Encode,
 };
 
-use indexmap::IndexMap;
+use indexmap::{
+    IndexMap,
+    IndexSet,
+};
 
 use super::*;
 use crate::types::{
@@ -15,6 +18,7 @@ use crate::types::{
     Type as SemanticType,
     TypeDefinition,
     TypeScheme,
+    TypeTransform,
 };
 
 /// A cursor for decoding LEB128-encoded data
@@ -127,7 +131,7 @@ impl TypeSignatureSection {
         module_name: &str,
         symbols: &SymbolTable,
     ) -> Self {
-        let mut imported_types = vec![];
+        let mut imported_types = IndexSet::new();
         let mut defined_types = IndexMap::new();
         let mut defined_terms = IndexMap::new();
 
@@ -153,6 +157,7 @@ impl TypeSignatureSection {
                 }
             }
         }
+        let imported_types = imported_types.into_iter().collect::<Vec<_>>();
         let mut index_map = HashMap::new();
         for (id, path) in imported_types
             .iter()
@@ -536,56 +541,31 @@ impl Encode for TypeSignatureSection {
 fn collect_imported_types(
     type_: &SemanticType,
     defined_types: &IndexMap<Path, TypeDefinition>,
-    imported_types: &mut Vec<Path>,
+    imported_types: &mut IndexSet<Path>,
 ) {
-    match type_ {
-        SemanticType::Named { name, body } => {
-            if !defined_types.contains_key(name) {
-                imported_types.push(name.clone());
-            }
-            collect_imported_types(body, defined_types, imported_types);
-        }
-        SemanticType::ForAll(body) | SemanticType::Mu(body) | SemanticType::Array(body) => {
-            collect_imported_types(body, defined_types, imported_types);
-        }
-        SemanticType::StructConstraint { fields, .. } | SemanticType::Struct { fields } => {
-            for field in fields.values() {
-                collect_imported_types(field, defined_types, imported_types);
-            }
-        }
-        SemanticType::Tuple(items) => {
-            for item in items {
-                collect_imported_types(item, defined_types, imported_types);
-            }
-        }
-        SemanticType::Sum { variants } => {
-            for variant in variants.values() {
-                collect_imported_types(variant, defined_types, imported_types);
-            }
-        }
-        SemanticType::Function(parameter, result) => {
-            collect_imported_types(parameter, defined_types, imported_types);
-            collect_imported_types(result, defined_types, imported_types);
-        }
-        SemanticType::Apply {
-            constructor,
-            arguments,
-        } => {
-            collect_imported_types(constructor, defined_types, imported_types);
-            for arg in arguments {
-                collect_imported_types(arg, defined_types, imported_types);
-            }
-        }
-        SemanticType::Unit
-        | SemanticType::Integer
-        | SemanticType::Real
-        | SemanticType::Boolean
-        | SemanticType::String
-        | SemanticType::Glyph
-        | SemanticType::TypeVar(_)
-        | SemanticType::MetaVar(_)
-        | SemanticType::RecVar(_) => {}
+    struct ImportedTypeCollector<'a> {
+        defined_types: &'a IndexMap<Path, TypeDefinition>,
+        imported_types: &'a mut IndexSet<Path>,
     }
+
+    impl TypeTransform for ImportedTypeCollector<'_> {
+        fn visit(
+            &mut self,
+            type_: &SemanticType,
+        ) {
+            if let SemanticType::Named { name, .. } = type_
+                && !self.defined_types.contains_key(name)
+            {
+                self.imported_types.insert(name.clone());
+            }
+        }
+    }
+
+    ImportedTypeCollector {
+        defined_types,
+        imported_types,
+    }
+    .walk(type_);
 }
 
 #[cfg(test)]

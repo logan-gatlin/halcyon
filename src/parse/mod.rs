@@ -67,6 +67,8 @@ pub enum SyntaxKind {
     WITH_KW,
     LET_KW,
     TYPE_KW,
+    TRAIT_KW,
+    IMPL_KW,
     DO_KW,
     OF_KW,
     IN_KW,
@@ -95,7 +97,12 @@ pub enum SyntaxKind {
 
     LET_STATEMENT,
     TYPE_STATEMENT,
+    TRAIT_STATEMENT,
+    IMPL_STATEMENT,
     WASM_STATEMENT,
+
+    TRAIT_METHOD_DECL,
+    IMPL_METHOD_DEF,
 
     STRUCT_DEF,
     SUM_DEF,
@@ -129,7 +136,7 @@ pub enum SyntaxKind {
     PATH,
     PAREN_EXPR,
     ARRAY_SPLAT,
-    OPERATOR_EXPR,
+    INLINE_WASM_EXPR,
 
     SEXPR,
     SEXPR_FIELD,
@@ -150,6 +157,31 @@ impl SyntaxKind {
         matches!(
             self,
             Self::WHITESPACE | Self::LINE_COMMENT | Self::BLOCK_COMMENT
+        )
+    }
+
+    pub fn is_operator_token(self) -> bool {
+        matches!(
+            self,
+            Self::PLUS
+                | Self::MINUS
+                | Self::STAR
+                | Self::SLASH
+                | Self::PERCENT
+                | Self::PIPE_ARROW
+                | Self::COMPOSE_LEFT
+                | Self::COMPOSE_RIGHT
+                | Self::DOUBLE_EQUAL
+                | Self::BANG_EQUAL
+                | Self::LESS
+                | Self::LESS_EQUAL
+                | Self::GREATER
+                | Self::GREATER_EQUAL
+                | Self::AND_KW
+                | Self::OR_KW
+                | Self::XOR_KW
+                | Self::NOT_KW
+                | Self::SEMICOLON
         )
     }
 }
@@ -210,6 +242,8 @@ impl std::fmt::Display for SyntaxKind {
                 WITH_KW => "with",
                 LET_KW => "let",
                 TYPE_KW => "type",
+                TRAIT_KW => "trait",
+                IMPL_KW => "impl",
                 DO_KW => "do",
                 OF_KW => "of",
                 IN_KW => "in",
@@ -232,7 +266,11 @@ impl std::fmt::Display for SyntaxKind {
                 MODULE => "module",
                 LET_STATEMENT => "let statement",
                 TYPE_STATEMENT => "type statement",
+                TRAIT_STATEMENT => "trait statement",
+                IMPL_STATEMENT => "impl statement",
                 WASM_STATEMENT => "wasm statement",
+                TRAIT_METHOD_DECL => "trait method declaration",
+                IMPL_METHOD_DEF => "impl method definition",
                 STRUCT_DEF => "struct definition",
                 SUM_DEF => "sum definition",
                 VARIANT => "variant",
@@ -262,7 +300,7 @@ impl std::fmt::Display for SyntaxKind {
                 PATH => "path",
                 PAREN_EXPR => "parenthesized expression",
                 ARRAY_SPLAT => "array splat",
-                OPERATOR_EXPR => "operator",
+                INLINE_WASM_EXPR => "inline wasm expression",
                 SEXPR => "s-expression",
                 SEXPR_FIELD => "s-expression field",
                 PAT_TUPLE => "tuple pattern",

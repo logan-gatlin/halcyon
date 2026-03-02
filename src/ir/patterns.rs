@@ -78,14 +78,8 @@ pub fn pattern(
                         if !matches!(glob, Glob::None) {
                             return None;
                         }
-                        glob = match rest.binding_token() {
-                            Some(token) => {
-                                let name = token
-                                    .text()
-                                    .to_string()
-                                    .with_span(token.text_range().into());
-                                Glob::Named(scope.define(name, NameSpace::Term))
-                            }
+                        glob = match rest.binding_name_spanned() {
+                            Some(name) => Glob::Named(scope.define(name, NameSpace::Term)),
                             None => Glob::Anonymous,
                         };
                         continue;
@@ -142,8 +136,7 @@ pub fn pattern(
             ast::Pattern::Path(pat_path) => {
                 PatternKind::ConstConstructor(
                     scope.query_path(
-                        Path::new(pat_path.qualifier()?.text(), pat_path.name_text()?)
-                            .clone()
+                        Path::new(pat_path.qualifier()?, pat_path.name_text()?)
                             .with_span(pat_path.span()),
                         NameSpace::Constructor,
                     ),

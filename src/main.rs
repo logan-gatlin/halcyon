@@ -24,4 +24,7 @@ fn main() {
         .for_each(|ir| println!("{ir}"));
     logger.consume_file(file_logger);
     logger.print_logs();
+    if !logger.is_ok() {
+        std::process::exit(1);
+    }
 }

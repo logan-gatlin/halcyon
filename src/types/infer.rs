@@ -12,9 +12,10 @@ use crate::ir::{
     Term,
     TermKind,
     TypeExpr,
-    TypeExprKind,
 };
 
+use super::instantiation::instantiate_predicates;
+use super::type_expr::lower_type_expr;
 use super::{
     MetaVarId,
     StructMatch,
@@ -46,11 +47,6 @@ pub enum TypeError {
         name: Path,
         expected: usize,
         found: usize,
-        span: Span,
-    },
-    MissingField {
-        field: String,
-        in_type: Type,
         span: Span,
     },
     NotAFunction {
@@ -229,7 +225,7 @@ impl InferenceContext {
                     current = body
                         .open_forall(&fresh)
                         .ok_or(TypeError::InvalidScheme { span })?;
-                    predicates = open_forall_predicates(&predicates, &fresh)
+                    predicates = instantiate_predicates(&predicates, std::slice::from_ref(&fresh))
                         .ok_or(TypeError::InvalidScheme { span })?;
                 }
                 other => {
@@ -405,6 +401,21 @@ pub fn infer_term(
                 },
                 type_,
                 typed_body.predicates,
+            )
+        }
+        TermKind::InlineWasm {
+            asserted_type,
+            definitions,
+            instructions,
+        } => {
+            (
+                TermKind::InlineWasm {
+                    asserted_type: asserted_type.clone(),
+                    definitions: definitions.clone(),
+                    instructions: instructions.clone(),
+                },
+                type_expr_to_type(ctx, asserted_type)?,
+                Vec::new(),
             )
         }
         TermKind::Call { callee, argument } => {
@@ -698,42 +709,28 @@ fn type_expr_to_type(
     ctx: &InferenceContext,
     expr: &TypeExpr,
 ) -> Result<Type, TypeError> {
-    match &expr.kind {
-        TypeExprKind::Tuple(items) => {
-            let mut types = Vec::with_capacity(items.len());
-            for item in items.iter() {
-                types.push(type_expr_to_type(ctx, item)?);
-            }
-            Ok(Type::Tuple(types))
-        }
-        TypeExprKind::Instantiation(path, args) => {
-            let arguments = args
-                .iter()
-                .map(|arg| type_expr_to_type(ctx, arg))
-                .collect::<Result<Vec<_>, _>>()?;
-            let definition = ctx.type_definitions.get(path);
-            if let Some(definition) = definition {
-                if definition.parameters != arguments.len() {
-                    return Err(TypeError::InvalidTypeApplication {
-                        name: path.clone(),
-                        expected: definition.parameters,
-                        found: arguments.len(),
-                        span: expr.span,
-                    });
-                }
-                let base = Type::Named {
+    lower_type_expr(expr, &mut |path, arguments, span| {
+        if let Some(definition) = ctx.type_definitions.get(path) {
+            if definition.parameters != arguments.len() {
+                return Err(TypeError::InvalidTypeApplication {
                     name: path.clone(),
-                    body: Box::new(definition.body.clone()),
-                };
-                return Ok(base.apply(arguments));
+                    expected: definition.parameters,
+                    found: arguments.len(),
+                    span,
+                });
             }
-            let base = Type::Named {
+            return Ok(Type::Named {
                 name: path.clone(),
-                body: Box::new(Type::Unit),
-            };
-            Ok(base.apply(arguments))
+                body: Box::new(definition.body.clone()),
+            }
+            .apply(arguments));
         }
-    }
+        Ok(Type::Named {
+            name: path.clone(),
+            body: Box::new(Type::Unit),
+        }
+        .apply(arguments))
+    })
 }
 
 fn infer_term_items(
@@ -824,26 +821,6 @@ fn replace_meta_vars_in_predicates(
                     .map(|arg| replacer.transform(arg).unwrap_or_else(|| arg.clone()))
                     .collect(),
             }
-        })
-        .collect()
-}
-
-fn open_forall_predicates(
-    predicates: &[TraitConstraint],
-    replacement: &Type,
-) -> Option<Vec<TraitConstraint>> {
-    predicates
-        .iter()
-        .map(|predicate| {
-            let arguments = predicate
-                .arguments
-                .iter()
-                .map(|arg| arg.open_forall(replacement))
-                .collect::<Option<Vec<_>>>()?;
-            Some(TraitRef {
-                trait_name: predicate.trait_name.clone(),
-                arguments,
-            })
         })
         .collect()
 }

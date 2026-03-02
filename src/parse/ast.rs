@@ -57,11 +57,10 @@ pub trait HasName: AstNode {
         child_token(self.syntax(), SyntaxKind::IDENT)
     }
     fn name_text(&self) -> Option<String> {
-        self.name_token().map(|t| t.text().to_string())
+        self.name_text_spanned().map(|n| n.inner)
     }
     fn name_text_spanned(&self) -> Option<Spanned<String>> {
-        self.name_token()
-            .map(|t| t.text().to_string().with_span(t.text_range().into()))
+        first_identifier_text_spanned(self.syntax())
     }
 }
 
@@ -162,6 +161,66 @@ fn first_token_where(
         .find(|t| pred(t.kind()))
 }
 
+fn non_trivia_tokens(parent: &SyntaxNode) -> Vec<SyntaxToken> {
+    parent
+        .children_with_tokens()
+        .filter_map(|el| el.into_token())
+        .filter(|t| !t.kind().is_trivia())
+        .collect()
+}
+
+fn first_identifier_text_spanned(parent: &SyntaxNode) -> Option<Spanned<String>> {
+    let tokens = non_trivia_tokens(parent);
+    let mut index = 0;
+    while index < tokens.len() {
+        let token = &tokens[index];
+        if token.kind() == SyntaxKind::IDENT {
+            return Some(
+                token
+                    .text()
+                    .to_string()
+                    .with_span(token.text_range().into()),
+            );
+        }
+        if token.kind() == SyntaxKind::L_SQUARE
+            && let (Some(op), Some(end)) = (tokens.get(index + 1), tokens.get(index + 2))
+            && op.kind().is_operator_token()
+            && end.kind() == SyntaxKind::R_SQUARE
+        {
+            return Some(format!("[{}]", op.text()).with_span(
+                rowan::TextRange::new(token.text_range().start(), end.text_range().end()).into(),
+            ));
+        }
+        index += 1;
+    }
+    None
+}
+
+fn all_identifier_texts(parent: &SyntaxNode) -> Vec<String> {
+    let tokens = non_trivia_tokens(parent);
+    let mut names = Vec::new();
+    let mut index = 0;
+    while index < tokens.len() {
+        let token = &tokens[index];
+        if token.kind() == SyntaxKind::IDENT {
+            names.push(token.text().to_string());
+            index += 1;
+            continue;
+        }
+        if token.kind() == SyntaxKind::L_SQUARE
+            && let (Some(op), Some(end)) = (tokens.get(index + 1), tokens.get(index + 2))
+            && op.kind().is_operator_token()
+            && end.kind() == SyntaxKind::R_SQUARE
+        {
+            names.push(format!("[{}]", op.text()));
+            index += 3;
+            continue;
+        }
+        index += 1;
+    }
+    names
+}
+
 // ── Macro to reduce per-node boilerplate ─────────────────────────────
 
 macro_rules! ast_node {
@@ -229,30 +288,164 @@ impl HasLeadingComments for TypeStatement {
 
 impl TypeStatement {
     /// Type parameters declared after `:`, e.g. `type Option: a = ...`.
-    /// Returns the IDENT tokens between `:` and `=`.
+    /// Returns canonical parameter names between `:` and `=`.
     pub fn type_params(&self) -> Vec<Spanned<String>> {
+        let tokens = non_trivia_tokens(&self.syntax);
         let mut after_colon = false;
-        self.syntax
-            .children_with_tokens()
-            .filter_map(|el| el.into_token())
-            .filter(|t| !t.kind().is_trivia())
-            .filter(move |t| {
-                if t.kind() == SyntaxKind::COLON {
-                    after_colon = true;
-                    return false;
-                }
-                if t.kind() == SyntaxKind::EQUAL {
-                    after_colon = false;
-                    return false;
-                }
-                after_colon && t.kind() == SyntaxKind::IDENT
-            })
-            .map(|t| t.text().to_string().with_span(t.text_range().into()))
-            .collect()
+        let mut params = Vec::new();
+        let mut index = 0;
+
+        while index < tokens.len() {
+            let token = &tokens[index];
+            if token.kind() == SyntaxKind::COLON {
+                after_colon = true;
+                index += 1;
+                continue;
+            }
+            if token.kind() == SyntaxKind::EQUAL {
+                after_colon = false;
+                index += 1;
+                continue;
+            }
+            if !after_colon {
+                index += 1;
+                continue;
+            }
+
+            if token.kind() == SyntaxKind::IDENT {
+                params.push(
+                    token
+                        .text()
+                        .to_string()
+                        .with_span(token.text_range().into()),
+                );
+                index += 1;
+                continue;
+            }
+
+            if token.kind() == SyntaxKind::L_SQUARE
+                && let (Some(op), Some(end)) = (tokens.get(index + 1), tokens.get(index + 2))
+                && op.kind().is_operator_token()
+                && end.kind() == SyntaxKind::R_SQUARE
+            {
+                params.push(
+                    format!("[{}]", op.text()).with_span(
+                        rowan::TextRange::new(token.text_range().start(), end.text_range().end())
+                            .into(),
+                    ),
+                );
+                index += 3;
+                continue;
+            }
+
+            index += 1;
+        }
+
+        params
     }
 
     pub fn type_def(&self) -> Option<TypeDef> {
         self.syntax.children().find_map(TypeDef::cast)
+    }
+}
+
+ast_node!(TraitStatement, TRAIT_STATEMENT);
+impl HasName for TraitStatement {
+}
+impl HasLeadingComments for TraitStatement {
+}
+
+impl TraitStatement {
+    pub fn trait_params(&self) -> Vec<Spanned<String>> {
+        let tokens = non_trivia_tokens(&self.syntax);
+        let mut after_colon = false;
+        let mut params = Vec::new();
+        let mut index = 0;
+
+        while index < tokens.len() {
+            let token = &tokens[index];
+            if token.kind() == SyntaxKind::COLON {
+                after_colon = true;
+                index += 1;
+                continue;
+            }
+            if token.kind() == SyntaxKind::EQUAL {
+                after_colon = false;
+                index += 1;
+                continue;
+            }
+            if !after_colon {
+                index += 1;
+                continue;
+            }
+
+            if token.kind() == SyntaxKind::IDENT {
+                params.push(
+                    token
+                        .text()
+                        .to_string()
+                        .with_span(token.text_range().into()),
+                );
+                index += 1;
+                continue;
+            }
+
+            if token.kind() == SyntaxKind::L_SQUARE
+                && let (Some(op), Some(end)) = (tokens.get(index + 1), tokens.get(index + 2))
+                && op.kind().is_operator_token()
+                && end.kind() == SyntaxKind::R_SQUARE
+            {
+                params.push(
+                    format!("[{}]", op.text()).with_span(
+                        rowan::TextRange::new(token.text_range().start(), end.text_range().end())
+                            .into(),
+                    ),
+                );
+                index += 3;
+                continue;
+            }
+
+            index += 1;
+        }
+
+        params
+    }
+
+    pub fn methods(&self) -> Vec<TraitMethodDecl> {
+        child_nodes(&self.syntax)
+    }
+}
+
+ast_node!(ImplStatement, IMPL_STATEMENT);
+impl HasLeadingComments for ImplStatement {
+}
+
+impl ImplStatement {
+    pub fn trait_name(&self) -> Option<PathOrIdent> {
+        self.syntax.children().find_map(PathOrIdent::cast)
+    }
+
+    pub fn type_args(&self) -> Vec<TypeExpr> {
+        let Some(colon) = child_token(&self.syntax, SyntaxKind::COLON) else {
+            return Vec::new();
+        };
+        let Some(equal) = child_token(&self.syntax, SyntaxKind::EQUAL) else {
+            return Vec::new();
+        };
+        let start = colon.text_range().end();
+        let end = equal.text_range().start();
+        self.syntax
+            .children()
+            .filter_map(TypeExpr::cast)
+            .filter(|type_expr| {
+                let range = type_expr.syntax().text_range();
+                range.start() >= start && range.end() <= end
+            })
+            .collect()
+    }
+
+    pub fn methods(&self) -> Vec<ImplMethodDef> {
+        child_nodes(&self.syntax)
     }
 }
 
@@ -263,6 +456,26 @@ impl HasLeadingComments for WasmStatement {
 impl WasmStatement {
     pub fn sexpr(&self) -> Option<Sexpr> {
         self.syntax.children().find_map(Sexpr::cast)
+    }
+}
+
+ast_node!(TraitMethodDecl, TRAIT_METHOD_DECL);
+impl HasName for TraitMethodDecl {
+}
+
+impl TraitMethodDecl {
+    pub fn ty(&self) -> Option<TypeExpr> {
+        self.syntax.children().find_map(TypeExpr::cast)
+    }
+}
+
+ast_node!(ImplMethodDef, IMPL_METHOD_DEF);
+impl HasName for ImplMethodDef {
+}
+
+impl ImplMethodDef {
+    pub fn value(&self) -> Option<Expr> {
+        child_node_after_token(&self.syntax, SyntaxKind::EQUAL)
     }
 }
 
@@ -428,6 +641,18 @@ impl MatchExpr {
     }
 }
 
+ast_node!(InlineWasmExpr, INLINE_WASM_EXPR);
+
+impl InlineWasmExpr {
+    pub fn asserted_type(&self) -> Option<TypeExpr> {
+        child_node_after_token(&self.syntax, SyntaxKind::COLON)
+    }
+
+    pub fn instructions(&self) -> Option<Sexpr> {
+        self.syntax.children().find_map(Sexpr::cast)
+    }
+}
+
 ast_node!(MatchArm, MATCH_ARM);
 
 impl MatchArm {
@@ -522,6 +747,33 @@ impl FieldExpr {
     pub fn base(&self) -> Option<Expr> {
         child_node(&self.syntax)
     }
+
+    pub fn field_name_spanned(&self) -> Option<Spanned<String>> {
+        let tokens = non_trivia_tokens(&self.syntax);
+        let mut index = 0;
+        while index < tokens.len() {
+            if tokens[index].kind() != SyntaxKind::DOT {
+                index += 1;
+                continue;
+            }
+            let next = tokens.get(index + 1)?;
+            if next.kind() == SyntaxKind::IDENT {
+                return Some(next.text().to_string().with_span(next.text_range().into()));
+            }
+            if next.kind() == SyntaxKind::L_SQUARE
+                && let (Some(op), Some(end)) = (tokens.get(index + 2), tokens.get(index + 3))
+                && op.kind().is_operator_token()
+                && end.kind() == SyntaxKind::R_SQUARE
+            {
+                return Some(format!("[{}]", op.text()).with_span(
+                    rowan::TextRange::new(next.text_range().start(), end.text_range().end()).into(),
+                ));
+            }
+            return None;
+        }
+        None
+    }
+
     /// The field name token after `.`.
     pub fn field_token(&self) -> Option<SyntaxToken> {
         // The IDENT token that follows the DOT
@@ -551,10 +803,6 @@ impl ParenExpr {
     /// True if this contains commas (i.e. is a tuple).
     pub fn is_tuple(&self) -> bool {
         self.inner_exprs().len() > 1
-    }
-    /// If this wraps an operator-as-value, return it.
-    pub fn operator(&self) -> Option<OperatorExpr> {
-        child_node(&self.syntax)
     }
 }
 
@@ -608,22 +856,19 @@ impl HasName for Ident {
 ast_node!(Path, PATH);
 
 impl Path {
-    /// All IDENT tokens (1 for simple name, 2 for `Module::name`).
-    pub fn segments(&self) -> Vec<SyntaxToken> {
-        self.syntax
-            .children_with_tokens()
-            .filter_map(|el| el.into_token())
-            .filter(|t| t.kind() == SyntaxKind::IDENT)
-            .collect()
+    /// All path segments (1 for simple name, 2 for `Module::name`).
+    /// Bracketed operators are normalized to `[<op>]`.
+    pub fn segments(&self) -> Vec<String> {
+        all_identifier_texts(&self.syntax)
     }
     /// For a path like `Module::name`, the module qualifier.
-    pub fn qualifier(&self) -> Option<SyntaxToken> {
+    pub fn qualifier(&self) -> Option<String> {
         let segs = self.segments();
         (segs.len() == 2).then(|| segs[0].clone())
     }
     /// The final name segment.
     pub fn name_text(&self) -> Option<String> {
-        self.segments().last().map(|t| t.text().to_string())
+        self.segments().last().cloned()
     }
 
     pub fn has_dollar_prefix(&self) -> bool {
@@ -639,17 +884,6 @@ ast_node!(ArraySplat, ARRAY_SPLAT);
 impl ArraySplat {
     pub fn expr(&self) -> Option<Expr> {
         child_node(&self.syntax)
-    }
-}
-
-ast_node!(OperatorExpr, OPERATOR_EXPR);
-
-impl OperatorExpr {
-    pub fn op_token(&self) -> Option<SyntaxToken> {
-        self.syntax
-            .children_with_tokens()
-            .filter_map(|el| el.into_token())
-            .find(|t| !t.kind().is_trivia())
     }
 }
 
@@ -716,6 +950,10 @@ impl PatRest {
     pub fn binding_token(&self) -> Option<SyntaxToken> {
         child_token(&self.syntax, SyntaxKind::IDENT)
     }
+
+    pub fn binding_name_spanned(&self) -> Option<Spanned<String>> {
+        first_identifier_text_spanned(&self.syntax)
+    }
 }
 
 ast_node!(PatField, PAT_FIELD);
@@ -757,7 +995,7 @@ impl PathOrIdent {
         }
     }
 
-    pub fn qualifier(&self) -> Option<SyntaxToken> {
+    pub fn qualifier(&self) -> Option<String> {
         match self {
             Self::Ident(_) => None,
             Self::Path(p) => p.qualifier(),
@@ -774,6 +1012,8 @@ impl PathOrIdent {
 pub enum Statement {
     Let(LetStatement),
     Type(TypeStatement),
+    Trait(TraitStatement),
+    Impl(ImplStatement),
     Wasm(WasmStatement),
 }
 
@@ -782,6 +1022,8 @@ impl AstNode for Statement {
         match node.kind() {
             SyntaxKind::LET_STATEMENT => LetStatement::cast(node).map(Self::Let),
             SyntaxKind::TYPE_STATEMENT => TypeStatement::cast(node).map(Self::Type),
+            SyntaxKind::TRAIT_STATEMENT => TraitStatement::cast(node).map(Self::Trait),
+            SyntaxKind::IMPL_STATEMENT => ImplStatement::cast(node).map(Self::Impl),
             SyntaxKind::WASM_STATEMENT => WasmStatement::cast(node).map(Self::Wasm),
             _ => None,
         }
@@ -790,6 +1032,8 @@ impl AstNode for Statement {
         match self {
             Self::Let(n) => n.syntax(),
             Self::Type(n) => n.syntax(),
+            Self::Trait(n) => n.syntax(),
+            Self::Impl(n) => n.syntax(),
             Self::Wasm(n) => n.syntax(),
         }
     }
@@ -870,6 +1114,7 @@ pub enum Expr {
     FnShorthand(FnShorthandExpr),
     If(IfExpr),
     Match(MatchExpr),
+    InlineWasm(InlineWasmExpr),
     Binary(BinaryExpr),
     Unary(UnaryExpr),
     Call(CallExpr),
@@ -881,7 +1126,6 @@ pub enum Expr {
     Unit(Unit),
     Ident(Ident),
     Path(Path),
-    Operator(OperatorExpr),
 }
 
 impl AstNode for Expr {
@@ -892,6 +1136,7 @@ impl AstNode for Expr {
             SyntaxKind::FN_SHORTHAND_EXPR => FnShorthandExpr::cast(node).map(Self::FnShorthand),
             SyntaxKind::IF_EXPR => IfExpr::cast(node).map(Self::If),
             SyntaxKind::MATCH_EXPR => MatchExpr::cast(node).map(Self::Match),
+            SyntaxKind::INLINE_WASM_EXPR => InlineWasmExpr::cast(node).map(Self::InlineWasm),
             SyntaxKind::BINARY_EXPR => BinaryExpr::cast(node).map(Self::Binary),
             SyntaxKind::UNARY_EXPR => UnaryExpr::cast(node).map(Self::Unary),
             SyntaxKind::CALL_EXPR => CallExpr::cast(node).map(Self::Call),
@@ -903,7 +1148,6 @@ impl AstNode for Expr {
             SyntaxKind::UNIT => Unit::cast(node).map(Self::Unit),
             SyntaxKind::IDENT_NODE => Ident::cast(node).map(Self::Ident),
             SyntaxKind::PATH => Path::cast(node).map(Self::Path),
-            SyntaxKind::OPERATOR_EXPR => OperatorExpr::cast(node).map(Self::Operator),
             _ => None,
         }
     }
@@ -914,6 +1158,7 @@ impl AstNode for Expr {
             Self::FnShorthand(n) => n.syntax(),
             Self::If(n) => n.syntax(),
             Self::Match(n) => n.syntax(),
+            Self::InlineWasm(n) => n.syntax(),
             Self::Binary(n) => n.syntax(),
             Self::Unary(n) => n.syntax(),
             Self::Call(n) => n.syntax(),
@@ -925,7 +1170,6 @@ impl AstNode for Expr {
             Self::Unit(n) => n.syntax(),
             Self::Ident(n) => n.syntax(),
             Self::Path(n) => n.syntax(),
-            Self::Operator(n) => n.syntax(),
         }
     }
 }
@@ -1088,8 +1332,7 @@ fn node_has_token(
     node: &SyntaxNode,
     kind: SyntaxKind,
 ) -> bool {
-    node
-        .children_with_tokens()
+    node.children_with_tokens()
         .filter_map(|el| el.into_token())
         .any(|token| token.kind() == kind)
 }
@@ -1106,6 +1349,8 @@ fn is_sexpr_ident_token(kind: SyntaxKind) -> bool {
             | SyntaxKind::WITH_KW
             | SyntaxKind::LET_KW
             | SyntaxKind::TYPE_KW
+            | SyntaxKind::TRAIT_KW
+            | SyntaxKind::IMPL_KW
             | SyntaxKind::DO_KW
             | SyntaxKind::OF_KW
             | SyntaxKind::IN_KW

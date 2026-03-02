@@ -7,8 +7,8 @@ use super::ast::{
 };
 use super::lexer::tokenize;
 use super::{
-    parse,
     SyntaxKind,
+    parse,
 };
 use crate::logging::Logger;
 
@@ -90,11 +90,12 @@ fn lex_symbols() {
 fn lex_keywords() {
     use SyntaxKind::*;
     let tokens = lex(
-        "module import use end match with let type do of in if then else and or xor not true false fn",
+        "module import use end match with let type trait impl do of in if then else and or xor not true false fn wasm",
     );
     let expected = vec![
-        MODULE_KW, IMPORT_KW, USE_KW, END_KW, MATCH_KW, WITH_KW, LET_KW, TYPE_KW, DO_KW, OF_KW,
-        IN_KW, IF_KW, THEN_KW, ELSE_KW, AND_KW, OR_KW, XOR_KW, NOT_KW, TRUE_KW, FALSE_KW, FN_KW,
+        MODULE_KW, IMPORT_KW, USE_KW, END_KW, MATCH_KW, WITH_KW, LET_KW, TYPE_KW, TRAIT_KW,
+        IMPL_KW, DO_KW, OF_KW, IN_KW, IF_KW, THEN_KW, ELSE_KW, AND_KW, OR_KW, XOR_KW, NOT_KW,
+        TRUE_KW, FALSE_KW, FN_KW, WASM_KW,
     ];
     assert_eq!(tokens, expected);
 }
@@ -331,6 +332,43 @@ fn parse_type_sum() {
 }
 
 #[test]
+fn parse_trait_statement() {
+    let tree_str = parse_to_string(
+        "module M =\n  trait Eq : a =\n    let eq : a -> a -> core::boolean\n  end\nend",
+    );
+    assert!(
+        tree_str.contains("TRAIT_STATEMENT"),
+        "Should contain TRAIT_STATEMENT"
+    );
+    assert!(
+        tree_str.contains("TRAIT_METHOD_DECL"),
+        "Should contain TRAIT_METHOD_DECL"
+    );
+}
+
+#[test]
+fn parse_impl_statement() {
+    let tree_str = parse_to_string(
+        "module M =\n  impl Eq : core::integer =\n    let eq = fn x y => x == y\n  end\nend",
+    );
+    assert!(
+        tree_str.contains("IMPL_STATEMENT"),
+        "Should contain IMPL_STATEMENT"
+    );
+    assert!(
+        tree_str.contains("IMPL_METHOD_DEF"),
+        "Should contain IMPL_METHOD_DEF"
+    );
+}
+
+#[test]
+fn parse_impl_statement_multiple_comma_args() {
+    assert_no_errors(
+        "module M =\n  impl Pair : core::integer, core::string =\n    let show = fn p => p\n  end\nend",
+    );
+}
+
+#[test]
 fn parse_error_recovery() {
     assert_has_errors("module M = !!! end");
 }
@@ -465,6 +503,11 @@ fn parse_unary_expr() {
 }
 
 #[test]
+fn parse_parenthesized_operator_as_value_is_error() {
+    assert_has_errors("module M =\n  let x = (+) 1 2\nend");
+}
+
+#[test]
 fn parse_struct_literal() {
     let tree_str = parse_to_string("module M =\n  let p = { x = 1, y = 2 }\nend");
     assert!(
@@ -565,6 +608,29 @@ fn parse_wasm_requires_fat_arrow() {
 }
 
 #[test]
+fn ast_inline_wasm_expr_has_type_and_instructions() {
+    let sf = parse_source_file("module M =\n  let x = (wasm : core::integer) => (get x)\nend");
+    let ast::Statement::Let(ref let_stmt) = sf.modules()[0].statements()[0] else {
+        panic!("expected let statement");
+    };
+    let ast::Expr::InlineWasm(ref inline_wasm) = let_stmt.value().expect("should have value")
+    else {
+        panic!("expected inline wasm expression");
+    };
+    assert!(
+        inline_wasm.asserted_type().is_some(),
+        "expected asserted type"
+    );
+    let Some(ast::SexprItem::Atom(ast::SexprAtom::Ident(token))) = inline_wasm
+        .instructions()
+        .and_then(|sexpr| sexpr.items().into_iter().next())
+    else {
+        panic!("expected first instruction token");
+    };
+    assert_eq!(token.text(), "get");
+}
+
+#[test]
 fn ast_let_statement_accessors() {
     let sf = parse_source_file("module M =\n  let x = 42\nend");
     let m = &sf.modules()[0];
@@ -612,6 +678,45 @@ fn ast_type_statement_accessors() {
         assert!(fields[0].ty().is_some(), "field x should have a type");
         assert!(fields[1].ty().is_some(), "field y should have a type");
     }
+}
+
+#[test]
+fn ast_trait_statement_accessors() {
+    let sf = parse_source_file(
+        "module M =\n  trait Eq : a =\n    let eq : a -> a -> core::boolean\n  end\nend",
+    );
+    let m = &sf.modules()[0];
+    let ast::Statement::Trait(ref trait_stmt) = m.statements()[0] else {
+        panic!("expected trait statement");
+    };
+    assert_eq!(trait_stmt.name_text().as_deref(), Some("Eq"));
+    let params = trait_stmt.trait_params();
+    assert_eq!(params.len(), 1);
+    assert_eq!(params[0].inner, "a");
+    let methods = trait_stmt.methods();
+    assert_eq!(methods.len(), 1);
+    assert_eq!(methods[0].name_text().as_deref(), Some("eq"));
+    assert!(methods[0].ty().is_some());
+}
+
+#[test]
+fn ast_impl_statement_accessors() {
+    let sf = parse_source_file(
+        "module M =\n  impl Eq : core::integer =\n    let eq = fn x y => x == y\n  end\nend",
+    );
+    let m = &sf.modules()[0];
+    let ast::Statement::Impl(ref impl_stmt) = m.statements()[0] else {
+        panic!("expected impl statement");
+    };
+    let Some(head) = impl_stmt.trait_name() else {
+        panic!("expected impl trait head");
+    };
+    assert_eq!(head.name_text().as_deref(), Some("Eq"));
+    assert_eq!(impl_stmt.type_args().len(), 1);
+    let methods = impl_stmt.methods();
+    assert_eq!(methods.len(), 1);
+    assert_eq!(methods[0].name_text().as_deref(), Some("eq"));
+    assert!(methods[0].value().is_some());
 }
 
 #[test]
@@ -793,6 +898,22 @@ fn ast_field_expr() {
 }
 
 #[test]
+fn ast_field_expr_with_bracketed_operator_name() {
+    assert_no_errors("module M =\n  let x = r.[ + ]\nend");
+    let sf = parse_source_file("module M =\n  let x = r.[ + ]\nend");
+    let ast::Statement::Let(ref ls) = sf.modules()[0].statements()[0] else {
+        panic!("expected let");
+    };
+    let ast::Expr::Field(ref fe) = ls.value().unwrap() else {
+        panic!("expected field");
+    };
+    assert_eq!(
+        fe.field_name_spanned().map(|name| name.inner).as_deref(),
+        Some("[+]")
+    );
+}
+
+#[test]
 fn ast_path_expr() {
     let sf = parse_source_file("module M =\n  let x = Foo::bar\nend");
     let ast::Statement::Let(ref ls) = sf.modules()[0].statements()[0] else {
@@ -802,8 +923,55 @@ fn ast_path_expr() {
         panic!("expected path");
     };
     assert_eq!(pe.segments().len(), 2);
-    assert_eq!(pe.qualifier().unwrap().text(), "Foo");
+    assert_eq!(pe.qualifier().as_deref(), Some("Foo"));
     assert_eq!(pe.name_text().as_deref(), Some("bar"));
+}
+
+#[test]
+fn ast_bracket_operator_ident_expr() {
+    assert_no_errors("module M =\n  let x = [+]\nend");
+    let sf = parse_source_file("module M =\n  let x = [+]\nend");
+    let ast::Statement::Let(ref ls) = sf.modules()[0].statements()[0] else {
+        panic!("expected let");
+    };
+    let ast::Expr::Ident(ref ident) = ls.value().unwrap() else {
+        panic!("expected ident");
+    };
+    assert_eq!(ident.name_text().as_deref(), Some("[+]"));
+}
+
+#[test]
+fn ast_bracket_operator_path_expr() {
+    assert_no_errors("module M =\n  let x = core::[+]\nend");
+    let sf = parse_source_file("module M =\n  let x = core::[+]\nend");
+    let ast::Statement::Let(ref ls) = sf.modules()[0].statements()[0] else {
+        panic!("expected let");
+    };
+    let ast::Expr::Path(ref pe) = ls.value().unwrap() else {
+        panic!("expected path");
+    };
+    assert_eq!(pe.qualifier().as_deref(), Some("core"));
+    assert_eq!(pe.name_text().as_deref(), Some("[+]"));
+}
+
+#[test]
+fn ast_bracket_operator_name_is_canonicalized() {
+    assert_no_errors("module M =\n  let [ + ] = fn a b => a + b\nend");
+    let sf = parse_source_file("module M =\n  let [ + ] = fn a b => a + b\nend");
+    let ast::Statement::Let(ref ls) = sf.modules()[0].statements()[0] else {
+        panic!("expected let");
+    };
+    let ast::Pattern::Ident(ref ident) = ls.pattern().unwrap() else {
+        panic!("expected ident pattern");
+    };
+    assert_eq!(ident.name_text().as_deref(), Some("[+]"));
+}
+
+#[test]
+fn ast_bracket_operator_module_name() {
+    assert_no_errors("module [ + ] =\nend");
+    let sf = parse_source_file("module [ + ] =\nend");
+    assert_eq!(sf.modules()[0].name_text().as_deref(), Some("[+]"));
 }
 
 #[test]

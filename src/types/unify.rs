@@ -2,12 +2,14 @@ use std::collections::BTreeSet;
 
 use indexmap::IndexMap;
 
+use super::instantiation::instantiate_forall_strict;
 use super::{
     MetaVarId,
     StructMatch,
     TraitConstraint,
     TraitRef,
     Type,
+    for_each_child_type,
 };
 
 /// State of a unification meta variable.
@@ -182,11 +184,18 @@ impl UnificationTable {
             (Type::MetaVar(id), other) => self.unify_meta_with_type(*id, other),
             (other, Type::MetaVar(id)) => self.unify_meta_with_type(*id, other),
             _ => {
-                let left = normalize_empty_apply(self.prune(left));
-                let right = normalize_empty_apply(self.prune(right));
+                let left = self.normalize_for_unify(left);
+                let right = self.normalize_for_unify(right);
                 self.unify_non_meta(left, right)
             }
         }
+    }
+
+    fn normalize_for_unify(
+        &mut self,
+        type_: &Type,
+    ) -> Type {
+        normalize_applied_named_types(self.prune(type_))
     }
 
     fn unify_non_meta(
@@ -334,11 +343,11 @@ impl UnificationTable {
         id: MetaVarId,
         other: &Type,
     ) -> Result<(), UnifyError> {
-        let other_pruned = normalize_empty_apply(self.prune(other));
+        let other_pruned = self.normalize_for_unify(other);
         match self.vars.get(id as usize).cloned() {
             Some(MetaVarState::Unbound { .. }) => self.bind_meta(id, &other_pruned),
             Some(MetaVarState::Link(link)) => {
-                let link_pruned = normalize_empty_apply(self.prune(&link));
+                let link_pruned = self.normalize_for_unify(&link);
                 match (link_pruned, other_pruned) {
                     (
                         Type::StructConstraint {
@@ -561,7 +570,7 @@ impl UnificationTable {
             Type::MetaVar(other_id) => id == other_id,
             _ => {
                 let mut found = false;
-                for_each_child_type(&pruned, |child| {
+                for_each_child_type(&pruned, false, |child| {
                     if !found && self.occurs(id, child) {
                         found = true;
                     }
@@ -594,7 +603,7 @@ impl UnificationTable {
             }
             _ => {
                 let mut result = Ok(());
-                for_each_child_type(&pruned, |child| {
+                for_each_child_type(&pruned, false, |child| {
                     if result.is_ok() {
                         result = self.adjust_levels(level, child);
                     }
@@ -620,53 +629,9 @@ impl UnificationTable {
                 }
             }
             _ => {
-                for_each_child_type(&pruned, |child| self.collect_meta_vars(child, vars));
+                for_each_child_type(&pruned, false, |child| self.collect_meta_vars(child, vars));
             }
         }
-    }
-}
-
-fn for_each_child_type(
-    type_: &Type,
-    mut visit: impl FnMut(&Type),
-) {
-    match type_ {
-        Type::ForAll(body) | Type::Mu(body) | Type::Array(body) => {
-            visit(body);
-        }
-        Type::Function(parameter, result) => {
-            visit(parameter);
-            visit(result);
-        }
-        Type::Tuple(items) => {
-            items.iter().for_each(&mut visit);
-        }
-        Type::StructConstraint { fields, .. } => {
-            fields.values().for_each(&mut visit);
-        }
-        Type::Struct { fields } => {
-            fields.values().for_each(&mut visit);
-        }
-        Type::Sum { variants } => {
-            variants.values().for_each(&mut visit);
-        }
-        Type::Apply {
-            constructor,
-            arguments,
-        } => {
-            visit(constructor);
-            arguments.iter().for_each(visit);
-        }
-        Type::Named { .. }
-        | Type::Unit
-        | Type::Integer
-        | Type::Real
-        | Type::Boolean
-        | Type::String
-        | Type::Glyph
-        | Type::TypeVar(_)
-        | Type::MetaVar(_)
-        | Type::RecVar(_) => {}
     }
 }
 
@@ -678,6 +643,25 @@ fn normalize_empty_apply(type_: Type) -> Type {
         } if arguments.is_empty() => normalize_empty_apply(*constructor),
         other => other,
     }
+}
+
+fn normalize_applied_named_types(type_: Type) -> Type {
+    let mut current = normalize_empty_apply(type_);
+    while let Some(next) = expand_applied_named_type(&current) {
+        current = normalize_empty_apply(next);
+    }
+    current
+}
+
+fn expand_applied_named_type(type_: &Type) -> Option<Type> {
+    let (base, arguments) = split_apply(type_);
+    if arguments.is_empty() {
+        return None;
+    }
+    let Type::Named { body, .. } = base else {
+        return None;
+    };
+    instantiate_named_body(&body, &arguments)
 }
 
 fn split_apply(type_: &Type) -> (Type, Vec<Type>) {
@@ -698,13 +682,5 @@ fn instantiate_named_body(
     body: &Type,
     arguments: &[Type],
 ) -> Option<Type> {
-    let mut current = body.clone();
-    for arg in arguments {
-        if let Type::ForAll(inner) = current {
-            current = inner.open_forall(arg)?;
-        } else {
-            return None;
-        }
-    }
-    Some(current)
+    instantiate_forall_strict(body, arguments)
 }

@@ -2,6 +2,10 @@ use crate::parse::SyntaxKind;
 use crate::parse::parser::Parser;
 
 use super::{
+    can_start_identifier,
+    expect_identifier,
+    identifier,
+    is_bracketed_operator_identifier_start,
     literal,
     paren_list,
     path_or_ident,
@@ -67,7 +71,13 @@ fn pattern_primary(p: &mut Parser<'_, '_>) {
                 SyntaxKind::L_PAREN => paren_pattern(p),
 
                 // Array pattern
-                SyntaxKind::L_SQUARE => array_pattern(p),
+                SyntaxKind::L_SQUARE => {
+                    if is_bracketed_operator_identifier_start(p) {
+                        ident_or_constructor(p);
+                    } else {
+                        array_pattern(p);
+                    }
+                }
 
                 // Struct pattern
                 SyntaxKind::L_BRACE => struct_pattern(p),
@@ -108,8 +118,8 @@ fn array_pattern(p: &mut Parser<'_, '_>) {
             let rm = p.start_node(SyntaxKind::PAT_REST);
             p.bump(); // ..
             // Optional binding name
-            if p.at(SyntaxKind::IDENT) {
-                p.bump();
+            if can_start_identifier(p) {
+                identifier(p);
             }
             p.finish_node(rm);
         } else {
@@ -127,7 +137,7 @@ fn struct_pattern(p: &mut Parser<'_, '_>) {
     p.bump(); // {
     while !p.at(SyntaxKind::R_BRACE) && !p.at_end() {
         let fm = p.start_node(SyntaxKind::PAT_FIELD);
-        p.expect(SyntaxKind::IDENT);
+        expect_identifier(p);
         if p.eat(SyntaxKind::EQUAL) {
             pattern(p);
         }

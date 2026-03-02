@@ -327,7 +327,7 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
                     } else if let Some(&idx) = global_namespace.get(&path) {
                         winstr::GlobalSet(idx)
                     } else {
-                        unreachable!("Unknown variable: {}", &path)
+                        winstr::Unreachable
                     }
                 }
                 i::Get(path) => {
@@ -336,7 +336,7 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
                     } else if let Some(&idx) = global_namespace.get(&path) {
                         winstr::GlobalGet(idx)
                     } else {
-                        unreachable!("Unknown variable: {path}")
+                        winstr::Unreachable
                     }
                 }
                 i::Const(const_value) => {
@@ -354,9 +354,12 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
                 i::I32Const(i) => winstr::I32Const(*i),
                 i::F32Const(f) => winstr::F32Const((*f).into()),
                 i::Func(path) => {
-                    let idx = func_namespace[path];
-                    referenced_funcs.insert(idx);
-                    winstr::RefFunc(idx)
+                    if let Some(&idx) = func_namespace.get(path) {
+                        referenced_funcs.insert(idx);
+                        winstr::RefFunc(idx)
+                    } else {
+                        winstr::Unreachable
+                    }
                 }
                 i::StructNew(items) => winstr::StructNew(type_section.new_struct(items)),
                 i::StructGet(t, field_index) => {
@@ -442,7 +445,13 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
                         memory_index: 0,
                     })
                 }
-                i::Call(path) => winstr::Call(func_namespace[path]),
+                i::Call(path) => {
+                    if let Some(&idx) = func_namespace.get(path) {
+                        winstr::Call(idx)
+                    } else {
+                        winstr::Unreachable
+                    }
+                }
             }
         }) {
             function_body.instruction(&instr);

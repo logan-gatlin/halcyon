@@ -6,8 +6,10 @@ use std::collections::{
 use crate::parse::ast;
 use crate::{
     CORE_MODULE_NAME,
+    FileLogger,
     Span,
     Spanned,
+    WithContext,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
@@ -21,7 +23,7 @@ impl TryFrom<ast::Path> for Path {
 
     fn try_from(value: ast::Path) -> Result<Self, Self::Error> {
         Ok(Path::new(
-            value.qualifier().ok_or(())?.text(),
+            value.qualifier().ok_or(())?,
             value.name_text().ok_or(())?,
         ))
     }
@@ -166,6 +168,78 @@ impl ModuleScope {
             usages: Default::default(),
             undefined_usages: Default::default(),
             multiple_definitions: Default::default(),
+        }
+    }
+
+    pub fn report_name_resolution_errors(
+        &self,
+        logger: &mut FileLogger,
+    ) {
+        self.report_multiple_definitions(logger);
+        self.report_undefined_usages(logger);
+    }
+
+    fn report_multiple_definitions(
+        &self,
+        logger: &mut FileLogger,
+    ) {
+        let mut duplicates = self
+            .multiple_definitions
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        duplicates
+            .sort_by_key(|scoped_path| format!("{}:{}", scoped_path.namespace, scoped_path.path));
+        for scoped_path in duplicates {
+            let Some(definitions) = self.definitions.get(&scoped_path) else {
+                continue;
+            };
+            let Some(first_span) = definitions.first().copied() else {
+                continue;
+            };
+            let mut log = logger
+                .error(format!("Duplicate {} definition", scoped_path.namespace))
+                .primary(
+                    format!("`{}` is already defined.", scoped_path.path),
+                    first_span,
+                );
+            for span in definitions.iter().skip(1) {
+                log = log.secondary("Redefined here.", *span);
+            }
+            log.done();
+        }
+    }
+
+    fn report_undefined_usages(
+        &self,
+        logger: &mut FileLogger,
+    ) {
+        let mut undefined = self
+            .undefined_usages
+            .iter()
+            .filter(|(scoped_path, _)| {
+                scoped_path.namespace != NameSpace::Constructor
+                    && !self.definitions.contains_key(*scoped_path)
+            })
+            .map(|(scoped_path, spans)| (scoped_path.clone(), spans.as_slice()))
+            .collect::<Vec<_>>();
+        undefined.sort_by_key(|(scoped_path, _)| {
+            format!("{}:{}", scoped_path.namespace, scoped_path.path)
+        });
+        for (scoped_path, spans) in undefined {
+            let Some(first_span) = spans.first().copied() else {
+                continue;
+            };
+            let mut log = logger
+                .error(format!("Undefined {}", scoped_path.namespace))
+                .primary(
+                    format!("`{}` is not defined.", scoped_path.path),
+                    first_span,
+                );
+            for span in spans.iter().skip(1) {
+                log = log.secondary("Also used here.", *span);
+            }
+            log.done();
         }
     }
 }

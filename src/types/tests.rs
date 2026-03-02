@@ -85,6 +85,18 @@ fn apply_nonempty_arguments_not_equal_constructor() {
 }
 
 #[test]
+fn unify_applied_named_function_with_function_type() {
+    let mut table = UnificationTable::default();
+    let core_function = Type::Named {
+        name: Path::new("core", "function"),
+        body: Box::new(Type::function()),
+    }
+    .apply(vec![Type::Integer, Type::Integer]);
+    let direct_function = Type::func(Type::Integer, Type::Integer);
+    assert!(table.unify(&core_function, &direct_function).is_ok());
+}
+
+#[test]
 fn shift_type_vars_respects_binder() {
     let original = Type::func(Type::v(0), Type::v(0).for_all(1));
     let shifted = original.shift_type_vars(1, 0).expect("shift succeeds");
@@ -318,6 +330,7 @@ fn resolve_trait_instance() {
             parameters: 0,
             head: TraitRef::new(eq.clone(), vec![Type::Integer]),
             predicates: Vec::new(),
+            methods: IndexMap::new(),
         })
         .expect("impl");
 
@@ -347,6 +360,7 @@ fn resolve_trait_instance_with_context() {
             parameters: 0,
             head: TraitRef::new(eq.clone(), vec![Type::Integer]),
             predicates: Vec::new(),
+            methods: IndexMap::new(),
         })
         .expect("impl eq int");
     symbols
@@ -354,6 +368,7 @@ fn resolve_trait_instance_with_context() {
             parameters: 1,
             head: TraitRef::new(eq.clone(), vec![list_of(Type::v(0))]),
             predicates: vec![TraitRef::new(eq.clone(), vec![Type::v(0)])],
+            methods: IndexMap::new(),
         })
         .expect("impl eq list");
 
@@ -404,6 +419,7 @@ fn resolve_trait_recursive_predicate_errors() {
             parameters: 1,
             head: TraitRef::new(eq.clone(), vec![Type::v(0)]),
             predicates: vec![TraitRef::new(eq.clone(), vec![Type::v(0)])],
+            methods: IndexMap::new(),
         })
         .expect("impl");
 
@@ -430,6 +446,7 @@ fn overlap_detection_rejects_conflicting_instances() {
             parameters: 1,
             head: TraitRef::new(eq.clone(), vec![list_of(Type::v(0))]),
             predicates: Vec::new(),
+            methods: IndexMap::new(),
         })
         .expect("impl list");
 
@@ -437,9 +454,75 @@ fn overlap_detection_rejects_conflicting_instances() {
         parameters: 0,
         head: TraitRef::new(eq.clone(), vec![list_of(Type::Integer)]),
         predicates: Vec::new(),
+        methods: IndexMap::new(),
     });
     assert!(matches!(
         result,
         Err(TraitError::OverlappingInstance { .. })
     ));
+}
+
+#[test]
+fn insert_impl_requires_all_trait_methods() {
+    let mut symbols = SymbolTable::new();
+    let trait_path = Path::new("test", "Eq");
+    let method_path = Path::new("test", "eq");
+    symbols
+        .insert_trait(TraitDef {
+            name: trait_path.clone(),
+            parameters: 1,
+            methods: [(
+                method_path,
+                Type::curry(&[Type::v(0), Type::v(0), Type::Boolean]).scheme(),
+            )]
+            .into_iter()
+            .collect(),
+        })
+        .expect("trait def");
+
+    let result = symbols.insert_impl(TraitImpl {
+        parameters: 0,
+        head: TraitRef::new(trait_path, vec![Type::Integer]),
+        predicates: Vec::new(),
+        methods: IndexMap::new(),
+    });
+    assert!(matches!(result, Err(TraitError::InvalidInstance { .. })));
+}
+
+#[test]
+fn resolve_method_specialization_uses_impl_mapping() {
+    let mut symbols = SymbolTable::new();
+    let trait_path = Path::new("test", "Eq");
+    let method_path = Path::new("test", "eq");
+    let impl_method_path = Path::new("test", "eq_integer");
+    symbols
+        .insert_trait(TraitDef {
+            name: trait_path.clone(),
+            parameters: 1,
+            methods: [(
+                method_path.clone(),
+                Type::curry(&[Type::v(0), Type::v(0), Type::Boolean]).scheme(),
+            )]
+            .into_iter()
+            .collect(),
+        })
+        .expect("trait def");
+    symbols
+        .insert_impl(TraitImpl {
+            parameters: 0,
+            head: TraitRef::new(trait_path.clone(), vec![Type::Integer]),
+            predicates: Vec::new(),
+            methods: [(method_path.clone(), impl_method_path.clone())]
+                .into_iter()
+                .collect(),
+        })
+        .expect("impl");
+
+    let resolved = symbols
+        .resolve_method_specialization(&method_path, &[Type::Integer])
+        .expect("resolve")
+        .expect("specialization");
+    assert_eq!(resolved.trait_name, trait_path);
+    assert_eq!(resolved.impl_method_path, impl_method_path);
+    assert!(resolved.predicates.is_empty());
 }

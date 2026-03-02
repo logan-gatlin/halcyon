@@ -119,8 +119,76 @@ impl Printer {
                 parameters,
                 def,
             } => self.type_statement(path, parameters, def),
+            Statement::Trait {
+                path,
+                parameters,
+                methods,
+            } => self.trait_statement(path, parameters, methods),
+            Statement::Impl {
+                trait_path,
+                arguments,
+                methods,
+            } => self.impl_statement(trait_path, arguments, methods),
             Statement::Wasm(declarations) => self.wasm_statement(declarations),
         }
+    }
+
+    fn trait_statement(
+        &mut self,
+        path: &Path,
+        parameters: &[Path],
+        methods: &[TraitMethodDecl],
+    ) {
+        let params = if parameters.is_empty() {
+            String::new()
+        } else {
+            let names = parameters
+                .iter()
+                .map(|param| self.format_path(param))
+                .collect::<Vec<_>>()
+                .join(" ");
+            format!(" : {names}")
+        };
+        self.line(format!("trait {}{params} =", self.format_path(path)));
+        self.indented(|printer| {
+            for method in methods {
+                printer.line(format!(
+                    "let {} : {}",
+                    printer.format_path(&method.path),
+                    printer.format_type_expr(&method.type_expr)
+                ));
+            }
+        });
+        self.line("end");
+    }
+
+    fn impl_statement(
+        &mut self,
+        trait_path: &Path,
+        arguments: &[TypeExpr],
+        methods: &[ImplMethod<Type>],
+    ) {
+        let args = arguments
+            .iter()
+            .map(|arg| self.format_type_expr(arg))
+            .collect::<Vec<_>>()
+            .join(", ");
+        self.line(format!("impl {} : {args} =", self.format_path(trait_path)));
+        self.indented(|printer| {
+            for method in methods {
+                let method_name = printer.format_path(&method.trait_method);
+                if let Some(value) = printer.format_term_inline_expr(&method.value) {
+                    let line = format!("let {method_name} = {value}");
+                    if line.len() <= LINE_LIMIT {
+                        printer.line(line);
+                        continue;
+                    }
+                }
+                printer.line(format!("let {method_name} ="));
+                printer.indented(|printer| printer.term(&method.value));
+            }
+        });
+        self.line("end");
     }
 
     fn wasm_statement(
@@ -613,6 +681,11 @@ impl Printer {
                 body,
                 ..
             } => self.term_function(term, parameter_name, parameter_type.as_ref(), body),
+            TermKind::InlineWasm {
+                asserted_type,
+                definitions,
+                instructions,
+            } => self.term_inline_wasm(term, asserted_type, definitions, instructions),
             TermKind::Call { callee, argument } => self.term_call(term, callee, argument),
             TermKind::Semicolon(left, right) => self.term_semicolon(term, left, right),
             TermKind::Unreachable => {
@@ -830,6 +903,32 @@ impl Printer {
                 printer.line(";");
             }
             printer.term(right);
+        });
+        self.line(format!(") : {}", term.type_.pretty()));
+    }
+
+    fn term_inline_wasm(
+        &mut self,
+        term: &Term<Type>,
+        asserted_type: &TypeExpr,
+        definitions: &IndexMap<Path, WasmType>,
+        instructions: &[WasmInstruction],
+    ) {
+        self.line(format!(
+            "(wasm : {}) => (",
+            self.format_type_expr(asserted_type)
+        ));
+        self.indented(|printer| {
+            for (name, type_) in definitions {
+                printer.line(format!(
+                    "(local {} {})",
+                    printer.format_wasm_local_name(name),
+                    printer.format_wasm_type(type_),
+                ));
+            }
+            for instruction in instructions {
+                printer.line(printer.format_wasm_instruction(instruction));
+            }
         });
         self.line(format!(") : {}", term.type_.pretty()));
     }
@@ -1069,7 +1168,7 @@ impl Printer {
                 Some(format!("{left}; {right}"))
             }
             TermKind::Unreachable => Some("unreachable".to_string()),
-            TermKind::Let { .. } | TermKind::Function { .. } => None,
+            TermKind::Let { .. } | TermKind::Function { .. } | TermKind::InlineWasm { .. } => None,
         }
     }
 

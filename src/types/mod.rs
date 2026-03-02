@@ -131,7 +131,54 @@ impl PartialEq for Type {
 impl Eq for Type {
 }
 
+pub(crate) fn for_each_child_type(
+    type_: &Type,
+    include_named_body: bool,
+    mut visit: impl FnMut(&Type),
+) {
+    match type_ {
+        Type::ForAll(body) | Type::Mu(body) | Type::Array(body) => {
+            visit(body);
+        }
+        Type::Function(parameter, result) => {
+            visit(parameter);
+            visit(result);
+        }
+        Type::Tuple(items) => items.iter().for_each(&mut visit),
+        Type::StructConstraint { fields, .. } | Type::Struct { fields } => {
+            fields.values().for_each(&mut visit);
+        }
+        Type::Sum { variants } => variants.values().for_each(&mut visit),
+        Type::Apply {
+            constructor,
+            arguments,
+        } => {
+            visit(constructor);
+            arguments.iter().for_each(visit);
+        }
+        Type::Named { body, .. } if include_named_body => visit(body),
+        Type::Named { .. }
+        | Type::Unit
+        | Type::Integer
+        | Type::Real
+        | Type::Boolean
+        | Type::String
+        | Type::Glyph
+        | Type::TypeVar(_)
+        | Type::MetaVar(_)
+        | Type::RecVar(_) => {}
+    }
+}
+
+/// A generic traversal/transformation interface for [`Type`].
+///
+/// Implementors can override small hooks for specific variants while relying
+/// on the default recursive behavior in [`TypeTransform::transform`] or
+/// [`TypeTransform::walk`].
+///
+/// Returning `None` from a transform hook aborts the transform.
 pub(crate) trait TypeTransform {
+    /// Transform a bound type variable (`Type::TypeVar`).
     fn type_var(
         &mut self,
         index: TypeParameterIndex,
@@ -139,6 +186,7 @@ pub(crate) trait TypeTransform {
         Some(Type::TypeVar(index))
     }
 
+    /// Transform an inference metavariable (`Type::MetaVar`).
     fn meta_var(
         &mut self,
         id: MetaVarId,
@@ -146,6 +194,7 @@ pub(crate) trait TypeTransform {
         Some(Type::MetaVar(id))
     }
 
+    /// Transform a recursive variable (`Type::RecVar`).
     fn rec_var(
         &mut self,
         index: RecursionIndex,
@@ -153,6 +202,11 @@ pub(crate) trait TypeTransform {
         Some(Type::RecVar(index))
     }
 
+    /// Transform a named type (`Type::Named`).
+    ///
+    /// The default implementation keeps the nominal name and body unchanged.
+    /// Implementors that need to transform inside `body` should call
+    /// [`TypeTransform::transform`] explicitly.
     fn named(
         &mut self,
         name: &Path,
@@ -164,18 +218,74 @@ pub(crate) trait TypeTransform {
         })
     }
 
+    /// Transform a type application (`Type::Apply`).
+    ///
+    /// The default implementation recursively transforms the constructor and
+    /// each argument, then rebuilds `Type::Apply`.
+    fn apply(
+        &mut self,
+        constructor: &Type,
+        arguments: &[Type],
+    ) -> Option<Type> {
+        let constructor = self.transform(constructor)?;
+        let arguments = arguments
+            .iter()
+            .map(|arg| self.transform(arg))
+            .collect::<Option<Vec<_>>>()?;
+        Some(Type::Apply {
+            constructor: Box::new(constructor),
+            arguments,
+        })
+    }
+
+    /// Hook called before recursively visiting the body of `Type::ForAll`.
     fn enter_forall(&mut self) {
     }
 
+    /// Hook called after recursively visiting the body of `Type::ForAll`.
     fn leave_forall(&mut self) {
     }
 
+    /// Hook called before recursively visiting the body of `Type::Mu`.
     fn enter_mu(&mut self) {
     }
 
+    /// Hook called after recursively visiting the body of `Type::Mu`.
     fn leave_mu(&mut self) {
     }
 
+    /// Hook called by [`TypeTransform::walk`] for every visited node.
+    fn visit(
+        &mut self,
+        _type_: &Type,
+    ) {
+    }
+
+    /// Walk the type tree without rebuilding it.
+    ///
+    /// This is useful for read-only traversals and side-effecting analyses
+    /// that do not need to allocate new `Type` values.
+    fn walk(
+        &mut self,
+        type_: &Type,
+    ) {
+        self.visit(type_);
+        match type_ {
+            Type::ForAll(body) => {
+                self.enter_forall();
+                self.walk(body);
+                self.leave_forall();
+            }
+            Type::Mu(body) => {
+                self.enter_mu();
+                self.walk(body);
+                self.leave_mu();
+            }
+            _ => for_each_child_type(type_, true, |child| self.walk(child)),
+        }
+    }
+
+    /// Recursively transform a [`Type`] using hook methods from this trait.
     fn transform(
         &mut self,
         type_: &Type,
@@ -246,17 +356,7 @@ pub(crate) trait TypeTransform {
             Type::Apply {
                 constructor,
                 arguments,
-            } => {
-                let constructor = self.transform(constructor)?;
-                let arguments = arguments
-                    .iter()
-                    .map(|arg| self.transform(arg))
-                    .collect::<Option<Vec<_>>>()?;
-                Some(Type::Apply {
-                    constructor: Box::new(constructor),
-                    arguments,
-                })
-            }
+            } => self.apply(constructor, arguments),
         }
     }
 }
@@ -519,16 +619,7 @@ impl Type {
             }
             Type::Named { name, .. } => format!("{name}"),
             Type::StructConstraint { fields, mode } => {
-                let fields = fields
-                    .iter()
-                    .map(|(name, type_)| {
-                        format!(
-                            "{name}: {}",
-                            type_.pretty_with_context(param_names, rec_names)
-                        )
-                    })
-                    .collect::<Vec<_>>()
-                    .join(", ");
+                let fields = pretty_record_fields(fields, param_names, rec_names);
                 let suffix = match mode {
                     StructMatch::Exact => "",
                     StructMatch::AtLeast => ", ..",
@@ -536,16 +627,7 @@ impl Type {
                 format!("{{{fields}{suffix}}}")
             }
             Type::Struct { fields } => {
-                let fields = fields
-                    .iter()
-                    .map(|(name, type_)| {
-                        format!(
-                            "{name}: {}",
-                            type_.pretty_with_context(param_names, rec_names)
-                        )
-                    })
-                    .collect::<Vec<_>>()
-                    .join(", ");
+                let fields = pretty_record_fields(fields, param_names, rec_names);
                 format!("{{{fields}}}")
             }
             Type::Array(inner) => {
@@ -690,6 +772,26 @@ fn alpha_name(index: u32) -> String {
     chars.into_iter().rev().collect()
 }
 
+fn pretty_record_fields(
+    fields: &IndexMap<String, Type>,
+    param_names: &[String],
+    rec_names: &[String],
+) -> String {
+    fields
+        .iter()
+        .map(|(name, type_)| {
+            format!(
+                "{name}: {}",
+                type_.pretty_with_context(param_names, rec_names)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+mod instantiation;
+mod type_expr;
+
 pub mod infer;
 pub mod resolve;
 pub mod symbol_table;
@@ -697,6 +799,7 @@ pub mod traits;
 pub mod unify;
 
 pub use symbol_table::{
+    MethodSpecialization,
     SymbolTable,
     TypeDefinition,
 };

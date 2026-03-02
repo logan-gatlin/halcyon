@@ -53,6 +53,13 @@ pub struct SymbolTable {
     trait_impls: IndexMap<Path, Vec<TraitImpl>>,
 }
 
+#[derive(Debug, Clone)]
+pub struct MethodSpecialization {
+    pub trait_name: Path,
+    pub impl_method_path: Path,
+    pub predicates: Vec<TraitConstraint>,
+}
+
 impl SymbolTable {
     pub fn new() -> Self {
         Self::default()
@@ -139,6 +146,24 @@ impl SymbolTable {
                 found: impl_.head.arguments.len(),
             });
         }
+        let has_unknown_method = impl_
+            .methods
+            .keys()
+            .any(|method| !def.methods.contains_key(method));
+        if has_unknown_method {
+            return Err(TraitError::InvalidInstance {
+                trait_name: impl_.head.trait_name.clone(),
+            });
+        }
+        let missing_method = def
+            .methods
+            .keys()
+            .any(|method| !impl_.methods.contains_key(method));
+        if missing_method {
+            return Err(TraitError::InvalidInstance {
+                trait_name: impl_.head.trait_name.clone(),
+            });
+        }
         let impls = self
             .trait_impls
             .entry(impl_.head.trait_name.clone())
@@ -218,6 +243,46 @@ impl SymbolTable {
             }
         }
         Ok(matched)
+    }
+
+    pub fn resolve_method_specialization(
+        &self,
+        method_path: &Path,
+        arguments: &[Type],
+    ) -> Result<Option<MethodSpecialization>, TraitError> {
+        let Some((trait_name, _)) = self
+            .trait_defs
+            .iter()
+            .find(|(_, def)| def.methods.contains_key(method_path))
+        else {
+            return Ok(None);
+        };
+        let predicate = TraitRef::new(trait_name.clone(), arguments.to_vec());
+        let Some(selected_impl) = self.select_impl(&predicate)? else {
+            return Ok(None);
+        };
+        let Some(impl_method_path) = selected_impl.methods.get(method_path).cloned() else {
+            return Err(TraitError::InvalidInstance {
+                trait_name: trait_name.clone(),
+            });
+        };
+
+        let mut table = UnificationTable::default();
+        let instantiated = instantiate_trait_impl(&mut table, &selected_impl)?;
+        if !matches_trait_ref(&mut table, &predicate, &instantiated.head) {
+            return Ok(None);
+        }
+        let predicates = instantiated
+            .predicates
+            .into_iter()
+            .map(|predicate| table.normalize_trait_ref(&predicate))
+            .collect();
+
+        Ok(Some(MethodSpecialization {
+            trait_name: trait_name.clone(),
+            impl_method_path,
+            predicates,
+        }))
     }
 
     fn resolve_predicate(

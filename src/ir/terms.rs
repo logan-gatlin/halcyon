@@ -1,3 +1,7 @@
+use crate::asm::{
+    Instruction as WasmInstruction,
+    Type as WasmType,
+};
 use crate::hc_core::CoreTerm;
 use crate::operator::{
     BinaryOp,
@@ -60,6 +64,11 @@ pub enum TermKind<T> {
         parameter_type: Option<TypeExpr>,
         captures: Box<[(Path, T)]>,
         body: Box<Term<T>>,
+    },
+    InlineWasm {
+        asserted_type: TypeExpr,
+        definitions: IndexMap<Path, WasmType>,
+        instructions: Box<[WasmInstruction]>,
     },
     Call {
         callee: Box<Term<T>>,
@@ -221,6 +230,7 @@ fn mk(
 
 fn curry(
     scope: &mut impl Scope,
+    wasm_type_defs: &IndexMap<String, WasmType>,
     logger: &mut FileLogger,
     mut params: impl Iterator<Item = ast::Param>,
     body: ast::Expr,
@@ -232,7 +242,7 @@ fn curry(
             let param_name = param.name_text_spanned()?;
             let param_span = param_name.span;
             let path = inner_scope.define(param_name, NameSpace::Term);
-            let body = curry(&mut inner_scope, logger, params, body, span)?;
+            let body = curry(&mut inner_scope, wasm_type_defs, logger, params, body, span)?;
             Some(mk(
                 TermKind::Function {
                     parameter_name: path.with_span(param_span),
@@ -247,12 +257,13 @@ fn curry(
                 span,
             ))
         }
-        None => term(scope, logger, body),
+        None => term(scope, wasm_type_defs, logger, body),
     }
 }
 
 fn array_term(
     scope: &mut impl Scope,
+    wasm_type_defs: &IndexMap<String, WasmType>,
     logger: &mut FileLogger,
     array_expr: ast::ArrayExpr,
 ) -> Option<UntypedTerm> {
@@ -263,7 +274,7 @@ fn array_term(
     for child in array_expr.syntax().children() {
         if let Some(splat) = ast::ArraySplat::cast(child.clone()) {
             let concat_path = CoreTerm::ArrayConcat.path();
-            let elem = term(scope, logger, splat.expr()?)?;
+            let elem = term(scope, wasm_type_defs, logger, splat.expr()?)?;
             let elem_span = elem.span;
             current = mk(
                 TermKind::Call {
@@ -281,7 +292,7 @@ fn array_term(
             );
         } else if let Some(expr) = ast::Expr::cast(child) {
             let push_path = CoreTerm::ArrayPush.path();
-            let elem = term(scope, logger, expr)?;
+            let elem = term(scope, wasm_type_defs, logger, expr)?;
             let elem_span = elem.span;
             current = mk(
                 TermKind::Call {
@@ -304,16 +315,17 @@ fn array_term(
 
 pub fn term(
     scope: &mut impl Scope,
+    wasm_type_defs: &IndexMap<String, WasmType>,
     logger: &mut FileLogger,
     expr: ast::Expr,
 ) -> Option<UntypedTerm> {
     let span = expr.span();
     Some(match expr {
         ast::Expr::Let(let_expr) => {
-            let value = term(scope, logger, let_expr.value()?)?;
+            let value = term(scope, wasm_type_defs, logger, let_expr.value()?)?;
             let mut inner_scope = scope.nest_scope();
             let pat = pattern(&mut inner_scope, logger, let_expr.pattern()?)?;
-            let body = term(&mut inner_scope, logger, let_expr.body()?)?;
+            let body = term(&mut inner_scope, wasm_type_defs, logger, let_expr.body()?)?;
             mk(
                 TermKind::Let {
                     assignee: pat,
@@ -333,7 +345,7 @@ pub fn term(
                 let mut inner_scope = scope.nest_function_scope();
                 let param_name = "<parameter>".to_string().with_span(Span::Generated);
                 let path = inner_scope.define(param_name, NameSpace::Term);
-                let body = term(&mut inner_scope, logger, body)?;
+                let body = term(&mut inner_scope, wasm_type_defs, logger, body)?;
                 mk(
                     TermKind::Function {
                         parameter_name: path.with_span(Span::Generated),
@@ -348,7 +360,14 @@ pub fn term(
                     span,
                 )
             } else {
-                curry(scope, logger, params.into_iter(), body, span)?
+                curry(
+                    scope,
+                    wasm_type_defs,
+                    logger,
+                    params.into_iter(),
+                    body,
+                    span,
+                )?
             }
         }
         ast::Expr::FnShorthand(fn_shorthand_expr) => {
@@ -363,7 +382,7 @@ pub fn term(
             for arm in arms.into_iter().rev() {
                 let mut arm_scope = inner_scope.nest_scope();
                 let pat = pattern(&mut arm_scope, logger, arm.pattern()?)?;
-                let body = term(&mut arm_scope, logger, arm.body()?)?;
+                let body = term(&mut arm_scope, wasm_type_defs, logger, arm.body()?)?;
                 let arm_span = pat.span;
                 current = mk(
                     TermKind::Let {
@@ -392,9 +411,9 @@ pub fn term(
             )
         }
         ast::Expr::If(if_expr) => {
-            let condition = term(scope, logger, if_expr.condition()?)?;
-            let then_branch = term(scope, logger, if_expr.then_branch()?)?;
-            let else_branch = term(scope, logger, if_expr.else_branch()?)?;
+            let condition = term(scope, wasm_type_defs, logger, if_expr.condition()?)?;
+            let then_branch = term(scope, wasm_type_defs, logger, if_expr.then_branch()?)?;
+            let else_branch = term(scope, wasm_type_defs, logger, if_expr.else_branch()?)?;
             mk(
                 TermKind::Let {
                     assignee: Pattern {
@@ -412,7 +431,7 @@ pub fn term(
             )
         }
         ast::Expr::Match(match_expr) => {
-            let scrutinee = term(scope, logger, match_expr.scrutinee()?)?;
+            let scrutinee = term(scope, wasm_type_defs, logger, match_expr.scrutinee()?)?;
             let scrutinee_span = scrutinee.span;
             let mut outer_scope = scope.nest_scope();
             let scrutinee_name = "<scrutinee>".to_string().with_span(scrutinee_span);
@@ -423,7 +442,7 @@ pub fn term(
             for arm in arms.into_iter().rev() {
                 let mut arm_scope = outer_scope.nest_scope();
                 let pat = pattern(&mut arm_scope, logger, arm.pattern()?)?;
-                let body = term(&mut arm_scope, logger, arm.body()?)?;
+                let body = term(&mut arm_scope, wasm_type_defs, logger, arm.body()?)?;
                 let arm_span = pat.span;
                 current = mk(
                     TermKind::Let {
@@ -453,18 +472,38 @@ pub fn term(
                 span,
             )
         }
+        ast::Expr::InlineWasm(inline_wasm_expr) => {
+            let asserted_type = type_expr(scope, inline_wasm_expr.asserted_type()?)?;
+            let inline_wasm = {
+                let mut inline_scope = scope.nest_scope();
+                wasm::build_inline_expression(
+                    &inline_wasm_expr.instructions()?,
+                    wasm_type_defs,
+                    logger,
+                    &mut inline_scope,
+                )
+            };
+            mk(
+                TermKind::InlineWasm {
+                    asserted_type,
+                    definitions: inline_wasm.definitions,
+                    instructions: inline_wasm.instructions,
+                },
+                span,
+            )
+        }
         ast::Expr::Binary(binary_expr) => {
             let op_token = binary_expr.op_token()?;
             let op_kind = op_token.kind();
             if op_kind == SyntaxKind::SEMICOLON {
-                let lhs = term(scope, logger, binary_expr.lhs()?)?;
-                let rhs = term(scope, logger, binary_expr.rhs()?)?;
+                let lhs = term(scope, wasm_type_defs, logger, binary_expr.lhs()?)?;
+                let rhs = term(scope, wasm_type_defs, logger, binary_expr.rhs()?)?;
                 mk(TermKind::Semicolon(lhs.into(), rhs.into()), span)
             } else {
                 let op_path = binary_op_path(op_kind)?;
                 let op_span: Span = op_token.text_range().into();
-                let lhs = term(scope, logger, binary_expr.lhs()?)?;
-                let rhs = term(scope, logger, binary_expr.rhs()?)?;
+                let lhs = term(scope, wasm_type_defs, logger, binary_expr.lhs()?)?;
+                let rhs = term(scope, wasm_type_defs, logger, binary_expr.rhs()?)?;
                 mk(
                     TermKind::Call {
                         callee: mk(
@@ -485,7 +524,7 @@ pub fn term(
             let op_token = unary_expr.op_token()?;
             let op_path = unary_op_path(op_token.kind())?;
             let op_span: Span = op_token.text_range().into();
-            let operand = term(scope, logger, unary_expr.operand()?)?;
+            let operand = term(scope, wasm_type_defs, logger, unary_expr.operand()?)?;
             mk(
                 TermKind::Call {
                     callee: mk(TermKind::Identifier(op_path), op_span).into(),
@@ -495,8 +534,8 @@ pub fn term(
             )
         }
         ast::Expr::Call(call_expr) => {
-            let callee = term(scope, logger, call_expr.callee()?)?;
-            let argument = term(scope, logger, call_expr.arg()?)?;
+            let callee = term(scope, wasm_type_defs, logger, call_expr.callee()?)?;
+            let argument = term(scope, wasm_type_defs, logger, call_expr.arg()?)?;
             mk(
                 TermKind::Call {
                     callee: callee.into(),
@@ -506,66 +545,53 @@ pub fn term(
             )
         }
         ast::Expr::Field(field_expr) => {
-            let base = term(scope, logger, field_expr.base()?)?;
-            let field_token = field_expr.field_token()?;
-            let field_name = field_token.text().to_string();
-            let field_span: Span = field_token.text_range().into();
+            let base = term(scope, wasm_type_defs, logger, field_expr.base()?)?;
+            let field_name = field_expr.field_name_spanned()?;
             mk(
                 TermKind::Field {
                     of: base.into(),
-                    index: field_name.with_span(field_span),
+                    index: field_name,
                 },
                 span,
             )
         }
         ast::Expr::Unit(_) => mk(TermKind::Immediate(ImmediateValue::Unit), span),
         ast::Expr::Paren(paren_expr) => {
-            if let Some(op) = paren_expr.operator() {
-                // Operator-as-value, e.g. `(+)`
-                let op_token = op.op_token()?;
-                let op_path = binary_op_path(op_token.kind())?;
-                mk(TermKind::Identifier(op_path), span)
-            } else if paren_expr.is_tuple() {
+            if paren_expr.is_tuple() {
                 let items = paren_expr
                     .inner_exprs()
                     .into_iter()
-                    .map(|e| term(scope, logger, e))
+                    .map(|e| term(scope, wasm_type_defs, logger, e))
                     .collect::<Option<Vec<_>>>()?;
                 mk(TermKind::Tuple(items), span)
             } else {
                 // Grouping: single inner expression
                 let inner = paren_expr.inner_exprs().into_iter().next()?;
-                return term(scope, logger, inner);
+                return term(scope, wasm_type_defs, logger, inner);
             }
         }
         ast::Expr::Array(array_expr) => {
-            return array_term(scope, logger, array_expr);
+            return array_term(scope, wasm_type_defs, logger, array_expr);
         }
         ast::Expr::Struct(struct_expr) => {
             let mut fields = IndexMap::new();
             for field in struct_expr.fields() {
                 let name = field.name_text_spanned()?;
-                let value = term(scope, logger, field.value()?)?;
+                let value = term(scope, wasm_type_defs, logger, field.value()?)?;
                 fields.insert(name, value);
             }
             mk(TermKind::Struct(fields), span)
         }
         ast::Expr::Literal(literal) => mk(TermKind::Immediate(immediate(logger, literal)?), span),
         ast::Expr::Ident(ident_expr) => {
-            let name = ident_expr.name_text()?;
-            let name_span = ident_expr.name_token()?.text_range().into();
-            let path = scope.query_string(name.with_span(name_span), NameSpace::Term);
+            let name = ident_expr.name_text_spanned()?;
+            let path = scope.query_string(name, NameSpace::Term);
             mk(TermKind::Identifier(path), span)
         }
         ast::Expr::Path(path_expr) => {
-            let path = Path::new(path_expr.qualifier()?.text(), path_expr.name_text()?);
+            let path = Path::new(path_expr.qualifier()?, path_expr.name_text()?);
             scope.query_path(path.clone().with_span(span), NameSpace::Term);
             mk(TermKind::Identifier(path), span)
-        }
-        ast::Expr::Operator(operator_expr) => {
-            let op_token = operator_expr.op_token()?;
-            let op_path = binary_op_path(op_token.kind())?;
-            mk(TermKind::Identifier(op_path), span)
         }
     })
 }

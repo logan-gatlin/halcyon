@@ -1,4 +1,6 @@
 use super::{
+    expect_identifier,
+    is_bracketed_operator_identifier_start,
     paren_list,
     path_or_ident,
 };
@@ -28,7 +30,7 @@ fn struct_def(p: &mut Parser<'_, '_>) {
     p.expect(SyntaxKind::L_BRACE);
     while !p.at(SyntaxKind::R_BRACE) && !p.at_end() {
         let fm = p.start_node(SyntaxKind::FIELD_DECL);
-        p.expect(SyntaxKind::IDENT);
+        expect_identifier(p);
         p.expect(SyntaxKind::COLON);
         type_expr(p);
         p.finish_node(fm);
@@ -44,7 +46,7 @@ fn sum_def(p: &mut Parser<'_, '_>) {
     while p.at(SyntaxKind::PIPE) {
         let vm = p.start_node(SyntaxKind::VARIANT);
         p.bump(); // |
-        p.expect(SyntaxKind::IDENT);
+        expect_identifier(p);
         // Optional payload type — if the next token could start a type
         // expression and is NOT `|` (which would be the next variant),
         // parse it as the variant's payload.
@@ -151,11 +153,15 @@ fn type_primary(p: &mut Parser<'_, '_>) -> bool {
                 }
 
                 SyntaxKind::L_SQUARE => {
-                    // `[]` — array type constructor
-                    let m = p.start_node(SyntaxKind::ARRAY_TYPE);
-                    p.bump(); // [
-                    p.expect(SyntaxKind::R_SQUARE);
-                    p.finish_node(m);
+                    if is_bracketed_operator_identifier_start(p) {
+                        path_or_ident(p);
+                    } else {
+                        // `[]` — array type constructor
+                        let m = p.start_node(SyntaxKind::ARRAY_TYPE);
+                        p.bump(); // [
+                        p.expect(SyntaxKind::R_SQUARE);
+                        p.finish_node(m);
+                    }
                     true
                 }
 

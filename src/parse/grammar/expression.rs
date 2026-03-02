@@ -2,10 +2,14 @@ use crate::parse::SyntaxKind;
 use crate::parse::parser::Parser;
 
 use super::{
+    can_start_identifier,
+    expect_identifier,
+    is_bracketed_operator_identifier_start,
     literal,
     paren_list,
     path_or_ident,
     pattern,
+    sexpr,
     type_expr,
 };
 
@@ -60,7 +64,7 @@ fn postfix_and_infix(
             }
             let m = p.start_node_at(checkpoint, SyntaxKind::FIELD_EXPR);
             p.bump(); // `.`
-            p.expect(SyntaxKind::IDENT);
+            expect_identifier(p);
             p.finish_node(m);
             continue;
         }
@@ -179,13 +183,21 @@ fn primary(p: &mut Parser<'_, '_>) -> bool {
 
                 // Parenthesised expr, tuple, unit, or `(op)`
                 SyntaxKind::L_PAREN => {
-                    paren_or_tuple(p);
+                    if p.nth(1) == Some(SyntaxKind::WASM_KW) {
+                        inline_wasm_expr(p);
+                    } else {
+                        paren_or_tuple(p);
+                    }
                     true
                 }
 
                 // Array literal
                 SyntaxKind::L_SQUARE => {
-                    array_expr(p);
+                    if is_bracketed_operator_identifier_start(p) {
+                        path_or_ident(p);
+                    } else {
+                        array_expr(p);
+                    }
                     true
                 }
 
@@ -206,47 +218,22 @@ fn primary(p: &mut Parser<'_, '_>) -> bool {
 
 // ── Compound primaries ───────────────────────────────────────────────
 
-/// `"(" ")"` (unit), `"(" expr ")"` (paren), `"(" expr "," ... ")"` (tuple),
-/// or `"(" op ")"` (operator-as-value).
+/// `"(" ")"` (unit), `"(" expr ")"` (paren), or `"(" expr "," ... ")"` (tuple).
 fn paren_or_tuple(p: &mut Parser<'_, '_>) {
-    // Operator as value: `(+)`, `(not)`, etc.
-    if p.nth(1).is_some_and(is_operator_kind) && p.nth(2) == Some(SyntaxKind::R_PAREN) {
-        let m = p.start_node(SyntaxKind::PAREN_EXPR);
-        p.expect(SyntaxKind::L_PAREN);
-        let om = p.start_node(SyntaxKind::OPERATOR_EXPR);
-        p.bump(); // the operator token
-        p.finish_node(om);
-        p.expect(SyntaxKind::R_PAREN);
-        p.finish_node(m);
-        return;
-    }
-
     paren_list(p, SyntaxKind::UNIT, SyntaxKind::PAREN_EXPR, expr);
 }
 
-fn is_operator_kind(kind: SyntaxKind) -> bool {
-    matches!(
-        kind,
-        SyntaxKind::PLUS
-            | SyntaxKind::MINUS
-            | SyntaxKind::STAR
-            | SyntaxKind::SLASH
-            | SyntaxKind::PERCENT
-            | SyntaxKind::PIPE_ARROW
-            | SyntaxKind::COMPOSE_LEFT
-            | SyntaxKind::COMPOSE_RIGHT
-            | SyntaxKind::DOUBLE_EQUAL
-            | SyntaxKind::BANG_EQUAL
-            | SyntaxKind::LESS
-            | SyntaxKind::LESS_EQUAL
-            | SyntaxKind::GREATER
-            | SyntaxKind::GREATER_EQUAL
-            | SyntaxKind::AND_KW
-            | SyntaxKind::OR_KW
-            | SyntaxKind::XOR_KW
-            | SyntaxKind::NOT_KW
-            | SyntaxKind::SEMICOLON
-    )
+/// `("wasm" ":" <type_expr>) "=>" <sexpr>`
+fn inline_wasm_expr(p: &mut Parser<'_, '_>) {
+    let m = p.start_node(SyntaxKind::INLINE_WASM_EXPR);
+    p.expect(SyntaxKind::L_PAREN);
+    p.expect(SyntaxKind::WASM_KW);
+    p.expect(SyntaxKind::COLON);
+    type_expr::type_expr(p);
+    p.expect(SyntaxKind::R_PAREN);
+    p.expect(SyntaxKind::DOUBLE_ARROW);
+    sexpr::parse(p);
+    p.finish_node(m);
 }
 
 /// `"[" (expr | ".." expr)* "]"`
@@ -278,7 +265,7 @@ fn struct_expr(p: &mut Parser<'_, '_>) {
     p.expect(SyntaxKind::L_BRACE);
     while !p.at(SyntaxKind::R_BRACE) && !p.at_end() {
         let fm = p.start_node(SyntaxKind::STRUCT_FIELD);
-        p.expect(SyntaxKind::IDENT);
+        expect_identifier(p);
         if p.at(SyntaxKind::EQUAL) || p.at(SyntaxKind::COLON) {
             p.bump(); // `=` or `:`
             expr(p);
@@ -338,14 +325,14 @@ fn param(p: &mut Parser<'_, '_>) {
     if p.at(SyntaxKind::L_PAREN) {
         let m = p.start_node(SyntaxKind::PARAM);
         p.bump(); // (
-        p.expect(SyntaxKind::IDENT);
+        expect_identifier(p);
         p.expect(SyntaxKind::COLON);
         type_expr::type_expr(p);
         p.expect(SyntaxKind::R_PAREN);
         p.finish_node(m);
-    } else if p.at(SyntaxKind::IDENT) {
+    } else if can_start_identifier(p) {
         let m = p.start_node(SyntaxKind::PARAM);
-        p.bump();
+        expect_identifier(p);
         p.finish_node(m);
     } else {
         p.error_and_bump("expected parameter");

@@ -1,9 +1,23 @@
 /*!
-    Inline WASM is parsed similarly, but not exactly like WAT. It corresponds to
-    the compilers internal representation of WAT, which is abstracted in several
-    ways. Registers, functions, types, etc are referred to by name rather than
-    index. The type system is based on the heavily simplified WASM GC type
-    representation in the `asm` module.
+    Parser for Halcyon's inline WASM S-expression syntax.
+
+    This is intentionally WAT-like, but not WAT-compatible:
+
+    - Declaration forms are restricted to `(type ...)`, `(global ...)`,
+      `(func ...)`, and `(memory ...)`.
+    - Memory declarations use 32-bit page counts; an optional maximum must not
+      be smaller than the initial size.
+    - Function/inline-expression bodies are *flat* instruction streams. Nested
+      instruction lists (WAT style) are rejected.
+    - Names are symbolic and resolved through IR scopes. `$name` resolves in the
+      wasm namespace; bare identifiers resolve in the term namespace.
+    - Types use the simplified GC-oriented `asm::Type` model, with support for
+      primitives (`any`, `i8`, `i16`, `i32`, `i64`, `f32`, `f64`), `(struct
+      ...)`, `(array ...)`, `(func (param ...) (result ...))`, and user-defined
+      wasm type aliases.
+
+    For inline wasm expressions (`(wasm : T) => (...)`), only `(local ...)`
+    declarations are allowed before instructions.
 */
 
 use indexmap::IndexMap;
@@ -78,6 +92,12 @@ pub enum Declaration {
     Memory(Memory),
 }
 
+#[derive(Debug, Clone)]
+pub struct InlineExpression {
+    pub definitions: IndexMap<Path, Type>,
+    pub instructions: Box<[Instruction]>,
+}
+
 struct TypeEnv<'a> {
     type_defs: &'a IndexMap<String, Type>,
     defining: Option<&'a str>,
@@ -130,14 +150,14 @@ impl<'a> Cursor<'a> {
 pub fn build_toplevel(
     sexpr: &Sexpr,
     module_name: &str,
+    type_defs: &mut IndexMap<String, Type>,
     logger: &mut FileLogger,
     scope: &mut impl Scope,
 ) -> Box<[Declaration]> {
-    let mut type_defs = IndexMap::new();
     let mut declarations = Vec::new();
     for list in collect_declaration_lists(sexpr, logger) {
         let env = TypeEnv {
-            type_defs: &type_defs,
+            type_defs,
             defining: None,
             module_name,
         };
@@ -150,6 +170,69 @@ pub fn build_toplevel(
         declarations.push(declaration);
     }
     declarations.into_boxed_slice()
+}
+
+pub fn build_inline_expression(
+    sexpr: &Sexpr,
+    type_defs: &IndexMap<String, Type>,
+    logger: &mut FileLogger,
+    scope: &mut impl Scope,
+) -> InlineExpression {
+    let env = TypeEnv {
+        type_defs,
+        defining: None,
+        module_name: "",
+    };
+    let items = sexpr.items();
+    let mut cursor = Cursor::new(&items);
+    let sections = parse_inline_expression_sections(&mut cursor, &env, logger, scope);
+    let instructions = parse_function_body(&sections.body_items, &env, logger, scope);
+    InlineExpression {
+        definitions: sections.locals,
+        instructions: instructions.into_boxed_slice(),
+    }
+}
+
+fn parse_inline_expression_sections(
+    cursor: &mut Cursor<'_>,
+    env: &TypeEnv<'_>,
+    logger: &mut FileLogger,
+    scope: &mut impl Scope,
+) -> FunctionSections {
+    let mut sections = FunctionSections::new();
+    while let Some(item) = cursor.next() {
+        match item {
+            SexprItem::List(list) => {
+                let Some(keyword) = declaration_keyword(list) else {
+                    logger
+                        .error("Unsupported list in inline wasm expression")
+                        .primary("Only `(local ...)` is allowed here.", list.span())
+                        .done();
+                    continue;
+                };
+                match keyword.as_str() {
+                    "local" => {
+                        for (name, ty) in parse_named_types_list("local", list, env, logger) {
+                            let name = scope.define(name, NameSpace::Wasm);
+                            sections.locals.insert(name, ty);
+                        }
+                    }
+                    _ => {
+                        logger
+                            .error("Unsupported list in inline wasm expression")
+                            .primary(
+                                format!("`({keyword} ...)` is not supported here."),
+                                list.span(),
+                            )
+                            .note("Only `(local ...)` is allowed here.")
+                            .done();
+                    }
+                }
+            }
+            other => sections.body_items.push(other.clone()),
+        }
+    }
+    sections
 }
 
 fn collect_declaration_lists(
@@ -169,7 +252,7 @@ fn collect_declaration_lists(
                     logger
                         .error("Expected a wasm declaration list")
                         .primary(
-                            "Only `(type ...)`, `(func ...)`, and `(memory ...)` are supported here.",
+                            "Only `(type ...)`, `(global ...)`, `(func ...)`, and `(memory ...)` are supported here.",
                             other.span(),
                         )
                         .done();
@@ -1017,7 +1100,7 @@ fn parse_path(
                 log_invalid(logger, path.span(), "Expected a two-part path.");
                 return None;
             };
-            let path = Path::new(lhs.text(), rhs.text()).with_span(path.span());
+            let path = Path::new(lhs.clone(), rhs.clone()).with_span(path.span());
             Some(scope.query_path(path, namespace))
         }
         SexprItem::Atom(SexprAtom::SymbolIdent(token)) => {
@@ -1085,10 +1168,11 @@ fn parse_memory_limits(
     let initial_span = cursor.peek().map(SexprItem::span).unwrap_or(fallback_span);
     let initial_size =
         parse_u32_immediate(cursor.next(), "initial memory size", initial_span, logger)?;
+    let mut maximum_span = fallback_span;
     let maximum_size = if cursor.is_done() {
         None
     } else {
-        let maximum_span = cursor.peek().map(SexprItem::span).unwrap_or(fallback_span);
+        maximum_span = cursor.peek().map(SexprItem::span).unwrap_or(fallback_span);
         Some(parse_u32_immediate(
             cursor.next(),
             "maximum memory size",
@@ -1096,6 +1180,18 @@ fn parse_memory_limits(
             logger,
         )?)
     };
+    if let Some(maximum_size) = maximum_size
+        && maximum_size < initial_size
+    {
+        logger
+            .error("Invalid memory limits")
+            .primary(
+                "Maximum memory size cannot be smaller than the initial size.",
+                maximum_span,
+            )
+            .done();
+        return None;
+    }
     if let Some(extra) = cursor.peek() {
         logger
             .error("Too many memory limits")

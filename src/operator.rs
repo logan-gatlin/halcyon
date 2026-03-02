@@ -130,9 +130,9 @@ impl std::fmt::Display for BinaryOp {
     ) -> std::fmt::Result {
         write!(
             f,
-            "({})",
+            "[{}]",
             match self {
-                BinaryOp::Star => " * ",
+                BinaryOp::Star => "*",
                 BinaryOp::Slash => "/",
                 BinaryOp::Percent => "%",
                 BinaryOp::Plus => "+",

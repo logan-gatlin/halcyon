@@ -1,3 +1,4 @@
+use indexmap::IndexMap;
 use itertools::Itertools;
 
 use crate::types::{
@@ -106,6 +107,13 @@ where
         .into_iter()
         .cartesian_product(types)
         .map(|(tr, ty)| {
+            let methods = trait_method_paths(tr)
+                .into_iter()
+                .map(|method_path| {
+                    let impl_path = core_impl_method_path(&method_path, &ty);
+                    (method_path, impl_path)
+                })
+                .collect::<IndexMap<_, _>>();
             TraitImpl {
                 parameters: tr.parameters(),
                 head: TraitRef {
@@ -113,9 +121,27 @@ where
                     arguments: vec![ty],
                 },
                 predicates: vec![],
+                methods,
             }
         })
         .collect()
+}
+
+fn trait_method_paths(tr: CoreTrait) -> Vec<Path> {
+    use {
+        BinaryOp as b,
+        UnaryOp as u,
+    };
+    match tr {
+        CoreTrait::Equal => vec![b::DoubleEqual.path(), b::BangEqual.path()],
+        CoreTrait::Compare => vec![b::Less.path(), b::Greater.path()],
+        CoreTrait::Add => vec![b::Plus.path()],
+        CoreTrait::Subtract => vec![b::Minus.path(), u::Minus.path()],
+        CoreTrait::Multiply => vec![b::Star.path()],
+        CoreTrait::Divide => vec![b::Slash.path()],
+        CoreTrait::Remainder => vec![b::Percent.path()],
+        CoreTrait::Bitwise => vec![b::And.path(), b::Or.path(), b::Xor.path(), u::Not.path()],
+    }
 }
 
 pub fn core_impls() -> Vec<TraitImpl> {

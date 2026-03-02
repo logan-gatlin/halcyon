@@ -399,6 +399,8 @@ pub fn tokenize(
             "false" => FALSE_KW,
             "fn" => FN_KW,
             "type" => TYPE_KW,
+            "trait" => TRAIT_KW,
+            "impl" => IMPL_KW,
             "wasm" => WASM_KW,
             _ => IDENT,
         };

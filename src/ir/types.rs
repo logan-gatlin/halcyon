@@ -138,6 +138,11 @@ pub fn type_expr(
                 )
             }
             ast::TypeExpr::Application(type_application) => {
+                let arguments = type_application
+                    .args()
+                    .into_iter()
+                    .map(|arg| type_expr(scope, arg))
+                    .collect::<Option<Box<[_]>>>()?;
                 TypeExprKind::Instantiation(
                     match type_application.base()? {
                         ast::TypeExpr::Array(_) => CoreType::Array.path(),
@@ -159,7 +164,7 @@ pub fn type_expr(
                             return None;
                         }
                     },
-                    [].into(),
+                    arguments,
                 )
             }
         },

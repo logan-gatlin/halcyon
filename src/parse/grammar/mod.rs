@@ -24,19 +24,51 @@ pub fn source_file(p: &mut Parser<'_, '_>) {
 
 // ── Common parsing logic ──────────────────────────────────────────────
 
-/// Parse a simple `IDENT` or qualified `Module::Name` path.
-///
-/// Uses `ident_kind` for simple identifiers and `path_kind` for qualified paths.
+pub(crate) fn can_start_identifier(p: &Parser<'_, '_>) -> bool {
+    p.at(SyntaxKind::IDENT) || is_bracketed_operator_identifier_start(p)
+}
+
+pub(crate) fn is_bracketed_operator_identifier_start(p: &Parser<'_, '_>) -> bool {
+    p.at(SyntaxKind::L_SQUARE)
+        && p.nth(1).is_some_and(SyntaxKind::is_operator_token)
+        && p.nth(2) == Some(SyntaxKind::R_SQUARE)
+}
+
+pub(crate) fn identifier(p: &mut Parser<'_, '_>) -> bool {
+    if p.at(SyntaxKind::IDENT) {
+        p.bump();
+        return true;
+    }
+    if is_bracketed_operator_identifier_start(p) {
+        p.bump();
+        p.bump();
+        p.bump();
+        return true;
+    }
+    false
+}
+
+pub(crate) fn expect_identifier(p: &mut Parser<'_, '_>) {
+    if !identifier(p) {
+        p.error_at_current("expected identifier");
+    }
+}
+
+/// Parse a simple identifier (bare or bracketed operator) or a qualified path.
 pub(crate) fn path_or_ident(p: &mut Parser<'_, '_>) {
-    if p.nth(1) == Some(SyntaxKind::DOUBLE_COLON) {
-        let m = p.start_node(SyntaxKind::PATH);
-        p.bump(); // first ident
-        p.bump(); // ::
-        p.expect(SyntaxKind::IDENT);
+    let checkpoint = p.checkpoint();
+    if !identifier(p) {
+        p.error_and_bump("expected identifier");
+        return;
+    }
+
+    if p.at(SyntaxKind::DOUBLE_COLON) {
+        let m = p.start_node_at(checkpoint, SyntaxKind::PATH);
+        p.bump();
+        expect_identifier(p);
         p.finish_node(m);
     } else {
-        let m = p.start_node(SyntaxKind::IDENT_NODE);
-        p.bump();
+        let m = p.start_node_at(checkpoint, SyntaxKind::IDENT_NODE);
         p.finish_node(m);
     }
 }

@@ -156,6 +156,8 @@ fn is_ident_token(kind: SyntaxKind) -> bool {
             | SyntaxKind::WITH_KW
             | SyntaxKind::LET_KW
             | SyntaxKind::TYPE_KW
+            | SyntaxKind::TRAIT_KW
+            | SyntaxKind::IMPL_KW
             | SyntaxKind::DO_KW
             | SyntaxKind::OF_KW
             | SyntaxKind::IN_KW

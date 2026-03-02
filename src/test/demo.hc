@@ -1,12 +1,15 @@
 module demo =
-	let i = 1
-	wasm => (
-		(type $integer (struct i64))
-		(global $asdf $integer)
-		(func $foo
-			get i
-			get $asdf
-			struct.get $integer 0
-		)
-	)
+	trait Id : self =
+		let id : self -> self
+	end
+
+	impl Id : core::integer =
+		let id = fn a => a
+	end
+
+	impl Id : core::boolean =
+		let id = fn a => a
+	end
+
+	let a = id "a"
 end

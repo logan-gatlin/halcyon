@@ -21,8 +21,10 @@ use crate::asm::{
     self,
     Encoder,
     Instruction,
+    NumberOperation,
     Type as LowerType,
     emit_array_concat,
+    emit_string_compare,
     lower_type,
 };
 
@@ -68,6 +70,8 @@ pub fn compile_core_module(symbols: &mut SymbolTable) -> Artifact {
             .unwrap_or_else(|e| unreachable!("{e:?}"))
     });
 
+    register_core_impl_method_terms(symbols);
+
     compile_core_artifact(symbols)
 }
 
@@ -92,7 +96,23 @@ pub(crate) fn core_impl_path(
     Path::new(CORE_MODULE_NAME, minor)
 }
 
-fn normalize_impl_argument(type_: &Type) -> Type {
+pub(crate) fn core_impl_method_path(
+    method_path: &Path,
+    argument: &Type,
+) -> Path {
+    let normalized = normalize_impl_argument(argument);
+    Path::new(
+        CORE_MODULE_NAME,
+        format!(
+            "[impl method] {} {} {}",
+            method_path.major,
+            method_path.minor,
+            type_key(&normalized)
+        ),
+    )
+}
+
+pub(crate) fn normalize_impl_argument(type_: &Type) -> Type {
     let mut current = type_.clone();
     while let Type::ForAll(body) = current {
         current = *body;
@@ -108,12 +128,48 @@ fn type_key(type_: &Type) -> String {
         .collect()
 }
 
+fn register_core_impl_method_terms(symbols: &mut SymbolTable) {
+    let trait_defs = symbols.trait_defs().clone();
+    let trait_impls = symbols.trait_impls().clone();
+    for (trait_name, impls) in trait_impls {
+        let Some(def) = trait_defs.get(&trait_name) else {
+            continue;
+        };
+        let methods = ordered_trait_methods(def);
+        for trait_impl in impls {
+            for (method_path, method_scheme) in methods.iter() {
+                let Some(impl_path) = trait_impl.methods.get(method_path).cloned() else {
+                    continue;
+                };
+                let Some(type_) =
+                    instantiate_scheme_type(&method_scheme.type_, &trait_impl.head.arguments)
+                else {
+                    continue;
+                };
+                symbols.insert_term(impl_path, TypeScheme::new(type_));
+            }
+        }
+    }
+}
+
+fn instantiate_scheme_type(
+    type_: &Type,
+    arguments: &[Type],
+) -> Option<Type> {
+    arguments
+        .iter()
+        .try_fold(type_.clone(), |current, argument| {
+            current.open_forall(argument)
+        })
+}
+
 fn compile_core_artifact(symbols: &SymbolTable) -> Artifact {
     let mut module = asm::Module::new(CORE_MODULE_NAME.to_string());
     let init_name = Path::new(CORE_MODULE_NAME, "[init]");
     let mut init = module.new_function(init_name.clone());
 
     define_core_terms(&mut init, symbols);
+    define_core_impl_methods(&mut init, symbols);
     define_trait_impl_terms(&mut init, symbols);
 
     module.start = init_name;
@@ -624,6 +680,387 @@ fn define_array_push(
             inner.call_closure();
         },
     );
+}
+
+fn define_core_impl_methods(
+    init: &mut Encoder<'_>,
+    symbols: &SymbolTable,
+) {
+    define_unit_compare_impl_methods(init, symbols);
+    define_integer_impl_methods(init, symbols);
+    define_real_impl_methods(init, symbols);
+    define_boolean_impl_methods(init, symbols);
+    define_glyph_impl_methods(init, symbols);
+    define_string_impl_methods(init, symbols);
+    define_array_impl_methods(init, symbols);
+}
+
+fn define_unit_compare_impl_methods(
+    init: &mut Encoder<'_>,
+    symbols: &SymbolTable,
+) {
+    let true_path = core_impl_method_path(&BinaryOp::DoubleEqual.path(), &Type::Unit);
+    define_constant_boolean_method(init, symbols, true_path, true);
+
+    let false_paths = [
+        core_impl_method_path(&BinaryOp::BangEqual.path(), &Type::Unit),
+        core_impl_method_path(&BinaryOp::Less.path(), &Type::Unit),
+        core_impl_method_path(&BinaryOp::Greater.path(), &Type::Unit),
+    ];
+    for path in false_paths {
+        define_constant_boolean_method(init, symbols, path, false);
+    }
+}
+
+fn define_integer_impl_methods(
+    init: &mut Encoder<'_>,
+    symbols: &SymbolTable,
+) {
+    let integer = Type::Integer;
+    for (method, op, boolean_result) in [
+        (BinaryOp::Plus.path(), NumberOperation::Add, false),
+        (BinaryOp::Minus.path(), NumberOperation::Sub, false),
+        (BinaryOp::Star.path(), NumberOperation::Mul, false),
+        (BinaryOp::Slash.path(), NumberOperation::Div, false),
+        (BinaryOp::Percent.path(), NumberOperation::Rem, false),
+        (BinaryOp::DoubleEqual.path(), NumberOperation::Eq, true),
+        (BinaryOp::BangEqual.path(), NumberOperation::Ne, true),
+        (BinaryOp::Less.path(), NumberOperation::Lt, true),
+        (BinaryOp::Greater.path(), NumberOperation::Gt, true),
+        (BinaryOp::And.path(), NumberOperation::And, false),
+        (BinaryOp::Or.path(), NumberOperation::Or, false),
+        (BinaryOp::Xor.path(), NumberOperation::Xor, false),
+    ] {
+        let path = core_impl_method_path(&method, &integer);
+        define_i64_binary_method(init, symbols, path, op, boolean_result);
+    }
+
+    let neg_path = core_impl_method_path(&UnaryOp::Minus.path(), &integer);
+    define_i64_unary_method(init, symbols, neg_path, |inner, value, fields| {
+        inner.extend([
+            i::Const(crate::ir::ImmediateValue::Integer(0)),
+            i::Get(value.clone()),
+            i::StructGet(fields.clone(), 0),
+            i::I64Op(NumberOperation::Sub),
+            i::StructNew(fields.clone()),
+        ]);
+    });
+
+    let not_path = core_impl_method_path(&UnaryOp::Not.path(), &integer);
+    define_i64_unary_method(init, symbols, not_path, |inner, value, fields| {
+        inner.extend([
+            i::Get(value.clone()),
+            i::StructGet(fields.clone(), 0),
+            i::Const(crate::ir::ImmediateValue::Integer(-1)),
+            i::I64Op(NumberOperation::Xor),
+            i::StructNew(fields.clone()),
+        ]);
+    });
+}
+
+fn define_real_impl_methods(
+    init: &mut Encoder<'_>,
+    symbols: &SymbolTable,
+) {
+    let real = Type::Real;
+    for (method, op, boolean_result) in [
+        (BinaryOp::Plus.path(), NumberOperation::Add, false),
+        (BinaryOp::Minus.path(), NumberOperation::Sub, false),
+        (BinaryOp::Star.path(), NumberOperation::Mul, false),
+        (BinaryOp::Slash.path(), NumberOperation::Div, false),
+        (BinaryOp::DoubleEqual.path(), NumberOperation::Eq, true),
+        (BinaryOp::BangEqual.path(), NumberOperation::Ne, true),
+        (BinaryOp::Less.path(), NumberOperation::Lt, true),
+        (BinaryOp::Greater.path(), NumberOperation::Gt, true),
+    ] {
+        let path = core_impl_method_path(&method, &real);
+        define_f64_binary_method(init, symbols, path, op, boolean_result);
+    }
+
+    let neg_path = core_impl_method_path(&UnaryOp::Minus.path(), &real);
+    define_f64_unary_method(init, symbols, neg_path, |inner, value, fields| {
+        inner.extend([
+            i::Const(crate::ir::ImmediateValue::Real(0.0)),
+            i::Get(value.clone()),
+            i::StructGet(fields.clone(), 0),
+            i::F64Op(NumberOperation::Sub),
+            i::StructNew(fields.clone()),
+        ]);
+    });
+}
+
+fn define_boolean_impl_methods(
+    init: &mut Encoder<'_>,
+    symbols: &SymbolTable,
+) {
+    let boolean = Type::Boolean;
+    for (method, op, boolean_result) in [
+        (BinaryOp::DoubleEqual.path(), NumberOperation::Eq, true),
+        (BinaryOp::BangEqual.path(), NumberOperation::Ne, true),
+        (BinaryOp::Less.path(), NumberOperation::Lt, true),
+        (BinaryOp::Greater.path(), NumberOperation::Gt, true),
+        (BinaryOp::And.path(), NumberOperation::And, false),
+        (BinaryOp::Or.path(), NumberOperation::Or, false),
+        (BinaryOp::Xor.path(), NumberOperation::Xor, false),
+    ] {
+        let path = core_impl_method_path(&method, &boolean);
+        define_i32_binary_method(init, symbols, path, Type::Boolean, op, boolean_result);
+    }
+
+    let not_path = core_impl_method_path(&UnaryOp::Not.path(), &boolean);
+    define_i32_unary_method(init, symbols, not_path, |inner, value, fields| {
+        inner.extend([
+            i::Get(value.clone()),
+            i::StructGet(fields.clone(), 0),
+            i::I32Const(1),
+            i::I32Op(NumberOperation::Xor),
+            i::StructNew(fields.clone()),
+        ]);
+    });
+}
+
+fn define_glyph_impl_methods(
+    init: &mut Encoder<'_>,
+    symbols: &SymbolTable,
+) {
+    let glyph = Type::Glyph;
+    for (method, op) in [
+        (BinaryOp::DoubleEqual.path(), NumberOperation::Eq),
+        (BinaryOp::BangEqual.path(), NumberOperation::Ne),
+        (BinaryOp::Less.path(), NumberOperation::Lt),
+        (BinaryOp::Greater.path(), NumberOperation::Gt),
+    ] {
+        let path = core_impl_method_path(&method, &glyph);
+        define_i32_binary_method(init, symbols, path, Type::Glyph, op, true);
+    }
+}
+
+fn define_string_impl_methods(
+    init: &mut Encoder<'_>,
+    symbols: &SymbolTable,
+) {
+    let string = Type::String;
+    let add_path = core_impl_method_path(&BinaryOp::Plus.path(), &string);
+    define_curried_binary(
+        init,
+        symbols,
+        add_path,
+        Type::String,
+        Type::String,
+        move |inner, left, right| emit_array_concat(inner, left, right, LowerType::I8),
+    );
+
+    for (method, op) in [
+        (BinaryOp::DoubleEqual.path(), NumberOperation::Eq),
+        (BinaryOp::BangEqual.path(), NumberOperation::Ne),
+        (BinaryOp::Less.path(), NumberOperation::Lt),
+        (BinaryOp::Greater.path(), NumberOperation::Gt),
+    ] {
+        let path = core_impl_method_path(&method, &string);
+        let bool_fields = lowered_struct_fields(&Type::Boolean, symbols);
+        define_curried_binary(
+            init,
+            symbols,
+            path,
+            Type::String,
+            Type::String,
+            move |inner, left, right| {
+                emit_string_compare(inner, left, right, op, bool_fields.clone())
+            },
+        );
+    }
+}
+
+fn define_array_impl_methods(
+    init: &mut Encoder<'_>,
+    symbols: &SymbolTable,
+) {
+    let path = core_impl_method_path(&BinaryOp::Plus.path(), &Type::array());
+    let array_concat = CoreTerm::ArrayConcat.path();
+    init.new_register(path.clone(), ScopeKind::Global, LowerType::closure_type());
+    if array_concat.major != init.module.name {
+        init.module
+            .imports
+            .entry(array_concat.clone())
+            .or_insert_with(|| {
+                symbols
+                    .terms()
+                    .get(&array_concat)
+                    .map(|scheme| lower_type(&scheme.type_, symbols))
+                    .unwrap_or_else(LowerType::closure_type)
+            });
+    }
+    init.extend([i::Get(array_concat), i::Set(path)]);
+}
+
+fn define_constant_boolean_method(
+    init: &mut Encoder<'_>,
+    symbols: &SymbolTable,
+    path: Path,
+    value: bool,
+) {
+    let bool_fields = lowered_struct_fields(&Type::Boolean, symbols);
+    define_curried_binary(
+        init,
+        symbols,
+        path,
+        Type::Unit,
+        Type::Unit,
+        move |inner, _left, _right| {
+            inner.extend([
+                i::I32Const(if value { 1 } else { 0 }),
+                i::StructNew(bool_fields.clone()),
+            ]);
+        },
+    );
+}
+
+fn define_i64_binary_method(
+    init: &mut Encoder<'_>,
+    symbols: &SymbolTable,
+    path: Path,
+    op: NumberOperation,
+    boolean_result: bool,
+) {
+    let value_fields: Box<[LowerType]> = [LowerType::I64].into();
+    let result_fields = if boolean_result {
+        lowered_struct_fields(&Type::Boolean, symbols)
+    } else {
+        value_fields.clone()
+    };
+    define_curried_binary(
+        init,
+        symbols,
+        path,
+        Type::Integer,
+        Type::Integer,
+        move |inner, left, right| {
+            inner.extend([
+                i::Get(left.clone()),
+                i::StructGet(value_fields.clone(), 0),
+                i::Get(right.clone()),
+                i::StructGet(value_fields.clone(), 0),
+                i::I64Op(op),
+                i::StructNew(result_fields.clone()),
+            ]);
+        },
+    );
+}
+
+fn define_i32_binary_method(
+    init: &mut Encoder<'_>,
+    symbols: &SymbolTable,
+    path: Path,
+    argument_type: Type,
+    op: NumberOperation,
+    boolean_result: bool,
+) {
+    let value_fields: Box<[LowerType]> = [LowerType::I32].into();
+    let result_fields = if boolean_result {
+        lowered_struct_fields(&Type::Boolean, symbols)
+    } else {
+        value_fields.clone()
+    };
+    define_curried_binary(
+        init,
+        symbols,
+        path,
+        argument_type.clone(),
+        argument_type,
+        move |inner, left, right| {
+            inner.extend([
+                i::Get(left.clone()),
+                i::StructGet(value_fields.clone(), 0),
+                i::Get(right.clone()),
+                i::StructGet(value_fields.clone(), 0),
+                i::I32Op(op),
+                i::StructNew(result_fields.clone()),
+            ]);
+        },
+    );
+}
+
+fn define_f64_binary_method(
+    init: &mut Encoder<'_>,
+    symbols: &SymbolTable,
+    path: Path,
+    op: NumberOperation,
+    boolean_result: bool,
+) {
+    let value_fields: Box<[LowerType]> = [LowerType::F64].into();
+    let result_fields = if boolean_result {
+        lowered_struct_fields(&Type::Boolean, symbols)
+    } else {
+        value_fields.clone()
+    };
+    define_curried_binary(
+        init,
+        symbols,
+        path,
+        Type::Real,
+        Type::Real,
+        move |inner, left, right| {
+            inner.extend([
+                i::Get(left.clone()),
+                i::StructGet(value_fields.clone(), 0),
+                i::Get(right.clone()),
+                i::StructGet(value_fields.clone(), 0),
+                i::F64Op(op),
+                i::StructNew(result_fields.clone()),
+            ]);
+        },
+    );
+}
+
+fn define_curried_unary(
+    init: &mut Encoder<'_>,
+    symbols: &SymbolTable,
+    path: Path,
+    argument_type: Type,
+    body: impl for<'b> FnOnce(&mut Encoder<'b>, &Path),
+) {
+    let value_name = init.temporary_name("value");
+    init.create_closure(symbols, value_name.clone(), argument_type, vec![], {
+        let value_name = value_name.clone();
+        move |inner, _symbols| body(inner, &value_name)
+    });
+    store_global_closure(init, path);
+}
+
+fn define_i64_unary_method(
+    init: &mut Encoder<'_>,
+    symbols: &SymbolTable,
+    path: Path,
+    body: impl for<'b> FnOnce(&mut Encoder<'b>, &Path, &Box<[LowerType]>),
+) {
+    let value_fields: Box<[LowerType]> = [LowerType::I64].into();
+    define_curried_unary(init, symbols, path, Type::Integer, move |inner, value| {
+        body(inner, value, &value_fields)
+    });
+}
+
+fn define_i32_unary_method(
+    init: &mut Encoder<'_>,
+    symbols: &SymbolTable,
+    path: Path,
+    body: impl for<'b> FnOnce(&mut Encoder<'b>, &Path, &Box<[LowerType]>),
+) {
+    let value_fields: Box<[LowerType]> = [LowerType::I32].into();
+    define_curried_unary(init, symbols, path, Type::Boolean, move |inner, value| {
+        body(inner, value, &value_fields)
+    });
+}
+
+fn define_f64_unary_method(
+    init: &mut Encoder<'_>,
+    symbols: &SymbolTable,
+    path: Path,
+    body: impl for<'b> FnOnce(&mut Encoder<'b>, &Path, &Box<[LowerType]>),
+) {
+    let value_fields: Box<[LowerType]> = [LowerType::F64].into();
+    define_curried_unary(init, symbols, path, Type::Real, move |inner, value| {
+        body(inner, value, &value_fields)
+    });
 }
 
 fn define_trait_impl_terms(

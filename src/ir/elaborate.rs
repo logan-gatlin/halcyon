@@ -1,15 +1,11 @@
 use indexmap::IndexMap;
 
-use crate::hc_core::{
-    core_impl_arguments,
-    core_impl_path,
-};
+use crate::hc_core::core_impl_path;
 use crate::ir::{
     Module,
     Path,
     Pattern,
     PatternKind,
-    ScopeKind,
     Statement,
     Term,
     TermKind,
@@ -52,12 +48,6 @@ struct DictEntry {
 }
 
 type DictEnv = Vec<DictEntry>;
-
-#[derive(Debug, Clone)]
-struct TraitMethodInfo {
-    trait_name: Option<Path>,
-    parameters: usize,
-}
 
 struct ElaborationContext<'a> {
     symbols: &'a SymbolTable,
@@ -107,6 +97,28 @@ pub fn elaborate_module(
                         path,
                         parameters,
                         def,
+                    }
+                }
+                Statement::Trait {
+                    path,
+                    parameters,
+                    methods,
+                } => {
+                    Statement::Trait {
+                        path,
+                        parameters,
+                        methods,
+                    }
+                }
+                Statement::Impl {
+                    trait_path,
+                    arguments,
+                    methods,
+                } => {
+                    Statement::Impl {
+                        trait_path,
+                        arguments,
+                        methods,
                     }
                 }
                 Statement::Wasm(sexpr) => Statement::Wasm(sexpr),
@@ -293,45 +305,6 @@ fn elaborate_identifier(
     type_: Type,
     dict_env: &DictEnv,
 ) -> Option<Term<Type>> {
-    if let Some(method_info) = method_info_for_path(context.symbols, &path) {
-        if let Some(arguments) =
-            specialize_method_arguments(&path, &type_, &method_info, context.symbols)
-        {
-            return Some(Term {
-                comments,
-                kind: TermKind::Identifier(core_impl_path(&path, &arguments)),
-                span,
-                type_,
-            });
-        }
-
-        let scheme = context.scheme_env.get(&path)?;
-        let predicates = instantiate_predicates_for_scheme(scheme, &type_)?;
-        if let Some(field) = method_field_from_dict(&path, &method_info, &predicates, dict_env) {
-            return Some(Term {
-                comments,
-                kind: field,
-                span,
-                type_,
-            });
-        }
-
-        if is_compare_operator(&path) {
-            let lambda = compare_lambda_from_dict(
-                &path,
-                &type_,
-                &predicates,
-                dict_env,
-                context.symbols,
-                context.module_name,
-                &mut context.dict_salt,
-            )?;
-            return Some(lambda);
-        }
-
-        return None;
-    }
-
     let scheme = context.scheme_env.get(&path)?;
     let args = dictionary_args_for_type(scheme, &type_, dict_env, context.symbols)?;
     if args.is_empty() {
@@ -357,33 +330,6 @@ fn elaborate_identifier(
     }))
 }
 
-fn method_info_for_path(
-    symbols: &SymbolTable,
-    path: &Path,
-) -> Option<TraitMethodInfo> {
-    for (trait_path, def) in symbols.trait_defs() {
-        if def.methods.contains_key(path) {
-            return Some(TraitMethodInfo {
-                trait_name: Some(trait_path.clone()),
-                parameters: def.parameters,
-            });
-        }
-    }
-    let less_equal = Path::core("(<=)");
-    let greater_equal = Path::core("(>=)");
-    if path == &less_equal || path == &greater_equal {
-        return Some(TraitMethodInfo {
-            trait_name: None,
-            parameters: 1,
-        });
-    }
-    None
-}
-
-fn is_compare_operator(path: &Path) -> bool {
-    path == &Path::core("(<=)") || path == &Path::core("(>=)")
-}
-
 fn find_dict_binding<'a>(
     dict_env: &'a [DictEntry],
     predicate: &TraitConstraint,
@@ -397,245 +343,6 @@ fn find_dict_binding<'a>(
         .map(|entry| &entry.binding);
     let first = matches.next()?;
     matches.next().is_none().then_some(first)
-}
-
-fn method_field_from_dict(
-    path: &Path,
-    method_info: &TraitMethodInfo,
-    predicates: &[TraitConstraint],
-    dict_env: &DictEnv,
-) -> Option<TermKind<Type>> {
-    let trait_name = method_info.trait_name.as_ref()?;
-    if predicates.len() != 1 {
-        return None;
-    }
-    let predicate = predicates.first()?;
-    if &predicate.trait_name != trait_name {
-        return None;
-    }
-    let binding = find_dict_binding(dict_env, predicate)?;
-    let dict_term = term_identifier(binding.path.clone(), binding.type_.clone());
-    Some(TermKind::Field {
-        of: dict_term.into(),
-        index: path.minor.clone().with_span(Span::Generated),
-    })
-}
-
-fn compare_lambda_from_dict(
-    path: &Path,
-    type_: &Type,
-    predicates: &[TraitConstraint],
-    dict_env: &DictEnv,
-    symbols: &SymbolTable,
-    module_name: &str,
-    dict_salt: &mut usize,
-) -> Option<Term<Type>> {
-    let compare_pred = predicates
-        .iter()
-        .find(|pred| pred.trait_name.minor == "compare")?;
-    let equal_pred = predicates
-        .iter()
-        .find(|pred| pred.trait_name.minor == "equal")?;
-    let compare_dict = find_dict_binding(dict_env, compare_pred)?;
-    let equal_dict = find_dict_binding(dict_env, equal_pred)?;
-
-    let (left_type, right_type, result_type) = function_pair_types(type_)?;
-    if result_type != Type::Boolean {
-        return None;
-    }
-
-    let compare_method = match path.minor.as_str() {
-        "(<=)" => Path::core("(<)"),
-        "(>=)" => Path::core("(>)"),
-        _ => return None,
-    };
-
-    let compare_method_type = method_type_for_predicate(symbols, compare_pred, &compare_method)?;
-    let equal_method_path = Path::core("(==)");
-    let equal_method_type = method_type_for_predicate(symbols, equal_pred, &equal_method_path)?;
-
-    let left_path = temp_path(module_name, dict_salt, "left");
-    let right_path = temp_path(module_name, dict_salt, "right");
-
-    let compare_field = Term {
-        comments: String::new(),
-        kind: TermKind::Field {
-            of: term_identifier(compare_dict.path.clone(), compare_dict.type_.clone()).into(),
-            index: compare_method.minor.clone().with_span(Span::Generated),
-        },
-        span: Span::Generated,
-        type_: compare_method_type,
-    };
-
-    let equal_field = Term {
-        comments: String::new(),
-        kind: TermKind::Field {
-            of: term_identifier(equal_dict.path.clone(), equal_dict.type_.clone()).into(),
-            index: equal_method_path.minor.clone().with_span(Span::Generated),
-        },
-        span: Span::Generated,
-        type_: equal_method_type,
-    };
-
-    let left_term = term_identifier(left_path.clone(), left_type.clone());
-    let right_term = term_identifier(right_path.clone(), right_type.clone());
-
-    let compare_call = call2(compare_field, left_term.clone(), right_term.clone());
-    let equal_call = call2(equal_field, left_term, right_term);
-
-    let true_term = Term {
-        comments: String::new(),
-        kind: TermKind::Immediate(crate::ir::ImmediateValue::Boolean(true)),
-        span: Span::Generated,
-        type_: Type::Boolean,
-    };
-
-    let if_term = Term {
-        comments: String::new(),
-        kind: TermKind::Let {
-            assignee: Pattern {
-                comments: String::new(),
-                kind: PatternKind::Immediate(crate::ir::ImmediateValue::Boolean(true)),
-                span: Span::Generated,
-                type_: Type::Boolean,
-            },
-            scope: ScopeKind::Local,
-            value: compare_call.into(),
-            then: true_term.into(),
-            else_: equal_call.into(),
-        },
-        span: Span::Generated,
-        type_: Type::Boolean,
-    };
-
-    let inner = Term {
-        comments: String::new(),
-        kind: TermKind::Function {
-            parameter_name: right_path.with_span(Span::Generated),
-            parameter_type: None,
-            captures: [].into(),
-            body: if_term.into(),
-        },
-        span: Span::Generated,
-        type_: Type::func(right_type, Type::Boolean),
-    };
-
-    Some(Term {
-        comments: String::new(),
-        kind: TermKind::Function {
-            parameter_name: left_path.with_span(Span::Generated),
-            parameter_type: None,
-            captures: [].into(),
-            body: inner.into(),
-        },
-        span: Span::Generated,
-        type_: type_.clone(),
-    })
-}
-
-fn method_type_for_predicate(
-    symbols: &SymbolTable,
-    predicate: &TraitConstraint,
-    method_path: &Path,
-) -> Option<Type> {
-    let def = symbols.trait_defs().get(&predicate.trait_name)?;
-    let scheme = def.methods.get(method_path)?;
-    substitute_type_vars(&scheme.type_, &predicate.arguments)
-}
-
-fn call2(
-    callee: Term<Type>,
-    left: Term<Type>,
-    right: Term<Type>,
-) -> Term<Type> {
-    let inner_type = call_result_type(&callee.type_).unwrap_or(Type::Unit);
-    let inner = Term {
-        comments: String::new(),
-        kind: TermKind::Call {
-            callee: callee.into(),
-            argument: left.into(),
-        },
-        span: Span::Generated,
-        type_: inner_type,
-    };
-    let outer_type = call_result_type(&inner.type_).unwrap_or(Type::Unit);
-    Term {
-        comments: String::new(),
-        kind: TermKind::Call {
-            callee: inner.into(),
-            argument: right.into(),
-        },
-        span: Span::Generated,
-        type_: outer_type,
-    }
-}
-
-fn call_result_type(type_: &Type) -> Option<Type> {
-    match type_ {
-        Type::Function(_, result) => Some(result.as_ref().clone()),
-        _ => None,
-    }
-}
-
-fn function_pair_types(type_: &Type) -> Option<(Type, Type, Type)> {
-    let Type::Function(left, rest) = type_ else {
-        return None;
-    };
-    let Type::Function(right, result) = rest.as_ref() else {
-        return None;
-    };
-    Some((
-        left.as_ref().clone(),
-        right.as_ref().clone(),
-        result.as_ref().clone(),
-    ))
-}
-
-fn temp_path(
-    module_name: &str,
-    dict_salt: &mut usize,
-    label: &str,
-) -> Path {
-    let path = Path::new(module_name, format!("[elab] {label} #{}", *dict_salt));
-    *dict_salt += 1;
-    path
-}
-
-fn specialize_method_arguments(
-    method_path: &Path,
-    concrete_type: &Type,
-    method_info: &TraitMethodInfo,
-    symbols: &SymbolTable,
-) -> Option<Vec<Type>> {
-    let scheme = symbols.terms().get(method_path)?;
-    let (scheme_body, var_count) = peel_forall(&scheme.type_);
-    if var_count < method_info.parameters {
-        return None;
-    }
-    let mut bindings = vec![None; var_count];
-    if !match_scheme_to_concrete(&scheme_body, concrete_type, &mut bindings) {
-        return None;
-    }
-    let mut arguments = Vec::with_capacity(method_info.parameters);
-    for index in 0..method_info.parameters {
-        let binding = bindings.get(index).and_then(|binding| binding.clone())?;
-        if !is_concrete_type(&binding) {
-            return None;
-        }
-        arguments.push(binding);
-    }
-
-    if let Some(trait_name) = &method_info.trait_name {
-        let predicate = TraitConstraint {
-            trait_name: trait_name.clone(),
-            arguments: arguments.clone(),
-        };
-        if let Some(selected_impl) = symbols.select_impl(&predicate).ok().flatten() {
-            return Some(core_impl_arguments(&selected_impl.head.arguments));
-        }
-    }
-
-    Some(arguments)
 }
 
 fn wrap_with_dict_params(
@@ -781,19 +488,16 @@ fn dictionary_term_for_predicate(
     };
     let methods = ordered_trait_methods(def);
     let selected_impl = symbols.select_impl(predicate).ok().flatten();
-    let impl_arguments = selected_impl
-        .as_ref()
-        .map(|impl_| core_impl_arguments(&impl_.head.arguments));
     let mut fields = IndexMap::new();
     let mut field_types = IndexMap::new();
     for (method_path, scheme) in methods {
         let Some(method_type) = substitute_type_vars(&scheme.type_, &predicate.arguments) else {
             continue;
         };
-        let specialized_path = match &impl_arguments {
-            Some(arguments) => core_impl_path(&method_path, arguments),
-            None => core_impl_path(&method_path, &predicate.arguments),
-        };
+        let specialized_path = selected_impl
+            .as_ref()
+            .and_then(|impl_| impl_.methods.get(&method_path).cloned())
+            .unwrap_or_else(|| core_impl_path(&method_path, &predicate.arguments));
         fields.insert(
             method_path.minor.clone().with_span(Span::Generated),
             Term {
@@ -1421,31 +1125,6 @@ fn match_scheme_to_type_relaxed(
     }
 }
 
-fn match_scheme_to_concrete(
-    scheme: &Type,
-    concrete: &Type,
-    bindings: &mut [Option<Type>],
-) -> bool {
-    match scheme {
-        Type::TypeVar(index) => {
-            let Some(slot) = bindings.get_mut(*index as usize) else {
-                return false;
-            };
-            match slot {
-                Some(existing) => existing == concrete,
-                None => {
-                    if !is_concrete_type(concrete) {
-                        return false;
-                    }
-                    *slot = Some(concrete.clone());
-                    true
-                }
-            }
-        }
-        _ => match_scheme_to_type(scheme, concrete, bindings),
-    }
-}
-
 fn is_concrete_type(type_: &Type) -> bool {
     match type_ {
         Type::TypeVar(_)
@@ -1543,29 +1222,6 @@ mod tests {
         })
     }
 
-    fn term_contains_field(term: &Term<Type>) -> bool {
-        match &term.kind {
-            TermKind::Field { .. } => true,
-            TermKind::Let {
-                value, then, else_, ..
-            } => {
-                term_contains_field(value)
-                    || term_contains_field(then)
-                    || term_contains_field(else_)
-            }
-            TermKind::Tuple(items) => items.iter().any(term_contains_field),
-            TermKind::Struct(fields) => fields.values().any(term_contains_field),
-            TermKind::Function { body, .. } => term_contains_field(body),
-            TermKind::Call { callee, argument } => {
-                term_contains_field(callee) || term_contains_field(argument)
-            }
-            TermKind::Semicolon(left, right) => {
-                term_contains_field(left) || term_contains_field(right)
-            }
-            _ => false,
-        }
-    }
-
     fn term_has_inline_dict_for(
         term: &Term<Type>,
         name: &str,
@@ -1619,7 +1275,6 @@ mod tests {
             panic!("expected function");
         };
         assert!(parameter_name.inner.minor.starts_with("[dict]"));
-        assert!(term_contains_field(double));
     }
 
     #[test]

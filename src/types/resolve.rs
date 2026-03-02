@@ -2,11 +2,13 @@ use std::collections::{
     HashMap,
     HashSet,
 };
+use std::convert::Infallible;
 
 use indexmap::IndexMap;
 
 use crate::ir::{
     Glob,
+    ImplMethod,
     Module,
     Path,
     Pattern,
@@ -17,7 +19,6 @@ use crate::ir::{
     TermKind,
     TypeDefKind,
     TypeExpr,
-    TypeExprKind,
 };
 use crate::logging::WithContext;
 use crate::{
@@ -30,20 +31,35 @@ use super::infer::{
     TypeEnv,
     TypeError,
 };
+use super::instantiation::{
+    instantiate_forall_strict,
+    instantiate_predicates,
+    leading_forall_count,
+};
+use super::type_expr::lower_type_expr;
 use super::{
     SymbolTable,
     TraitConstraint,
+    TraitDef,
     TraitError,
+    TraitImpl,
     TraitRef,
     Type,
     TypeDefinition,
     TypeScheme,
+    for_each_child_type,
 };
 
 #[derive(Debug, Clone)]
 struct TypeDefEntry {
     parameters: Vec<Path>,
     def: crate::ir::TypeDef,
+}
+
+#[derive(Debug, Clone)]
+struct TraitDefEntry {
+    span: Span,
+    def: TraitDef,
 }
 
 #[derive(Debug, Clone)]
@@ -94,15 +110,6 @@ pub fn resolve_module_with_symbols_and_schemes(
     log_term_duplicates(logger, symbols, &term_definitions);
     let type_definitions =
         build_type_definitions(symbols.type_definitions(), &type_entries, logger);
-    let mut env = TypeEnv::new();
-    env.extend(
-        symbols
-            .terms()
-            .iter()
-            .map(|(path, scheme)| (path.clone(), scheme.clone())),
-    );
-    let constructors = build_sum_constructors(&type_entries, &type_definitions, logger);
-    env.extend(constructors);
 
     for (path, entry) in type_entries.iter() {
         if symbols.type_definitions().contains_key(path) {
@@ -119,6 +126,20 @@ pub fn resolve_module_with_symbols_and_schemes(
         }
     }
 
+    let trait_entries =
+        build_trait_definitions(&statements, &type_entries, &type_definitions, logger);
+    register_trait_definitions(symbols, &trait_entries, logger);
+
+    let mut env = TypeEnv::new();
+    env.extend(
+        symbols
+            .terms()
+            .iter()
+            .map(|(path, scheme)| (path.clone(), scheme.clone())),
+    );
+    let constructors = build_sum_constructors(&type_entries, &type_definitions, logger);
+    env.extend(constructors);
+
     let mut ctx = InferenceContext::new();
     let mut schemes = IndexMap::new();
     ctx.set_type_definitions(
@@ -128,36 +149,79 @@ pub fn resolve_module_with_symbols_and_schemes(
             .collect::<IndexMap<_, _>>(),
     );
 
-    let typed_statements = statements
-        .into_iter()
-        .map(|statement| {
-            match statement {
-                Statement::Term(term) => {
-                    let output = match ctx.infer_term(&mut env, &term, &mut schemes) {
-                        Ok(output) => output,
-                        Err(error) => {
-                            log_type_error(logger, error);
-                            return Statement::Term(fallback_term(&term));
+    let mut typed_statements = Vec::new();
+    for statement in statements.into_iter() {
+        match statement {
+            Statement::Term(term) => {
+                let known_scheme_paths = schemes.keys().cloned().collect::<HashSet<_>>();
+                let output = match ctx.infer_term(&mut env, &term, &mut schemes) {
+                    Ok(output) => output,
+                    Err(error) => {
+                        log_type_error(logger, error);
+                        typed_statements.push(Statement::Term(fallback_term(&term)));
+                        continue;
+                    }
+                };
+                solve_predicates(logger, &mut ctx, symbols, term.span, &output.predicates);
+                let mut grounded_predicates = Vec::new();
+                for (path, scheme) in schemes.iter() {
+                    if known_scheme_paths.contains(path) {
+                        continue;
+                    }
+                    for predicate in scheme.predicates.iter() {
+                        if predicate_is_ground(predicate)
+                            && !grounded_predicates.contains(predicate)
+                        {
+                            grounded_predicates.push(predicate.clone());
                         }
-                    };
-                    solve_predicates(logger, &mut ctx, symbols, term.span, &output.predicates);
-                    Statement::Term(output.term)
+                    }
                 }
-                Statement::Type {
+                solve_predicates(logger, &mut ctx, symbols, term.span, &grounded_predicates);
+                typed_statements.push(Statement::Term(output.term));
+            }
+            Statement::Type {
+                path,
+                parameters,
+                def,
+            } => {
+                typed_statements.push(Statement::Type {
                     path,
                     parameters,
                     def,
-                } => {
-                    Statement::Type {
-                        path,
-                        parameters,
-                        def,
-                    }
-                }
-                Statement::Wasm(sexpr) => Statement::Wasm(sexpr),
+                });
             }
-        })
-        .collect::<Vec<_>>();
+            Statement::Trait {
+                path,
+                parameters,
+                methods,
+            } => {
+                typed_statements.push(Statement::Trait {
+                    path,
+                    parameters,
+                    methods,
+                });
+            }
+            Statement::Impl {
+                trait_path,
+                arguments,
+                methods,
+            } => {
+                let (typed_impl, generated_terms) = ImplProcessingContext {
+                    logger,
+                    ctx: &mut ctx,
+                    env: &mut env,
+                    symbols,
+                    schemes: &mut schemes,
+                    type_entries: &type_entries,
+                    type_definitions: &type_definitions,
+                }
+                .process(trait_path, arguments, methods);
+                typed_statements.push(typed_impl);
+                typed_statements.extend(generated_terms.into_iter().map(Statement::Term));
+            }
+            Statement::Wasm(sexpr) => typed_statements.push(Statement::Wasm(sexpr)),
+        }
+    }
 
     for (path, span) in term_definitions.iter() {
         if symbols.terms().contains_key(path) {
@@ -186,45 +250,356 @@ pub fn resolve_module_with_symbols_and_schemes(
 }
 
 fn collect_type_entries(statements: &[Statement<()>]) -> IndexMap<Path, TypeDefEntry> {
-    statements
-        .iter()
-        .filter_map(|statement| {
-            let Statement::Type {
-                path,
-                parameters,
-                def,
-            } = statement
-            else {
-                return None;
-            };
-            Some((
-                path.clone(),
-                TypeDefEntry {
-                    parameters: parameters.to_vec(),
-                    def: def.clone(),
-                },
-            ))
-        })
-        .collect()
+    let mut entries = IndexMap::new();
+    for statement in statements {
+        let Statement::Type {
+            path,
+            parameters,
+            def,
+        } = statement
+        else {
+            continue;
+        };
+        entries.entry(path.clone()).or_insert_with(|| {
+            TypeDefEntry {
+                parameters: parameters.to_vec(),
+                def: def.clone(),
+            }
+        });
+    }
+    entries
 }
 
 fn collect_term_definitions(statements: &[Statement<()>]) -> Vec<(Path, Span)> {
     let mut definitions = Vec::new();
     for statement in statements {
-        let Statement::Term(term) = statement else {
-            continue;
-        };
-        let TermKind::Let {
-            assignee,
-            scope: ScopeKind::Global,
-            ..
-        } = &term.kind
-        else {
-            continue;
-        };
-        definitions.extend(collect_pattern_bindings(assignee));
+        match statement {
+            Statement::Term(term) => {
+                let TermKind::Let {
+                    assignee,
+                    scope: ScopeKind::Global,
+                    ..
+                } = &term.kind
+                else {
+                    continue;
+                };
+                definitions.extend(collect_pattern_bindings(assignee));
+            }
+            Statement::Trait { methods, .. } => {
+                definitions.extend(
+                    methods
+                        .iter()
+                        .map(|method| (method.path.clone(), method.span)),
+                );
+            }
+            Statement::Impl { methods, .. } => {
+                definitions.extend(
+                    methods
+                        .iter()
+                        .map(|method| (method.impl_path.clone(), method.span)),
+                );
+            }
+            Statement::Type { .. } | Statement::Wasm(_) => {}
+        }
     }
     definitions
+}
+
+fn build_trait_definitions(
+    statements: &[Statement<()>],
+    type_entries: &IndexMap<Path, TypeDefEntry>,
+    type_definitions: &IndexMap<Path, TypeDefinition>,
+    logger: &mut FileLogger,
+) -> Vec<TraitDefEntry> {
+    let mut resolved_type_definitions = type_definitions.clone();
+    let mut seen_traits = HashSet::new();
+    statements
+        .iter()
+        .filter_map(|statement| {
+            let Statement::Trait {
+                path,
+                parameters,
+                methods: method_decls,
+            } = statement
+            else {
+                return None;
+            };
+            if !seen_traits.insert(path.clone()) {
+                return None;
+            }
+            let param_map = param_index_map(parameters);
+            let span = method_decls
+                .first()
+                .map(|method| method.span)
+                .unwrap_or(Span::Generated);
+            let methods = method_decls
+                .iter()
+                .map(|method| {
+                    let type_ = type_expr_to_type_in_def(
+                        &method.type_expr,
+                        &param_map,
+                        type_entries,
+                        &mut resolved_type_definitions,
+                        &mut Vec::new(),
+                        logger,
+                    )
+                    .for_all(parameters.len());
+                    (method.path.clone(), TypeScheme::new(type_))
+                })
+                .collect();
+            Some(TraitDefEntry {
+                span,
+                def: TraitDef {
+                    name: path.clone(),
+                    parameters: parameters.len(),
+                    methods,
+                },
+            })
+        })
+        .collect()
+}
+
+fn register_trait_definitions(
+    symbols: &mut SymbolTable,
+    entries: &[TraitDefEntry],
+    logger: &mut FileLogger,
+) {
+    for entry in entries {
+        match symbols.insert_trait(entry.def.clone()) {
+            Ok(()) => {
+                for (method_path, scheme) in entry.def.methods.iter() {
+                    if symbols.terms().contains_key(method_path) {
+                        continue;
+                    }
+                    symbols.insert_term(
+                        method_path.clone(),
+                        trait_method_term_scheme(&entry.def.name, entry.def.parameters, scheme),
+                    );
+                }
+            }
+            Err(error) => log_trait_error(logger, entry.span, error),
+        }
+    }
+}
+
+fn trait_method_term_scheme(
+    trait_name: &Path,
+    parameters: usize,
+    method_scheme: &TypeScheme,
+) -> TypeScheme {
+    let mut predicates = method_scheme.predicates.clone();
+    predicates.push(TraitRef::new(
+        trait_name.clone(),
+        type_vars_for_params(parameters),
+    ));
+    TypeScheme {
+        predicates,
+        type_: method_scheme.type_.clone(),
+    }
+}
+
+struct ImplProcessingContext<'a> {
+    logger: &'a mut FileLogger,
+    ctx: &'a mut InferenceContext,
+    env: &'a mut TypeEnv,
+    symbols: &'a mut SymbolTable,
+    schemes: &'a mut IndexMap<Path, TypeScheme>,
+    type_entries: &'a IndexMap<Path, TypeDefEntry>,
+    type_definitions: &'a IndexMap<Path, TypeDefinition>,
+}
+
+impl ImplProcessingContext<'_> {
+    fn process(
+        &mut self,
+        trait_path: Path,
+        arguments: Box<[TypeExpr]>,
+        methods: Box<[ImplMethod<()>]>,
+    ) -> (Statement<Type>, Vec<Term<Type>>) {
+        let mut resolved_type_definitions = self.type_definitions.clone();
+        let argument_types = arguments
+            .iter()
+            .map(|arg| {
+                type_expr_to_type_in_def(
+                    arg,
+                    &HashMap::new(),
+                    self.type_entries,
+                    &mut resolved_type_definitions,
+                    &mut Vec::new(),
+                    self.logger,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let trait_definition = self.symbols.trait_defs().get(&trait_path).cloned();
+        let mut typed_methods = Vec::new();
+        let mut generated_terms = Vec::new();
+        let mut method_map = IndexMap::new();
+
+        for method in methods {
+            let (mut typed_value, mut predicates) =
+                match self.ctx.infer_term(self.env, &method.value, self.schemes) {
+                    Ok(output) => (output.term, output.predicates),
+                    Err(error) => {
+                        log_type_error(self.logger, error);
+                        (fallback_term(&method.value), Vec::new())
+                    }
+                };
+
+            if let Some(definition) = trait_definition.as_ref()
+                && let Some(method_scheme) = definition.methods.get(&method.trait_method)
+            {
+                let found = argument_types.len();
+                if found == definition.parameters {
+                    let expected = leading_forall_count(&method_scheme.type_);
+                    if found > expected {
+                        self.logger
+                            .error("Invalid impl method type application")
+                            .primary(
+                                format!(
+                                    "`{}` expects {expected} type arguments but got {found}.",
+                                    method.trait_method
+                                ),
+                                method.span,
+                            )
+                            .done();
+                    } else if let Some(instantiated) =
+                        instantiate_method_scheme(method_scheme, &argument_types)
+                    {
+                        if let Err(error) = self
+                            .ctx
+                            .table_mut()
+                            .unify(&typed_value.type_, &instantiated.type_)
+                        {
+                            log_type_error(
+                                self.logger,
+                                TypeError::Unification {
+                                    error,
+                                    span: method.span,
+                                },
+                            );
+                        }
+                        predicates.extend(instantiated.predicates);
+                    } else {
+                        log_trait_error(
+                            self.logger,
+                            method.span,
+                            TraitError::InvalidInstance {
+                                trait_name: trait_path.clone(),
+                            },
+                        );
+                    }
+                }
+            }
+
+            let normalized_type = self.ctx.table_mut().normalize(&typed_value.type_);
+            typed_value.type_ = normalized_type.clone();
+            solve_predicates(
+                self.logger,
+                self.ctx,
+                self.symbols,
+                method.span,
+                &predicates,
+            );
+
+            let scheme =
+                self.ctx
+                    .generalize_with_predicates(&normalized_type, 0, predicates.clone());
+            self.env.insert(method.impl_path.clone(), scheme.clone());
+            self.schemes.insert(method.impl_path.clone(), scheme);
+
+            method_map.insert(method.trait_method.clone(), method.impl_path.clone());
+            generated_terms.push(build_impl_method_binding(
+                method.impl_path.clone(),
+                method.span,
+                normalized_type,
+                typed_value.clone(),
+            ));
+            typed_methods.push(ImplMethod {
+                trait_method: method.trait_method,
+                impl_path: method.impl_path,
+                value: typed_value,
+                span: method.span,
+            });
+        }
+
+        let impl_span = typed_methods
+            .first()
+            .map(|method| method.span)
+            .unwrap_or(Span::Generated);
+        let trait_impl = TraitImpl {
+            parameters: 0,
+            head: TraitRef::new(trait_path.clone(), argument_types),
+            predicates: Vec::new(),
+            methods: method_map,
+        };
+        if let Err(error) = self.symbols.insert_impl(trait_impl) {
+            log_trait_error(self.logger, impl_span, error);
+        }
+
+        (
+            Statement::Impl {
+                trait_path,
+                arguments,
+                methods: typed_methods.into_boxed_slice(),
+            },
+            generated_terms,
+        )
+    }
+}
+
+fn instantiate_method_scheme(
+    scheme: &TypeScheme,
+    arguments: &[Type],
+) -> Option<TypeScheme> {
+    if arguments.len() > leading_forall_count(&scheme.type_) {
+        return None;
+    }
+    let type_ = instantiate_forall_strict(&scheme.type_, arguments)?;
+    let predicates = instantiate_predicates(&scheme.predicates, arguments)?;
+    Some(TypeScheme { predicates, type_ })
+}
+
+fn build_impl_method_binding(
+    path: Path,
+    span: Span,
+    type_: Type,
+    value: Term<Type>,
+) -> Term<Type> {
+    Term {
+        comments: String::new(),
+        kind: TermKind::Let {
+            assignee: Pattern {
+                comments: String::new(),
+                kind: PatternKind::Identifier(path),
+                span,
+                type_,
+            },
+            scope: ScopeKind::Global,
+            value: Box::new(value),
+            then: Box::new(typed_unit_term()),
+            else_: Box::new(typed_unreachable_term()),
+        },
+        span,
+        type_: Type::Unit,
+    }
+}
+
+fn typed_unit_term() -> Term<Type> {
+    Term {
+        comments: String::new(),
+        kind: TermKind::Immediate(crate::ir::ImmediateValue::Unit),
+        span: Span::Generated,
+        type_: Type::Unit,
+    }
+}
+
+fn typed_unreachable_term() -> Term<Type> {
+    Term {
+        comments: String::new(),
+        kind: TermKind::Unreachable,
+        span: Span::Generated,
+        type_: Type::Unit,
+    }
 }
 
 fn collect_constructor_definitions(
@@ -403,88 +778,96 @@ fn type_expr_to_type_in_def(
     stack: &mut Vec<Path>,
     logger: &mut FileLogger,
 ) -> Type {
-    match &expr.kind {
-        TypeExprKind::Tuple(items) => {
-            let items = items
-                .iter()
-                .map(|item| {
-                    type_expr_to_type_in_def(
-                        item,
-                        param_map,
-                        entries,
-                        type_definitions,
-                        stack,
-                        logger,
+    TypeDefTypeExprLowering {
+        param_map,
+        entries,
+        type_definitions,
+        stack,
+        logger,
+    }
+    .lower(expr)
+}
+
+struct TypeDefTypeExprLowering<'a> {
+    param_map: &'a HashMap<Path, u32>,
+    entries: &'a IndexMap<Path, TypeDefEntry>,
+    type_definitions: &'a mut IndexMap<Path, TypeDefinition>,
+    stack: &'a mut Vec<Path>,
+    logger: &'a mut FileLogger,
+}
+
+impl TypeDefTypeExprLowering<'_> {
+    fn lower(
+        &mut self,
+        expr: &TypeExpr,
+    ) -> Type {
+        lower_type_expr(expr, &mut |path, arguments, span| {
+            Ok::<Type, Infallible>(self.lower_instantiation(path, arguments, span))
+        })
+        .unwrap_or_else(|never| match never {})
+    }
+
+    fn lower_instantiation(
+        &mut self,
+        path: &Path,
+        arguments: Vec<Type>,
+        span: Span,
+    ) -> Type {
+        if let Some(index) = self.param_map.get(path) {
+            if !arguments.is_empty() {
+                self.logger
+                    .error("Type parameters cannot be applied")
+                    .primary(
+                        format!(
+                            "`{}` is a type parameter but is applied to arguments.",
+                            path
+                        ),
+                        span,
                     )
-                })
-                .collect();
-            Type::Tuple(items)
+                    .done();
+            }
+            return Type::v(*index);
         }
-        TypeExprKind::Instantiation(path, args) => {
-            if let Some(index) = param_map.get(path) {
-                if !args.is_empty() {
-                    logger
-                        .error("Type parameters cannot be applied")
-                        .primary(
-                            format!(
-                                "`{}` is a type parameter but is applied to arguments.",
-                                path
-                            ),
-                            expr.span,
-                        )
-                        .done();
-                }
-                return Type::v(*index);
-            }
 
-            let arguments = args
-                .iter()
-                .map(|arg| {
-                    type_expr_to_type_in_def(
-                        arg,
-                        param_map,
-                        entries,
-                        type_definitions,
-                        stack,
-                        logger,
+        let definition = self.type_definitions.get(path).cloned().or_else(|| {
+            self.entries.contains_key(path).then(|| {
+                resolve_type_definition(
+                    path,
+                    self.entries,
+                    self.type_definitions,
+                    self.stack,
+                    self.logger,
+                )
+            })
+        });
+
+        if let Some(definition) = definition {
+            if definition.parameters != arguments.len() {
+                self.logger
+                    .error("Invalid type application")
+                    .primary(
+                        format!(
+                            "`{}` expects {} type arguments but got {}.",
+                            path,
+                            definition.parameters,
+                            arguments.len()
+                        ),
+                        span,
                     )
-                })
-                .collect::<Vec<_>>();
-
-            let definition = type_definitions.get(path).cloned().or_else(|| {
-                entries.contains_key(path).then(|| {
-                    resolve_type_definition(path, entries, type_definitions, stack, logger)
-                })
-            });
-
-            if let Some(definition) = definition {
-                if definition.parameters != arguments.len() {
-                    logger
-                        .error("Invalid type application")
-                        .primary(
-                            format!(
-                                "`{}` expects {} type arguments but got {}.",
-                                path,
-                                definition.parameters,
-                                arguments.len()
-                            ),
-                            expr.span,
-                        )
-                        .done();
-                }
-                let base = Type::Named {
-                    name: path.clone(),
-                    body: Box::new(definition.body),
-                };
-                return base.apply(arguments);
+                    .done();
             }
-
-            let base = Type::Named {
+            return Type::Named {
                 name: path.clone(),
-                body: Box::new(Type::Unit),
-            };
-            base.apply(arguments)
+                body: Box::new(definition.body),
+            }
+            .apply(arguments);
         }
+
+        Type::Named {
+            name: path.clone(),
+            body: Box::new(Type::Unit),
+        }
+        .apply(arguments)
     }
 }
 
@@ -494,6 +877,7 @@ fn build_sum_constructors(
     logger: &mut FileLogger,
 ) -> Box<[(Path, TypeScheme)]> {
     let mut constructors = Vec::new();
+    let mut seen_paths = HashSet::new();
     let mut type_definitions = type_definitions.clone();
     for (path, entry) in entries.iter() {
         let TypeDefKind::Sum(variants) = entry.def.kind() else {
@@ -530,10 +914,10 @@ fn build_sum_constructors(
                 Type::func(payload_type, result_type.clone())
             };
             let scheme_type = constructor_type.for_all(entry.parameters.len());
-            constructors.push((
-                Path::new(path.major.clone(), variant.clone()),
-                scheme_type.scheme(),
-            ));
+            let constructor_path = Path::new(path.major.clone(), variant.clone());
+            if seen_paths.insert(constructor_path.clone()) {
+                constructors.push((constructor_path, scheme_type.scheme()));
+            }
         }
     }
     constructors.into_boxed_slice()
@@ -593,6 +977,25 @@ fn format_trait_ref(trait_ref: &TraitRef) -> String {
             .collect::<Vec<_>>()
             .join(" ");
         format!("{} {args}", trait_ref.trait_name)
+    }
+}
+
+fn predicate_is_ground(predicate: &TraitConstraint) -> bool {
+    predicate.arguments.iter().all(type_is_ground)
+}
+
+fn type_is_ground(type_: &Type) -> bool {
+    match type_ {
+        Type::TypeVar(_) | Type::MetaVar(_) => false,
+        _ => {
+            let mut is_ground = true;
+            for_each_child_type(type_, true, |child| {
+                if is_ground && !type_is_ground(child) {
+                    is_ground = false;
+                }
+            });
+            is_ground
+        }
     }
 }
 
@@ -732,16 +1135,6 @@ fn log_type_error(
                 )
                 .done();
         }
-        TypeError::MissingField {
-            field,
-            in_type,
-            span,
-        } => {
-            logger
-                .error("Missing field")
-                .primary(format!("Field `{field}` is missing in `{in_type}`."), span)
-                .done();
-        }
         TypeError::NotAFunction { type_, span } => {
             logger
                 .error("Not a function")
@@ -826,6 +1219,17 @@ fn fallback_term(term: &Term<()>) -> Term<Type> {
                 body: Box::new(fallback_term(body)),
             }
         }
+        TermKind::InlineWasm {
+            asserted_type,
+            definitions,
+            instructions,
+        } => {
+            TermKind::InlineWasm {
+                asserted_type: asserted_type.clone(),
+                definitions: definitions.clone(),
+                instructions: instructions.clone(),
+            }
+        }
         TermKind::Call { callee, argument } => {
             TermKind::Call {
                 callee: Box::new(fallback_term(callee)),
@@ -889,5 +1293,17 @@ fn fallback_pattern(pattern: &Pattern<()>) -> Pattern<Type> {
         kind,
         span: pattern.span,
         type_: Type::Unit,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn instantiate_method_scheme_rejects_extra_type_arguments() {
+        let scheme = Type::v(0).for_all(1).scheme();
+        assert!(instantiate_method_scheme(&scheme, &[Type::Integer]).is_some());
+        assert!(instantiate_method_scheme(&scheme, &[Type::Integer, Type::Boolean]).is_none());
     }
 }

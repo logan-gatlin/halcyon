@@ -90,6 +90,7 @@ pub struct TraitImpl {
     pub parameters: usize,
     pub head: TraitRef,
     pub predicates: Vec<TraitConstraint>,
+    pub methods: IndexMap<Path, Path>,
 }
 
 /// Errors that can occur when defining or resolving traits.

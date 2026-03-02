@@ -70,7 +70,7 @@ module inference =
   -- Uses a function literal as an argument.
   let apply_use: core::integer = apply (fn n => n + 1) 2
   -- Treats a binary operator as a curried function.
-  let operator_as_value: core::integer = (+) 1 2
+  let operator_as_value: core::integer = core::[+] 1 2
   -- Infers simple arithmetic lambdas for composition.
   let increment = fn n => n + 1
   -- Infers multiplication lambda for composition.
