@@ -35,7 +35,6 @@ use crate::types::SymbolTable;
 
 pub use encode::encode;
 use lower::ConstructorTable;
-pub(crate) use lower::emit_string_compare;
 pub use lower::lower_type;
 pub(crate) use snippets::emit_array_concat;
 

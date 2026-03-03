@@ -186,9 +186,9 @@ impl std::fmt::Display for UnaryOp {
     ) -> std::fmt::Result {
         write!(
             f,
-            "(unary {})",
+            "[{}]",
             match self {
-                UnaryOp::Minus => "-",
+                UnaryOp::Minus => "~",
                 UnaryOp::Not => "not",
             }
         )

@@ -120,9 +120,22 @@ pub fn module(
     module_node: ast::Module,
     logger: &mut FileLogger,
 ) -> Option<Module<()>> {
+    module_with_prelude(module_node, logger, &[])
+}
+
+pub fn module_with_prelude(
+    module_node: ast::Module,
+    logger: &mut FileLogger,
+    prelude: &[(Path, NameSpace)],
+) -> Option<Module<()>> {
     let name = module_node.name_text()?;
     let module_name = name.clone();
     let mut module_scope = ModuleScope::new(name.clone());
+    for (path, namespace) in prelude {
+        if path.major == module_name {
+            module_scope.predefine(path.clone(), *namespace);
+        }
+    }
     let mut wasm_type_defs: IndexMap<String, WasmType> = IndexMap::new();
     let mut statements = Vec::new();
     for statement in module_node.statements() {

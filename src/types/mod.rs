@@ -462,7 +462,8 @@ impl Type {
         &self,
         replacement: &Type,
     ) -> Option<Self> {
-        self.substitute_type_var(0, replacement)?
+        let replacement = replacement.shift_type_vars(1, 0)?;
+        self.substitute_type_var(0, &replacement)?
             .shift_type_vars(-1, 0)
     }
 

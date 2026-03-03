@@ -1,3 +1,4 @@
+use super::instantiation::instantiate_forall_strict;
 use super::*;
 use crate::ir::Path;
 use indexmap::IndexMap;
@@ -129,6 +130,14 @@ fn substitute_type_var_shifts_replacement() {
         .expect("substitution succeeds");
     let expected = Type::func(Type::v(1), Type::v(1)).for_all(1);
     assert_eq!(replaced, expected);
+}
+
+#[test]
+fn instantiate_forall_strict_accepts_type_var_arguments() {
+    let instantiated = instantiate_forall_strict(&Type::function(), &[Type::v(0), Type::v(0)])
+        .expect("instantiation succeeds");
+    let expected = Type::func(Type::v(0), Type::v(0));
+    assert_eq!(instantiated, expected);
 }
 
 #[test]

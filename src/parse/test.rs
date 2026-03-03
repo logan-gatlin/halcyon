@@ -7,8 +7,8 @@ use super::ast::{
 };
 use super::lexer::tokenize;
 use super::{
-    SyntaxKind,
     parse,
+    SyntaxKind,
 };
 use crate::logging::Logger;
 
@@ -960,6 +960,19 @@ fn ast_bracket_operator_ident_expr() {
         panic!("expected ident");
     };
     assert_eq!(ident.name_text().as_deref(), Some("[+]"));
+}
+
+#[test]
+fn ast_bracket_tilde_operator_ident_expr() {
+    assert_no_errors("module M =\n  let x = [~]\nend");
+    let sf = parse_source_file("module M =\n  let x = [~]\nend");
+    let ast::Statement::Let(ref ls) = sf.modules()[0].statements()[0] else {
+        panic!("expected let");
+    };
+    let ast::Expr::Ident(ref ident) = ls.value().unwrap() else {
+        panic!("expected ident");
+    };
+    assert_eq!(ident.name_text().as_deref(), Some("[~]"));
 }
 
 #[test]

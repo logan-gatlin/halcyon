@@ -71,6 +71,8 @@ module inference =
   let apply_use: core::integer = apply (fn n => n + 1) 2
   -- Treats a binary operator as a curried function.
   let operator_as_value: core::integer = core::[+] 1 2
+  -- Treats unary negation as a first-class function.
+  let unary_operator_as_value: core::integer = core::[~] 1
   -- Infers simple arithmetic lambdas for composition.
   let increment = fn n => n + 1
   -- Infers multiplication lambda for composition.

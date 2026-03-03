@@ -179,6 +179,22 @@ impl ModuleScope {
         self.report_undefined_usages(logger);
     }
 
+    pub fn predefine(
+        &mut self,
+        path: Path,
+        namespace: NameSpace,
+    ) {
+        let scoped_path = ScopedPath {
+            path,
+            namespace,
+        };
+        self.globals.insert(scoped_path.clone());
+        self.definitions
+            .entry(scoped_path)
+            .or_default()
+            .push(Span::Generated);
+    }
+
     fn report_multiple_definitions(
         &self,
         logger: &mut FileLogger,

@@ -182,6 +182,7 @@ impl SyntaxKind {
                 | Self::OR_KW
                 | Self::XOR_KW
                 | Self::NOT_KW
+                | Self::TILDE
                 | Self::SEMICOLON
         )
     }

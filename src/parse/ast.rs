@@ -298,25 +298,17 @@ impl TypeStatement {
     /// Returns canonical parameter names between `:` and `=`.
     pub fn type_params(&self) -> Vec<Spanned<String>> {
         let tokens = non_trivia_tokens(&self.syntax);
-        let mut after_colon = false;
         let mut params = Vec::new();
-        let mut index = 0;
+        let Some(mut index) = tokens.iter().position(|token| token.kind() == SyntaxKind::COLON)
+        else {
+            return params;
+        };
+        index += 1;
 
         while index < tokens.len() {
             let token = &tokens[index];
-            if token.kind() == SyntaxKind::COLON {
-                after_colon = true;
-                index += 1;
-                continue;
-            }
             if token.kind() == SyntaxKind::EQUAL {
-                after_colon = false;
-                index += 1;
-                continue;
-            }
-            if !after_colon {
-                index += 1;
-                continue;
+                break;
             }
 
             if token.kind() == SyntaxKind::IDENT {
@@ -365,25 +357,17 @@ impl HasLeadingComments for TraitStatement {
 impl TraitStatement {
     pub fn trait_params(&self) -> Vec<Spanned<String>> {
         let tokens = non_trivia_tokens(&self.syntax);
-        let mut after_colon = false;
         let mut params = Vec::new();
-        let mut index = 0;
+        let Some(mut index) = tokens.iter().position(|token| token.kind() == SyntaxKind::COLON)
+        else {
+            return params;
+        };
+        index += 1;
 
         while index < tokens.len() {
             let token = &tokens[index];
-            if token.kind() == SyntaxKind::COLON {
-                after_colon = true;
-                index += 1;
-                continue;
-            }
             if token.kind() == SyntaxKind::EQUAL {
-                after_colon = false;
-                index += 1;
-                continue;
-            }
-            if !after_colon {
-                index += 1;
-                continue;
+                break;
             }
 
             if token.kind() == SyntaxKind::IDENT {
