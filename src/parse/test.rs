@@ -50,7 +50,7 @@ fn lex_with_text(input: &str) -> Vec<(SyntaxKind, &str)> {
 #[test]
 fn lex_symbols() {
     use SyntaxKind::*;
-    let tokens = lex("() {} [] , : :: ; . .. + - / * % |> << >> -> => != = == > >= < <= |");
+    let tokens = lex("() {} [] , : :: ; . .. + - / * % |> << >> -> => != = == > >= < <= | ~");
     let expected = vec![
         L_PAREN,
         R_PAREN,
@@ -82,6 +82,7 @@ fn lex_symbols() {
         LESS,
         LESS_EQUAL,
         PIPE,
+        TILDE,
     ];
     assert_eq!(tokens, expected);
 }
@@ -678,6 +679,27 @@ fn ast_type_statement_accessors() {
         assert!(fields[0].ty().is_some(), "field x should have a type");
         assert!(fields[1].ty().is_some(), "field y should have a type");
     }
+}
+
+#[test]
+fn ast_type_statement_alias_marker() {
+    let sf = parse_source_file("module M =\n  type ~pair: a b = (a, b)\nend");
+    let m = &sf.modules()[0];
+    let ast::Statement::Type(ref type_stmt) = m.statements()[0] else {
+        panic!("expected type statement");
+    };
+    assert!(type_stmt.is_alias());
+    assert_eq!(type_stmt.name_text().as_deref(), Some("pair"));
+    let params = type_stmt.type_params();
+    assert_eq!(params.len(), 2);
+    let ast::TypeDef::Alias(_) = type_stmt.type_def().expect("should have type def") else {
+        panic!("expected alias rhs");
+    };
+}
+
+#[test]
+fn parse_tilde_type_alias_rejects_struct_rhs() {
+    assert_has_errors("module M =\n  type ~point = { x: int }\nend");
 }
 
 #[test]

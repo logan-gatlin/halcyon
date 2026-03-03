@@ -4,6 +4,12 @@ use crate::types::symbol_table::Symbol;
 
 use super::*;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TypeDeclKind {
+    Named,
+    Alias,
+}
+
 #[derive(Debug, Clone)]
 pub enum TypeExprKind {
     Tuple(Box<[TypeExpr]>),

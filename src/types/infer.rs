@@ -14,7 +14,10 @@ use crate::ir::{
     TypeExpr,
 };
 
-use super::instantiation::instantiate_predicates;
+use super::instantiation::{
+    instantiate_forall_strict,
+    instantiate_predicates,
+};
 use super::type_expr::lower_type_expr;
 use super::{
     MetaVarId,
@@ -23,6 +26,7 @@ use super::{
     TraitRef,
     Type,
     TypeDefinition,
+    TypeDefinitionKind,
     TypeScheme,
     TypeTransform,
 };
@@ -719,11 +723,19 @@ fn type_expr_to_type(
                     span,
                 });
             }
-            return Ok(Type::Named {
-                name: path.clone(),
-                body: Box::new(definition.body.clone()),
-            }
-            .apply(arguments));
+            return Ok(match definition.kind {
+                TypeDefinitionKind::Named => {
+                    Type::Named {
+                        name: path.clone(),
+                        body: Box::new(definition.body.clone()),
+                    }
+                    .apply(arguments)
+                }
+                TypeDefinitionKind::Alias => {
+                    instantiate_forall_strict(&definition.body, &arguments)
+                        .unwrap_or_else(|| definition.body.clone())
+                }
+            });
         }
         Ok(Type::Named {
             name: path.clone(),
@@ -830,6 +842,7 @@ mod tests {
     use crate::ir::{
         ImmediateValue,
         ScopeKind,
+        TypeExprKind,
     };
     use crate::{
         Span,
@@ -844,6 +857,14 @@ mod tests {
             kind,
             span: Span::Generated,
             type_: (),
+        }
+    }
+
+    fn instantiation_type_expr(path: Path) -> TypeExpr {
+        TypeExpr {
+            comments: String::new(),
+            kind: TypeExprKind::Instantiation(path, [].into()),
+            span: Span::Generated,
         }
     }
 
@@ -961,5 +982,48 @@ mod tests {
             .infer_term(&mut env, &field_term, &mut schemes)
             .expect("infer");
         assert_eq!(typed.term.type_, Type::Integer);
+    }
+
+    #[test]
+    fn named_type_expression_definition_stays_nominal() {
+        let mut ctx = InferenceContext::new();
+        let pair = Path::new("test", "Pair");
+        ctx.set_type_definitions(
+            [(
+                pair.clone(),
+                TypeDefinition {
+                    parameters: 0,
+                    body: Type::Tuple(vec![Type::Integer, Type::Boolean]),
+                    kind: TypeDefinitionKind::Named,
+                },
+            )]
+            .into_iter()
+            .collect(),
+        );
+
+        let type_ =
+            type_expr_to_type(&ctx, &instantiation_type_expr(pair.clone())).expect("lower type");
+        assert!(matches!(type_, Type::Named { name, .. } if name == pair));
+    }
+
+    #[test]
+    fn tilde_type_alias_lowers_structurally() {
+        let mut ctx = InferenceContext::new();
+        let pair = Path::new("test", "Pair");
+        ctx.set_type_definitions(
+            [(
+                pair.clone(),
+                TypeDefinition {
+                    parameters: 0,
+                    body: Type::Tuple(vec![Type::Integer, Type::Boolean]),
+                    kind: TypeDefinitionKind::Alias,
+                },
+            )]
+            .into_iter()
+            .collect(),
+        );
+
+        let type_ = type_expr_to_type(&ctx, &instantiation_type_expr(pair)).expect("lower type");
+        assert_eq!(type_, Type::Tuple(vec![Type::Integer, Type::Boolean]));
     }
 }

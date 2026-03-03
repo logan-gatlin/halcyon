@@ -287,6 +287,13 @@ impl HasLeadingComments for TypeStatement {
 }
 
 impl TypeStatement {
+    pub fn is_alias(&self) -> bool {
+        non_trivia_tokens(&self.syntax)
+            .into_iter()
+            .take_while(|token| token.kind() != SyntaxKind::EQUAL)
+            .any(|token| token.kind() == SyntaxKind::TILDE)
+    }
+
     /// Type parameters declared after `:`, e.g. `type Option: a = ...`.
     /// Returns canonical parameter names between `:` and `=`.
     pub fn type_params(&self) -> Vec<Spanned<String>> {

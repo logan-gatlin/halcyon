@@ -72,11 +72,12 @@ fn let_statement(p: &mut Parser<'_, '_>) {
 }
 
 /// ```bnf
-/// <type_statement> ::= "type" <ident> (":" <ident>+)? "=" <type_def>
+/// <type_statement> ::= "type" ("~")? <ident> (":" <ident>+)? "=" (<type_def> | <type_expr>)
 /// ```
 fn type_statement(p: &mut Parser<'_, '_>) {
     let m = p.start_node_with_leading_comments(SyntaxKind::TYPE_STATEMENT);
     p.expect(SyntaxKind::TYPE_KW);
+    let is_alias = p.eat(SyntaxKind::TILDE);
     expect_identifier(p);
     // Optional type parameters: `: a b c`
     if p.eat(SyntaxKind::COLON) {
@@ -85,7 +86,13 @@ fn type_statement(p: &mut Parser<'_, '_>) {
         }
     }
     p.expect(SyntaxKind::EQUAL);
-    type_expr::type_def(p);
+    if is_alias {
+        let alias = p.start_node(SyntaxKind::TYPE_ALIAS_DEF);
+        type_expr::type_expr(p);
+        p.finish_node(alias);
+    } else {
+        type_expr::type_def(p);
+    }
     p.finish_node(m);
 }
 

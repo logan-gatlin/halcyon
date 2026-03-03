@@ -353,10 +353,17 @@ impl SymbolTable {
 }
 
 /// Definition of a named type with its parameters and body.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TypeDefinitionKind {
+    Named,
+    Alias,
+}
+
 #[derive(Debug, Clone)]
 pub struct TypeDefinition {
     pub parameters: usize,
     pub body: Type,
+    pub kind: TypeDefinitionKind,
 }
 
 struct InstantiatedImpl {

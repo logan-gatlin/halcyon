@@ -58,6 +58,7 @@ pub enum Statement<T> {
         path: Path,
         parameters: Box<[Path]>,
         def: TypeDef,
+        kind: TypeDeclKind,
     },
     Trait {
         path: Path,
@@ -151,7 +152,14 @@ pub fn module(
                 let path =
                     module_scope.define(type_statement.name_text_spanned()?, NameSpace::Type);
                 let type_def = type_statement.type_def()?;
-                define_sum_constructors(&mut module_scope, &type_def)?;
+                let kind = if type_statement.is_alias() {
+                    TypeDeclKind::Alias
+                } else {
+                    TypeDeclKind::Named
+                };
+                if kind == TypeDeclKind::Named {
+                    define_sum_constructors(&mut module_scope, &type_def)?;
+                }
                 let mut parameter_scope = module_scope.nest_scope();
                 Statement::Type {
                     path,
@@ -161,6 +169,7 @@ pub fn module(
                         .map(|param| parameter_scope.define(param, NameSpace::Type))
                         .collect(),
                     def: typedef(&mut parameter_scope, type_def)?,
+                    kind,
                 }
             }
             ast::Statement::Trait(trait_statement) => {

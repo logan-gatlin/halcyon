@@ -12,4 +12,8 @@ module demo =
 	end
 
 	let a = id "a"
+	let f = fn a => a + a
+	let id = f 1
+
+	type Box: a = { inner: a }
 end

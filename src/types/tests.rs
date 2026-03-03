@@ -85,7 +85,7 @@ fn apply_nonempty_arguments_not_equal_constructor() {
 }
 
 #[test]
-fn unify_applied_named_function_with_function_type() {
+fn applied_named_type_does_not_unify_structurally() {
     let mut table = UnificationTable::default();
     let core_function = Type::Named {
         name: Path::new("core", "function"),
@@ -93,7 +93,7 @@ fn unify_applied_named_function_with_function_type() {
     }
     .apply(vec![Type::Integer, Type::Integer]);
     let direct_function = Type::func(Type::Integer, Type::Integer);
-    assert!(table.unify(&core_function, &direct_function).is_ok());
+    assert!(table.unify(&core_function, &direct_function).is_err());
 }
 
 #[test]
@@ -108,20 +108,6 @@ fn shift_type_vars_respects_binder() {
 fn shift_type_vars_underflow_returns_none() {
     let original = Type::v(0);
     assert!(original.shift_type_vars(-1, 0).is_none());
-}
-
-#[test]
-fn shift_rec_vars_respects_binder() {
-    let original = Type::func(Type::RecVar(0), Type::Mu(Box::new(Type::RecVar(0))));
-    let shifted = original.shift_rec_vars(1, 0).expect("shift succeeds");
-    let expected = Type::func(Type::RecVar(1), Type::Mu(Box::new(Type::RecVar(0))));
-    assert_eq!(shifted, expected);
-}
-
-#[test]
-fn shift_rec_vars_underflow_returns_none() {
-    let original = Type::RecVar(0);
-    assert!(original.shift_rec_vars(-1, 0).is_none());
 }
 
 #[test]
@@ -146,47 +132,6 @@ fn substitute_type_var_shifts_replacement() {
 }
 
 #[test]
-fn substitute_rec_var_respects_binder() {
-    let original = Type::Mu(Box::new(Type::func(Type::RecVar(0), Type::RecVar(1))));
-    let replaced = original
-        .substitute_rec_var(0, &Type::Integer)
-        .expect("substitution succeeds");
-    let expected = Type::Mu(Box::new(Type::func(Type::RecVar(0), Type::Integer)));
-    assert_eq!(replaced, expected);
-}
-
-#[test]
-fn substitute_rec_var_shifts_replacement() {
-    let original = Type::Mu(Box::new(Type::RecVar(1)));
-    let replacement = Type::func(Type::RecVar(0), Type::RecVar(0));
-    let replaced = original
-        .substitute_rec_var(0, &replacement)
-        .expect("substitution succeeds");
-    let expected = Type::Mu(Box::new(Type::func(Type::RecVar(1), Type::RecVar(1))));
-    assert_eq!(replaced, expected);
-}
-
-#[test]
-fn pretty_prints_forall_mu_sum() {
-    let list_type = Type::Mu(Box::new(Type::Sum {
-        variants: [
-            (
-                "Cons".to_string(),
-                Type::Tuple(vec![Type::v(0), Type::RecVar(0)]),
-            ),
-            ("Nil".to_string(), Type::Unit),
-        ]
-        .into_iter()
-        .collect(),
-    }))
-    .for_all(1);
-    assert_eq!(
-        list_type.pretty(),
-        "forall 'a. mu 'rec a. (| Cons ('a, 'rec a) | Nil )"
-    );
-}
-
-#[test]
 fn pretty_prints_named_application() {
     let nominal = named("core", "List", Type::Unit);
     let applied = Type::Apply {
@@ -202,8 +147,6 @@ fn pretty_prints_letter_sequence() {
     assert_eq!(Type::v(25).pretty(), "'z");
     assert_eq!(Type::v(26).pretty(), "'aa");
     assert_eq!(Type::v(27).pretty(), "'ab");
-    assert_eq!(Type::RecVar(0).pretty(), "'rec a");
-    assert_eq!(Type::RecVar(26).pretty(), "'rec aa");
 }
 
 #[test]

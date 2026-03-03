@@ -44,6 +44,7 @@ pub enum SyntaxKind {
     DOLLAR,
     HASH,
     AT,
+    TILDE,
 
     BANG_EQUAL,
     EQUAL,
@@ -207,6 +208,7 @@ impl std::fmt::Display for SyntaxKind {
                 DOLLAR => "$",
                 AT => "@",
                 HASH => "#",
+                TILDE => "~",
                 DOUBLE_COLON => "::",
                 SEMICOLON => ";",
                 DOT => ".",

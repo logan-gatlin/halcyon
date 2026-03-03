@@ -17,6 +17,7 @@ use crate::types::{
     TraitRef,
     Type as SemanticType,
     TypeDefinition,
+    TypeDefinitionKind,
     TypeScheme,
     TypeTransform,
 };
@@ -183,9 +184,7 @@ impl TypeSignatureSection {
     /// * Glyph: '5'
     /// * TypeVar: '6' u32
     /// * MetaVar: '7' u32
-    /// * RecVar: '8' u32
     /// * ForAll: '9' Type
-    /// * Mu: '10' Type
     /// * Named: '11' uint Type
     /// * StructConstraint: '12' (match_mode, [(str, Type)])
     /// * Struct: '13' [(str, Type)]
@@ -215,16 +214,8 @@ impl TypeSignatureSection {
                 7usize.encode(sink);
                 id.encode(sink);
             }
-            RecVar(id) => {
-                8usize.encode(sink);
-                id.encode(sink);
-            }
             ForAll(body) => {
                 9usize.encode(sink);
-                self.encode_type(body, sink);
-            }
-            Mu(body) => {
-                10usize.encode(sink);
                 self.encode_type(body, sink);
             }
             Named { name, body } => {
@@ -359,9 +350,21 @@ impl TypeSignatureSection {
         for _ in 0..defined_count {
             let path = dec.decode_path()?;
             reverse_index.push(path.clone());
+            let kind = match dec.decode_usize()? {
+                0 => TypeDefinitionKind::Named,
+                1 => TypeDefinitionKind::Alias,
+                _ => return None,
+            };
             let parameters = dec.decode_usize()?;
             let body = Self::decode_type(dec, &reverse_index)?;
-            defined_types.insert(path, TypeDefinition { parameters, body });
+            defined_types.insert(
+                path,
+                TypeDefinition {
+                    parameters,
+                    body,
+                    kind,
+                },
+            );
         }
 
         let defined_count = dec.decode_usize()?;
@@ -402,9 +405,7 @@ impl TypeSignatureSection {
             5 => Glyph,
             6 => TypeVar(dec.decode_u32()?),
             7 => MetaVar(dec.decode_u32()?),
-            8 => RecVar(dec.decode_u32()?),
             9 => ForAll(Box::new(Self::decode_type(dec, reverse_index)?)),
-            10 => Mu(Box::new(Self::decode_type(dec, reverse_index)?)),
             11 => {
                 let idx = dec.decode_usize()?;
                 let name = reverse_index.get(idx)?.clone();
@@ -522,6 +523,10 @@ impl Encode for TypeSignatureSection {
         self.defined_types.len().encode(&mut data);
         for (path, t) in &self.defined_types {
             path.encode(&mut data);
+            match t.kind {
+                TypeDefinitionKind::Named => 0usize.encode(&mut data),
+                TypeDefinitionKind::Alias => 1usize.encode(&mut data),
+            }
             t.parameters.encode(&mut data);
             self.encode_type(&t.body, &mut data);
         }
@@ -590,6 +595,7 @@ mod tests {
             TypeDefinition {
                 parameters: 0,
                 body: type_.clone(),
+                kind: TypeDefinitionKind::Named,
             },
         );
         section.rebuild_index_map();
@@ -617,9 +623,7 @@ mod tests {
     fn roundtrip_vars_and_binders() {
         roundtrip_type(SemanticType::TypeVar(2));
         roundtrip_type(SemanticType::MetaVar(3));
-        roundtrip_type(SemanticType::RecVar(1));
         roundtrip_type(SemanticType::ForAll(Box::new(SemanticType::TypeVar(0))));
-        roundtrip_type(SemanticType::Mu(Box::new(SemanticType::RecVar(0))));
     }
 
     #[test]
@@ -682,6 +686,7 @@ mod tests {
             TypeDefinition {
                 parameters: 1,
                 body: body.clone(),
+                kind: TypeDefinitionKind::Named,
             },
         );
         section.defined_terms.insert(
@@ -758,6 +763,7 @@ mod tests {
         1usize.encode(&mut data); // 1 defined type
         "test".encode(&mut data); // path.major
         "T".encode(&mut data); // path.minor
+        0usize.encode(&mut data); // kind: named
         0usize.encode(&mut data); // 0 parameters
         99usize.encode(&mut data); // invalid type tag
         0usize.encode(&mut data); // 0 defined terms
@@ -772,10 +778,11 @@ mod tests {
         1usize.encode(&mut data); // 1 defined type
         "test".encode(&mut data); // path.major
         "T".encode(&mut data); // path.minor
+        0usize.encode(&mut data); // kind: named
+        0usize.encode(&mut data); // 0 parameters
         11usize.encode(&mut data); // Named tag
         999usize.encode(&mut data); // out-of-bounds index into reverse_index
         0usize.encode(&mut data); // body tag: unit
-        0usize.encode(&mut data); // 0 parameters
         0usize.encode(&mut data); // 0 defined terms
         assert!(TypeSignatureSection::decode(&data).is_none());
     }

@@ -149,6 +149,7 @@ pub fn tokenize(
                 '$' => DOLLAR,
                 '#' => HASH,
                 '@' => AT,
+                '~' => TILDE,
                 ':' if not_next(':') => COLON,
                 ';' => SEMICOLON,
                 '|' if not_next('>') => PIPE,

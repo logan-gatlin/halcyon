@@ -17,6 +17,7 @@ use crate::ir::{
     Statement,
     Term,
     TermKind,
+    TypeDeclKind,
     TypeDefKind,
     TypeExpr,
 };
@@ -46,12 +47,14 @@ use super::{
     TraitRef,
     Type,
     TypeDefinition,
+    TypeDefinitionKind,
     TypeScheme,
     for_each_child_type,
 };
 
 #[derive(Debug, Clone)]
 struct TypeDefEntry {
+    kind: TypeDefinitionKind,
     parameters: Vec<Path>,
     def: crate::ir::TypeDef,
 }
@@ -121,6 +124,7 @@ pub fn resolve_module_with_symbols_and_schemes(
             let definition = TypeDefinition {
                 parameters: entry.parameters.len(),
                 body: Type::Unit,
+                kind: entry.kind,
             };
             symbols.insert_type(path.clone(), definition);
         }
@@ -183,11 +187,13 @@ pub fn resolve_module_with_symbols_and_schemes(
                 path,
                 parameters,
                 def,
+                kind,
             } => {
                 typed_statements.push(Statement::Type {
                     path,
                     parameters,
                     def,
+                    kind,
                 });
             }
             Statement::Trait {
@@ -256,18 +262,27 @@ fn collect_type_entries(statements: &[Statement<()>]) -> IndexMap<Path, TypeDefE
             path,
             parameters,
             def,
+            kind,
         } = statement
         else {
             continue;
         };
         entries.entry(path.clone()).or_insert_with(|| {
             TypeDefEntry {
+                kind: type_definition_kind_from_decl_kind(*kind),
                 parameters: parameters.to_vec(),
                 def: def.clone(),
             }
         });
     }
     entries
+}
+
+fn type_definition_kind_from_decl_kind(kind: TypeDeclKind) -> TypeDefinitionKind {
+    match kind {
+        TypeDeclKind::Named => TypeDefinitionKind::Named,
+        TypeDeclKind::Alias => TypeDefinitionKind::Alias,
+    }
 }
 
 fn collect_term_definitions(statements: &[Statement<()>]) -> Vec<(Path, Span)> {
@@ -676,19 +691,25 @@ fn resolve_type_definition(
         return TypeDefinition {
             parameters: 0,
             body: Type::Unit,
+            kind: TypeDefinitionKind::Named,
         };
     };
-    if stack.contains(path) {
-        logger
-            .error("Recursive type definitions are not supported yet")
-            .primary(
-                format!("Type `{path}` depends on itself."),
-                entry.def.span(),
-            )
-            .done();
+    if let Some(cycle_start) = stack.iter().position(|candidate| candidate == path) {
+        let cycle = &stack[cycle_start..];
+        if recursive_cycle_allowed(cycle, entries) {
+            let definition = TypeDefinition {
+                parameters: entry.parameters.len(),
+                body: Type::Unit,
+                kind: entry.kind,
+            };
+            type_definitions.insert(path.clone(), definition.clone());
+            return definition;
+        }
+        log_invalid_recursive_cycle(logger, cycle, entries);
         let definition = TypeDefinition {
             parameters: entry.parameters.len(),
             body: Type::Unit,
+            kind: entry.kind,
         };
         type_definitions.insert(path.clone(), definition.clone());
         return definition;
@@ -708,10 +729,92 @@ fn resolve_type_definition(
     let definition = TypeDefinition {
         parameters: entry.parameters.len(),
         body,
+        kind: entry.kind,
     };
     type_definitions.insert(path.clone(), definition.clone());
     stack.pop();
     definition
+}
+
+fn recursive_cycle_allowed(
+    cycle: &[Path],
+    entries: &IndexMap<Path, TypeDefEntry>,
+) -> bool {
+    cycle.iter().all(|path| {
+        let Some(entry) = entries.get(path) else {
+            return false;
+        };
+        entry.kind == TypeDefinitionKind::Named && matches!(entry.def.kind(), TypeDefKind::Sum(_))
+    })
+}
+
+fn log_invalid_recursive_cycle(
+    logger: &mut FileLogger,
+    cycle: &[Path],
+    entries: &IndexMap<Path, TypeDefEntry>,
+) {
+    let cycle_text = format_recursive_cycle(cycle);
+    if let Some(path) = cycle.iter().find(|path| {
+        entries
+            .get(*path)
+            .is_some_and(|entry| entry.kind == TypeDefinitionKind::Alias)
+    }) {
+        let span = entries
+            .get(path)
+            .map(|entry| entry.def.span())
+            .unwrap_or(Span::Generated);
+        logger
+            .error("Recursive type aliases are not allowed")
+            .primary(
+                format!("`{path}` is part of recursive cycle `{cycle_text}`."),
+                span,
+            )
+            .done();
+        return;
+    }
+
+    if let Some(path) = cycle.iter().find(|path| {
+        entries
+            .get(*path)
+            .is_some_and(|entry| !matches!(entry.def.kind(), TypeDefKind::Sum(_)))
+    }) {
+        let span = entries
+            .get(path)
+            .map(|entry| entry.def.span())
+            .unwrap_or(Span::Generated);
+        logger
+            .error("Invalid recursive type definition")
+            .primary(
+                format!(
+                    "`{path}` is part of recursive cycle `{cycle_text}`. Only sum type definitions may be recursive."
+                ),
+                span,
+            )
+            .done();
+        return;
+    }
+
+    if let Some(path) = cycle.first() {
+        let span = entries
+            .get(path)
+            .map(|entry| entry.def.span())
+            .unwrap_or(Span::Generated);
+        logger
+            .error("Invalid recursive type definition")
+            .primary(
+                format!("Recursive cycle `{cycle_text}` is not supported."),
+                span,
+            )
+            .done();
+    }
+}
+
+fn format_recursive_cycle(cycle: &[Path]) -> String {
+    let mut names = cycle.iter().map(ToString::to_string).collect::<Vec<_>>();
+    if let Some(first) = cycle.first() {
+        names.push(first.to_string());
+    }
+    names.join(" -> ")
 }
 
 fn type_def_kind_to_type(
@@ -856,11 +959,18 @@ impl TypeDefTypeExprLowering<'_> {
                     )
                     .done();
             }
-            return Type::Named {
-                name: path.clone(),
-                body: Box::new(definition.body),
-            }
-            .apply(arguments);
+            return match definition.kind {
+                TypeDefinitionKind::Named => {
+                    Type::Named {
+                        name: path.clone(),
+                        body: Box::new(definition.body),
+                    }
+                    .apply(arguments)
+                }
+                TypeDefinitionKind::Alias => {
+                    instantiate_alias_type(&definition, &arguments).unwrap_or(definition.body)
+                }
+            };
         }
 
         Type::Named {
@@ -869,6 +979,14 @@ impl TypeDefTypeExprLowering<'_> {
         }
         .apply(arguments)
     }
+}
+
+fn instantiate_alias_type(
+    definition: &TypeDefinition,
+    arguments: &[Type],
+) -> Option<Type> {
+    let argument_count = arguments.len().min(definition.parameters);
+    instantiate_forall_strict(&definition.body, &arguments[..argument_count])
 }
 
 fn build_sum_constructors(
@@ -880,6 +998,9 @@ fn build_sum_constructors(
     let mut seen_paths = HashSet::new();
     let mut type_definitions = type_definitions.clone();
     for (path, entry) in entries.iter() {
+        if entry.kind != TypeDefinitionKind::Named {
+            continue;
+        }
         let TypeDefKind::Sum(variants) = entry.def.kind() else {
             continue;
         };
@@ -891,6 +1012,7 @@ fn build_sum_constructors(
             .unwrap_or(TypeDefinition {
                 parameters: entry.parameters.len(),
                 body: Type::Unit,
+                kind: TypeDefinitionKind::Named,
             });
         let base = Type::Named {
             name: path.clone(),

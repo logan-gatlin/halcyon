@@ -1,15 +1,15 @@
 module inference =
 
   -- Defines a generic Pair type for type application inference.
-  type Pair = fn a b => (a, b)
+  type ~Pair: a b = (a, b)
   -- Defines a generic Option type for sum inference.
-  type Option = fn a => | None | Some a
+  type Option: a = | None | Some a
   -- Defines a generic Result type for multi-parameter sum inference.
-  type Result = fn ok err => | Ok ok | Err err
+  type Result: ok err = | Ok ok | Err err
   -- Defines a Point record type for struct inference.
   type Point = { x: core::integer, y: core::integer }
   -- Defines a generic Box record type for type-application struct inference.
-  type Box = fn a => { value: a }
+  type Box: a = { value: a }
 
   -- Infers integer literal as core::integer.
   let literal_integer: core::integer = 42

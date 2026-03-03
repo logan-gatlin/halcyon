@@ -26,8 +26,8 @@ pub fn lower_type(
         Real => Type::Struct([Type::F64].into()),
         Glyph | Boolean => Type::Struct([Type::I32].into()),
         String => Type::Array(Type::I8.into()),
-        TypeVar(_) | MetaVar(_) | RecVar(_) => Type::Any,
-        ForAll(body) | Mu(body) => lower_type(body, symbols),
+        TypeVar(_) | MetaVar(_) => Type::Any,
+        ForAll(body) => lower_type(body, symbols),
         Named { name, body } => lower_type(&resolve_named_body(name, body, symbols), symbols),
         StructConstraint { fields, .. } => {
             Type::Struct(fields.values().map(|v| lower_type(v, symbols)).collect())
@@ -1003,7 +1003,7 @@ fn sum_variants(definition: &TypeDefinition) -> Option<IndexMap<String, Semantic
     let mut current = &definition.body;
     loop {
         match current {
-            SemanticType::ForAll(body) | SemanticType::Mu(body) => current = body,
+            SemanticType::ForAll(body) => current = body,
             SemanticType::Sum { variants } => return Some(variants.clone()),
             _ => return None,
         }

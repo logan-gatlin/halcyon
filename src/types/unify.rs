@@ -84,10 +84,8 @@ impl UnificationTable {
             | Type::String
             | Type::Glyph
             | Type::TypeVar(_)
-            | Type::MetaVar(_)
-            | Type::RecVar(_) => pruned,
+            | Type::MetaVar(_) => pruned,
             Type::ForAll(body) => Type::ForAll(Box::new(self.normalize(&body))),
-            Type::Mu(body) => Type::Mu(Box::new(self.normalize(&body))),
             Type::Named { name, body } => Type::Named { name, body },
             Type::StructConstraint { fields, mode } => {
                 Type::StructConstraint {
@@ -195,7 +193,7 @@ impl UnificationTable {
         &mut self,
         type_: &Type,
     ) -> Type {
-        normalize_applied_named_types(self.prune(type_))
+        normalize_empty_apply(self.prune(type_))
     }
 
     fn unify_non_meta(
@@ -211,9 +209,7 @@ impl UnificationTable {
             | (Type::String, Type::String)
             | (Type::Glyph, Type::Glyph) => Ok(()),
             (Type::TypeVar(left), Type::TypeVar(right)) if left == right => Ok(()),
-            (Type::RecVar(left), Type::RecVar(right)) if left == right => Ok(()),
             (Type::ForAll(left), Type::ForAll(right)) => self.unify(&left, &right),
-            (Type::Mu(left), Type::Mu(right)) => self.unify(&left, &right),
             (Type::Named { name: left, .. }, Type::Named { name: right, .. }) if left == right => {
                 Ok(())
             }
@@ -643,25 +639,6 @@ fn normalize_empty_apply(type_: Type) -> Type {
         } if arguments.is_empty() => normalize_empty_apply(*constructor),
         other => other,
     }
-}
-
-fn normalize_applied_named_types(type_: Type) -> Type {
-    let mut current = normalize_empty_apply(type_);
-    while let Some(next) = expand_applied_named_type(&current) {
-        current = normalize_empty_apply(next);
-    }
-    current
-}
-
-fn expand_applied_named_type(type_: &Type) -> Option<Type> {
-    let (base, arguments) = split_apply(type_);
-    if arguments.is_empty() {
-        return None;
-    }
-    let Type::Named { body, .. } = base else {
-        return None;
-    };
-    instantiate_named_body(&body, &arguments)
 }
 
 fn split_apply(type_: &Type) -> (Type, Vec<Type>) {

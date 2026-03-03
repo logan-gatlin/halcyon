@@ -3,7 +3,6 @@ use indexmap::IndexMap;
 use crate::ir::Path;
 
 pub type TypeParameterIndex = u32;
-pub type RecursionIndex = u32;
 pub type MetaVarId = u32;
 
 /// Structural match mode for struct constraints.
@@ -33,12 +32,8 @@ pub enum Type {
     TypeVar(TypeParameterIndex),
     /// Inference-time meta type variable
     MetaVar(MetaVarId),
-    /// Bound recursive reference (De Bruijn index; 0 is innermost Mu)
-    RecVar(RecursionIndex),
     /// Universal type binder for parameters
     ForAll(Box<Type>),
-    /// Recursive type binder
-    Mu(Box<Type>),
     /// Nominal type definition
     Named { name: Path, body: Box<Type> },
     /// Structural constraint for named structs
@@ -78,9 +73,7 @@ impl PartialEq for Type {
             | (Glyph, Glyph) => true,
             (TypeVar(left), TypeVar(right)) => left == right,
             (MetaVar(left), MetaVar(right)) => left == right,
-            (RecVar(left), RecVar(right)) => left == right,
             (ForAll(left), ForAll(right)) => left == right,
-            (Mu(left), Mu(right)) => left == right,
             (Named { name: left, .. }, Named { name: right, .. }) => left == right,
             (
                 StructConstraint {
@@ -137,7 +130,7 @@ pub(crate) fn for_each_child_type(
     mut visit: impl FnMut(&Type),
 ) {
     match type_ {
-        Type::ForAll(body) | Type::Mu(body) | Type::Array(body) => {
+        Type::ForAll(body) | Type::Array(body) => {
             visit(body);
         }
         Type::Function(parameter, result) => {
@@ -165,8 +158,7 @@ pub(crate) fn for_each_child_type(
         | Type::String
         | Type::Glyph
         | Type::TypeVar(_)
-        | Type::MetaVar(_)
-        | Type::RecVar(_) => {}
+        | Type::MetaVar(_) => {}
     }
 }
 
@@ -192,14 +184,6 @@ pub(crate) trait TypeTransform {
         id: MetaVarId,
     ) -> Option<Type> {
         Some(Type::MetaVar(id))
-    }
-
-    /// Transform a recursive variable (`Type::RecVar`).
-    fn rec_var(
-        &mut self,
-        index: RecursionIndex,
-    ) -> Option<Type> {
-        Some(Type::RecVar(index))
     }
 
     /// Transform a named type (`Type::Named`).
@@ -246,14 +230,6 @@ pub(crate) trait TypeTransform {
     fn leave_forall(&mut self) {
     }
 
-    /// Hook called before recursively visiting the body of `Type::Mu`.
-    fn enter_mu(&mut self) {
-    }
-
-    /// Hook called after recursively visiting the body of `Type::Mu`.
-    fn leave_mu(&mut self) {
-    }
-
     /// Hook called by [`TypeTransform::walk`] for every visited node.
     fn visit(
         &mut self,
@@ -276,11 +252,6 @@ pub(crate) trait TypeTransform {
                 self.walk(body);
                 self.leave_forall();
             }
-            Type::Mu(body) => {
-                self.enter_mu();
-                self.walk(body);
-                self.leave_mu();
-            }
             _ => for_each_child_type(type_, true, |child| self.walk(child)),
         }
     }
@@ -299,18 +270,11 @@ pub(crate) trait TypeTransform {
             | Type::Glyph => Some(type_.clone()),
             Type::TypeVar(index) => self.type_var(*index),
             Type::MetaVar(index) => self.meta_var(*index),
-            Type::RecVar(index) => self.rec_var(*index),
             Type::ForAll(body) => {
                 self.enter_forall();
                 let body = self.transform(body)?;
                 self.leave_forall();
                 Some(Type::ForAll(Box::new(body)))
-            }
-            Type::Mu(body) => {
-                self.enter_mu();
-                let body = self.transform(body)?;
-                self.leave_mu();
-                Some(Type::Mu(Box::new(body)))
             }
             Type::Named { name, body } => self.named(name, body),
             Type::StructConstraint { fields, mode } => {
@@ -387,32 +351,6 @@ impl TypeTransform for ShiftTypeVars {
     }
 }
 
-struct ShiftRecVars {
-    amount: i32,
-    cutoff: RecursionIndex,
-}
-
-impl TypeTransform for ShiftRecVars {
-    fn rec_var(
-        &mut self,
-        index: RecursionIndex,
-    ) -> Option<Type> {
-        if index < self.cutoff {
-            Some(Type::RecVar(index))
-        } else {
-            shift_index(index, self.amount).map(Type::RecVar)
-        }
-    }
-
-    fn enter_mu(&mut self) {
-        self.cutoff += 1;
-    }
-
-    fn leave_mu(&mut self) {
-        self.cutoff -= 1;
-    }
-}
-
 struct SubstituteTypeVar<'a> {
     index: TypeParameterIndex,
     replacement: &'a Type,
@@ -437,34 +375,6 @@ impl TypeTransform for SubstituteTypeVar<'_> {
     }
 
     fn leave_forall(&mut self) {
-        self.depth -= 1;
-    }
-}
-
-struct SubstituteRecVar<'a> {
-    index: RecursionIndex,
-    replacement: &'a Type,
-    depth: RecursionIndex,
-}
-
-impl TypeTransform for SubstituteRecVar<'_> {
-    fn rec_var(
-        &mut self,
-        var_index: RecursionIndex,
-    ) -> Option<Type> {
-        match self.index.checked_add(self.depth) {
-            Some(target) if var_index == target => {
-                self.replacement.shift_rec_vars(self.depth as i32, 0)
-            }
-            _ => Some(Type::RecVar(var_index)),
-        }
-    }
-
-    fn enter_mu(&mut self) {
-        self.depth += 1;
-    }
-
-    fn leave_mu(&mut self) {
         self.depth -= 1;
     }
 }
@@ -505,6 +415,17 @@ impl Type {
         TypeDefinition {
             parameters,
             body: self,
+            kind: TypeDefinitionKind::Alias,
+        }
+    }
+    pub fn def_named(
+        self,
+        parameters: usize,
+    ) -> TypeDefinition {
+        TypeDefinition {
+            parameters,
+            body: self,
+            kind: TypeDefinitionKind::Named,
         }
     }
     pub fn scheme(self) -> TypeScheme {
@@ -524,33 +445,12 @@ impl Type {
         ShiftTypeVars { amount, cutoff }.transform(self)
     }
 
-    pub fn shift_rec_vars(
-        &self,
-        amount: i32,
-        cutoff: RecursionIndex,
-    ) -> Option<Self> {
-        ShiftRecVars { amount, cutoff }.transform(self)
-    }
-
     pub fn substitute_type_var(
         &self,
         index: TypeParameterIndex,
         replacement: &Type,
     ) -> Option<Self> {
         SubstituteTypeVar {
-            index,
-            replacement,
-            depth: 0,
-        }
-        .transform(self)
-    }
-
-    pub fn substitute_rec_var(
-        &self,
-        index: RecursionIndex,
-        replacement: &Type,
-    ) -> Option<Self> {
-        SubstituteRecVar {
             index,
             replacement,
             depth: 0,
@@ -581,13 +481,12 @@ impl Type {
     }
 
     pub fn pretty(&self) -> String {
-        self.pretty_with_context(&[], &[])
+        self.pretty_with_context(&[])
     }
 
     fn pretty_with_context(
         &self,
         param_names: &[String],
-        rec_names: &[String],
     ) -> String {
         match self {
             Type::Unit => "()".to_string(),
@@ -598,28 +497,15 @@ impl Type {
             Type::Glyph => "glyph".to_string(),
             Type::TypeVar(index) => lookup_name(param_names, *index, type_var_name),
             Type::MetaVar(index) => format!("v{index}"),
-            Type::RecVar(index) => lookup_name(rec_names, *index, rec_var_name),
             Type::ForAll(body) => {
                 let name = type_var_name(param_names.len() as u32);
                 let mut next_params = param_names.to_vec();
                 next_params.push(name.clone());
-                format!(
-                    "forall {name}. {}",
-                    body.pretty_with_context(&next_params, rec_names)
-                )
-            }
-            Type::Mu(body) => {
-                let name = rec_var_name(rec_names.len() as u32);
-                let mut next_recs = rec_names.to_vec();
-                next_recs.push(name.clone());
-                format!(
-                    "mu {name}. {}",
-                    body.pretty_with_context(param_names, &next_recs)
-                )
+                format!("forall {name}. {}", body.pretty_with_context(&next_params))
             }
             Type::Named { name, .. } => format!("{name}"),
             Type::StructConstraint { fields, mode } => {
-                let fields = pretty_record_fields(fields, param_names, rec_names);
+                let fields = pretty_record_fields(fields, param_names);
                 let suffix = match mode {
                     StructMatch::Exact => "",
                     StructMatch::AtLeast => ", ..",
@@ -627,16 +513,14 @@ impl Type {
                 format!("{{{fields}{suffix}}}")
             }
             Type::Struct { fields } => {
-                let fields = pretty_record_fields(fields, param_names, rec_names);
+                let fields = pretty_record_fields(fields, param_names);
                 format!("{{{fields}}}")
             }
-            Type::Array(inner) => {
-                format!("[] {}", inner.pretty_with_context(param_names, rec_names))
-            }
+            Type::Array(inner) => format!("[] {}", inner.pretty_with_context(param_names)),
             Type::Tuple(items) => {
                 let items = items
                     .iter()
-                    .map(|item| item.pretty_with_context(param_names, rec_names))
+                    .map(|item| item.pretty_with_context(param_names))
                     .collect::<Vec<_>>()
                     .join(", ");
                 format!("({items})")
@@ -648,7 +532,7 @@ impl Type {
                         if matches!(type_, Type::Unit) {
                             name.clone()
                         } else {
-                            format!("{name} {}", type_.pretty_wrapped(param_names, rec_names))
+                            format!("{name} {}", type_.pretty_wrapped(param_names))
                         }
                     })
                     .collect::<Vec<_>>()
@@ -658,8 +542,8 @@ impl Type {
             Type::Function(parameter, result) => {
                 format!(
                     "({} -> {})",
-                    parameter.pretty_wrapped(param_names, rec_names),
-                    result.pretty_wrapped(param_names, rec_names)
+                    parameter.pretty_wrapped(param_names),
+                    result.pretty_wrapped(param_names)
                 )
             }
             Type::Apply {
@@ -667,17 +551,14 @@ impl Type {
                 arguments,
             } => {
                 if arguments.is_empty() {
-                    constructor.pretty_with_context(param_names, rec_names)
+                    constructor.pretty_with_context(param_names)
                 } else {
                     let args = arguments
                         .iter()
-                        .map(|arg| arg.pretty_wrapped(param_names, rec_names))
+                        .map(|arg| arg.pretty_wrapped(param_names))
                         .collect::<Vec<_>>()
                         .join(" ");
-                    format!(
-                        "{} {args}",
-                        constructor.pretty_wrapped(param_names, rec_names)
-                    )
+                    format!("{} {args}", constructor.pretty_wrapped(param_names))
                 }
             }
         }
@@ -686,9 +567,8 @@ impl Type {
     fn pretty_wrapped(
         &self,
         param_names: &[String],
-        rec_names: &[String],
     ) -> String {
-        let pretty = self.pretty_with_context(param_names, rec_names);
+        let pretty = self.pretty_with_context(param_names);
         if self.is_wrapped_atom() {
             pretty
         } else {
@@ -707,7 +587,6 @@ impl Type {
                 | Type::Glyph
                 | Type::TypeVar(_)
                 | Type::MetaVar(_)
-                | Type::RecVar(_)
                 | Type::Named { .. }
                 | Type::StructConstraint { .. }
                 | Type::Array(_)
@@ -756,10 +635,6 @@ fn type_var_name(index: u32) -> String {
     format!("'{}", alpha_name(index))
 }
 
-fn rec_var_name(index: u32) -> String {
-    format!("'rec {}", alpha_name(index))
-}
-
 fn alpha_name(index: u32) -> String {
     let mut n = index + 1;
     let mut chars = Vec::new();
@@ -775,16 +650,10 @@ fn alpha_name(index: u32) -> String {
 fn pretty_record_fields(
     fields: &IndexMap<String, Type>,
     param_names: &[String],
-    rec_names: &[String],
 ) -> String {
     fields
         .iter()
-        .map(|(name, type_)| {
-            format!(
-                "{name}: {}",
-                type_.pretty_with_context(param_names, rec_names)
-            )
-        })
+        .map(|(name, type_)| format!("{name}: {}", type_.pretty_with_context(param_names)))
         .collect::<Vec<_>>()
         .join(", ")
 }
@@ -802,6 +671,7 @@ pub use symbol_table::{
     MethodSpecialization,
     SymbolTable,
     TypeDefinition,
+    TypeDefinitionKind,
 };
 
 pub use traits::{

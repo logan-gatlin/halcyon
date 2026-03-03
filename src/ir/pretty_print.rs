@@ -118,7 +118,8 @@ impl Printer {
                 path,
                 parameters,
                 def,
-            } => self.type_statement(path, parameters, def),
+                kind,
+            } => self.type_statement(path, parameters, def, *kind),
             Statement::Trait {
                 path,
                 parameters,
@@ -619,6 +620,7 @@ impl Printer {
         path: &Path,
         parameters: &[Path],
         def: &TypeDef,
+        kind: TypeDeclKind,
     ) {
         let params = if parameters.is_empty() {
             String::new()
@@ -630,14 +632,21 @@ impl Printer {
                 .join(" ");
             format!(" : {names}")
         };
+        let alias_prefix = if kind == TypeDeclKind::Alias { "~" } else { "" };
         if let Some(def_inline) = self.format_type_def_inline(def) {
-            let line = format!("type {}{params} = {def_inline}", self.format_path(path));
+            let line = format!(
+                "type {alias_prefix}{}{params} = {def_inline}",
+                self.format_path(path)
+            );
             if line.len() <= LINE_LIMIT {
                 self.line(line);
                 return;
             }
         }
-        self.line(format!("type {}{params} =", self.format_path(path)));
+        self.line(format!(
+            "type {alias_prefix}{}{params} =",
+            self.format_path(path)
+        ));
         self.indented(|printer| printer.type_def(def));
     }
 

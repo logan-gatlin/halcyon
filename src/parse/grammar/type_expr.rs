@@ -14,7 +14,7 @@ use crate::parse::parser::Parser;
 /// ```bnf
 /// <type_def> ::= "{" field_decl+ "}"             -- record
 ///              | ("|" variant)+                  -- sum type
-///              | <type_expr>                     -- alias
+///              | <type_expr>                     -- type-expression body
 /// ```
 pub(crate) fn type_def(p: &mut Parser<'_, '_>) {
     match p.current() {
@@ -58,7 +58,7 @@ fn sum_def(p: &mut Parser<'_, '_>) {
     p.finish_node(m);
 }
 
-/// A bare type expression used as an alias.
+/// A bare type expression used as a type body.
 fn type_alias_def(p: &mut Parser<'_, '_>) {
     let m = p.start_node(SyntaxKind::TYPE_ALIAS_DEF);
     type_expr(p);

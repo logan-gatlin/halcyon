@@ -92,11 +92,13 @@ pub fn elaborate_module(
                     path,
                     parameters,
                     def,
+                    kind,
                 } => {
                     Statement::Type {
                         path,
                         parameters,
                         def,
+                        kind,
                     }
                 }
                 Statement::Trait {
@@ -670,11 +672,7 @@ fn substitute_type_vars_in_type(
                 arguments,
             })
         }
-        Type::StructConstraint { .. }
-        | Type::MetaVar(_)
-        | Type::RecVar(_)
-        | Type::ForAll(_)
-        | Type::Mu(_) => None,
+        Type::StructConstraint { .. } | Type::MetaVar(_) | Type::ForAll(_) => None,
         other => Some(other.clone()),
     }
 }
@@ -1001,11 +999,7 @@ fn match_scheme_to_type(
                     .zip(other_arguments.iter())
                     .all(|(left, right)| match_scheme_to_type(left, right, bindings))
         }
-        Type::StructConstraint { .. }
-        | Type::MetaVar(_)
-        | Type::RecVar(_)
-        | Type::ForAll(_)
-        | Type::Mu(_) => false,
+        Type::StructConstraint { .. } | Type::MetaVar(_) | Type::ForAll(_) => false,
     }
 }
 
@@ -1117,22 +1111,15 @@ fn match_scheme_to_type_relaxed(
                     .zip(other_arguments.iter())
                     .all(|(left, right)| match_scheme_to_type_relaxed(left, right, bindings))
         }
-        Type::StructConstraint { .. }
-        | Type::MetaVar(_)
-        | Type::RecVar(_)
-        | Type::ForAll(_)
-        | Type::Mu(_) => false,
+        Type::StructConstraint { .. } | Type::MetaVar(_) | Type::ForAll(_) => false,
     }
 }
 
 fn is_concrete_type(type_: &Type) -> bool {
     match type_ {
-        Type::TypeVar(_)
-        | Type::MetaVar(_)
-        | Type::RecVar(_)
-        | Type::ForAll(_)
-        | Type::Mu(_)
-        | Type::StructConstraint { .. } => false,
+        Type::TypeVar(_) | Type::MetaVar(_) | Type::ForAll(_) | Type::StructConstraint { .. } => {
+            false
+        }
         Type::Array(inner) => is_concrete_type(inner),
         Type::Tuple(items) => items.iter().all(is_concrete_type),
         Type::Struct { fields } => fields.values().all(is_concrete_type),

@@ -217,10 +217,6 @@ impl ModuleScope {
         let mut undefined = self
             .undefined_usages
             .iter()
-            .filter(|(scoped_path, _)| {
-                scoped_path.namespace != NameSpace::Constructor
-                    && !self.definitions.contains_key(*scoped_path)
-            })
             .map(|(scoped_path, spans)| (scoped_path.clone(), spans.as_slice()))
             .collect::<Vec<_>>();
         undefined.sort_by_key(|(scoped_path, _)| {
@@ -303,13 +299,21 @@ impl Scope for ModuleScope {
             }
             None => {
                 let path = Path::new(&self.module_name, &string.inner);
-                self.undefined_usages
-                    .entry(ScopedPath {
-                        path: path.clone(),
-                        namespace,
-                    })
-                    .or_default()
-                    .push(string.span);
+                let scoped_path = ScopedPath {
+                    path: path.clone(),
+                    namespace,
+                };
+                if self.definitions.contains_key(&scoped_path) {
+                    self.usages
+                        .entry(scoped_path)
+                        .or_default()
+                        .push(string.span);
+                } else {
+                    self.undefined_usages
+                        .entry(scoped_path)
+                        .or_default()
+                        .push(string.span);
+                }
                 path
             }
         }
@@ -319,13 +323,19 @@ impl Scope for ModuleScope {
         path: Spanned<Path>,
         namespace: NameSpace,
     ) -> Path {
-        self.usages
-            .entry(ScopedPath {
-                path: path.inner.clone(),
-                namespace,
-            })
-            .or_default()
-            .push(path.span);
+        let scoped_path = ScopedPath {
+            path: path.inner.clone(),
+            namespace,
+        };
+        let is_local_module_path = path.inner.major == self.module_name;
+        if is_local_module_path && !self.definitions.contains_key(&scoped_path) {
+            self.undefined_usages
+                .entry(scoped_path)
+                .or_default()
+                .push(path.span);
+        } else {
+            self.usages.entry(scoped_path).or_default().push(path.span);
+        }
         path.inner
     }
     fn nest_function_scope(&mut self) -> LocalFunctionScope<impl Scope> {

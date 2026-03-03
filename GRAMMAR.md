@@ -12,7 +12,7 @@
                | <wasm_statement>
 
 <let_statement>  ::= "let" <pattern> "=" <expr>
-<type_statement> ::= "type" <ident> (":" <ident>+)? "=" <type_def>
+<type_statement> ::= "type" "~"? <ident> (":" <ident>+)? "=" (<type_def> | <type_expr>)
 <trait_statement> ::= "trait" <ident> (":" <ident>+)? "=" <trait_method_decl>* "end"
 <impl_statement> ::= "impl" (<ident> | <path>) ":" <type_expr> ("," <type_expr>)* "=" <impl_method_def>* "end"
 <trait_method_decl> ::= "let" <ident> ":" <type_expr>
@@ -24,7 +24,15 @@
 ```bnf
 <type_def>   ::= "{" <field_decl>+ "}"           -- record definition
                | ("|" <variant>)+                  -- sum type
-               | <type_expr>                        -- type alias
+               | <type_expr>                        -- named type body
+
+Type declarations are split by the `~` marker:
+- `type Name ... = <type_def>` defines a nominal named type.
+- `type ~Name ... = <type_expr>` defines a structural type alias.
+
+Recursion rules:
+- Recursive type aliases are rejected.
+- Recursive nominal definitions are allowed only for sum types (`| ...`).
 
 <field_decl> ::= <ident> ":" <type_expr> ("," <ident> ":" <type_expr>)* ","?
 <variant>    ::= <ident> <type_expr>?
