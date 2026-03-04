@@ -5,6 +5,7 @@ pub enum CoreTerm {
     EmptyArray,
     ArrayPush,
     ArrayConcat,
+    PrintString,
 }
 
 impl Symbol for CoreTerm {
@@ -13,6 +14,7 @@ impl Symbol for CoreTerm {
             CoreTerm::EmptyArray => Path::core("array_empty"),
             CoreTerm::ArrayPush => Path::core("array_push"),
             CoreTerm::ArrayConcat => Path::core("array_concat"),
+            CoreTerm::PrintString => Path::core("print_string"),
         }
     }
 
@@ -37,6 +39,7 @@ impl Symbol for CoreTerm {
                 .for_all(1)
                 .scheme()
             }
+            CoreTerm::PrintString => Type::func(Type::String, Type::Unit).scheme(),
         })
     }
 }

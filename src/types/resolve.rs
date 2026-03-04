@@ -37,6 +37,7 @@ use super::instantiation::{
     instantiate_predicates,
     leading_forall_count,
 };
+use super::unify::UnificationTable;
 use super::type_expr::lower_type_expr;
 use super::{
     SymbolTable,
@@ -506,8 +507,8 @@ impl ImplProcessingContext<'_> {
                 }
             }
 
-            let normalized_type = self.ctx.table_mut().normalize(&typed_value.type_);
-            typed_value.type_ = normalized_type.clone();
+            typed_value = normalize_term_types(typed_value, self.ctx.table_mut());
+            let normalized_type = typed_value.type_.clone();
             solve_predicates(
                 self.logger,
                 self.ctx,
@@ -572,6 +573,149 @@ fn instantiate_method_scheme(
     let type_ = instantiate_forall_strict(&scheme.type_, arguments)?;
     let predicates = instantiate_predicates(&scheme.predicates, arguments)?;
     Some(TypeScheme { predicates, type_ })
+}
+
+fn normalize_term_types(
+    term: Term<Type>,
+    table: &mut UnificationTable,
+) -> Term<Type> {
+    let kind = match term.kind {
+        TermKind::Let {
+            assignee,
+            scope,
+            value,
+            then,
+            else_,
+        } => TermKind::Let {
+            assignee: normalize_pattern_types(assignee, table),
+            scope,
+            value: Box::new(normalize_term_types(*value, table)),
+            then: Box::new(normalize_term_types(*then, table)),
+            else_: Box::new(normalize_term_types(*else_, table)),
+        },
+        TermKind::Immediate(value) => TermKind::Immediate(value),
+        TermKind::Identifier(path) => TermKind::Identifier(path),
+        TermKind::Tuple(items) => {
+            TermKind::Tuple(items.into_iter().map(|item| normalize_term_types(item, table)).collect())
+        }
+        TermKind::Struct(fields) => {
+            TermKind::Struct(
+                fields
+                    .into_iter()
+                    .map(|(name, value)| (name, normalize_term_types(value, table)))
+                    .collect(),
+            )
+        }
+        TermKind::Field { of, index } => {
+            TermKind::Field {
+                of: Box::new(normalize_term_types(*of, table)),
+                index,
+            }
+        }
+        TermKind::Function {
+            parameter_name,
+            parameter_type,
+            captures,
+            body,
+        } => {
+            TermKind::Function {
+                parameter_name,
+                parameter_type,
+                captures: captures
+                    .into_iter()
+                    .map(|(path, type_)| (path, table.normalize(&type_)))
+                    .collect(),
+                body: Box::new(normalize_term_types(*body, table)),
+            }
+        }
+        TermKind::InlineWasm {
+            asserted_type,
+            definitions,
+            instructions,
+        } => {
+            TermKind::InlineWasm {
+                asserted_type,
+                definitions,
+                instructions,
+            }
+        }
+        TermKind::Call { callee, argument } => {
+            TermKind::Call {
+                callee: Box::new(normalize_term_types(*callee, table)),
+                argument: Box::new(normalize_term_types(*argument, table)),
+            }
+        }
+        TermKind::Semicolon(left, right) => {
+            TermKind::Semicolon(
+                Box::new(normalize_term_types(*left, table)),
+                Box::new(normalize_term_types(*right, table)),
+            )
+        }
+        TermKind::Unreachable => TermKind::Unreachable,
+    };
+    Term {
+        comments: term.comments,
+        kind,
+        span: term.span,
+        type_: table.normalize(&term.type_),
+    }
+}
+
+fn normalize_pattern_types(
+    pattern: Pattern<Type>,
+    table: &mut UnificationTable,
+) -> Pattern<Type> {
+    let kind = match pattern.kind {
+        PatternKind::Hole => PatternKind::Hole,
+        PatternKind::Identifier(path) => PatternKind::Identifier(path),
+        PatternKind::ConstConstructor(path) => PatternKind::ConstConstructor(path),
+        PatternKind::Constructor(path, payload) => {
+            PatternKind::Constructor(path, Box::new(normalize_pattern_types(*payload, table)))
+        }
+        PatternKind::Tuple(items) => {
+            PatternKind::Tuple(
+                items
+                    .into_iter()
+                    .map(|item| normalize_pattern_types(item, table))
+                    .collect(),
+            )
+        }
+        PatternKind::Array {
+            starting,
+            glob,
+            ending,
+        } => {
+            PatternKind::Array {
+                starting: starting
+                    .into_iter()
+                    .map(|item| normalize_pattern_types(item, table))
+                    .collect(),
+                glob,
+                ending: ending
+                    .into_iter()
+                    .map(|item| normalize_pattern_types(item, table))
+                    .collect(),
+            }
+        }
+        PatternKind::Struct(fields) => {
+            PatternKind::Struct(
+                fields
+                    .into_iter()
+                    .map(|(name, value)| (name, normalize_pattern_types(value, table)))
+                    .collect(),
+            )
+        }
+        PatternKind::Immediate(value) => PatternKind::Immediate(value),
+        PatternKind::TypeHint(inner, type_expr) => {
+            PatternKind::TypeHint(Box::new(normalize_pattern_types(*inner, table)), type_expr)
+        }
+    };
+    Pattern {
+        comments: pattern.comments,
+        kind,
+        span: pattern.span,
+        type_: table.normalize(&pattern.type_),
+    }
 }
 
 fn build_impl_method_binding(

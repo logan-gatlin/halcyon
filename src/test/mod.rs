@@ -48,6 +48,15 @@ fn demo_reports_missing_trait_instance() {
 }
 
 #[test]
+fn core_artifact_validates() {
+    let mut symbols = SymbolTable::new();
+    let core = compile_core_module(&mut symbols);
+    let mut logger = Logger::new();
+    let _ = validate_artifact(core, &mut logger);
+    assert_logger_is_ok(&logger, "Core artifact should validate");
+}
+
+#[test]
 fn wasm_type_alias_requires_symbol_name() {
     let source = "module demo =\n\twasm => (\n\t\t(type integer (struct i64))\n\t\t(global $asdf integer)\n\t)\nend\n";
     let mut symbols = SymbolTable::new();
@@ -219,6 +228,18 @@ fn bracketed_operator_name_is_canonicalized_in_ir() {
 #[test]
 fn toplevel_wasm_function_declaration_is_lowered() {
     let source = "module demo =\n\twasm => (\n\t\t(type $integer (struct i64))\n\t\t(func $id\n\t\t\t(param $x $integer)\n\t\t\t(result $integer)\n\t\t\tget $x\n\t\t)\n\t)\n\tlet i = 1\n\tlet j = (wasm : core::integer) => (\n\t\tget i\n\t\tcall $id\n\t)\nend\n";
+    let mut symbols = SymbolTable::new();
+    let _core = compile_core_module(&mut symbols);
+    let mut logger = Logger::new();
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let _ = compile_source(source, &mut file_logger, &mut symbols);
+    logger.consume_file(file_logger);
+    assert_logger_is_ok(&logger, "Compilation failed");
+}
+
+#[test]
+fn core_print_string_compiles() {
+    let source = "module demo =\n\tlet _ = core::print_string \"hello\"\nend\n";
     let mut symbols = SymbolTable::new();
     let _core = compile_core_module(&mut symbols);
     let mut logger = Logger::new();

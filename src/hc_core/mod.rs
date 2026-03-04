@@ -20,8 +20,11 @@ use crate::asm::{
     emit_array_concat,
     lower_type,
     Encoder,
+    FunctionImport,
     Instruction,
+    NumberOperation,
     Type as LowerType,
+    ValType,
 };
 
 use crate::ir::{
@@ -233,8 +236,93 @@ fn define_core_terms(
             CoreTerm::EmptyArray => define_empty_array(init, symbols),
             CoreTerm::ArrayConcat => define_array_concat(init, symbols),
             CoreTerm::ArrayPush => define_array_push(init, symbols),
+            CoreTerm::PrintString => define_print_string(init, symbols),
         }
     }
+}
+
+fn wasi_fd_write_path() -> Path {
+    Path::new(CORE_MODULE_NAME, "[wasi]fd_write")
+}
+
+fn define_print_string(
+    init: &mut Encoder<'_>,
+    symbols: &SymbolTable,
+) {
+    let fd_write = wasi_fd_write_path();
+    init.module
+        .function_imports
+        .entry(fd_write.clone())
+        .or_insert(FunctionImport {
+            module: "wasi_snapshot_preview1".to_string(),
+            name: "fd_write".to_string(),
+            params: [ValType::I32, ValType::I32, ValType::I32, ValType::I32].into(),
+            results: [ValType::I32].into(),
+        });
+    init.module.has_memory = true;
+
+    let value_name = init.temporary_name("value");
+    init.create_closure(symbols, value_name.clone(), Type::String, vec![], {
+        let value_name = value_name.clone();
+        move |inner, _symbols| {
+            let len_name = inner.temporary_name("len");
+            let index_name = inner.temporary_name("index");
+            inner.new_register(len_name.clone(), ScopeKind::Local, LowerType::I32);
+            inner.new_register(index_name.clone(), ScopeKind::Local, LowerType::I32);
+
+            // Memory layout:
+            // 0..4   = iovec.buf (i32)
+            // 4..8   = iovec.len (i32)
+            // 8..12  = nwritten (i32)
+            // 12..   = string bytes
+            const IOVEC_PTR: i32 = 0;
+            const NWRITTEN_PTR: i32 = 8;
+            const BUFFER_PTR: i32 = 12;
+
+            inner.extend([
+                i::Get(value_name.clone()),
+                i::ArrayLen,
+                i::Set(len_name.clone()),
+                i::I32Const(0),
+                i::Set(index_name.clone()),
+                i::Block(None),
+                i::Loop,
+                i::Get(index_name.clone()),
+                i::Get(len_name.clone()),
+                i::I32Op(NumberOperation::Eq),
+                i::BreakIf(1),
+                i::I32Const(BUFFER_PTR),
+                i::Get(index_name.clone()),
+                i::I32Op(NumberOperation::Add),
+                i::Get(value_name.clone()),
+                i::Get(index_name.clone()),
+                i::ArrayGet(LowerType::I8),
+                i::I32Store8,
+                i::Get(index_name.clone()),
+                i::I32Const(1),
+                i::I32Op(NumberOperation::Add),
+                i::Set(index_name.clone()),
+                i::Break(0),
+                i::End,
+                i::End,
+                i::I32Const(IOVEC_PTR),
+                i::I32Const(BUFFER_PTR),
+                i::I32Store,
+                i::I32Const(IOVEC_PTR + 4),
+                i::Get(len_name),
+                i::I32Store,
+                i::I32Const(1),
+                i::I32Const(IOVEC_PTR),
+                i::I32Const(1),
+                i::I32Const(NWRITTEN_PTR),
+                i::Call(fd_write.clone()),
+                i::Drop,
+                i::StructNew([].into()),
+            ]);
+        }
+    });
+
+    store_global_closure(init, CoreTerm::PrintString.path());
 }
 
 fn define_empty_array(

@@ -318,29 +318,29 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
             f.variables.iter().map(|(_, t)| type_section.valtype_of(t)),
         );
         // Instruction lowering
-        for instr in f.ops.iter().map(|o| {
+        for op in &f.ops {
             use Instruction as i;
-            match o {
+            match op {
                 i::Set(path) => {
                     if let Some(&idx) = local_namespace.get(path) {
-                        winstr::LocalSet(idx as u32)
+                        function_body.instruction(&winstr::LocalSet(idx as u32));
                     } else if let Some(&idx) = global_namespace.get(&path) {
-                        winstr::GlobalSet(idx)
+                        function_body.instruction(&winstr::GlobalSet(idx));
                     } else {
-                        winstr::Unreachable
+                        function_body.instruction(&winstr::Unreachable);
                     }
                 }
                 i::Get(path) => {
                     if let Some(&idx) = local_namespace.get(path) {
-                        winstr::LocalGet(idx as u32)
+                        function_body.instruction(&winstr::LocalGet(idx as u32));
                     } else if let Some(&idx) = global_namespace.get(&path) {
-                        winstr::GlobalGet(idx)
+                        function_body.instruction(&winstr::GlobalGet(idx));
                     } else {
-                        winstr::Unreachable
+                        function_body.instruction(&winstr::Unreachable);
                     }
                 }
                 i::Const(const_value) => {
-                    match const_value {
+                    let instr = match const_value {
                         ImmediateValue::Unit => winstr::Nop,
                         ImmediateValue::Integer(i) => winstr::I64Const(*i),
                         ImmediateValue::Real(f) => winstr::F64Const((*f).into()),
@@ -349,112 +349,156 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
                             unreachable!("String constants not yet supported")
                         }
                         ImmediateValue::Glyph(c) => winstr::I32Const(*c as i32),
-                    }
+                    };
+                    function_body.instruction(&instr);
                 }
-                i::I32Const(i) => winstr::I32Const(*i),
-                i::F32Const(f) => winstr::F32Const((*f).into()),
+                i::I32Const(i) => {
+                    function_body.instruction(&winstr::I32Const(*i));
+                }
+                i::F32Const(f) => {
+                    function_body.instruction(&winstr::F32Const((*f).into()));
+                }
                 i::Func(path) => {
                     if let Some(&idx) = func_namespace.get(path) {
                         referenced_funcs.insert(idx);
-                        winstr::RefFunc(idx)
+                        function_body.instruction(&winstr::RefFunc(idx));
                     } else {
-                        winstr::Unreachable
+                        function_body.instruction(&winstr::Unreachable);
                     }
                 }
-                i::StructNew(items) => winstr::StructNew(type_section.new_struct(items)),
+                i::StructNew(items) => {
+                    function_body.instruction(&winstr::StructNew(type_section.new_struct(items)));
+                }
                 i::StructGet(t, field_index) => {
-                    winstr::StructGet {
-                        struct_type_index: type_section.new_struct(t),
+                    let struct_type_index = type_section.new_struct(t);
+                    function_body.instruction(&winstr::RefCastNullable(HeapType::Concrete(
+                        struct_type_index,
+                    )));
+                    function_body.instruction(&winstr::StructGet {
+                        struct_type_index,
                         field_index: *field_index as u32,
-                    }
+                    });
                 }
                 i::ArrayGet(t) => {
                     let arr_idx = type_section.new_array(t);
-                    match t {
+                    let instr = match t {
                         Type::I8 | Type::I16 => winstr::ArrayGetU(arr_idx),
                         _ => winstr::ArrayGet(arr_idx),
-                    }
+                    };
+                    function_body.instruction(&instr);
                 }
                 i::ArrayNewFixed { inner_type, length } => {
-                    winstr::ArrayNewFixed {
+                    function_body.instruction(&winstr::ArrayNewFixed {
                         array_type_index: type_section.new_array(inner_type),
                         array_size: *length as u32,
-                    }
+                    });
                 }
-                i::ArrayNewDefault(t) => winstr::ArrayNewDefault(type_section.new_array(t)),
-                i::ArrayLen => winstr::ArrayLen,
+                i::ArrayNewDefault(t) => {
+                    function_body.instruction(&winstr::ArrayNewDefault(type_section.new_array(t)));
+                }
+                i::ArrayLen => {
+                    function_body.instruction(&winstr::ArrayLen);
+                }
                 i::ArrayCopy { dst_type, src_type } => {
-                    winstr::ArrayCopy {
+                    function_body.instruction(&winstr::ArrayCopy {
                         array_type_index_dst: type_section.new_array(dst_type),
                         array_type_index_src: type_section.new_array(src_type),
-                    }
+                    });
                 }
                 i::CallRef {
                     parameters,
                     returns,
-                } => winstr::CallRef(type_section.new_function(parameters, returns)),
-                i::Unreachable => winstr::Unreachable,
-                i::Drop => winstr::Drop,
+                } => {
+                    function_body.instruction(&winstr::CallRef(
+                        type_section.new_function(parameters, returns),
+                    ));
+                }
+                i::Unreachable => {
+                    function_body.instruction(&winstr::Unreachable);
+                }
+                i::Drop => {
+                    function_body.instruction(&winstr::Drop);
+                }
                 i::If(result) => {
-                    winstr::If(match result {
+                    function_body.instruction(&winstr::If(match result {
                         Some(r) => BlockType::Result(type_section.valtype_of(r)),
                         None => BlockType::Empty,
-                    })
+                    }));
                 }
-                i::Else => winstr::Else,
-                i::End => winstr::End,
-                i::Loop => winstr::Loop(BlockType::Empty),
+                i::Else => {
+                    function_body.instruction(&winstr::Else);
+                }
+                i::End => {
+                    function_body.instruction(&winstr::End);
+                }
+                i::Loop => {
+                    function_body.instruction(&winstr::Loop(BlockType::Empty));
+                }
                 i::Block(result) => {
-                    winstr::Block(match result {
+                    function_body.instruction(&winstr::Block(match result {
                         Some(r) => BlockType::Result(type_section.valtype_of(r)),
                         None => BlockType::Empty,
-                    })
+                    }));
                 }
-                i::Break(target) => winstr::Br(*target as u32),
-                i::BreakIf(target) => winstr::BrIf(*target as u32),
-                i::I32Op(op) => lower_i32_op(*op),
-                i::I64Op(op) => lower_i64_op(*op),
-                i::F32Op(op) => lower_f32_op(*op),
-                i::F64Op(op) => lower_f64_op(*op),
+                i::Break(target) => {
+                    function_body.instruction(&winstr::Br(*target as u32));
+                }
+                i::BreakIf(target) => {
+                    function_body.instruction(&winstr::BrIf(*target as u32));
+                }
+                i::I32Op(op) => {
+                    function_body.instruction(&lower_i32_op(*op));
+                }
+                i::I64Op(op) => {
+                    function_body.instruction(&lower_i64_op(*op));
+                }
+                i::F32Op(op) => {
+                    function_body.instruction(&lower_f32_op(*op));
+                }
+                i::F64Op(op) => {
+                    function_body.instruction(&lower_f64_op(*op));
+                }
                 i::RefCastFunc {
                     parameters,
                     returns,
                 } => {
                     let func_type_idx = type_section.new_function(parameters, returns);
-                    winstr::RefCastNullable(HeapType::Concrete(func_type_idx))
+                    function_body
+                        .instruction(&winstr::RefCastNullable(HeapType::Concrete(func_type_idx)));
                 }
                 i::RefCastStruct(fields) => {
                     let struct_type_idx = type_section.new_struct(fields);
-                    winstr::RefCastNullable(HeapType::Concrete(struct_type_idx))
+                    function_body.instruction(&winstr::RefCastNullable(HeapType::Concrete(
+                        struct_type_idx,
+                    )));
                 }
                 i::RefCastArray(inner) => {
                     let array_type_idx = type_section.new_array(inner);
-                    winstr::RefCastNullable(HeapType::Concrete(array_type_idx))
+                    function_body
+                        .instruction(&winstr::RefCastNullable(HeapType::Concrete(array_type_idx)));
                 }
                 i::I32Store8 => {
-                    winstr::I32Store8(wasm_encoder::MemArg {
+                    function_body.instruction(&winstr::I32Store8(wasm_encoder::MemArg {
                         offset: 0,
                         align: 0,
                         memory_index: 0,
-                    })
+                    }));
                 }
                 i::I32Store => {
-                    winstr::I32Store(wasm_encoder::MemArg {
+                    function_body.instruction(&winstr::I32Store(wasm_encoder::MemArg {
                         offset: 0,
                         align: 2,
                         memory_index: 0,
-                    })
+                    }));
                 }
                 i::Call(path) => {
                     if let Some(&idx) = func_namespace.get(path) {
-                        winstr::Call(idx)
+                        function_body.instruction(&winstr::Call(idx));
                     } else {
-                        winstr::Unreachable
+                        function_body.instruction(&winstr::Unreachable);
                     }
                 }
             }
-        }) {
-            function_body.instruction(&instr);
         }
         function_body.instruction(&winstr::End);
         code_section.function(&function_body);
