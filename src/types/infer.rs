@@ -14,11 +14,12 @@ use crate::ir::{
     TypeExpr,
 };
 
-use super::instantiation::{
-    instantiate_forall_strict,
-    instantiate_predicates,
+use super::instantiation::instantiate_predicates;
+use super::type_expr::{
+    TypeExprLowerError,
+    TypeExprSymbol,
+    lower_type_expr,
 };
-use super::type_expr::lower_type_expr;
 use super::{
     MetaVarId,
     StructMatch,
@@ -26,7 +27,6 @@ use super::{
     TraitRef,
     Type,
     TypeDefinition,
-    TypeDefinitionKind,
     TypeScheme,
     TypeTransform,
 };
@@ -51,6 +51,9 @@ pub enum TypeError {
         name: Path,
         expected: usize,
         found: usize,
+        span: Span,
+    },
+    InvalidPlaceholderType {
         span: Span,
     },
     NotAFunction {
@@ -377,7 +380,16 @@ pub fn infer_term(
             body,
         } => {
             let param_type = match parameter_type {
-                Some(type_expr) => type_expr_to_type(ctx, type_expr)?,
+                Some(type_expr) => {
+                    let annotated = type_expr_to_type(ctx, type_expr)?;
+                    match annotated {
+                        forall @ Type::ForAll(_) => {
+                            let scheme = TypeScheme::new(forall);
+                            ctx.instantiate(&scheme, type_expr.span)?
+                        }
+                        other => other,
+                    }
+                }
                 None => ctx.fresh_meta(),
             };
             let mut env_with_param =
@@ -412,13 +424,21 @@ pub fn infer_term(
             definitions,
             instructions,
         } => {
+            let asserted_type_value = type_expr_to_type(ctx, asserted_type)?;
+            let inferred_type = match asserted_type_value {
+                forall @ Type::ForAll(_) => {
+                    let scheme = TypeScheme::new(forall);
+                    ctx.instantiate(&scheme, asserted_type.span)?
+                }
+                other => other,
+            };
             (
                 TermKind::InlineWasm {
                     asserted_type: asserted_type.clone(),
                     definitions: definitions.clone(),
                     instructions: instructions.clone(),
                 },
-                type_expr_to_type(ctx, asserted_type)?,
+                inferred_type,
                 Vec::new(),
             )
         }
@@ -680,6 +700,15 @@ fn infer_pattern(
         }
         PatternKind::TypeHint(inner, type_expr) => {
             let hint_type = type_expr_to_type(ctx, type_expr)?;
+            let expected_type = ctx.table.normalize(expected);
+            let hint_type = match (hint_type, expected_type) {
+                (forall @ Type::ForAll(_), Type::ForAll(_)) => forall,
+                (forall @ Type::ForAll(_), _) => {
+                    let scheme = TypeScheme::new(forall);
+                    ctx.instantiate(&scheme, type_expr.span)?
+                }
+                (other, _) => other,
+            };
             unify_with_span(&mut ctx.table, expected, &hint_type, type_expr.span)?;
             let typed_inner = infer_pattern(ctx, env, inner, &hint_type, bindings)?;
             Ok(Pattern {
@@ -710,39 +739,55 @@ fn field_access_type(
 }
 
 fn type_expr_to_type(
-    ctx: &InferenceContext,
+    ctx: &mut InferenceContext,
     expr: &TypeExpr,
 ) -> Result<Type, TypeError> {
-    lower_type_expr(expr, &mut |path, arguments, span| {
-        if let Some(definition) = ctx.type_definitions.get(path) {
-            if definition.parameters != arguments.len() {
-                return Err(TypeError::InvalidTypeApplication {
-                    name: path.clone(),
-                    expected: definition.parameters,
-                    found: arguments.len(),
-                    span,
-                });
+    let type_definitions = ctx.type_definitions.clone();
+    let lowered = lower_type_expr(
+        expr,
+        &mut |path| {
+            type_definitions
+                .get(path)
+                .cloned()
+                .map(TypeExprSymbol::Definition)
+                .unwrap_or(TypeExprSymbol::Unknown)
+        },
+        &mut |_| Some(ctx.fresh_meta()),
+    );
+    lowered
+        .errors
+        .into_iter()
+        .next()
+        .map_or(Ok(lowered.type_), |error| Err(type_expr_lower_error(error)))
+}
+
+fn type_expr_lower_error(error: TypeExprLowerError) -> TypeError {
+    match error {
+        TypeExprLowerError::TypeParameterApplied { name, found, span } => {
+            TypeError::InvalidTypeApplication {
+                name,
+                expected: 0,
+                found,
+                span,
             }
-            return Ok(match definition.kind {
-                TypeDefinitionKind::Named => {
-                    Type::Named {
-                        name: path.clone(),
-                        body: Box::new(definition.body.clone()),
-                    }
-                    .apply(arguments)
-                }
-                TypeDefinitionKind::Alias => {
-                    instantiate_forall_strict(&definition.body, &arguments)
-                        .unwrap_or_else(|| definition.body.clone())
-                }
-            });
         }
-        Ok(Type::Named {
-            name: path.clone(),
-            body: Box::new(Type::Unit),
+        TypeExprLowerError::InvalidTypeApplication {
+            name,
+            expected,
+            found,
+            span,
+        } => {
+            TypeError::InvalidTypeApplication {
+                name,
+                expected,
+                found,
+                span,
+            }
         }
-        .apply(arguments))
-    })
+        TypeExprLowerError::PlaceholderNotAllowed { span } => {
+            TypeError::InvalidPlaceholderType { span }
+        }
+    }
 }
 
 fn infer_term_items(
@@ -844,6 +889,7 @@ mod tests {
         ScopeKind,
         TypeExprKind,
     };
+    use crate::types::TypeDefinitionKind;
     use crate::{
         Span,
         WithSpan,
@@ -1001,8 +1047,8 @@ mod tests {
             .collect(),
         );
 
-        let type_ =
-            type_expr_to_type(&ctx, &instantiation_type_expr(pair.clone())).expect("lower type");
+        let type_ = type_expr_to_type(&mut ctx, &instantiation_type_expr(pair.clone()))
+            .expect("lower type");
         assert!(matches!(type_, Type::Named { name, .. } if name == pair));
     }
 
@@ -1023,7 +1069,255 @@ mod tests {
             .collect(),
         );
 
-        let type_ = type_expr_to_type(&ctx, &instantiation_type_expr(pair)).expect("lower type");
+        let type_ =
+            type_expr_to_type(&mut ctx, &instantiation_type_expr(pair)).expect("lower type");
         assert_eq!(type_, Type::Tuple(vec![Type::Integer, Type::Boolean]));
+    }
+
+    fn core_type_definitions() -> IndexMap<Path, TypeDefinition> {
+        [
+            (Path::core("function"), Type::function().def(2)),
+            (Path::core("array"), Type::array().def(1)),
+        ]
+        .into_iter()
+        .collect()
+    }
+
+    #[test]
+    fn forall_type_expr_lowers_to_forall_type() {
+        let mut ctx = InferenceContext::new();
+        ctx.set_type_definitions(core_type_definitions());
+        let a_path = Path::new("test", "a");
+        // Build: for a. a -> a
+        // The body is: function(a, a) where a resolves through the ForAll param
+        let function_path = Path::core("function");
+        let body = TypeExpr {
+            comments: String::new(),
+            kind: TypeExprKind::Instantiation(
+                function_path,
+                [
+                    TypeExpr {
+                        comments: String::new(),
+                        kind: TypeExprKind::Instantiation(a_path.clone(), [].into()),
+                        span: Span::Generated,
+                    },
+                    TypeExpr {
+                        comments: String::new(),
+                        kind: TypeExprKind::Instantiation(a_path.clone(), [].into()),
+                        span: Span::Generated,
+                    },
+                ]
+                .into(),
+            ),
+            span: Span::Generated,
+        };
+        let forall_expr = TypeExpr {
+            comments: String::new(),
+            kind: TypeExprKind::ForAll([a_path].into(), body.into()),
+            span: Span::Generated,
+        };
+        let type_ = type_expr_to_type(&mut ctx, &forall_expr).expect("lower forall type");
+        // Should be ForAll(TypeVar(0) -> TypeVar(0))
+        let expected = Type::func(Type::v(0), Type::v(0)).for_all(1);
+        assert_eq!(type_, expected);
+    }
+
+    #[test]
+    fn forall_type_expr_rejects_applied_type_parameter() {
+        let mut ctx = InferenceContext::new();
+        ctx.set_type_definitions(core_type_definitions());
+        let a_path = Path::new("test", "a");
+        let invalid = TypeExpr {
+            comments: String::new(),
+            kind: TypeExprKind::ForAll(
+                [a_path.clone()].into(),
+                Box::new(TypeExpr {
+                    comments: String::new(),
+                    kind: TypeExprKind::Instantiation(
+                        a_path.clone(),
+                        [TypeExpr {
+                            comments: String::new(),
+                            kind: TypeExprKind::Instantiation(a_path.clone(), [].into()),
+                            span: Span::Generated,
+                        }]
+                        .into(),
+                    ),
+                    span: Span::Generated,
+                }),
+            ),
+            span: Span::Generated,
+        };
+
+        let result = type_expr_to_type(&mut ctx, &invalid);
+        assert!(matches!(
+            result,
+            Err(TypeError::InvalidTypeApplication {
+                name,
+                expected: 0,
+                found: 1,
+                ..
+            }) if name == a_path
+        ));
+    }
+
+    #[test]
+    fn unknown_type_expression_recovers_to_placeholder_nominal() {
+        let mut ctx = InferenceContext::new();
+        let missing = Path::new("test", "Missing");
+        let type_ = type_expr_to_type(&mut ctx, &instantiation_type_expr(missing.clone()))
+            .expect("unknown type should recover");
+        assert!(matches!(type_, Type::Named { name, .. } if name == missing));
+    }
+
+    #[test]
+    fn placeholder_type_expr_lowers_to_fresh_meta() {
+        let mut ctx = InferenceContext::new();
+        let placeholder = TypeExpr {
+            comments: String::new(),
+            kind: TypeExprKind::Placeholder,
+            span: Span::Generated,
+        };
+        let first = type_expr_to_type(&mut ctx, &placeholder).expect("first placeholder");
+        let second = type_expr_to_type(&mut ctx, &placeholder).expect("second placeholder");
+        assert!(matches!(first, Type::MetaVar(_)));
+        assert!(matches!(second, Type::MetaVar(_)));
+        assert_ne!(first, second);
+    }
+
+    #[test]
+    fn forall_type_hint_allows_polymorphic_use() {
+        let mut ctx = InferenceContext::new();
+        ctx.set_type_definitions(core_type_definitions());
+        let mut env = TypeEnv::new();
+        let id_path = Path::new("test", "id");
+        let x_path = Path::new("test", "x");
+        let a_path = Path::new("test", "a");
+
+        // Build: let (id: for a. a -> a) = fn x => x in (id 1, id true)
+        let function_path = Path::core("function");
+        let forall_type_expr = TypeExpr {
+            comments: String::new(),
+            kind: TypeExprKind::ForAll(
+                [a_path.clone()].into(),
+                Box::new(TypeExpr {
+                    comments: String::new(),
+                    kind: TypeExprKind::Instantiation(
+                        function_path,
+                        [
+                            TypeExpr {
+                                comments: String::new(),
+                                kind: TypeExprKind::Instantiation(a_path.clone(), [].into()),
+                                span: Span::Generated,
+                            },
+                            TypeExpr {
+                                comments: String::new(),
+                                kind: TypeExprKind::Instantiation(a_path, [].into()),
+                                span: Span::Generated,
+                            },
+                        ]
+                        .into(),
+                    ),
+                    span: Span::Generated,
+                }),
+            ),
+            span: Span::Generated,
+        };
+
+        let id_fn = term(TermKind::Function {
+            parameter_name: x_path.clone().with_span(Span::Generated),
+            parameter_type: None,
+            captures: [].into(),
+            body: term(TermKind::Identifier(x_path.clone())).into(),
+        });
+
+        let id_pattern = pattern(PatternKind::TypeHint(
+            Box::new(pattern(PatternKind::Identifier(id_path.clone()))),
+            forall_type_expr,
+        ));
+
+        let call_id_int = term(TermKind::Call {
+            callee: term(TermKind::Identifier(id_path.clone())).into(),
+            argument: term(TermKind::Immediate(ImmediateValue::Integer(1))).into(),
+        });
+        let call_id_bool = term(TermKind::Call {
+            callee: term(TermKind::Identifier(id_path.clone())).into(),
+            argument: term(TermKind::Immediate(ImmediateValue::Boolean(true))).into(),
+        });
+
+        let tuple = term(TermKind::Tuple(vec![call_id_int, call_id_bool]));
+        let let_term = term(TermKind::Let {
+            assignee: id_pattern,
+            scope: ScopeKind::Local,
+            value: id_fn.into(),
+            then: tuple.into(),
+            else_: term(TermKind::Unreachable).into(),
+        });
+
+        let mut schemes = IndexMap::new();
+        let typed = ctx
+            .infer_term(&mut env, &let_term, &mut schemes)
+            .expect("infer forall-annotated identity");
+        assert_eq!(
+            typed.term.type_,
+            Type::Tuple(vec![Type::Integer, Type::Boolean])
+        );
+    }
+
+    #[test]
+    fn tuple_type_hint_placeholders_infer_from_value() {
+        let mut ctx = InferenceContext::new();
+        let mut env = TypeEnv::new();
+        let mut schemes = IndexMap::new();
+        let a_path = Path::new("test", "a");
+        let b_path = Path::new("test", "b");
+
+        let placeholder = || {
+            TypeExpr {
+                comments: String::new(),
+                kind: TypeExprKind::Placeholder,
+                span: Span::Generated,
+            }
+        };
+
+        let tuple_hint = TypeExpr {
+            comments: String::new(),
+            kind: TypeExprKind::Tuple(vec![placeholder(), placeholder()].into()),
+            span: Span::Generated,
+        };
+
+        let assignee = pattern(PatternKind::TypeHint(
+            Box::new(pattern(PatternKind::Tuple(
+                vec![
+                    pattern(PatternKind::Identifier(a_path.clone())),
+                    pattern(PatternKind::Identifier(b_path.clone())),
+                ]
+                .into_boxed_slice(),
+            ))),
+            tuple_hint,
+        ));
+
+        let value = term(TermKind::Tuple(vec![
+            term(TermKind::Immediate(ImmediateValue::Integer(1))),
+            term(TermKind::Immediate(ImmediateValue::Boolean(true))),
+        ]));
+
+        let let_term = term(TermKind::Let {
+            assignee,
+            scope: ScopeKind::Local,
+            value: Box::new(value),
+            then: Box::new(term(TermKind::Tuple(vec![
+                term(TermKind::Identifier(a_path)),
+                term(TermKind::Identifier(b_path)),
+            ]))),
+            else_: Box::new(term(TermKind::Unreachable)),
+        });
+
+        let typed = ctx
+            .infer_term(&mut env, &let_term, &mut schemes)
+            .expect("infer tuple placeholder hint");
+        assert_eq!(
+            typed.term.type_,
+            Type::Tuple(vec![Type::Integer, Type::Boolean])
+        );
     }
 }

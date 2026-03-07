@@ -17,7 +17,7 @@ fn compile_modules(source: &str) -> (Vec<crate::ir::ElaborationResult>, SymbolTa
     let mut logger = Logger::new();
     let mut file_logger = logger.new_file("test.hc", source);
     let mut symbols = SymbolTable::new();
-    let _ = compile_core_module(&mut symbols);
+    let _ = compile_core_module(&mut symbols, &mut Logger::new());
 
     let modules = parse::parse(source, &mut file_logger)
         .map(|m| m.modules())

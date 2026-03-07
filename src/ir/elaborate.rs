@@ -6,6 +6,7 @@ use crate::ir::{
     Path,
     Pattern,
     PatternKind,
+    ScopeKind,
     Statement,
     Term,
     TermKind,
@@ -14,21 +15,14 @@ use crate::types::{
     ResolvedModule,
     SymbolTable,
     TraitConstraint,
-    TraitDef,
     Type,
     TypeScheme,
+    ordered_trait_methods,
 };
 use crate::{
     Span,
     WithSpan,
 };
-
-#[derive(Debug, Clone)]
-pub struct Specialization {
-    pub method_path: Path,
-    pub arguments: Vec<Type>,
-    pub specialized_path: Path,
-}
 
 #[derive(Debug, Clone)]
 pub struct ElaborationResult {
@@ -55,6 +49,8 @@ struct ElaborationContext<'a> {
     module_name: &'a str,
     dict_types: IndexMap<Path, Type>,
     dict_salt: usize,
+    grouped_binding_salt: usize,
+    grouped_binding_predicates: IndexMap<Path, Vec<TraitConstraint>>,
 }
 
 impl<'a> ElaborationContext<'a> {
@@ -69,6 +65,8 @@ impl<'a> ElaborationContext<'a> {
             module_name,
             dict_types: IndexMap::new(),
             dict_salt: 0,
+            grouped_binding_salt: 0,
+            grouped_binding_predicates: IndexMap::new(),
         }
     }
 }
@@ -89,12 +87,14 @@ pub fn elaborate_module(
                     Statement::Term(fix_dict_captures(term, &context.dict_types))
                 }
                 Statement::Type {
+                    comments,
                     path,
                     parameters,
                     def,
                     kind,
                 } => {
                     Statement::Type {
+                        comments,
                         path,
                         parameters,
                         def,
@@ -102,22 +102,26 @@ pub fn elaborate_module(
                     }
                 }
                 Statement::Trait {
+                    comments,
                     path,
                     parameters,
                     methods,
                 } => {
                     Statement::Trait {
+                        comments,
                         path,
                         parameters,
                         methods,
                     }
                 }
                 Statement::Impl {
+                    comments,
                     trait_path,
                     arguments,
                     methods,
                 } => {
                     Statement::Impl {
+                        comments,
                         trait_path,
                         arguments,
                         methods,
@@ -189,13 +193,62 @@ fn elaborate_term(
             then,
             else_,
         } => {
-            let bindings = pattern_bindings(&assignee);
-            if bindings.len() == 1 {
-                let binding = bindings.first().cloned().unwrap_or_else(|| unreachable!());
+            let binding_entries = pattern_binding_entries(&assignee);
+            if binding_entries.len() > 1
+                && grouped_binding_has_non_concrete_predicates(context, &binding_entries)
+            {
+                let rewritten = if scope == ScopeKind::Global {
+                    rewrite_top_level_grouped_binding_let(
+                        context,
+                        comments.clone(),
+                        assignee,
+                        value,
+                        then,
+                        else_,
+                        span,
+                        type_.clone(),
+                        &binding_entries,
+                    )
+                } else {
+                    rewrite_local_grouped_binding_let(
+                        context,
+                        comments.clone(),
+                        assignee,
+                        value,
+                        then,
+                        else_,
+                        span,
+                        type_.clone(),
+                        &binding_entries,
+                    )
+                };
+                let predicate_overrides =
+                    grouped_binding_predicate_overrides(context, &binding_entries);
+                let overridden_paths = predicate_overrides.keys().cloned().collect::<Vec<_>>();
+                context
+                    .grouped_binding_predicates
+                    .extend(predicate_overrides);
+                let elaborated = elaborate_term(context, rewritten, dict_env);
+                for path in overridden_paths {
+                    context.grouped_binding_predicates.shift_remove(&path);
+                }
+                return elaborated;
+            }
+
+            if binding_entries.len() == 1 {
+                let (binding, binding_type) = binding_entries
+                    .first()
+                    .cloned()
+                    .unwrap_or_else(|| unreachable!());
                 let predicates = context
-                    .scheme_env
+                    .grouped_binding_predicates
                     .get(&binding)
-                    .and_then(|scheme| instantiate_predicates_for_scheme(scheme, &value.type_))
+                    .cloned()
+                    .or_else(|| {
+                        context.scheme_env.get(&binding).and_then(|scheme| {
+                            instantiate_predicates_for_scheme(scheme, &binding_type)
+                        })
+                    })
                     .unwrap_or_default();
                 let has_non_concrete = predicates
                     .iter()
@@ -213,6 +266,8 @@ fn elaborate_term(
                     value_dict_env.extend(dict_params.iter().cloned());
                     let value = elaborate_term(context, *value, &value_dict_env);
                     let wrapped_value = wrap_with_dict_params(value, &dict_params);
+                    let assignee =
+                        rewrite_single_binding_pattern_type(assignee, wrapped_value.type_.clone());
                     let then = elaborate_term(context, *then, dict_env);
                     let else_ = elaborate_term(context, *else_, dict_env);
                     return Term {
@@ -312,24 +367,34 @@ fn elaborate_identifier(
     if args.is_empty() {
         return None;
     }
+
+    let is_trait_item = context
+        .symbols
+        .trait_defs()
+        .values()
+        .any(|def| def.methods.contains_key(&path));
+    if is_trait_item
+        && args.len() == 1
+        && let Some(dict) = args.first().cloned()
+    {
+        return Some(Term {
+            comments,
+            kind: TermKind::Field {
+                of: Box::new(dict),
+                index: path.minor.clone().with_span(Span::Generated),
+            },
+            span,
+            type_,
+        });
+    }
+
     let callee = Term {
         comments,
         kind: TermKind::Identifier(path),
         span,
-        type_: type_.clone(),
+        type_,
     };
-    Some(args.into_iter().fold(callee, |current, arg| {
-        let current_type = current.type_.clone();
-        Term {
-            comments: String::new(),
-            kind: TermKind::Call {
-                callee: current.into(),
-                argument: arg.into(),
-            },
-            span: Span::Generated,
-            type_: current_type,
-        }
-    }))
+    Some(apply_explicit_arguments(callee, args))
 }
 
 fn find_dict_binding<'a>(
@@ -368,6 +433,498 @@ fn wrap_with_dict_params(
     })
 }
 
+fn rewrite_single_binding_pattern_type(
+    pattern: Pattern<Type>,
+    new_type: Type,
+) -> Pattern<Type> {
+    let Pattern {
+        comments,
+        kind,
+        span,
+        type_,
+    } = pattern;
+    match kind {
+        PatternKind::Identifier(path) => {
+            Pattern {
+                comments,
+                kind: PatternKind::Identifier(path),
+                span,
+                type_: new_type,
+            }
+        }
+        PatternKind::TypeHint(inner, type_expr) => {
+            Pattern {
+                comments,
+                kind: PatternKind::TypeHint(
+                    Box::new(rewrite_single_binding_pattern_type(
+                        *inner,
+                        new_type.clone(),
+                    )),
+                    type_expr,
+                ),
+                span,
+                type_,
+            }
+        }
+        _ => {
+            Pattern {
+                comments,
+                kind,
+                span,
+                type_,
+            }
+        }
+    }
+}
+
+fn grouped_binding_has_non_concrete_predicates(
+    context: &ElaborationContext<'_>,
+    binding_entries: &[(Path, Type)],
+) -> bool {
+    binding_entries.iter().any(|(binding, _)| {
+        context.scheme_env.get(binding).is_some_and(|scheme| {
+            scheme
+                .predicates
+                .iter()
+                .any(|predicate| !predicate_is_concrete(predicate))
+        })
+    })
+}
+
+fn grouped_binding_predicate_overrides(
+    context: &ElaborationContext<'_>,
+    binding_entries: &[(Path, Type)],
+) -> IndexMap<Path, Vec<TraitConstraint>> {
+    let mut overrides = IndexMap::new();
+    for (binding_path, _) in binding_entries {
+        let Some(scheme) = context.scheme_env.get(binding_path) else {
+            continue;
+        };
+        if scheme.predicates.is_empty() {
+            continue;
+        }
+        let (_, var_count) = peel_forall(&scheme.type_);
+        let mut merged_bindings = vec![None; var_count];
+        for (other_path, other_type) in binding_entries {
+            let Some(other_scheme) = context.scheme_env.get(other_path) else {
+                continue;
+            };
+            let (other_body, other_var_count) = peel_forall(&other_scheme.type_);
+            if other_var_count != var_count {
+                continue;
+            }
+            let mut local_bindings = vec![None; var_count];
+            if !match_scheme_to_type(&other_body, other_type, &mut local_bindings) {
+                continue;
+            }
+            for (slot, binding) in merged_bindings.iter_mut().zip(local_bindings.into_iter()) {
+                if slot.is_none() {
+                    *slot = binding;
+                }
+            }
+        }
+        if let Some(predicates) = instantiate_predicates(&scheme.predicates, &merged_bindings) {
+            overrides.insert(binding_path.clone(), predicates);
+        }
+    }
+    overrides
+}
+
+fn rewrite_top_level_grouped_binding_let(
+    context: &mut ElaborationContext<'_>,
+    comments: String,
+    assignee: Pattern<Type>,
+    value: Box<Term<Type>>,
+    then: Box<Term<Type>>,
+    else_: Box<Term<Type>>,
+    span: Span,
+    type_: Type,
+    binding_entries: &[(Path, Type)],
+) -> Term<Type> {
+    let grouped_else = (*else_).clone();
+    let grouped_value = *value;
+    let mut chain = *then;
+
+    for (binding_path, binding_type) in binding_entries.iter().rev() {
+        let binding_value = extraction_value_for_grouped_binding_from_value(
+            context,
+            &assignee,
+            binding_path,
+            binding_type,
+            grouped_value.clone(),
+        );
+        chain = generated_term(
+            TermKind::Let {
+                assignee: generated_identifier_pattern(binding_path.clone(), binding_type.clone()),
+                scope: ScopeKind::Global,
+                value: binding_value.into(),
+                then: chain.into(),
+                else_: grouped_else.clone().into(),
+            },
+            type_.clone(),
+        );
+    }
+
+    Term {
+        comments,
+        span,
+        type_,
+        ..chain
+    }
+}
+
+fn rewrite_local_grouped_binding_let(
+    context: &mut ElaborationContext<'_>,
+    comments: String,
+    assignee: Pattern<Type>,
+    value: Box<Term<Type>>,
+    then: Box<Term<Type>>,
+    else_: Box<Term<Type>>,
+    span: Span,
+    type_: Type,
+    binding_entries: &[(Path, Type)],
+) -> Term<Type> {
+    let grouped_value = *value;
+    let grouped_else = *else_;
+    let grouped_then = *then;
+    let grouped_scrutinee =
+        grouped_binding_temp_path(context.module_name, &mut context.grouped_binding_salt);
+    let grouped_scrutinee_type = assignee.type_.clone();
+
+    let chain = grouped_binding_chain(
+        context,
+        &assignee,
+        &grouped_scrutinee,
+        &grouped_scrutinee_type,
+        grouped_then,
+        &grouped_else,
+        &type_,
+        binding_entries,
+    );
+
+    let guard = generated_term(
+        TermKind::Let {
+            assignee: rewrite_pattern_for_match_guard(assignee),
+            scope: ScopeKind::Local,
+            value: term_identifier(grouped_scrutinee.clone(), grouped_scrutinee_type.clone())
+                .into(),
+            then: chain.into(),
+            else_: grouped_else.into(),
+        },
+        type_.clone(),
+    );
+
+    let rewritten = generated_term(
+        TermKind::Let {
+            assignee: generated_identifier_pattern(grouped_scrutinee, grouped_scrutinee_type),
+            scope: ScopeKind::Local,
+            value: grouped_value.into(),
+            then: guard.into(),
+            else_: generated_term(TermKind::Unreachable, type_.clone()).into(),
+        },
+        type_.clone(),
+    );
+
+    Term {
+        comments,
+        span,
+        type_,
+        ..rewritten
+    }
+}
+
+fn grouped_binding_chain(
+    context: &mut ElaborationContext<'_>,
+    assignee: &Pattern<Type>,
+    grouped_scrutinee: &Path,
+    grouped_scrutinee_type: &Type,
+    then: Term<Type>,
+    else_: &Term<Type>,
+    result_type: &Type,
+    binding_entries: &[(Path, Type)],
+) -> Term<Type> {
+    let mut chain = then;
+    for (binding_path, binding_type) in binding_entries.iter().rev() {
+        let binding_value = extraction_value_for_grouped_binding_from_scrutinee(
+            context,
+            assignee,
+            binding_path,
+            binding_type,
+            grouped_scrutinee,
+            grouped_scrutinee_type,
+        );
+        chain = generated_term(
+            TermKind::Let {
+                assignee: generated_identifier_pattern(binding_path.clone(), binding_type.clone()),
+                scope: ScopeKind::Local,
+                value: binding_value.into(),
+                then: chain.into(),
+                else_: else_.clone().into(),
+            },
+            result_type.clone(),
+        );
+    }
+    chain
+}
+
+fn extraction_value_for_grouped_binding_from_scrutinee(
+    context: &mut ElaborationContext<'_>,
+    assignee: &Pattern<Type>,
+    target_binding: &Path,
+    target_type: &Type,
+    grouped_scrutinee: &Path,
+    grouped_scrutinee_type: &Type,
+) -> Term<Type> {
+    let extracted_binding =
+        grouped_binding_temp_path(context.module_name, &mut context.grouped_binding_salt);
+    let extraction_pattern =
+        rewrite_pattern_for_target_binding(assignee.clone(), target_binding, &extracted_binding);
+    generated_term(
+        TermKind::Let {
+            assignee: extraction_pattern,
+            scope: ScopeKind::Local,
+            value: term_identifier(grouped_scrutinee.clone(), grouped_scrutinee_type.clone())
+                .into(),
+            then: term_identifier(extracted_binding, target_type.clone()).into(),
+            else_: generated_term(TermKind::Unreachable, target_type.clone()).into(),
+        },
+        target_type.clone(),
+    )
+}
+
+fn extraction_value_for_grouped_binding_from_value(
+    context: &mut ElaborationContext<'_>,
+    assignee: &Pattern<Type>,
+    target_binding: &Path,
+    target_type: &Type,
+    value: Term<Type>,
+) -> Term<Type> {
+    let extracted_binding =
+        grouped_binding_temp_path(context.module_name, &mut context.grouped_binding_salt);
+    let extraction_pattern =
+        rewrite_pattern_for_target_binding(assignee.clone(), target_binding, &extracted_binding);
+    generated_term(
+        TermKind::Let {
+            assignee: extraction_pattern,
+            scope: ScopeKind::Local,
+            value: value.into(),
+            then: term_identifier(extracted_binding, target_type.clone()).into(),
+            else_: generated_term(TermKind::Unreachable, target_type.clone()).into(),
+        },
+        target_type.clone(),
+    )
+}
+
+fn rewrite_pattern_for_match_guard(pattern: Pattern<Type>) -> Pattern<Type> {
+    let Pattern {
+        comments,
+        kind,
+        span,
+        type_,
+    } = pattern;
+    let kind = match kind {
+        PatternKind::Hole | PatternKind::Immediate(_) | PatternKind::ConstConstructor(_) => kind,
+        PatternKind::Identifier(_) => PatternKind::Hole,
+        PatternKind::Constructor(path, inner) => {
+            PatternKind::Constructor(path, Box::new(rewrite_pattern_for_match_guard(*inner)))
+        }
+        PatternKind::Tuple(items) => {
+            PatternKind::Tuple(
+                items
+                    .into_iter()
+                    .map(rewrite_pattern_for_match_guard)
+                    .collect::<Vec<_>>()
+                    .into_boxed_slice(),
+            )
+        }
+        PatternKind::Array {
+            starting,
+            glob,
+            ending,
+        } => {
+            PatternKind::Array {
+                starting: starting
+                    .into_iter()
+                    .map(rewrite_pattern_for_match_guard)
+                    .collect::<Vec<_>>()
+                    .into_boxed_slice(),
+                glob: match glob {
+                    crate::ir::Glob::Named(_) => crate::ir::Glob::Anonymous,
+                    other => other,
+                },
+                ending: ending
+                    .into_iter()
+                    .map(rewrite_pattern_for_match_guard)
+                    .collect::<Vec<_>>()
+                    .into_boxed_slice(),
+            }
+        }
+        PatternKind::Struct(fields) => {
+            PatternKind::Struct(
+                fields
+                    .into_iter()
+                    .map(|(name, field_pattern)| {
+                        (name, rewrite_pattern_for_match_guard(field_pattern))
+                    })
+                    .collect(),
+            )
+        }
+        PatternKind::TypeHint(inner, type_expr) => {
+            PatternKind::TypeHint(Box::new(rewrite_pattern_for_match_guard(*inner)), type_expr)
+        }
+    };
+
+    Pattern {
+        comments,
+        kind,
+        span,
+        type_,
+    }
+}
+
+fn grouped_binding_temp_path(
+    module_name: &str,
+    grouped_binding_salt: &mut usize,
+) -> Path {
+    let path = Path::new(
+        module_name,
+        format!("[group binding] #{}", *grouped_binding_salt),
+    );
+    *grouped_binding_salt += 1;
+    path
+}
+
+fn generated_identifier_pattern(
+    path: Path,
+    type_: Type,
+) -> Pattern<Type> {
+    Pattern {
+        comments: String::new(),
+        kind: PatternKind::Identifier(path),
+        span: Span::Generated,
+        type_,
+    }
+}
+
+fn rewrite_pattern_for_target_binding(
+    pattern: Pattern<Type>,
+    target_binding: &Path,
+    replacement_binding: &Path,
+) -> Pattern<Type> {
+    let Pattern {
+        comments,
+        kind,
+        span,
+        type_,
+    } = pattern;
+    let kind = match kind {
+        PatternKind::Hole | PatternKind::Immediate(_) | PatternKind::ConstConstructor(_) => kind,
+        PatternKind::Identifier(path) => {
+            if path == *target_binding {
+                PatternKind::Identifier(replacement_binding.clone())
+            } else {
+                PatternKind::Hole
+            }
+        }
+        PatternKind::Constructor(path, inner) => {
+            PatternKind::Constructor(
+                path,
+                Box::new(rewrite_pattern_for_target_binding(
+                    *inner,
+                    target_binding,
+                    replacement_binding,
+                )),
+            )
+        }
+        PatternKind::Tuple(items) => {
+            PatternKind::Tuple(
+                items
+                    .into_iter()
+                    .map(|item| {
+                        rewrite_pattern_for_target_binding(
+                            item,
+                            target_binding,
+                            replacement_binding,
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .into_boxed_slice(),
+            )
+        }
+        PatternKind::Array {
+            starting,
+            glob,
+            ending,
+        } => {
+            PatternKind::Array {
+                starting: starting
+                    .into_iter()
+                    .map(|item| {
+                        rewrite_pattern_for_target_binding(
+                            item,
+                            target_binding,
+                            replacement_binding,
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .into_boxed_slice(),
+                glob: match glob {
+                    crate::ir::Glob::Named(path) if path == *target_binding => {
+                        crate::ir::Glob::Named(replacement_binding.clone())
+                    }
+                    crate::ir::Glob::Named(_) => crate::ir::Glob::Anonymous,
+                    other => other,
+                },
+                ending: ending
+                    .into_iter()
+                    .map(|item| {
+                        rewrite_pattern_for_target_binding(
+                            item,
+                            target_binding,
+                            replacement_binding,
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .into_boxed_slice(),
+            }
+        }
+        PatternKind::Struct(fields) => {
+            PatternKind::Struct(
+                fields
+                    .into_iter()
+                    .map(|(name, pattern)| {
+                        (
+                            name,
+                            rewrite_pattern_for_target_binding(
+                                pattern,
+                                target_binding,
+                                replacement_binding,
+                            ),
+                        )
+                    })
+                    .collect(),
+            )
+        }
+        PatternKind::TypeHint(inner, type_expr) => {
+            PatternKind::TypeHint(
+                Box::new(rewrite_pattern_for_target_binding(
+                    *inner,
+                    target_binding,
+                    replacement_binding,
+                )),
+                type_expr,
+            )
+        }
+    };
+
+    Pattern {
+        comments,
+        kind,
+        span,
+        type_,
+    }
+}
+
 fn apply_dictionary_args(
     context: &mut ElaborationContext<'_>,
     callee: Term<Type>,
@@ -382,21 +939,39 @@ fn apply_dictionary_args(
     let call_type = Type::func(argument.type_.clone(), result_type.clone());
     let args = dictionary_args_for_type(scheme, &call_type, dict_env, context.symbols)
         .ok_or(callee.clone())?;
+    Ok(apply_explicit_arguments(callee, args))
+}
 
-    let callee_with_args = args.into_iter().fold(callee, |current, arg| {
-        let current_type = current.type_.clone();
+fn apply_explicit_arguments(
+    mut callee: Term<Type>,
+    arguments: Vec<Term<Type>>,
+) -> Term<Type> {
+    if arguments.is_empty() {
+        return callee;
+    }
+
+    callee.type_ = arguments
+        .iter()
+        .rev()
+        .fold(callee.type_.clone(), |result, argument| {
+            Type::func(argument.type_.clone(), result)
+        });
+
+    arguments.into_iter().fold(callee, |current, argument| {
+        let result_type = match &current.type_ {
+            Type::Function(_, result) => (**result).clone(),
+            other => other.clone(),
+        };
         Term {
             comments: String::new(),
             kind: TermKind::Call {
                 callee: current.into(),
-                argument: arg.into(),
+                argument: argument.into(),
             },
             span: Span::Generated,
-            type_: current_type,
+            type_: result_type,
         }
-    });
-
-    Ok(callee_with_args)
+    })
 }
 
 fn dictionary_args_for_type(
@@ -470,7 +1045,7 @@ fn dictionary_type_for_predicate(
     let methods = ordered_trait_methods(def);
     let mut fields = IndexMap::new();
     for (method_path, scheme) in methods {
-        let type_ = substitute_type_vars(&scheme.type_, &predicate.arguments)?;
+        let type_ = scheme.type_.clone();
         fields.insert(method_path.minor.clone(), type_);
     }
     Some(Type::Struct { fields })
@@ -493,9 +1068,7 @@ fn dictionary_term_for_predicate(
     let mut fields = IndexMap::new();
     let mut field_types = IndexMap::new();
     for (method_path, scheme) in methods {
-        let Some(method_type) = substitute_type_vars(&scheme.type_, &predicate.arguments) else {
-            continue;
-        };
+        let method_type = scheme.type_.clone();
         let specialized_path = selected_impl
             .as_ref()
             .and_then(|impl_| impl_.methods.get(&method_path).cloned())
@@ -519,20 +1092,6 @@ fn dictionary_term_for_predicate(
             fields: field_types,
         },
     }
-}
-
-fn ordered_trait_methods(def: &TraitDef) -> Vec<(Path, TypeScheme)> {
-    let mut methods = def
-        .methods
-        .iter()
-        .map(|(path, scheme)| (path.clone(), scheme.clone()))
-        .collect::<Vec<_>>();
-    methods.sort_by(|(left, _), (right, _)| method_key(left).cmp(&method_key(right)));
-    methods
-}
-
-fn method_key(path: &Path) -> (String, String) {
-    (path.major.clone(), path.minor.clone())
 }
 
 fn predicate_key(predicate: &TraitConstraint) -> String {
@@ -563,17 +1122,6 @@ fn sorted_predicates(predicates: &[TraitConstraint]) -> Vec<TraitConstraint> {
 
 fn predicate_is_concrete(predicate: &TraitConstraint) -> bool {
     predicate.arguments.iter().all(is_concrete_type)
-}
-
-fn substitute_type_vars(
-    type_: &Type,
-    arguments: &[Type],
-) -> Option<Type> {
-    let mut current = type_.clone();
-    for (index, arg) in arguments.iter().enumerate() {
-        current = current.substitute_type_var(index as u32, arg)?;
-    }
-    Some(current)
 }
 
 fn instantiate_predicates_for_scheme(
@@ -701,29 +1249,29 @@ fn generated_term(
     }
 }
 
-fn pattern_bindings(pattern: &Pattern<Type>) -> Vec<Path> {
+fn pattern_binding_entries(pattern: &Pattern<Type>) -> Vec<(Path, Type)> {
     match &pattern.kind {
         PatternKind::Hole | PatternKind::Immediate(_) | PatternKind::ConstConstructor(_) => {
             Vec::new()
         }
-        PatternKind::Identifier(path) => vec![path.clone()],
-        PatternKind::Constructor(_, inner) => pattern_bindings(inner),
-        PatternKind::Tuple(items) => items.iter().flat_map(pattern_bindings).collect(),
+        PatternKind::Identifier(path) => vec![(path.clone(), pattern.type_.clone())],
+        PatternKind::Constructor(_, inner) => pattern_binding_entries(inner),
+        PatternKind::Tuple(items) => items.iter().flat_map(pattern_binding_entries).collect(),
         PatternKind::Array {
             starting,
             glob,
             ending,
         } => {
             let mut bindings = Vec::new();
-            bindings.extend(starting.iter().flat_map(pattern_bindings));
-            bindings.extend(ending.iter().flat_map(pattern_bindings));
+            bindings.extend(starting.iter().flat_map(pattern_binding_entries));
+            bindings.extend(ending.iter().flat_map(pattern_binding_entries));
             if let crate::ir::Glob::Named(path) = glob {
-                bindings.push(path.clone());
+                bindings.push((path.clone(), pattern.type_.clone()));
             }
             bindings
         }
-        PatternKind::Struct(fields) => fields.values().flat_map(pattern_bindings).collect(),
-        PatternKind::TypeHint(inner, _) => pattern_bindings(inner),
+        PatternKind::Struct(fields) => fields.values().flat_map(pattern_binding_entries).collect(),
+        PatternKind::TypeHint(inner, _) => pattern_binding_entries(inner),
     }
 }
 
@@ -1021,9 +1569,6 @@ fn match_scheme_to_type_relaxed(
                     }
                 }
                 None => {
-                    if matches!(concrete, Type::MetaVar(_)) {
-                        return false;
-                    }
                     *slot = Some(concrete.clone());
                     true
                 }
@@ -1160,7 +1705,7 @@ mod tests {
         let mut logger = Logger::new();
         let mut file_logger = logger.new_file("test.hc", source);
         let mut symbols = SymbolTable::new();
-        let _ = compile_core_module(&mut symbols);
+        let _ = compile_core_module(&mut symbols, &mut Logger::new());
 
         let modules = parse::parse(source, &mut file_logger)
             .map(|m| m.modules())
@@ -1185,28 +1730,307 @@ mod tests {
         (results.pop().unwrap(), symbols)
     }
 
+    fn resolve_source(source: &str) -> (ResolvedModule, SymbolTable) {
+        let mut logger = Logger::new();
+        let mut file_logger = logger.new_file("test.hc", source);
+        let mut symbols = SymbolTable::new();
+        let _ = compile_core_module(&mut symbols, &mut Logger::new());
+
+        let modules = parse::parse(source, &mut file_logger)
+            .map(|m| m.modules())
+            .unwrap_or_default()
+            .into_iter()
+            .flat_map(|m| crate::ir::module(m, &mut file_logger))
+            .collect::<Vec<_>>();
+
+        let mut resolved_modules = modules
+            .into_iter()
+            .map(|m| resolve_module_with_symbols_and_schemes(&mut symbols, m, &mut file_logger))
+            .collect::<Vec<_>>();
+
+        logger.consume_file(file_logger);
+        logger.print_logs();
+        assert!(logger.is_ok());
+
+        (resolved_modules.pop().unwrap(), symbols)
+    }
+
     fn find_global_binding<'a>(
         module: &'a Module<Type>,
         name: &str,
     ) -> Option<&'a Term<Type>> {
+        fn binding_name(pattern: &Pattern<Type>) -> Option<&Path> {
+            match &pattern.kind {
+                PatternKind::Identifier(path) => Some(path),
+                PatternKind::TypeHint(inner, _) => binding_name(inner),
+                _ => None,
+            }
+        }
+
+        fn find_global_binding_in_term<'a>(
+            term: &'a Term<Type>,
+            name: &str,
+        ) -> Option<&'a Term<Type>> {
+            match &term.kind {
+                TermKind::Let {
+                    assignee,
+                    scope: ScopeKind::Global,
+                    value,
+                    then,
+                    else_,
+                } => {
+                    binding_name(assignee)
+                        .is_some_and(|path| path.minor == name)
+                        .then(|| value.as_ref())
+                        .or_else(|| find_global_binding_in_term(value, name))
+                        .or_else(|| find_global_binding_in_term(then, name))
+                        .or_else(|| find_global_binding_in_term(else_, name))
+                }
+                TermKind::Let {
+                    value, then, else_, ..
+                } => {
+                    find_global_binding_in_term(value, name)
+                        .or_else(|| find_global_binding_in_term(then, name))
+                        .or_else(|| find_global_binding_in_term(else_, name))
+                }
+                TermKind::Tuple(items) => {
+                    items
+                        .iter()
+                        .find_map(|item| find_global_binding_in_term(item, name))
+                }
+                TermKind::Struct(fields) => {
+                    fields
+                        .values()
+                        .find_map(|item| find_global_binding_in_term(item, name))
+                }
+                TermKind::Field { of, .. } => find_global_binding_in_term(of, name),
+                TermKind::Function { body, .. } => find_global_binding_in_term(body, name),
+                TermKind::Call { callee, argument } => {
+                    find_global_binding_in_term(callee, name)
+                        .or_else(|| find_global_binding_in_term(argument, name))
+                }
+                TermKind::Semicolon(left, right) => {
+                    find_global_binding_in_term(left, name)
+                        .or_else(|| find_global_binding_in_term(right, name))
+                }
+                _ => None,
+            }
+        }
+
         module.statements.iter().find_map(|statement| {
             let Statement::Term(term) = statement else {
                 return None;
             };
-            let TermKind::Let {
+            find_global_binding_in_term(term, name)
+        })
+    }
+
+    fn term_has_global_binding(
+        term: &Term<Type>,
+        name: &str,
+    ) -> bool {
+        fn binding_name(pattern: &Pattern<Type>) -> Option<&Path> {
+            match &pattern.kind {
+                PatternKind::Identifier(path) => Some(path),
+                PatternKind::TypeHint(inner, _) => binding_name(inner),
+                _ => None,
+            }
+        }
+
+        match &term.kind {
+            TermKind::Let {
                 assignee,
                 scope: ScopeKind::Global,
                 value,
-                ..
-            } = &term.kind
-            else {
-                return None;
+                then,
+                else_,
+            } => {
+                binding_name(assignee).is_some_and(|path| path.minor == name)
+                    || term_has_global_binding(value, name)
+                    || term_has_global_binding(then, name)
+                    || term_has_global_binding(else_, name)
+            }
+            TermKind::Let {
+                value, then, else_, ..
+            } => {
+                term_has_global_binding(value, name)
+                    || term_has_global_binding(then, name)
+                    || term_has_global_binding(else_, name)
+            }
+            TermKind::Tuple(items) => items.iter().any(|item| term_has_global_binding(item, name)),
+            TermKind::Struct(fields) => {
+                fields
+                    .values()
+                    .any(|item| term_has_global_binding(item, name))
+            }
+            TermKind::Field { of, .. } => term_has_global_binding(of, name),
+            TermKind::Function { body, .. } => term_has_global_binding(body, name),
+            TermKind::Call { callee, argument } => {
+                term_has_global_binding(callee, name) || term_has_global_binding(argument, name)
+            }
+            TermKind::Semicolon(left, right) => {
+                term_has_global_binding(left, name) || term_has_global_binding(right, name)
+            }
+            _ => false,
+        }
+    }
+
+    fn module_has_global_binding(
+        module: &Module<Type>,
+        name: &str,
+    ) -> bool {
+        module.statements.iter().any(|statement| {
+            let Statement::Term(term) = statement else {
+                return false;
             };
-            let PatternKind::Identifier(path) = &assignee.kind else {
-                return None;
-            };
-            (path.minor == name).then(|| value.as_ref())
+            term_has_global_binding(term, name)
         })
+    }
+
+    fn term_has_local_wrapped_binding(
+        term: &Term<Type>,
+        binding_prefix: &str,
+    ) -> bool {
+        fn binding_name(pattern: &Pattern<Type>) -> Option<&Path> {
+            match &pattern.kind {
+                PatternKind::Identifier(path) => Some(path),
+                PatternKind::TypeHint(inner, _) => binding_name(inner),
+                _ => None,
+            }
+        }
+
+        match &term.kind {
+            TermKind::Let {
+                assignee,
+                scope: ScopeKind::Local,
+                value,
+                then,
+                else_,
+            } => {
+                let is_wrapped_binding = binding_name(assignee).is_some_and(|path| {
+                    path.minor.starts_with(binding_prefix)
+                        && matches!(
+                            &value.kind,
+                            TermKind::Function { parameter_name, .. }
+                                if parameter_name.inner.minor.starts_with("[dict]")
+                        )
+                });
+                is_wrapped_binding
+                    || term_has_local_wrapped_binding(value, binding_prefix)
+                    || term_has_local_wrapped_binding(then, binding_prefix)
+                    || term_has_local_wrapped_binding(else_, binding_prefix)
+            }
+            TermKind::Let {
+                value, then, else_, ..
+            } => {
+                term_has_local_wrapped_binding(value, binding_prefix)
+                    || term_has_local_wrapped_binding(then, binding_prefix)
+                    || term_has_local_wrapped_binding(else_, binding_prefix)
+            }
+            TermKind::Tuple(items) => {
+                items
+                    .iter()
+                    .any(|item| term_has_local_wrapped_binding(item, binding_prefix))
+            }
+            TermKind::Struct(fields) => {
+                fields
+                    .values()
+                    .any(|item| term_has_local_wrapped_binding(item, binding_prefix))
+            }
+            TermKind::Field { of, .. } => term_has_local_wrapped_binding(of, binding_prefix),
+            TermKind::Function { body, .. } => term_has_local_wrapped_binding(body, binding_prefix),
+            TermKind::Call { callee, argument } => {
+                term_has_local_wrapped_binding(callee, binding_prefix)
+                    || term_has_local_wrapped_binding(argument, binding_prefix)
+            }
+            TermKind::Semicolon(left, right) => {
+                term_has_local_wrapped_binding(left, binding_prefix)
+                    || term_has_local_wrapped_binding(right, binding_prefix)
+            }
+            _ => false,
+        }
+    }
+
+    fn term_has_refutable_group_guard_with_fallback(term: &Term<Type>) -> bool {
+        fn pattern_contains_integer(
+            pattern: &Pattern<Type>,
+            expected: i64,
+        ) -> bool {
+            match &pattern.kind {
+                PatternKind::Immediate(crate::ir::ImmediateValue::Integer(value)) => {
+                    *value == expected
+                }
+                PatternKind::Constructor(_, inner) => pattern_contains_integer(inner, expected),
+                PatternKind::Tuple(items) => {
+                    items
+                        .iter()
+                        .any(|item| pattern_contains_integer(item, expected))
+                }
+                PatternKind::Array {
+                    starting, ending, ..
+                } => {
+                    starting
+                        .iter()
+                        .any(|item| pattern_contains_integer(item, expected))
+                        || ending
+                            .iter()
+                            .any(|item| pattern_contains_integer(item, expected))
+                }
+                PatternKind::Struct(fields) => {
+                    fields
+                        .values()
+                        .any(|item| pattern_contains_integer(item, expected))
+                }
+                PatternKind::TypeHint(inner, _) => pattern_contains_integer(inner, expected),
+                _ => false,
+            }
+        }
+
+        match &term.kind {
+            TermKind::Let {
+                assignee,
+                scope: ScopeKind::Local,
+                value,
+                then,
+                else_,
+            } => {
+                let is_guard = pattern_binding_entries(assignee).is_empty()
+                    && pattern_contains_integer(assignee, 0)
+                    && !matches!(else_.kind, TermKind::Unreachable);
+                is_guard
+                    || term_has_refutable_group_guard_with_fallback(value)
+                    || term_has_refutable_group_guard_with_fallback(then)
+                    || term_has_refutable_group_guard_with_fallback(else_)
+            }
+            TermKind::Let {
+                value, then, else_, ..
+            } => {
+                term_has_refutable_group_guard_with_fallback(value)
+                    || term_has_refutable_group_guard_with_fallback(then)
+                    || term_has_refutable_group_guard_with_fallback(else_)
+            }
+            TermKind::Tuple(items) => {
+                items
+                    .iter()
+                    .any(term_has_refutable_group_guard_with_fallback)
+            }
+            TermKind::Struct(fields) => {
+                fields
+                    .values()
+                    .any(term_has_refutable_group_guard_with_fallback)
+            }
+            TermKind::Field { of, .. } => term_has_refutable_group_guard_with_fallback(of),
+            TermKind::Function { body, .. } => term_has_refutable_group_guard_with_fallback(body),
+            TermKind::Call { callee, argument } => {
+                term_has_refutable_group_guard_with_fallback(callee)
+                    || term_has_refutable_group_guard_with_fallback(argument)
+            }
+            TermKind::Semicolon(left, right) => {
+                term_has_refutable_group_guard_with_fallback(left)
+                    || term_has_refutable_group_guard_with_fallback(right)
+            }
+            _ => false,
+        }
     }
 
     fn term_has_inline_dict_for(
@@ -1245,12 +2069,85 @@ mod tests {
                     .any(|item| term_has_inline_dict_for(item, name))
             }
             TermKind::Function { body, .. } => term_has_inline_dict_for(body, name),
-            TermKind::Field { of, .. } => term_has_inline_dict_for(of, name),
+            TermKind::Field { of, index } => {
+                (index.inner == name && matches!(of.kind, TermKind::Struct(_)))
+                    || term_has_inline_dict_for(of, name)
+            }
             TermKind::Semicolon(left, right) => {
                 term_has_inline_dict_for(left, name) || term_has_inline_dict_for(right, name)
             }
             _ => false,
         }
+    }
+
+    fn inline_dict_field_count_for(
+        term: &Term<Type>,
+        name: &str,
+    ) -> Option<usize> {
+        match &term.kind {
+            TermKind::Call { callee, argument } => {
+                let is_target = match &callee.kind {
+                    TermKind::Identifier(path) => path.minor == name,
+                    TermKind::Call { callee: inner, .. } => {
+                        matches!(inner.kind, TermKind::Identifier(ref path) if path.minor == name)
+                    }
+                    _ => false,
+                };
+
+                if is_target && let TermKind::Struct(fields) = &argument.kind {
+                    return Some(fields.len());
+                }
+
+                inline_dict_field_count_for(callee, name)
+                    .or_else(|| inline_dict_field_count_for(argument, name))
+            }
+            TermKind::Let {
+                value, then, else_, ..
+            } => {
+                inline_dict_field_count_for(value, name)
+                    .or_else(|| inline_dict_field_count_for(then, name))
+                    .or_else(|| inline_dict_field_count_for(else_, name))
+            }
+            TermKind::Tuple(items) => {
+                items
+                    .iter()
+                    .find_map(|item| inline_dict_field_count_for(item, name))
+            }
+            TermKind::Struct(fields) => {
+                fields
+                    .values()
+                    .find_map(|item| inline_dict_field_count_for(item, name))
+            }
+            TermKind::Function { body, .. } => inline_dict_field_count_for(body, name),
+            TermKind::Field { of, index } => {
+                if index.inner == name
+                    && let TermKind::Struct(fields) = &of.kind
+                {
+                    return Some(fields.len());
+                }
+                inline_dict_field_count_for(of, name)
+            }
+            TermKind::Semicolon(left, right) => {
+                inline_dict_field_count_for(left, name)
+                    .or_else(|| inline_dict_field_count_for(right, name))
+            }
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn resolve_stage_has_no_dictionary_rewrite() {
+        let source = "module demo =\n\tlet double = fn x => x + x\n\tlet result = double 3\nend\n";
+        let (resolved, _symbols) = resolve_source(source);
+
+        let double = find_global_binding(&resolved.module, "double").expect("double binding");
+        let TermKind::Function { parameter_name, .. } = &double.kind else {
+            panic!("expected function");
+        };
+        assert!(!parameter_name.inner.minor.starts_with("[dict]"));
+
+        let result = find_global_binding(&resolved.module, "result").expect("result binding");
+        assert!(!term_has_inline_dict_for(result, "double"));
     }
 
     #[test]
@@ -1262,6 +2159,14 @@ mod tests {
             panic!("expected function");
         };
         assert!(parameter_name.inner.minor.starts_with("[dict]"));
+
+        let Type::Function(parameter, _) = &double.type_ else {
+            panic!("expected dictionary function type");
+        };
+        let Type::Struct { fields } = parameter.as_ref() else {
+            panic!("expected dictionary parameter to be a struct");
+        };
+        assert!(!fields.is_empty());
     }
 
     #[test]
@@ -1270,5 +2175,39 @@ mod tests {
         let (elaborated, _symbols) = elaborate_source(source);
         let result = find_global_binding(&elaborated.module, "result").expect("result binding");
         assert!(term_has_inline_dict_for(result, "double"));
+        assert_eq!(inline_dict_field_count_for(result, "double"), Some(1));
+    }
+
+    #[test]
+    fn elaborates_associated_constant_dictionary_argument() {
+        let source = "module demo =\n\ttrait default : a =\n\t\tlet default : a\n\tend\n\timpl default : core::integer =\n\t\tlet default = 7\n\tend\n\tlet value : core::integer = default\nend\n";
+        let (elaborated, _symbols) = elaborate_source(source);
+        let value = find_global_binding(&elaborated.module, "value").expect("value binding");
+        assert!(term_has_inline_dict_for(value, "default"));
+        assert_eq!(inline_dict_field_count_for(value, "default"), Some(1));
+    }
+
+    #[test]
+    fn rewrites_top_level_grouped_polymorphic_destructuring() {
+        let source = "module demo =\n\tlet default_pair = (core::default, core::default)\n\tlet (a, b) = default_pair\nend\n";
+        let (elaborated, _symbols) = elaborate_source(source);
+        assert!(module_has_global_binding(&elaborated.module, "a"));
+        assert!(module_has_global_binding(&elaborated.module, "b"));
+
+        let a = find_global_binding(&elaborated.module, "a").expect("a binding");
+        let TermKind::Function { parameter_name, .. } = &a.kind else {
+            panic!("expected dictionary-wrapper function for grouped binding");
+        };
+        assert!(parameter_name.inner.minor.starts_with("[dict]"));
+    }
+
+    #[test]
+    fn rewrites_local_grouped_refutable_polymorphic_destructuring() {
+        let source = "module demo =\n\tlet result : core::integer =\n\t\tmatch (core::default, core::default, 1) with\n\t\t| (left_local, right_local, 0) => left_local\n\t\t| _ => core::default\nend\n";
+        let (elaborated, _symbols) = elaborate_source(source);
+        let result = find_global_binding(&elaborated.module, "result").expect("result binding");
+        assert!(term_has_local_wrapped_binding(result, "left_local#"));
+        assert!(term_has_local_wrapped_binding(result, "right_local#"));
+        assert!(term_has_refutable_group_guard_with_fallback(result));
     }
 }

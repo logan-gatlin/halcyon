@@ -184,10 +184,7 @@ impl ModuleScope {
         path: Path,
         namespace: NameSpace,
     ) {
-        let scoped_path = ScopedPath {
-            path,
-            namespace,
-        };
+        let scoped_path = ScopedPath { path, namespace };
         self.globals.insert(scoped_path.clone());
         self.definitions
             .entry(scoped_path)

@@ -3,7 +3,6 @@ use crate::ir::{
     ImmediateValue,
     Pattern,
     PatternKind,
-    Specialization,
     Term,
     TermKind,
 };
@@ -11,6 +10,7 @@ use crate::types::{
     Type as SemanticType,
     TypeDefinition,
     TypeScheme,
+    ordered_trait_methods,
 };
 
 use super::*;
@@ -35,8 +35,8 @@ pub fn lower_type(
         Struct { fields } => {
             Type::Struct(fields.values().map(|v| lower_type(v, symbols)).collect())
         }
-        Array(t) => Type::Array(lower_type(t, symbols).into()),
-        Tuple(items) => Type::Struct(items.iter().map(|i| lower_type(i, symbols)).collect()),
+        Array(_) => Type::Array(Type::Any.into()),
+        Tuple(items) => Type::Struct(items.iter().map(|_| Type::Any).collect()),
         Sum { .. } => Type::Struct([Type::I32, Type::Any].into()),
         Function(..) => Type::closure_type(),
         Apply {
@@ -123,18 +123,19 @@ impl<'a> Encoder<'a> {
                 self.push(i::Drop);
             }
             PatternKind::Identifier(path) => {
+                self.ref_cast_if_needed(&lowered_type);
                 self.push(i::Set(path));
             }
             PatternKind::Tuple(items) => {
                 let temporary = self.temporary_name("pattern");
-                let SemanticType::Tuple(types) = &type_ else {
+                let SemanticType::Tuple(_) = &type_ else {
                     unreachable!()
                 };
-                let types = types
-                    .iter()
-                    .map(|t| lower_type(t, symbols))
-                    .collect::<Box<[Type]>>();
+                let Type::Struct(types) = lowered_type.clone() else {
+                    unreachable!()
+                };
                 self.new_register(temporary.clone(), scope, lowered_type.clone());
+                self.ref_cast_if_needed(&lowered_type);
                 self.push(i::Set(temporary.clone()));
                 for (index, item) in items.into_iter().enumerate() {
                     self.extend([
@@ -155,6 +156,7 @@ impl<'a> Encoder<'a> {
                 let inner_type_lowered = lower_type(inner_type, symbols);
                 let temporary = self.temporary_name("array_pattern");
                 self.new_register(temporary.clone(), scope, lowered_type.clone());
+                self.ref_cast_if_needed(&lowered_type);
                 self.push(i::Set(temporary.clone()));
 
                 let start_len = starting.len() as i32;
@@ -248,6 +250,7 @@ impl<'a> Encoder<'a> {
             PatternKind::Struct(index_map) => {
                 let temporary = self.temporary_name("pattern");
                 self.new_register(temporary.clone(), scope, lowered_type.clone());
+                self.ref_cast_if_needed(&lowered_type);
                 self.push(i::Set(temporary.clone()));
                 let ordered_fields = struct_fields_for_type(&type_, symbols).unwrap_or_else(|| {
                     index_map
@@ -277,6 +280,7 @@ impl<'a> Encoder<'a> {
                 let sum_type: Box<[Type]> = [Type::I32, Type::Any].into();
                 let temporary = self.temporary_name("constructor_pattern");
                 self.new_register(temporary.clone(), scope, lowered_type.clone());
+                self.ref_cast_if_needed(&lowered_type);
                 self.push(i::Set(temporary.clone()));
                 self.extend([
                     i::Get(temporary),
@@ -294,6 +298,7 @@ impl<'a> Encoder<'a> {
 
                 let temporary = self.temporary_name("constructor_pattern");
                 self.new_register(temporary.clone(), scope, lowered_type.clone());
+                self.ref_cast_if_needed(&lowered_type);
                 self.push(i::Set(temporary.clone()));
 
                 self.extend([
@@ -318,7 +323,8 @@ impl<'a> Encoder<'a> {
                         let temp = self.temporary_name("const_pattern");
                         let fields = lowered_struct_fields(&SemanticType::Integer, symbols)
                             .unwrap_or_else(|| unreachable!());
-                        self.new_register(temp.clone(), scope, lowered_type);
+                        self.new_register(temp.clone(), scope, lowered_type.clone());
+                        self.ref_cast_if_needed(&lowered_type);
                         self.push(i::Set(temp.clone()));
                         self.extend([
                             i::Get(temp),
@@ -334,7 +340,8 @@ impl<'a> Encoder<'a> {
                         let temp = self.temporary_name("const_pattern");
                         let fields = lowered_struct_fields(&SemanticType::Real, symbols)
                             .unwrap_or_else(|| unreachable!());
-                        self.new_register(temp.clone(), scope, lowered_type);
+                        self.new_register(temp.clone(), scope, lowered_type.clone());
+                        self.ref_cast_if_needed(&lowered_type);
                         self.push(i::Set(temp.clone()));
                         self.extend([
                             i::Get(temp),
@@ -350,7 +357,8 @@ impl<'a> Encoder<'a> {
                         let temp = self.temporary_name("const_pattern");
                         let fields = lowered_struct_fields(&SemanticType::Boolean, symbols)
                             .unwrap_or_else(|| unreachable!());
-                        self.new_register(temp.clone(), scope, lowered_type);
+                        self.new_register(temp.clone(), scope, lowered_type.clone());
+                        self.ref_cast_if_needed(&lowered_type);
                         self.push(i::Set(temp.clone()));
                         self.extend([
                             i::Get(temp),
@@ -366,7 +374,8 @@ impl<'a> Encoder<'a> {
                         let temp = self.temporary_name("const_pattern");
                         let fields = lowered_struct_fields(&SemanticType::Glyph, symbols)
                             .unwrap_or_else(|| unreachable!());
-                        self.new_register(temp.clone(), scope, lowered_type);
+                        self.new_register(temp.clone(), scope, lowered_type.clone());
+                        self.ref_cast_if_needed(&lowered_type);
                         self.push(i::Set(temp.clone()));
                         self.extend([
                             i::Get(temp),
@@ -383,8 +392,9 @@ impl<'a> Encoder<'a> {
                         let const_string = self.temporary_name("const_string");
                         let bool_fields = bool_fields(symbols);
                         let array_type = lower_type(&SemanticType::String, symbols);
-                        self.new_register(temp.clone(), scope, lowered_type);
+                        self.new_register(temp.clone(), scope, lowered_type.clone());
                         self.new_register(const_string.clone(), scope, array_type);
+                        self.ref_cast_if_needed(&lowered_type);
                         self.push(i::Set(temp.clone()));
                         self.extend(value.bytes().map(|b| i::I32Const(b as i32)));
                         self.push(i::ArrayNewFixed {
@@ -466,11 +476,23 @@ impl<'a> Encoder<'a> {
             TermKind::Identifier(path) => {
                 let result_type = lower_type(&type_, symbols);
                 if path.major != self.module.name {
-                    let import_type = symbols
+                    let is_trait_dispatch_symbol = symbols
+                        .trait_defs()
+                        .values()
+                        .any(|def| def.methods.contains_key(&path));
+                    let scheme_type = symbols
                         .terms()
                         .get(&path)
-                        .map(|scheme| lower_type(&scheme.type_, symbols))
-                        .unwrap_or_else(|| result_type.clone());
+                        .map(|scheme| lower_type(&scheme.type_, symbols));
+                    let import_type = if is_trait_dispatch_symbol {
+                        Type::closure_type()
+                    } else {
+                        match scheme_type {
+                            Some(Type::Any) => result_type.clone(),
+                            Some(type_) => type_,
+                            None => result_type.clone(),
+                        }
+                    };
                     self.module
                         .imports
                         .entry(path.clone())
@@ -532,6 +554,8 @@ impl<'a> Encoder<'a> {
                     .collect::<Box<[Type]>>();
                 self.lower_ir(*of, symbols, constructors);
                 self.push(i::StructGet(inner_types, field_index));
+                let result_type = lower_type(&type_, symbols);
+                self.ref_cast_if_needed(&result_type);
             }
             TermKind::Function {
                 parameter_name,
@@ -572,12 +596,7 @@ impl<'a> Encoder<'a> {
                 self.push(i::Get(callee_name));
                 self.call_closure();
                 let result_type = lower_type(&type_, symbols);
-                match result_type {
-                    Type::Struct(fields) => self.push(i::RefCastStruct(fields)),
-                    Type::Array(inner) => self.push(i::RefCastArray(inner)),
-                    Type::Any => {}
-                    _ => unreachable!(),
-                }
+                self.ref_cast_if_needed(&result_type);
             }
             TermKind::Semicolon(a, b) => {
                 self.lower_ir(*a, symbols, constructors);
@@ -665,81 +684,6 @@ impl<'a> Encoder<'a> {
         );
         self.new_register(method_path.clone(), ScopeKind::Global, Type::closure_type());
         self.push(i::Set(method_path));
-    }
-
-    pub(crate) fn lower_specialization(
-        &mut self,
-        specialization: &Specialization,
-        symbols: &SymbolTable,
-    ) {
-        let specialization_target = symbols
-            .resolve_method_specialization(&specialization.method_path, &specialization.arguments)
-            .ok()
-            .flatten();
-        let Some(target) = specialization_target else {
-            let fallback_argument = specialization
-                .arguments
-                .first()
-                .cloned()
-                .unwrap_or(SemanticType::Unit);
-            self.lower_unreachable_specialization(
-                specialization.specialized_path.clone(),
-                fallback_argument,
-                symbols,
-            );
-            return;
-        };
-
-        let target_type = symbols
-            .terms()
-            .get(&target.impl_method_path)
-            .map(|scheme| lower_type(&scheme.type_, symbols))
-            .unwrap_or_else(Type::closure_type);
-        if target.impl_method_path.major != self.module.name {
-            self.module
-                .imports
-                .entry(target.impl_method_path.clone())
-                .or_insert_with(|| target_type.clone());
-        }
-        self.new_register(
-            specialization.specialized_path.clone(),
-            ScopeKind::Global,
-            target_type,
-        );
-        self.extend([
-            i::Get(target.impl_method_path),
-            i::Set(specialization.specialized_path.clone()),
-        ]);
-    }
-
-    fn lower_unary_closure(
-        &mut self,
-        path: Path,
-        argument: SemanticType,
-        symbols: &SymbolTable,
-        body: impl for<'b> FnOnce(&mut Encoder<'b>, &SymbolTable, &Path),
-    ) {
-        let value_name = self.temporary_name("value");
-        self.create_closure(
-            symbols,
-            value_name.clone(),
-            argument,
-            vec![],
-            |inner, symbols| body(inner, symbols, &value_name),
-        );
-        self.new_register(path.clone(), ScopeKind::Global, Type::closure_type());
-        self.push(i::Set(path));
-    }
-
-    fn lower_unreachable_specialization(
-        &mut self,
-        path: Path,
-        argument: SemanticType,
-        symbols: &SymbolTable,
-    ) {
-        self.lower_unary_closure(path, argument, symbols, |inner, _symbols, _value| {
-            inner.push(i::Unreachable);
-        });
     }
 
     /// [argument, closure] -> [result]
@@ -1122,20 +1066,6 @@ fn ordered_trait_methods_for_path(
             .position(|(path, _)| path == method_path)
             .map(|index| (methods, index))
     })
-}
-
-fn ordered_trait_methods(def: &crate::types::TraitDef) -> Vec<(Path, TypeScheme)> {
-    let mut methods = def
-        .methods
-        .iter()
-        .map(|(path, scheme)| (path.clone(), scheme.clone()))
-        .collect::<Vec<_>>();
-    methods.sort_by(|(left, _), (right, _)| method_key(left).cmp(&method_key(right)));
-    methods
-}
-
-fn method_key(path: &Path) -> (String, String) {
-    (path.major.clone(), path.minor.clone())
 }
 
 fn collect_pattern_bindings(pattern: &Pattern<SemanticType>) -> Vec<(Path, SemanticType)> {

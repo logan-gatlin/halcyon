@@ -30,6 +30,12 @@ pub fn statement(p: &mut Parser<'_, '_>) {
         Some(SyntaxKind::TRAIT_KW) => trait_statement(p),
         Some(SyntaxKind::IMPL_KW) => impl_statement(p),
         Some(SyntaxKind::WASM_KW) => inline_wasm(p),
+        Some(SyntaxKind::IMPORT_KW) => {
+            p.error_recover(
+                "`import` statements are only allowed at source-file top level",
+                STATEMENT_RECOVERY,
+            )
+        }
         _ => {
             if p.at(SyntaxKind::MODULE_KW) {
                 p.error_recover("nested modules are not supported", &[SyntaxKind::END_KW]);
@@ -171,7 +177,7 @@ fn impl_method_def(p: &mut Parser<'_, '_>) {
 fn can_start_impl_argument(p: &Parser<'_, '_>) -> bool {
     matches!(
         p.current(),
-        Some(SyntaxKind::IDENT | SyntaxKind::L_PAREN | SyntaxKind::L_SQUARE)
+        Some(SyntaxKind::IDENT | SyntaxKind::L_PAREN | SyntaxKind::L_SQUARE | SyntaxKind::FOR_KW)
     )
 }
 

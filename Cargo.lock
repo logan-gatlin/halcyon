@@ -744,6 +744,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "halcyon"
+version = "2026.2.11"
+dependencies = [
+ "halcyon-lib",
+ "wasmtime",
+ "wasmtime-wasi",
+]
+
+[[package]]
 name = "halcyon-lib"
 version = "2026.2.11"
 dependencies = [
@@ -764,8 +773,6 @@ dependencies = [
  "wasm-encoder 0.233.0",
  "wasmparser 0.235.0",
  "wasmprinter 0.235.0",
- "wasmtime",
- "wasmtime-wasi",
 ]
 
 [[package]]

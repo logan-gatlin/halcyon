@@ -86,6 +86,29 @@ fn apply_nonempty_arguments_not_equal_constructor() {
 }
 
 #[test]
+fn empty_apply_unifies_like_constructor() {
+    let mut table = UnificationTable::default();
+    let constructor = named("core", "List", Type::Unit);
+    let applied = Type::Apply {
+        constructor: Box::new(constructor.clone()),
+        arguments: vec![],
+    };
+    assert!(table.unify(&applied, &constructor).is_ok());
+}
+
+#[test]
+fn type_transform_canonicalizes_empty_apply() {
+    let apply = Type::Apply {
+        constructor: Box::new(Type::Integer),
+        arguments: vec![],
+    };
+    let transformed = apply
+        .shift_type_vars(0, 0)
+        .expect("identity transform succeeds");
+    assert_eq!(transformed, Type::Integer);
+}
+
+#[test]
 fn applied_named_type_does_not_unify_structurally() {
     let mut table = UnificationTable::default();
     let core_function = Type::Named {
@@ -95,6 +118,22 @@ fn applied_named_type_does_not_unify_structurally() {
     .apply(vec![Type::Integer, Type::Integer]);
     let direct_function = Type::func(Type::Integer, Type::Integer);
     assert!(table.unify(&core_function, &direct_function).is_err());
+}
+
+#[test]
+fn named_struct_does_not_unify_with_direct_struct() {
+    let mut table = UnificationTable::default();
+    let named_struct = named(
+        "test",
+        "Point",
+        Type::Struct {
+            fields: fields(vec![("x", Type::Integer)]),
+        },
+    );
+    let direct_struct = Type::Struct {
+        fields: fields(vec![("x", Type::Integer)]),
+    };
+    assert!(table.unify(&named_struct, &direct_struct).is_err());
 }
 
 #[test]
@@ -224,6 +263,19 @@ fn struct_constraint_at_least_rejects_missing() {
         mode: StructMatch::AtLeast,
     };
     assert!(table.unify(&constraint, &named_struct).is_err());
+}
+
+#[test]
+fn struct_constraint_does_not_match_direct_struct_type() {
+    let mut table = UnificationTable::default();
+    let direct_struct = Type::Struct {
+        fields: fields(vec![("x", Type::Integer)]),
+    };
+    let constraint = Type::StructConstraint {
+        fields: fields(vec![("x", Type::Integer)]),
+        mode: StructMatch::Exact,
+    };
+    assert!(table.unify(&constraint, &direct_struct).is_err());
 }
 
 #[test]

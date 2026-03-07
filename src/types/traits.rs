@@ -84,6 +84,18 @@ impl TraitDef {
     }
 }
 
+pub(crate) fn ordered_trait_methods(def: &TraitDef) -> Vec<(Path, TypeScheme)> {
+    let mut methods = def
+        .methods
+        .iter()
+        .map(|(path, scheme)| (path.clone(), scheme.clone()))
+        .collect::<Vec<_>>();
+    methods.sort_by(|(left, _), (right, _)| {
+        (left.major.clone(), left.minor.clone()).cmp(&(right.major.clone(), right.minor.clone()))
+    });
+    methods
+}
+
 /// A trait implementation head with its context predicates.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TraitImpl {

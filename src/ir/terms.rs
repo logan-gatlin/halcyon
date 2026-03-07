@@ -2,7 +2,6 @@ use crate::asm::{
     Instruction as WasmInstruction,
     Type as WasmType,
 };
-use crate::hc_core::CoreTerm;
 use crate::operator::{
     BinaryOp,
     Operator,
@@ -10,7 +9,6 @@ use crate::operator::{
 };
 use crate::parse::ast::AstNode;
 use crate::types::Type;
-use crate::types::symbol_table::Symbol;
 use crate::{
     WithContext,
     WithSpan,
@@ -238,15 +236,19 @@ fn curry(
 ) -> Option<UntypedTerm> {
     match params.next() {
         Some(param) => {
-            let mut inner_scope = scope.nest_function_scope();
             let param_name = param.name_text_spanned()?;
             let param_span = param_name.span;
+            let parameter_type = match param.ty() {
+                Some(type_expr_node) => Some(type_expr(scope, type_expr_node)?),
+                None => None,
+            };
+            let mut inner_scope = scope.nest_function_scope();
             let path = inner_scope.define(param_name, NameSpace::Term);
             let body = curry(&mut inner_scope, wasm_type_defs, logger, params, body, span)?;
             Some(mk(
                 TermKind::Function {
                     parameter_name: path.with_span(param_span),
-                    parameter_type: None,
+                    parameter_type,
                     captures: inner_scope
                         .into_captures()
                         .into_iter()
@@ -268,12 +270,12 @@ fn array_term(
     array_expr: ast::ArrayExpr,
 ) -> Option<UntypedTerm> {
     let span = array_expr.span();
-    let empty = CoreTerm::EmptyArray.path();
+    let empty = Path::core("array_empty");
     let mut current = mk(TermKind::Identifier(empty), span);
 
     for child in array_expr.syntax().children() {
         if let Some(splat) = ast::ArraySplat::cast(child.clone()) {
-            let concat_path = CoreTerm::ArrayConcat.path();
+            let concat_path = Path::core("array_concat");
             let elem = term(scope, wasm_type_defs, logger, splat.expr()?)?;
             let elem_span = elem.span;
             current = mk(
@@ -291,7 +293,7 @@ fn array_term(
                 elem_span,
             );
         } else if let Some(expr) = ast::Expr::cast(child) {
-            let push_path = CoreTerm::ArrayPush.path();
+            let push_path = Path::core("array_push");
             let elem = term(scope, wasm_type_defs, logger, expr)?;
             let elem_span = elem.span;
             current = mk(

@@ -42,6 +42,10 @@ module core =
     (type $real (struct f64))
     (type $word (struct i32))
     (type $string (array i8))
+    (type $unit (struct))
+    (import "wasi_snapshot_preview1" "fd_write"
+      (func $fd_write (param i32 i32 i32 i32) (result i32)))
+    (memory $mem 1)
   )
 
   impl equal : core::unit =
@@ -744,4 +748,186 @@ module core =
 
   let [<=] = fn left right => if left < right then true else left == right
   let [>=] = fn left right => if left > right then true else left == right
+
+  let array_empty : for a . array a = (wasm : for a . array a) => (
+    i32.const 0
+    array.new_default any
+  )
+
+  let array_concat : for a . array a -> array a -> array a =
+    fn (left : for a . array a) (right : for a . array a) =>
+      (wasm : for a . array a) => (
+        (local $left (array any))
+        (local $right (array any))
+        (local $left_len i32)
+        (local $right_len i32)
+        (local $result (array any))
+
+        get left
+        ref.cast_array any
+        set $left
+
+        get right
+        ref.cast_array any
+        set $right
+
+        get $left
+        array.len
+        set $left_len
+
+        get $right
+        array.len
+        set $right_len
+
+        get $left_len
+        get $right_len
+        i32.add
+        array.new_default any
+        set $result
+
+        get $result
+        i32.const 0
+        get $left
+        i32.const 0
+        get $left_len
+        array.copy any any
+
+        get $result
+        get $left_len
+        get $right
+        i32.const 0
+        get $right_len
+        array.copy any any
+
+        get $result
+      )
+
+  let array_push : for a . a -> array a -> array a =
+    fn (value : for a . a) (arr : for a . array a) =>
+      (wasm : for a . array a) => (
+        (local $arr (array any))
+        (local $len i32)
+        (local $result (array any))
+
+        get arr
+        ref.cast_array any
+        set $arr
+
+        get $arr
+        array.len
+        set $len
+
+        get $len
+        i32.const 1
+        i32.add
+        array.new_default any
+        set $result
+
+        get $result
+        i32.const 0
+        get $arr
+        i32.const 0
+        get $len
+        array.copy any any
+
+        get $result
+        get $len
+        get value
+        array.new_fixed any 1
+        i32.const 0
+        i32.const 1
+        array.copy any any
+
+        get $result
+      )
+
+  let print_string = fn (value : core::string) => (wasm : core::unit) => (
+    (local $str $string)
+    (local $len i32)
+    (local $index i32)
+
+    get value
+    ref.cast_array i8
+    set $str
+
+    get $str
+    array.len
+    set $len
+
+    i32.const 0
+    set $index
+
+    block
+    loop
+      get $index
+      get $len
+      i32.eq
+      break.if 1
+
+      i32.const 12
+      get $index
+      i32.add
+      get $str
+      get $index
+      array.get i8
+      i32.store8
+
+      get $index
+      i32.const 1
+      i32.add
+      set $index
+      break 0
+    end
+    end
+
+    i32.const 0
+    i32.const 12
+    i32.store
+
+    i32.const 4
+    get $len
+    i32.store
+
+    i32.const 1
+    i32.const 0
+    i32.const 1
+    i32.const 8
+    call $fd_write
+    drop
+
+    struct.new $unit
+  )
+
+  impl add : for a. array a =
+    let [+] = fn left right => array_concat left right
+  end
+
+  trait default : self =
+    let default : self
+  end
+
+  impl default : () =
+    let default = ()
+  end
+
+  impl default : core::integer = 
+    let default = 0
+  end
+
+  impl default : core::real = 
+    let default = 0.0
+  end
+
+  impl default : core::boolean =
+    let default = false
+  end
+
+  impl default : core::string =
+    let default = ""
+  end
+
+  impl default : for a . array a =
+    let default = []
+  end
+
 end

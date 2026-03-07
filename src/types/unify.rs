@@ -10,6 +10,7 @@ use super::{
     TraitRef,
     Type,
     for_each_child_type,
+    normalize_empty_apply,
 };
 
 /// State of a unification meta variable.
@@ -210,6 +211,7 @@ impl UnificationTable {
             | (Type::Glyph, Type::Glyph) => Ok(()),
             (Type::TypeVar(left), Type::TypeVar(right)) if left == right => Ok(()),
             (Type::ForAll(left), Type::ForAll(right)) => self.unify(&left, &right),
+            // Named types are nominal on the main unification path.
             (Type::Named { name: left, .. }, Type::Named { name: right, .. }) if left == right => {
                 Ok(())
             }
@@ -318,19 +320,24 @@ impl UnificationTable {
         if left == right {
             return Ok(());
         }
-        match (
-            self.vars.get(left as usize).cloned(),
-            self.vars.get(right as usize).cloned(),
-        ) {
-            (Some(MetaVarState::Unbound { .. }), _) => self.bind_meta(left, &Type::MetaVar(right)),
-            (_, Some(MetaVarState::Unbound { .. })) => self.bind_meta(right, &Type::MetaVar(left)),
-            (Some(MetaVarState::Link(left_link)), _) => {
-                self.unify_meta_with_type(right, &left_link)
+        // Follow link chains to canonical representatives.
+        let left_canonical = self.prune(&Type::MetaVar(left));
+        let right_canonical = self.prune(&Type::MetaVar(right));
+        match (&left_canonical, &right_canonical) {
+            // Both pruned to the same meta — already unified.
+            (Type::MetaVar(l), Type::MetaVar(r)) if l == r => Ok(()),
+            // Both are (distinct) unbound metas — bind one to the other.
+            (Type::MetaVar(l), Type::MetaVar(_)) => self.bind_meta(*l, &right_canonical),
+            // Left resolved to a non-meta — delegate to meta-with-type for right.
+            (_, Type::MetaVar(r)) => self.unify_meta_with_type(*r, &left_canonical),
+            // Right resolved to a non-meta — delegate to meta-with-type for left.
+            (Type::MetaVar(l), _) => self.unify_meta_with_type(*l, &right_canonical),
+            // Both resolved to non-meta types.
+            _ => {
+                let left = self.normalize_for_unify(&left_canonical);
+                let right = self.normalize_for_unify(&right_canonical);
+                self.unify_non_meta(left, right)
             }
-            (_, Some(MetaVarState::Link(right_link))) => {
-                self.unify_meta_with_type(left, &right_link)
-            }
-            _ => Ok(()),
         }
     }
 
@@ -507,26 +514,14 @@ impl UnificationTable {
         mode: StructMatch,
         other: &Type,
     ) -> Result<(), UnifyError> {
-        if let Some(named_fields) = self.resolve_named_struct_fields(other) {
-            match mode {
-                StructMatch::Exact => {
-                    if named_fields.len() != fields.len()
-                        || fields.keys().any(|key| !named_fields.contains_key(key))
-                    {
-                        return Err(UnifyError::Mismatch {
-                            left: Type::StructConstraint { fields, mode },
-                            right: other.clone(),
-                        });
-                    }
-                }
-                StructMatch::AtLeast => {
-                    if fields.keys().any(|key| !named_fields.contains_key(key)) {
-                        return Err(UnifyError::Mismatch {
-                            left: Type::StructConstraint { fields, mode },
-                            right: other.clone(),
-                        });
-                    }
-                }
+        // The only structural escape hatch for named types is field constraints.
+        // Named-vs-named and named-vs-struct unification remains nominal elsewhere.
+        if let Some(named_fields) = self.resolve_named_struct_fields_for_constraint(other) {
+            if !struct_constraint_matches_fields(&fields, mode, &named_fields) {
+                return Err(UnifyError::Mismatch {
+                    left: Type::StructConstraint { fields, mode },
+                    right: other.clone(),
+                });
             }
             for (name, field_type) in fields.iter() {
                 if let Some(named_type) = named_fields.get(name) {
@@ -541,10 +536,12 @@ impl UnificationTable {
         })
     }
 
-    fn resolve_named_struct_fields(
+    fn resolve_named_struct_fields_for_constraint(
         &mut self,
         type_: &Type,
     ) -> Option<IndexMap<String, Type>> {
+        // Only named types expose structural fields here, and only for
+        // struct-constraint matching.
         let (base, arguments) = split_apply(type_);
         let Type::Named { body, .. } = base else {
             return None;
@@ -631,13 +628,23 @@ impl UnificationTable {
     }
 }
 
-fn normalize_empty_apply(type_: Type) -> Type {
-    match type_ {
-        Type::Apply {
-            constructor,
-            arguments,
-        } if arguments.is_empty() => normalize_empty_apply(*constructor),
-        other => other,
+fn struct_constraint_matches_fields(
+    constraint_fields: &IndexMap<String, Type>,
+    mode: StructMatch,
+    target_fields: &IndexMap<String, Type>,
+) -> bool {
+    match mode {
+        StructMatch::Exact => {
+            target_fields.len() == constraint_fields.len()
+                && constraint_fields
+                    .keys()
+                    .all(|key| target_fields.contains_key(key))
+        }
+        StructMatch::AtLeast => {
+            constraint_fields
+                .keys()
+                .all(|key| target_fields.contains_key(key))
+        }
     }
 }
 

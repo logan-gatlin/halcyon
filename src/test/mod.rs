@@ -5,6 +5,7 @@
 
 use super::*;
 use crate::hc_core::compile_core_module;
+use crate::ir::Path;
 use crate::types::SymbolTable;
 
 fn assert_logger_is_ok(
@@ -29,11 +30,11 @@ fn file_logger_has_error_message(
 
 #[test]
 fn demo_reports_missing_trait_instance() {
-    let source = include_str!("demo.hc");
+    let source = "module demo =\n\ttrait Id : self =\n\t\tlet id : self -> self\n\tend\n\n\tlet value = id 1\nend\n";
     let mut symbols = SymbolTable::new();
-    let _core = compile_core_module(&mut symbols);
     let mut logger = Logger::new();
-    let mut file_logger = logger.new_file("demo.hc", source);
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("missing_trait_instance.hc", source);
     let modules = parse::parse(source, &mut file_logger)
         .map(|source_file| source_file.modules())
         .unwrap_or_default()
@@ -48,10 +49,56 @@ fn demo_reports_missing_trait_instance() {
 }
 
 #[test]
+fn associated_constant_trait_item_compiles() {
+    let source = "module demo =\n\ttrait default : a =\n\t\tlet default : a\n\tend\n\timpl default : core::integer =\n\t\tlet default = 42\n\tend\n\tlet value : core::integer = default\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let _ = compile_source(source, &mut file_logger, &mut symbols);
+    logger.consume_file(file_logger);
+    assert_logger_is_ok(&logger, "Compilation failed");
+}
+
+#[test]
+fn top_level_grouped_polymorphic_destructuring_compiles_and_validates() {
+    let source = "module demo =\n\tlet default_pair = (core::default, core::default)\n\tlet (a, b) = default_pair\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let artifacts = compile_source(source, &mut file_logger, &mut symbols);
+    logger.consume_file(file_logger);
+
+    for artifact in artifacts.into_vec() {
+        let _ = validate_artifact(artifact, &mut logger);
+    }
+
+    assert_logger_is_ok(&logger, "Compilation failed");
+}
+
+#[test]
+fn local_grouped_refutable_polymorphic_destructuring_compiles_and_validates() {
+    let source = "module demo =\n\tlet result : core::integer =\n\t\tmatch (core::default, core::default, 1) with\n\t\t| (left_local, right_local, 0) => left_local\n\t\t| _ => core::default\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let artifacts = compile_source(source, &mut file_logger, &mut symbols);
+    logger.consume_file(file_logger);
+
+    for artifact in artifacts.into_vec() {
+        let _ = validate_artifact(artifact, &mut logger);
+    }
+
+    assert_logger_is_ok(&logger, "Compilation failed");
+}
+
+#[test]
 fn core_artifact_validates() {
     let mut symbols = SymbolTable::new();
-    let core = compile_core_module(&mut symbols);
     let mut logger = Logger::new();
+    let core = compile_core_module(&mut symbols, &mut logger);
     let _ = validate_artifact(core, &mut logger);
     assert_logger_is_ok(&logger, "Core artifact should validate");
 }
@@ -60,8 +107,8 @@ fn core_artifact_validates() {
 fn wasm_type_alias_requires_symbol_name() {
     let source = "module demo =\n\twasm => (\n\t\t(type integer (struct i64))\n\t\t(global $asdf integer)\n\t)\nend\n";
     let mut symbols = SymbolTable::new();
-    let _core = compile_core_module(&mut symbols);
     let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
     let mut file_logger = logger.new_file("demo.hc", source);
     let _ = compile_source(source, &mut file_logger, &mut symbols);
     logger.consume_file(file_logger);
@@ -72,8 +119,8 @@ fn wasm_type_alias_requires_symbol_name() {
 fn wasm_function_name_requires_symbol_name() {
     let source = "module demo =\n\tlet foo = fn x => x\n\twasm => (\n\t\t(func foo)\n\t)\nend\n";
     let mut symbols = SymbolTable::new();
-    let _core = compile_core_module(&mut symbols);
     let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
     let mut file_logger = logger.new_file("demo.hc", source);
     let _ = compile_source(source, &mut file_logger, &mut symbols);
     logger.consume_file(file_logger);
@@ -84,8 +131,8 @@ fn wasm_function_name_requires_symbol_name() {
 fn wasm_function_name_accepts_symbol_name() {
     let source = "module demo =\n\twasm => (\n\t\t(func $foo)\n\t)\nend\n";
     let mut symbols = SymbolTable::new();
-    let _core = compile_core_module(&mut symbols);
     let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
     let mut file_logger = logger.new_file("demo.hc", source);
     let _ = compile_source(source, &mut file_logger, &mut symbols);
     logger.consume_file(file_logger);
@@ -96,8 +143,8 @@ fn wasm_function_name_accepts_symbol_name() {
 fn wasm_reports_undefined_register_usage() {
     let source = "module demo =\n\twasm => (\n\t\t(func $foo\n\t\t\tget $b\n\t\t)\n\t)\nend\n";
     let mut symbols = SymbolTable::new();
-    let _core = compile_core_module(&mut symbols);
     let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
     let mut file_logger = logger.new_file("demo.hc", source);
     let _ = compile_source(source, &mut file_logger, &mut symbols);
     logger.consume_file(file_logger);
@@ -108,8 +155,8 @@ fn wasm_reports_undefined_register_usage() {
 fn wasm_memory_maximum_cannot_be_less_than_initial() {
     let source = "module demo =\n\twasm => (\n\t\t(memory $mem 2 1)\n\t)\nend\n";
     let mut symbols = SymbolTable::new();
-    let _core = compile_core_module(&mut symbols);
     let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
     let mut file_logger = logger.new_file("demo.hc", source);
     let _ = compile_source(source, &mut file_logger, &mut symbols);
     logger.consume_file(file_logger);
@@ -148,8 +195,8 @@ fn reports_duplicate_constructor_definition_during_ir_construction() {
 fn duplicate_trait_definition_is_not_re_emitted_in_typechecking() {
     let source = "module demo =\n\ttrait Eq : a =\n\t\tlet eq : a -> a -> core::boolean\n\tend\n\ttrait Eq : a =\n\t\tlet eq : a -> a -> core::boolean\n\tend\nend\n";
     let mut symbols = SymbolTable::new();
-    let _core = compile_core_module(&mut symbols);
     let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
     let mut file_logger = logger.new_file("demo.hc", source);
     let _ = compile_source(source, &mut file_logger, &mut symbols);
     let messages = file_logger
@@ -175,8 +222,8 @@ fn duplicate_trait_definition_is_not_re_emitted_in_typechecking() {
 fn inline_wasm_expression_compiles() {
     let source = "module demo =\n\tlet i = 1\n\tlet j = (wasm : core::integer) => (\n\t\t(local $tmp (struct i64))\n\t\tget i\n\t\tset $tmp\n\t\tget $tmp\n\t)\nend\n";
     let mut symbols = SymbolTable::new();
-    let _core = compile_core_module(&mut symbols);
     let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
     let mut file_logger = logger.new_file("demo.hc", source);
     let _ = compile_source(source, &mut file_logger, &mut symbols);
     logger.consume_file(file_logger);
@@ -187,8 +234,8 @@ fn inline_wasm_expression_compiles() {
 fn inline_wasm_expression_can_use_toplevel_wasm_type_alias() {
     let source = "module demo =\n\twasm => (\n\t\t(type $integer (struct i64))\n\t)\n\tlet i = 1\n\tlet j = (wasm : core::integer) => (\n\t\t(local $tmp $integer)\n\t\tget i\n\t\tset $tmp\n\t\tget $tmp\n\t)\nend\n";
     let mut symbols = SymbolTable::new();
-    let _core = compile_core_module(&mut symbols);
     let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
     let mut file_logger = logger.new_file("demo.hc", source);
     let _ = compile_source(source, &mut file_logger, &mut symbols);
     logger.consume_file(file_logger);
@@ -229,8 +276,8 @@ fn bracketed_operator_name_is_canonicalized_in_ir() {
 fn toplevel_wasm_function_declaration_is_lowered() {
     let source = "module demo =\n\twasm => (\n\t\t(type $integer (struct i64))\n\t\t(func $id\n\t\t\t(param $x $integer)\n\t\t\t(result $integer)\n\t\t\tget $x\n\t\t)\n\t)\n\tlet i = 1\n\tlet j = (wasm : core::integer) => (\n\t\tget i\n\t\tcall $id\n\t)\nend\n";
     let mut symbols = SymbolTable::new();
-    let _core = compile_core_module(&mut symbols);
     let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
     let mut file_logger = logger.new_file("demo.hc", source);
     let _ = compile_source(source, &mut file_logger, &mut symbols);
     logger.consume_file(file_logger);
@@ -241,8 +288,8 @@ fn toplevel_wasm_function_declaration_is_lowered() {
 fn core_print_string_compiles() {
     let source = "module demo =\n\tlet _ = core::print_string \"hello\"\nend\n";
     let mut symbols = SymbolTable::new();
-    let _core = compile_core_module(&mut symbols);
     let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
     let mut file_logger = logger.new_file("demo.hc", source);
     let _ = compile_source(source, &mut file_logger, &mut symbols);
     logger.consume_file(file_logger);
@@ -253,8 +300,8 @@ fn core_print_string_compiles() {
 fn recursive_sum_type_definition_compiles() {
     let source = "module demo =\n\ttype List: a = | Cons (a, List a) | Nil\nend\n";
     let mut symbols = SymbolTable::new();
-    let _core = compile_core_module(&mut symbols);
     let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
     let mut file_logger = logger.new_file("demo.hc", source);
     let _ = compile_source(source, &mut file_logger, &mut symbols);
     logger.consume_file(file_logger);
@@ -266,8 +313,8 @@ fn mutually_recursive_sum_type_definitions_are_rejected_without_forward_decls() 
     let source =
         "module demo =\n\ttype Even = | EvenZ | EvenS Odd\n\ttype Odd = | OddZ | OddS Even\nend\n";
     let mut symbols = SymbolTable::new();
-    let _core = compile_core_module(&mut symbols);
     let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
     let mut file_logger = logger.new_file("demo.hc", source);
     let _ = compile_source(source, &mut file_logger, &mut symbols);
     assert!(file_logger_has_error_message(
@@ -280,8 +327,8 @@ fn mutually_recursive_sum_type_definitions_are_rejected_without_forward_decls() 
 fn recursive_type_alias_is_rejected() {
     let source = "module demo =\n\ttype ~Loop = Loop\nend\n";
     let mut symbols = SymbolTable::new();
-    let _core = compile_core_module(&mut symbols);
     let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
     let mut file_logger = logger.new_file("demo.hc", source);
     let _ = compile_source(source, &mut file_logger, &mut symbols);
     logger.consume_file(file_logger);
@@ -292,8 +339,8 @@ fn recursive_type_alias_is_rejected() {
 fn recursive_non_sum_named_type_is_rejected() {
     let source = "module demo =\n\ttype Node = { next: Node }\nend\n";
     let mut symbols = SymbolTable::new();
-    let _core = compile_core_module(&mut symbols);
     let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
     let mut file_logger = logger.new_file("demo.hc", source);
     let _ = compile_source(source, &mut file_logger, &mut symbols);
     logger.consume_file(file_logger);
@@ -304,8 +351,8 @@ fn recursive_non_sum_named_type_is_rejected() {
 fn recursive_named_type_expression_is_rejected() {
     let source = "module demo =\n\ttype Loop = Loop\nend\n";
     let mut symbols = SymbolTable::new();
-    let _core = compile_core_module(&mut symbols);
     let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
     let mut file_logger = logger.new_file("demo.hc", source);
     let _ = compile_source(source, &mut file_logger, &mut symbols);
     logger.consume_file(file_logger);
@@ -316,8 +363,8 @@ fn recursive_named_type_expression_is_rejected() {
 fn mutually_recursive_type_aliases_are_rejected() {
     let source = "module demo =\n\ttype ~A = B\n\ttype ~B = A\nend\n";
     let mut symbols = SymbolTable::new();
-    let _core = compile_core_module(&mut symbols);
     let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
     let mut file_logger = logger.new_file("demo.hc", source);
     let _ = compile_source(source, &mut file_logger, &mut symbols);
     logger.consume_file(file_logger);
@@ -328,8 +375,8 @@ fn mutually_recursive_type_aliases_are_rejected() {
 fn recursive_mixed_cycle_with_struct_is_rejected() {
     let source = "module demo =\n\ttype A = | MkA B\n\ttype B = { inner: A }\nend\n";
     let mut symbols = SymbolTable::new();
-    let _core = compile_core_module(&mut symbols);
     let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
     let mut file_logger = logger.new_file("demo.hc", source);
     let _ = compile_source(source, &mut file_logger, &mut symbols);
     logger.consume_file(file_logger);
@@ -340,8 +387,8 @@ fn recursive_mixed_cycle_with_struct_is_rejected() {
 fn recursive_sum_type_works_with_trait_dispatch() {
     let source = "module demo =\n\ttype List = | Nil | Cons List\n\ttrait Empty : self =\n\t\tlet empty : self -> core::boolean\n\tend\n\timpl Empty : List =\n\t\tlet empty = fn _ => true\n\tend\n\tlet use-empty = fn (xs: List) => empty xs\nend\n";
     let mut symbols = SymbolTable::new();
-    let _core = compile_core_module(&mut symbols);
     let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
     let mut file_logger = logger.new_file("demo.hc", source);
     let _ = compile_source(source, &mut file_logger, &mut symbols);
     logger.consume_file(file_logger);
@@ -352,8 +399,8 @@ fn recursive_sum_type_works_with_trait_dispatch() {
 fn forward_type_reference_is_rejected() {
     let source = "module demo =\n\ttype A = B\n\ttype B = core::integer\nend\n";
     let mut symbols = SymbolTable::new();
-    let _core = compile_core_module(&mut symbols);
     let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
     let mut file_logger = logger.new_file("demo.hc", source);
     let _ = compile_source(source, &mut file_logger, &mut symbols);
     assert!(file_logger_has_error_message(
@@ -366,12 +413,79 @@ fn forward_type_reference_is_rejected() {
 fn forward_module_path_term_reference_is_rejected() {
     let source = "module demo =\n\tlet a = demo::b\n\tlet b = 1\nend\n";
     let mut symbols = SymbolTable::new();
-    let _core = compile_core_module(&mut symbols);
     let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
     let mut file_logger = logger.new_file("demo.hc", source);
     let _ = compile_source(source, &mut file_logger, &mut symbols);
     assert!(file_logger_has_error_message(
         &file_logger,
         "Undefined term"
     ));
+}
+
+#[test]
+fn forall_annotation_type_checks() {
+    let source = "module demo =
+  let id: for a. a -> a = fn x => x
+end
+";
+    let mut logger = Logger::new();
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let modules = parse::parse(source, &mut file_logger)
+        .map(|source_file| source_file.modules())
+        .unwrap_or_default()
+        .into_iter()
+        .flat_map(|module| ir::module(module, &mut file_logger))
+        .collect::<Vec<_>>();
+    assert!(!modules.is_empty(), "should produce at least one module");
+    let is_ok = file_logger.is_ok();
+    logger.consume_file(file_logger);
+    if !is_ok {
+        logger.print_logs();
+    }
+    assert_logger_is_ok(
+        &logger,
+        "forall annotation should parse and lower to IR without errors",
+    );
+}
+
+#[test]
+fn forall_impl_head_type_checks() {
+    let source = "module demo =
+  trait Id : t =
+    let id : t -> t
+  end
+
+  impl Id : for a. a =
+    let id = fn x => x
+  end
+
+  let value = id 1
+end
+";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let _ = compile_source(source, &mut file_logger, &mut symbols);
+    let trait_path = Path::new("demo", "Id");
+    let impls = symbols
+        .trait_impls()
+        .get(&trait_path)
+        .cloned()
+        .unwrap_or_default();
+    assert_eq!(impls.len(), 1, "expected one impl for demo::Id");
+    assert_eq!(impls[0].parameters, 1, "expected one impl parameter");
+    assert_eq!(
+        impls[0].head.arguments.len(),
+        1,
+        "expected one trait argument"
+    );
+    assert_eq!(
+        impls[0].head.arguments[0].pretty(),
+        "'a",
+        "expected generic impl head argument"
+    );
+    logger.consume_file(file_logger);
+    assert_logger_is_ok(&logger, "forall impl head should type-check");
 }

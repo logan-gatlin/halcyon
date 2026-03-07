@@ -152,4 +152,15 @@ module inference =
   let bool_to_int = fn | true => 1 | false => 0
   -- Instantiates function shorthand at boolean inputs.
   let bool_to_int_use: core::integer = bool_to_int false
+
+  -- Annotates a polymorphic identity function with forall.
+  let (forall_identity: for a. a -> a) = fn x => x
+  -- Uses the annotated identity at both integer and boolean.
+  let forall_id_int: core::integer = forall_identity 42
+  let forall_id_bool: core::boolean = forall_identity true
+
+  -- Annotates a two-parameter polymorphic function with forall.
+  let (forall_const: for a b. a -> b -> a) = fn x y => x
+  -- Uses the annotated const at concrete types.
+  let forall_const_use: core::integer = forall_const 1 "hello"
 end

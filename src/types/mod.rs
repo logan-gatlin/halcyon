@@ -13,6 +13,15 @@ pub enum StructMatch {
 }
 
 /// Core type representation used by inference and type checking.
+///
+/// Invariants:
+/// - `Type::Named` is primarily nominal (name-based equality/unification).
+/// - `type ~Alias = ...` declarations are expanded to their structural body during
+///   lowering and are represented by that body rather than `Type::Named`.
+/// - `Type::StructConstraint` is a partial structural view used for record access
+///   and pattern checking; it intentionally does not represent a first-class record
+///   declaration.
+/// - `Type::Apply` with zero arguments is canonicalized to its constructor.
 #[derive(Debug, Clone, Default)]
 pub enum Type {
     /// The empty type ()
@@ -34,9 +43,12 @@ pub enum Type {
     MetaVar(MetaVarId),
     /// Universal type binder for parameters
     ForAll(Box<Type>),
-    /// Nominal type definition
+    /// Nominal type definition.
+    ///
+    /// The `body` is retained for controlled instantiation/introspection in later
+    /// passes, but equality and the main unification path are name-based.
     Named { name: Path, body: Box<Type> },
-    /// Structural constraint for named structs
+    /// Structural field constraint used by inference.
     StructConstraint {
         fields: IndexMap<String, Type>,
         mode: StructMatch,
@@ -64,7 +76,9 @@ impl PartialEq for Type {
         other: &Self,
     ) -> bool {
         use Type::*;
-        match (self, other) {
+        let left = strip_empty_apply_ref(self);
+        let right = strip_empty_apply_ref(other);
+        match (left, right) {
             (Unit, Unit)
             | (Integer, Integer)
             | (Real, Real)
@@ -102,26 +116,37 @@ impl PartialEq for Type {
                     arguments: right_arguments,
                 },
             ) => left_constructor == right_constructor && left_arguments == right_arguments,
-            (
-                Apply {
-                    constructor,
-                    arguments,
-                },
-                other,
-            )
-            | (
-                other,
-                Apply {
-                    constructor,
-                    arguments,
-                },
-            ) if arguments.is_empty() => constructor.as_ref() == other,
             _ => false,
         }
     }
 }
 
 impl Eq for Type {
+}
+
+fn strip_empty_apply_ref(mut type_: &Type) -> &Type {
+    while let Type::Apply {
+        constructor,
+        arguments,
+    } = type_
+    {
+        if arguments.is_empty() {
+            type_ = constructor;
+            continue;
+        }
+        break;
+    }
+    type_
+}
+
+pub(crate) fn normalize_empty_apply(type_: Type) -> Type {
+    match type_ {
+        Type::Apply {
+            constructor,
+            arguments,
+        } if arguments.is_empty() => normalize_empty_apply(*constructor),
+        other => other,
+    }
 }
 
 pub(crate) fn for_each_child_type(
@@ -216,10 +241,7 @@ pub(crate) trait TypeTransform {
             .iter()
             .map(|arg| self.transform(arg))
             .collect::<Option<Vec<_>>>()?;
-        Some(Type::Apply {
-            constructor: Box::new(constructor),
-            arguments,
-        })
+        Some(constructor.apply(arguments))
     }
 
     /// Hook called before recursively visiting the body of `Type::ForAll`.
@@ -683,6 +705,8 @@ pub use traits::{
     TraitRef,
     TypeScheme,
 };
+
+pub(crate) use traits::ordered_trait_methods;
 
 pub use resolve::{
     ResolvedModule,

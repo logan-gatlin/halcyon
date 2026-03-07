@@ -51,6 +51,9 @@ pub fn pattern(
         span: pat.span(),
         type_: (),
         kind: match pat {
+            ast::Pattern::Ident(pat_ident) if pat_ident.name_text().is_some_and(|n| n == "_") => {
+                PatternKind::Hole
+            }
             ast::Pattern::Ident(pat_ident) => {
                 PatternKind::Identifier(
                     scope.define(pat_ident.name_text_spanned()?, NameSpace::Term),

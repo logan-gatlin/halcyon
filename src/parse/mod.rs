@@ -84,6 +84,7 @@ pub enum SyntaxKind {
     FALSE_KW,
     FN_KW,
     WASM_KW,
+    FOR_KW,
 
     WHITESPACE,
     LINE_COMMENT,
@@ -95,6 +96,7 @@ pub enum SyntaxKind {
     // The parser may reuse token kinds (IDENT, STRING, INTEGER, REAL) for nodes.
     SOURCE_FILE,
     MODULE,
+    IMPORT_STATEMENT,
 
     LET_STATEMENT,
     TYPE_STATEMENT,
@@ -115,6 +117,7 @@ pub enum SyntaxKind {
     TYPE_APPLICATION,
     TUPLE_TYPE,
     ARRAY_TYPE,
+    FORALL_TYPE,
 
     UNIT,
 
@@ -261,12 +264,14 @@ impl std::fmt::Display for SyntaxKind {
                 FALSE_KW => "false",
                 FN_KW => "fn",
                 WASM_KW => "wasm",
+                FOR_KW => "for",
                 WHITESPACE => "whitespace",
                 LINE_COMMENT => "line comment",
                 BLOCK_COMMENT => "block comment",
                 TOKEN_ERROR => "[ERROR]",
                 SOURCE_FILE => "source file",
                 MODULE => "module",
+                IMPORT_STATEMENT => "import statement",
                 LET_STATEMENT => "let statement",
                 TYPE_STATEMENT => "type statement",
                 TRAIT_STATEMENT => "trait statement",
@@ -283,6 +288,7 @@ impl std::fmt::Display for SyntaxKind {
                 TYPE_APPLICATION => "type application",
                 TUPLE_TYPE => "tuple type",
                 ARRAY_TYPE => "array type",
+                FORALL_TYPE => "forall type",
                 UNIT => "()",
                 LET_EXPR => "let expression",
                 FN_EXPR => "function expression",

@@ -1,4 +1,5 @@
 use super::{
+    can_start_identifier,
     expect_identifier,
     is_bracketed_operator_identifier_start,
     paren_list,
@@ -69,7 +70,28 @@ fn type_alias_def(p: &mut Parser<'_, '_>) {
 
 /// Parse a type expression with full precedence.
 pub(crate) fn type_expr(p: &mut Parser<'_, '_>) {
-    type_expr_bp(p, 0);
+    if p.at(SyntaxKind::FOR_KW) {
+        forall_type(p);
+    } else {
+        type_expr_bp(p, 0);
+    }
+}
+
+/// Parse `for <ident>+ . <type_expr>`.
+fn forall_type(p: &mut Parser<'_, '_>) {
+    let m = p.start_node(SyntaxKind::FORALL_TYPE);
+    p.bump(); // for
+    if !can_start_identifier(p) {
+        p.error_at_current("expected type variable after `for`");
+    }
+    while can_start_identifier(p) {
+        let im = p.start_node(SyntaxKind::IDENT_NODE);
+        expect_identifier(p);
+        p.finish_node(im);
+    }
+    p.expect(SyntaxKind::DOT);
+    type_expr(p);
+    p.finish_node(m);
 }
 
 /// Pratt parser for type expressions.
@@ -122,7 +144,7 @@ fn type_expr_bp(
 const TYPE_APPLY_BP: u8 = 20;
 
 fn can_start_type_expr(p: &mut Parser<'_, '_>) -> bool {
-    p.current().is_some_and(can_start_type_atom)
+    p.at(SyntaxKind::FOR_KW) || p.current().is_some_and(can_start_type_atom)
 }
 
 fn can_start_type_atom(kind: SyntaxKind) -> bool {

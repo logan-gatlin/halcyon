@@ -7,8 +7,8 @@ use super::ast::{
 };
 use super::lexer::tokenize;
 use super::{
-    parse,
     SyntaxKind,
+    parse,
 };
 use crate::logging::Logger;
 
@@ -91,12 +91,12 @@ fn lex_symbols() {
 fn lex_keywords() {
     use SyntaxKind::*;
     let tokens = lex(
-        "module import use end match with let type trait impl do of in if then else and or xor not true false fn wasm",
+        "module import use end match with let type trait impl do of in if then else and or xor not true false fn wasm for",
     );
     let expected = vec![
         MODULE_KW, IMPORT_KW, USE_KW, END_KW, MATCH_KW, WITH_KW, LET_KW, TYPE_KW, TRAIT_KW,
         IMPL_KW, DO_KW, OF_KW, IN_KW, IF_KW, THEN_KW, ELSE_KW, AND_KW, OR_KW, XOR_KW, NOT_KW,
-        TRUE_KW, FALSE_KW, FN_KW, WASM_KW,
+        TRUE_KW, FALSE_KW, FN_KW, WASM_KW, FOR_KW,
     ];
     assert_eq!(tokens, expected);
 }
@@ -290,6 +290,29 @@ fn parse_module_structure() {
 }
 
 #[test]
+fn parse_top_level_import_statement() {
+    let tree_str = parse_to_string("import \"./dep.hc\"\nmodule Main = end");
+    assert!(
+        tree_str.contains("IMPORT_STATEMENT"),
+        "Should contain IMPORT_STATEMENT"
+    );
+    assert!(
+        tree_str.contains("STRING"),
+        "Should contain import path token"
+    );
+}
+
+#[test]
+fn parse_top_level_import_multiple_paths() {
+    assert_no_errors("import \"./a.hc\", \"./b.hc\"\nmodule Main = end");
+}
+
+#[test]
+fn parse_import_inside_module_is_error() {
+    assert_has_errors("module Main =\n  import \"./dep.hc\"\nend");
+}
+
+#[test]
 fn parse_top_level_statement_is_error() {
     assert_has_errors("let x = 1");
 }
@@ -367,6 +390,11 @@ fn parse_impl_statement_multiple_comma_args() {
     assert_no_errors(
         "module M =\n  impl Pair : core::integer, core::string =\n    let show = fn p => p\n  end\nend",
     );
+}
+
+#[test]
+fn parse_impl_statement_with_forall_argument() {
+    assert_no_errors("module M =\n  impl Id : for a. a =\n    let id = fn x => x\n  end\nend");
 }
 
 #[test]
@@ -545,6 +573,29 @@ fn ast_source_file_modules() {
     assert_eq!(mods.len(), 2, "Should have 2 modules");
     assert_eq!(mods[0].name_text().as_deref(), Some("A"));
     assert_eq!(mods[1].name_text().as_deref(), Some("B"));
+}
+
+#[test]
+fn ast_source_file_items_preserve_order() {
+    let sf =
+        parse_source_file("import \"./a.hc\"\nmodule A = end\nimport \"./b.hc\"\nmodule B = end");
+    let items = sf.items();
+    assert_eq!(items.len(), 4, "Should have 4 top-level items");
+    assert!(matches!(items[0], ast::TopLevelItem::Import(_)));
+    assert!(matches!(items[1], ast::TopLevelItem::Module(_)));
+    assert!(matches!(items[2], ast::TopLevelItem::Import(_)));
+    assert!(matches!(items[3], ast::TopLevelItem::Module(_)));
+}
+
+#[test]
+fn ast_import_statement_paths() {
+    let sf = parse_source_file("import \"./a.hc\", \"./b.hc\"\nmodule Main = end");
+    let imports = sf.imports();
+    assert_eq!(imports.len(), 1, "Should have one import statement");
+    let literals = imports[0].path_literals();
+    assert_eq!(literals.len(), 2, "Should have two import path literals");
+    assert_eq!(literals[0].inner, "\"./a.hc\"");
+    assert_eq!(literals[1].inner, "\"./b.hc\"");
 }
 
 #[test]
@@ -1635,4 +1686,52 @@ fn leading_comment_text_concatenated() {
     let stmts = sf.modules()[0].statements();
     let text = stmts[0].leading_comment_text();
     assert_eq!(text, "-- line 1\n-- line 2");
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Forall type annotation tests
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn parse_forall_type_annotation() {
+    let tree_str = parse_to_string("module M =\n  let (id: for a. a -> a) = fn x => x\nend");
+    assert!(
+        tree_str.contains("FORALL_TYPE"),
+        "Should contain FORALL_TYPE"
+    );
+}
+
+#[test]
+fn round_trip_forall_type_annotation() {
+    assert_round_trip("module M =\n  let (id: for a. a -> a) = fn x => x\nend\n");
+}
+
+#[test]
+fn round_trip_forall_type_annotation_multi_params() {
+    assert_round_trip("module M =\n  let (f: for a b. a -> b -> a) = fn x y => x\nend\n");
+}
+
+#[test]
+fn parse_forall_type_annotation_no_errors() {
+    assert_no_errors("module M =\n  let (id: for a. a -> a) = fn x => x\nend");
+}
+
+#[test]
+fn ast_forall_type_accessors() {
+    let sf = parse_source_file("module M =\n  type f = for a b. a -> b\nend");
+    let ast::Statement::Type(ref ts) = sf.modules()[0].statements()[0] else {
+        panic!("expected type statement");
+    };
+    let ast::TypeDef::Alias(ref alias) = ts.type_def().unwrap() else {
+        panic!("expected alias");
+    };
+    let te = alias.type_expr().unwrap();
+    let ast::TypeExpr::ForAll(ref fa) = te else {
+        panic!("expected forall type, got: {te:?}");
+    };
+    let params = fa.params();
+    assert_eq!(params.len(), 2);
+    assert_eq!(params[0].name_text().as_deref(), Some("a"));
+    assert_eq!(params[1].name_text().as_deref(), Some("b"));
+    assert!(fa.body().is_some(), "should have body type");
 }

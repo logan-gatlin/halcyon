@@ -4,7 +4,7 @@
     This is intentionally WAT-like, but not WAT-compatible:
 
     - Declaration forms are restricted to `(type ...)`, `(global ...)`,
-      `(func ...)`, and `(memory ...)`.
+      `(func ...)`, `(memory ...)`, and `(import ...)`.
     - Memory declarations use 32-bit page counts; an optional maximum must not
       be smaller than the initial size.
     - Function/inline-expression bodies are *flat* instruction streams. Nested
@@ -85,11 +85,21 @@ pub struct Global {
 }
 
 #[derive(Debug, Clone)]
+pub struct Import {
+    pub wasm_module: String,
+    pub wasm_name: String,
+    pub local_name: Path,
+    pub params: Box<[Type]>,
+    pub results: Box<[Type]>,
+}
+
+#[derive(Debug, Clone)]
 pub enum Declaration {
     Type(TypeDefinition),
     Global(Global),
     Function(Function),
     Memory(Memory),
+    Import(Import),
 }
 
 #[derive(Debug, Clone)]
@@ -252,7 +262,7 @@ fn collect_declaration_lists(
                     logger
                         .error("Expected a wasm declaration list")
                         .primary(
-                            "Only `(type ...)`, `(global ...)`, `(func ...)`, and `(memory ...)` are supported here.",
+                            "Only `(type ...)`, `(global ...)`, `(func ...)`, `(memory ...)`, and `(import ...)` are supported here.",
                             other.span(),
                         )
                         .done();
@@ -271,6 +281,7 @@ fn is_declaration_list(items: &[SexprItem]) -> bool {
                 || keyword == "global"
                 || keyword == "func"
                 || keyword == "memory"
+                || keyword == "import"
     )
 }
 
@@ -284,7 +295,7 @@ fn parse_declaration(
         logger
             .error("Expected a wasm declaration")
             .primary(
-                "Declarations must start with `type`, `global`, `func`, or `memory`.",
+                "Declarations must start with `type`, `global`, `func`, `memory`, or `import`.",
                 list.span(),
             )
             .done();
@@ -295,11 +306,12 @@ fn parse_declaration(
         "global" => parse_global_definition(list, env, logger, scope).map(Declaration::Global),
         "func" => parse_function(list, env, logger, scope).map(Declaration::Function),
         "memory" => parse_memory(list, logger).map(Declaration::Memory),
+        "import" => parse_import(list, env, logger, scope).map(Declaration::Import),
         _ => {
             logger
                 .error("Unsupported wasm declaration")
                 .primary(format!("`{keyword}` is not supported here."), list.span())
-                .note("Only `(type ...)`, `(global ...)`, `(func ...)`, and `(memory ...)` are supported.")
+                .note("Only `(type ...)`, `(global ...)`, `(func ...)`, `(memory ...)`, and `(import ...)` are supported.")
                 .done();
             None
         }
@@ -651,9 +663,9 @@ fn parse_instruction(
         "block" => parse_block(cursor, op_span, env, logger),
         "break" => parse_break(cursor, op_span, logger),
         "break.if" => parse_break_if(cursor, op_span, logger),
-        "ref.cast.func" => parse_ref_cast_func(cursor, op_span, env, logger),
-        "ref.cast.struct" => parse_ref_cast_struct(cursor, op_span, env, logger),
-        "ref.cast.array" => parse_ref_cast_array(cursor, op_span, env, logger),
+        "ref.cast_func" => parse_ref_cast_func(cursor, op_span, env, logger),
+        "ref.cast_struct" => parse_ref_cast_struct(cursor, op_span, env, logger),
+        "ref.cast_array" => parse_ref_cast_array(cursor, op_span, env, logger),
         "i32.store8" => Some(Instruction::I32Store8),
         "i32.store" => Some(Instruction::I32Store),
         _ => {
@@ -1120,6 +1132,90 @@ fn parse_path(
             None
         }
     }
+}
+
+fn parse_import(
+    list: &Sexpr,
+    env: &TypeEnv<'_>,
+    logger: &mut FileLogger,
+    scope: &mut impl Scope,
+) -> Option<Import> {
+    // (import "module" "name" (func $local (param ...) (result ...)))
+    let items = list.items();
+    let mut cursor = Cursor::new(&items);
+    cursor.next(); // skip "import"
+
+    let Some(wasm_module) = cursor
+        .next()
+        .and_then(|item| parse_string_literal_from_item(item, logger))
+    else {
+        log_expected(logger, list.span(), "import module string");
+        return None;
+    };
+
+    let Some(wasm_name) = cursor
+        .next()
+        .and_then(|item| parse_string_literal_from_item(item, logger))
+    else {
+        log_expected(logger, list.span(), "import name string");
+        return None;
+    };
+
+    let Some(SexprItem::List(func_list)) = cursor.next() else {
+        log_expected(logger, list.span(), "function descriptor `(func ...)`");
+        return None;
+    };
+
+    let func_items = func_list.items();
+    let Some(kw) = func_items.first().and_then(item_keyword) else {
+        log_expected(logger, func_list.span(), "`func` keyword");
+        return None;
+    };
+    if kw != "func" {
+        log_invalid(
+            logger,
+            func_list.span(),
+            "Only function imports are supported.",
+        );
+        return None;
+    }
+
+    let mut func_cursor = Cursor::new(&func_items);
+    func_cursor.next(); // skip "func"
+    let local_name = parse_function_name(&mut func_cursor, func_list.span(), logger)?;
+    let local_path = scope.define(local_name, NameSpace::Wasm);
+
+    let mut params = Vec::new();
+    let mut results = Vec::new();
+    while let Some(SexprItem::List(inner_list)) = func_cursor.next() {
+        let Some(keyword) = declaration_keyword(inner_list) else {
+            log_invalid(
+                logger,
+                inner_list.span(),
+                "Expected `(param ...)` or `(result ...)`.",
+            );
+            continue;
+        };
+        match keyword.as_str() {
+            "param" => params.extend(parse_types_from_list(inner_list, env, logger)),
+            "result" => results.extend(parse_types_from_list(inner_list, env, logger)),
+            _ => {
+                log_invalid(
+                    logger,
+                    inner_list.span(),
+                    "Expected `(param ...)` or `(result ...)`.",
+                );
+            }
+        }
+    }
+
+    Some(Import {
+        wasm_module,
+        wasm_name,
+        local_name: local_path,
+        params: params.into_boxed_slice(),
+        results: results.into_boxed_slice(),
+    })
 }
 
 fn parse_memory(

@@ -1,0 +1,21 @@
+[package]
+name = "halcyon"
+version = "2026.2.11"
+authors = ["Logan Gatlin <logan@gatlintc.com>"]
+edition = "2024"
+description = "CLI for the Halcyon programming language compiler"
+license = "MIT"
+
+[dependencies]
+halcyon-lib = { path = ".." }
+wasmtime = { version = "34.0", features = ["runtime", "cranelift", "gc", "gc-drc"] }
+wasmtime-wasi = { version = "34.0", features = ["preview1"] }
+
+[lints.rust]
+mismatched_lifetime_syntaxes = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+exit = "deny"
+large_enum_variant = "allow"
+result_large_err = "allow"

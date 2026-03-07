@@ -103,18 +103,6 @@ impl TypeSection {
         self.get_or_insert(ct)
     }
 
-    fn new_function_raw(
-        &mut self,
-        parameters: &[ValType],
-        returns: &[ValType],
-    ) -> u32 {
-        let ct = ConcreteType::Function(FuncType::new(
-            parameters.iter().copied().collect::<Box<_>>(),
-            returns.iter().copied().collect::<Box<_>>(),
-        ));
-        self.get_or_insert(ct)
-    }
-
     fn storagetype_of(
         &mut self,
         type_: &Type,
@@ -242,7 +230,7 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
 
     // Encode function imports (these occupy function indices 0..N)
     for (idx, (path, fi)) in asm_module.function_imports.iter().enumerate() {
-        let type_idx = type_section.new_function_raw(&fi.params, &fi.results);
+        let type_idx = type_section.new_function(&fi.params, &fi.results);
         import_section.import(&fi.module, &fi.name, EntityType::Function(type_idx));
         func_namespace.insert(path, idx as u32);
     }

@@ -1,5 +1,6 @@
 #![cfg_attr(test, allow(clippy::panic, clippy::unwrap_used))]
 pub mod asm;
+pub mod documentation;
 pub mod hc_core;
 pub mod ir;
 pub mod logging;

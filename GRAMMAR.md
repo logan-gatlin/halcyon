@@ -2,7 +2,10 @@
 
 ## Program Structure
 ```bnf
-<file>       ::= <module>*
+<file>       ::= <top_level_item>*
+<top_level_item> ::= <import_statement>
+                   | <module>
+<import_statement> ::= "import" <string> ("," <string>)*
 <module>     ::= "module" <ident> "=" <statement>* "end"
 
 <statement>  ::= <let_statement>
@@ -40,7 +43,8 @@ Recursion rules:
 
 ## Type Expressions
 ```bnf
-<type_expr>  ::= <type_term> "->" <type_expr>      -- function type
+<type_expr>  ::= "for" <ident>+ "." <type_expr>    -- universal quantifier (rank-1)
+               | <type_term> "->" <type_expr>       -- function type
                | <type_term> <type_term>+           -- type application
                | <type_term>
 

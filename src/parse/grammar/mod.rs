@@ -7,18 +7,43 @@ mod type_expr;
 use super::SyntaxKind;
 use super::parser::Parser;
 
-/// Parse a complete source file: zero or more module declarations.
+/// Parse a complete source file: top-level `import` and `module` items.
 pub fn source_file(p: &mut Parser<'_, '_>) {
     let m = p.start_node_before_trivia(SyntaxKind::SOURCE_FILE);
+    const TOP_LEVEL_RECOVERY: &[SyntaxKind] = &[SyntaxKind::IMPORT_KW, SyntaxKind::MODULE_KW];
     while !p.at_end() {
-        if p.at(SyntaxKind::MODULE_KW) {
+        if p.at(SyntaxKind::IMPORT_KW) {
+            import_statement(p);
+        } else if p.at(SyntaxKind::MODULE_KW) {
             module::module(p);
         } else {
-            p.error_recover("expected `module`", &[SyntaxKind::MODULE_KW]);
+            p.error_recover("expected `import` or `module`", TOP_LEVEL_RECOVERY);
         }
     }
     // Attach any trailing trivia to the root node.
     p.skip_trivia();
+    p.finish_node(m);
+}
+
+fn import_statement(p: &mut Parser<'_, '_>) {
+    let m = p.start_node_with_leading_comments(SyntaxKind::IMPORT_STATEMENT);
+    p.expect(SyntaxKind::IMPORT_KW);
+
+    if !p.at(SyntaxKind::STRING) {
+        p.error_at_current("expected import path string literal");
+    }
+
+    while p.at(SyntaxKind::STRING) {
+        p.bump();
+        if !p.eat(SyntaxKind::COMMA) {
+            break;
+        }
+        if !p.at(SyntaxKind::STRING) {
+            p.error_at_current("expected import path string literal after `,`");
+            break;
+        }
+    }
+
     p.finish_node(m);
 }
 

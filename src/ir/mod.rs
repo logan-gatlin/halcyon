@@ -55,17 +55,20 @@ impl std::fmt::Display for ImmediateValue {
 pub enum Statement<T> {
     Term(Term<T>),
     Type {
+        comments: String,
         path: Path,
         parameters: Box<[Path]>,
         def: TypeDef,
         kind: TypeDeclKind,
     },
     Trait {
+        comments: String,
         path: Path,
         parameters: Box<[Path]>,
         methods: Box<[TraitMethodDecl]>,
     },
     Impl {
+        comments: String,
         trait_path: Path,
         arguments: Box<[TypeExpr]>,
         methods: Box<[ImplMethod<T>]>,
@@ -175,6 +178,7 @@ pub fn module_with_prelude(
                 }
                 let mut parameter_scope = module_scope.nest_scope();
                 Statement::Type {
+                    comments,
                     path,
                     parameters: type_statement
                         .type_params()
@@ -216,6 +220,7 @@ pub fn module_with_prelude(
                     })
                     .collect::<Option<Box<[_]>>>()?;
                 Statement::Trait {
+                    comments,
                     path,
                     parameters,
                     methods,
@@ -263,6 +268,7 @@ pub fn module_with_prelude(
                     .collect::<Option<Box<[_]>>>()?;
 
                 Statement::Impl {
+                    comments,
                     trait_path,
                     arguments,
                     methods,

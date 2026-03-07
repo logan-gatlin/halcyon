@@ -14,6 +14,16 @@ pub(crate) fn leading_forall_count(type_: &Type) -> usize {
     count
 }
 
+pub(crate) fn peel_leading_foralls(type_: &Type) -> (usize, Type) {
+    let mut count = 0;
+    let mut current = type_.clone();
+    while let Type::ForAll(body) = current {
+        count += 1;
+        current = *body;
+    }
+    (count, current)
+}
+
 pub(crate) fn instantiate_forall_strict(
     type_: &Type,
     arguments: &[Type],

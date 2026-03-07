@@ -14,6 +14,8 @@ pub enum TypeDeclKind {
 pub enum TypeExprKind {
     Tuple(Box<[TypeExpr]>),
     Instantiation(Path, Box<[TypeExpr]>),
+    ForAll(Box<[Path]>, Box<TypeExpr>),
+    Placeholder,
 }
 
 impl TypeExprKind {
@@ -122,7 +124,12 @@ pub fn type_expr(
                 TypeExprKind::alias(path)
             }
             ast::TypeExpr::Ident(ident) => {
-                TypeExprKind::alias(scope.query_string(ident.name_text_spanned()?, NameSpace::Type))
+                let name = ident.name_text_spanned()?;
+                if name.inner == "_" {
+                    TypeExprKind::Placeholder
+                } else {
+                    TypeExprKind::alias(scope.query_string(name, NameSpace::Type))
+                }
             }
             ast::TypeExpr::Function(function_type) => {
                 TypeExprKind::Instantiation(
@@ -142,6 +149,19 @@ pub fn type_expr(
                         .flat_map(|f| type_expr(scope, f))
                         .collect(),
                 )
+            }
+            ast::TypeExpr::ForAll(forall_type) => {
+                let mut inner_scope = scope.nest_scope();
+                let params = forall_type
+                    .params()
+                    .into_iter()
+                    .flat_map(|ident| {
+                        let name = ident.name_text_spanned()?;
+                        Some(inner_scope.define(name, NameSpace::Type))
+                    })
+                    .collect::<Box<[_]>>();
+                let body = type_expr(&mut inner_scope, forall_type.body()?)?;
+                TypeExprKind::ForAll(params, body.into())
             }
             ast::TypeExpr::Application(type_application) => {
                 let arguments = type_application
@@ -165,6 +185,7 @@ pub fn type_expr(
                         }
                         ast::TypeExpr::Function(..)
                         | ast::TypeExpr::Application(..)
+                        | ast::TypeExpr::ForAll(..)
                         | ast::TypeExpr::Tuple(..) => {
                             // TODO report error
                             return None;

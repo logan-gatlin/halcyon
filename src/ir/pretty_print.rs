@@ -119,16 +119,19 @@ impl Printer {
                 parameters,
                 def,
                 kind,
+                ..
             } => self.type_statement(path, parameters, def, *kind),
             Statement::Trait {
                 path,
                 parameters,
                 methods,
+                ..
             } => self.trait_statement(path, parameters, methods),
             Statement::Impl {
                 trait_path,
                 arguments,
                 methods,
+                ..
             } => self.impl_statement(trait_path, arguments, methods),
             Statement::Wasm(declarations) => self.wasm_statement(declarations),
         }
@@ -225,6 +228,7 @@ impl Printer {
             wasm::Declaration::Global(global) => self.wasm_global(global),
             wasm::Declaration::Function(function) => self.wasm_function(function),
             wasm::Declaration::Memory(memory) => self.wasm_memory(memory),
+            wasm::Declaration::Import(import) => self.wasm_import(import),
         }
     }
 
@@ -279,6 +283,34 @@ impl Printer {
             None => format!("(memory {name} {})", memory.initial_size),
         };
         self.line(line);
+    }
+
+    fn wasm_import(
+        &mut self,
+        import: &wasm::Import,
+    ) {
+        let params = import
+            .params
+            .iter()
+            .map(|t| self.format_wasm_type(t))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let results = import
+            .results
+            .iter()
+            .map(|t| self.format_wasm_type(t))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let name = self.format_wasm_local_name(&import.local_name);
+        let func_desc = if results.is_empty() {
+            format!("(func {name} (param {params}))")
+        } else {
+            format!("(func {name} (param {params}) (result {results}))")
+        };
+        self.line(format!(
+            "(import \"{}\" \"{}\" {func_desc})",
+            import.wasm_module, import.wasm_name
+        ));
     }
 
     fn wasm_named_types_lines(
@@ -1057,6 +1089,16 @@ impl Printer {
                     .join(" ");
                 format!("{name} {args}")
             }
+            TypeExprKind::ForAll(params, body) => {
+                let param_names = params
+                    .iter()
+                    .map(|p| self.format_path(p))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                let body = self.format_type_expr(body);
+                format!("for {param_names}. {body}")
+            }
+            TypeExprKind::Placeholder => "_".to_string(),
         }
     }
 

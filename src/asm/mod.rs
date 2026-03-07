@@ -13,14 +13,12 @@ pub mod custom_section;
 mod encode;
 mod lower;
 pub mod pretty_print;
-mod snippets;
 
 #[cfg(test)]
 mod tests;
 
 use custom_section::*;
 use indexmap::IndexMap;
-pub use wasm_encoder::ValType;
 
 use crate::Artifact;
 use crate::ir::{
@@ -36,8 +34,6 @@ use crate::types::SymbolTable;
 pub use encode::encode;
 use lower::ConstructorTable;
 pub use lower::lower_type;
-pub(crate) use snippets::emit_array_concat;
-
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Type {
     Any,
@@ -439,8 +435,8 @@ pub struct Function {
 pub struct FunctionImport {
     pub module: String,
     pub name: String,
-    pub params: Box<[ValType]>,
-    pub results: Box<[ValType]>,
+    pub params: Box<[Type]>,
+    pub results: Box<[Type]>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -565,6 +561,17 @@ fn lower_wasm_declarations(
             }
             wasm::Declaration::Memory(_) => {
                 module.has_memory = true;
+            }
+            wasm::Declaration::Import(import) => {
+                module
+                    .function_imports
+                    .entry(import.local_name)
+                    .or_insert(FunctionImport {
+                        module: import.wasm_module,
+                        name: import.wasm_name,
+                        params: import.params,
+                        results: import.results,
+                    });
             }
         }
     }

@@ -158,6 +158,11 @@ impl FileLogger {
     ) -> LogBuilder<'_> {
         self.diagnostic(Severity::Help, message)
     }
+    pub fn escalate_to_bug(&mut self) {
+        for d in &mut self.diagnostics {
+            d.severity = Severity::Bug;
+        }
+    }
     pub fn is_ok(&self) -> bool {
         self.diagnostics
             .iter()

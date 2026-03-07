@@ -403,6 +403,7 @@ pub fn tokenize(
             "trait" => TRAIT_KW,
             "impl" => IMPL_KW,
             "wasm" => WASM_KW,
+            "for" => FOR_KW,
             _ => IDENT,
         };
         iter.push(kind, start);

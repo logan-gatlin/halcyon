@@ -252,7 +252,18 @@ macro_rules! ast_node {
 ast_node!(SourceFile, SOURCE_FILE);
 
 impl SourceFile {
+    pub fn items(&self) -> Vec<TopLevelItem> {
+        self.syntax
+            .children()
+            .filter_map(TopLevelItem::cast)
+            .collect()
+    }
+
     pub fn modules(&self) -> Vec<Module> {
+        child_nodes(&self.syntax)
+    }
+
+    pub fn imports(&self) -> Vec<ImportStatement> {
         child_nodes(&self.syntax)
     }
 }
@@ -264,6 +275,25 @@ impl HasName for Module {
 impl Module {
     pub fn statements(&self) -> Vec<Statement> {
         self.syntax.children().filter_map(Statement::cast).collect()
+    }
+}
+
+ast_node!(ImportStatement, IMPORT_STATEMENT);
+impl HasLeadingComments for ImportStatement {
+}
+
+impl ImportStatement {
+    pub fn path_literals(&self) -> Vec<Spanned<String>> {
+        non_trivia_tokens(&self.syntax)
+            .into_iter()
+            .filter(|token| token.kind() == SyntaxKind::STRING)
+            .map(|token| {
+                token
+                    .text()
+                    .to_string()
+                    .with_span(token.text_range().into())
+            })
+            .collect()
     }
 }
 
@@ -299,7 +329,9 @@ impl TypeStatement {
     pub fn type_params(&self) -> Vec<Spanned<String>> {
         let tokens = non_trivia_tokens(&self.syntax);
         let mut params = Vec::new();
-        let Some(mut index) = tokens.iter().position(|token| token.kind() == SyntaxKind::COLON)
+        let Some(mut index) = tokens
+            .iter()
+            .position(|token| token.kind() == SyntaxKind::COLON)
         else {
             return params;
         };
@@ -358,7 +390,9 @@ impl TraitStatement {
     pub fn trait_params(&self) -> Vec<Spanned<String>> {
         let tokens = non_trivia_tokens(&self.syntax);
         let mut params = Vec::new();
-        let Some(mut index) = tokens.iter().position(|token| token.kind() == SyntaxKind::COLON)
+        let Some(mut index) = tokens
+            .iter()
+            .position(|token| token.kind() == SyntaxKind::COLON)
         else {
             return params;
         };
@@ -558,6 +592,33 @@ impl TupleType {
 }
 
 ast_node!(ArrayType, ARRAY_TYPE);
+ast_node!(ForAllType, FORALL_TYPE);
+
+impl ForAllType {
+    /// The type variable identifiers declared after `for`.
+    pub fn params(&self) -> Vec<Ident> {
+        let Some(dot) = child_token(&self.syntax, SyntaxKind::DOT) else {
+            return Vec::new();
+        };
+        let dot_start = dot.text_range().start();
+        self.syntax
+            .children()
+            .filter_map(Ident::cast)
+            .filter(|ident| ident.syntax().text_range().end() <= dot_start)
+            .collect()
+    }
+
+    /// The body type expression after `.`.
+    pub fn body(&self) -> Option<TypeExpr> {
+        let dot = child_token(&self.syntax, SyntaxKind::DOT)?;
+        let dot_end = dot.text_range().end();
+        self.syntax
+            .children()
+            .filter_map(TypeExpr::cast)
+            .find(|type_expr| type_expr.syntax().text_range().start() >= dot_end)
+    }
+}
+
 ast_node!(Unit, UNIT);
 
 /// Helper: get the nth TypeExpr child of a node.
@@ -930,7 +991,7 @@ impl PatTypeHint {
         child_node(&self.syntax)
     }
     pub fn ty(&self) -> Option<TypeExpr> {
-        self.syntax.children().find_map(TypeExpr::cast)
+        child_node_after_token(&self.syntax, SyntaxKind::COLON)
     }
 }
 
@@ -997,6 +1058,29 @@ impl PathOrIdent {
 // ═══════════════════════════════════════════════════════════════════════
 // Enum groupings
 // ═══════════════════════════════════════════════════════════════════════
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum TopLevelItem {
+    Import(ImportStatement),
+    Module(Module),
+}
+
+impl TopLevelItem {
+    fn cast(node: SyntaxNode) -> Option<Self> {
+        match node.kind() {
+            SyntaxKind::IMPORT_STATEMENT => ImportStatement::cast(node).map(Self::Import),
+            SyntaxKind::MODULE => Module::cast(node).map(Self::Module),
+            _ => None,
+        }
+    }
+
+    pub fn span(&self) -> Span {
+        match self {
+            Self::Import(import) => import.span(),
+            Self::Module(module) => module.span(),
+        }
+    }
+}
 
 /// A top-level statement inside a module body.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -1066,6 +1150,7 @@ pub enum TypeExpr {
     Application(TypeApplication),
     Tuple(TupleType),
     Array(ArrayType),
+    ForAll(ForAllType),
     Unit(Unit),
     Path(Path),
     Ident(Ident),
@@ -1078,6 +1163,7 @@ impl AstNode for TypeExpr {
             SyntaxKind::TYPE_APPLICATION => TypeApplication::cast(node).map(Self::Application),
             SyntaxKind::TUPLE_TYPE => TupleType::cast(node).map(Self::Tuple),
             SyntaxKind::ARRAY_TYPE => ArrayType::cast(node).map(Self::Array),
+            SyntaxKind::FORALL_TYPE => ForAllType::cast(node).map(Self::ForAll),
             SyntaxKind::UNIT => Unit::cast(node).map(Self::Unit),
             SyntaxKind::PATH => Path::cast(node).map(Self::Path),
             SyntaxKind::IDENT_NODE => Ident::cast(node).map(Self::Ident),
@@ -1090,6 +1176,7 @@ impl AstNode for TypeExpr {
             Self::Application(n) => n.syntax(),
             Self::Tuple(n) => n.syntax(),
             Self::Array(n) => n.syntax(),
+            Self::ForAll(n) => n.syntax(),
             Self::Unit(n) => n.syntax(),
             Self::Path(n) => n.syntax(),
             Self::Ident(n) => n.syntax(),
@@ -1354,5 +1441,6 @@ fn is_sexpr_ident_token(kind: SyntaxKind) -> bool {
             | SyntaxKind::NOT_KW
             | SyntaxKind::FN_KW
             | SyntaxKind::WASM_KW
+            | SyntaxKind::FOR_KW
     )
 }

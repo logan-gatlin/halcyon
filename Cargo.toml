@@ -1,3 +1,6 @@
+[workspace]
+members = [".", "cli"]
+
 [package]
 name = "halcyon-lib"
 version = "2026.2.11"
@@ -30,8 +33,6 @@ paste = "1"
 enum-iterator = "2.3"
 rowan = "0.16"
 itertools = "0.14"
-wasmtime = { version = "34.0", features = ["runtime", "cranelift", "gc", "gc-drc"] }
-wasmtime-wasi = { version = "34.0", features = ["preview1"] }
 
 [dev-dependencies]
 
