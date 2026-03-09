@@ -14,6 +14,7 @@ use crate::parse::parser::Parser;
 /// Recovery set at the module-body level: we can resume parsing at any
 /// statement-starting keyword or at `end`.
 const STATEMENT_RECOVERY: &[SyntaxKind] = &[
+    SyntaxKind::USE_KW,
     SyntaxKind::LET_KW,
     SyntaxKind::TYPE_KW,
     SyntaxKind::TRAIT_KW,
@@ -25,11 +26,13 @@ const STATEMENT_RECOVERY: &[SyntaxKind] = &[
 
 pub fn statement(p: &mut Parser<'_, '_>) {
     match p.current() {
+        Some(SyntaxKind::USE_KW) => use_statement(p),
         Some(SyntaxKind::LET_KW) => let_statement(p),
         Some(SyntaxKind::TYPE_KW) => type_statement(p),
         Some(SyntaxKind::TRAIT_KW) => trait_statement(p),
         Some(SyntaxKind::IMPL_KW) => impl_statement(p),
         Some(SyntaxKind::WASM_KW) => inline_wasm(p),
+        Some(SyntaxKind::MODULE_KW) => module(p),
         Some(SyntaxKind::IMPORT_KW) => {
             p.error_recover(
                 "`import` statements are only allowed at source-file top level",
@@ -37,12 +40,8 @@ pub fn statement(p: &mut Parser<'_, '_>) {
             )
         }
         _ => {
-            if p.at(SyntaxKind::MODULE_KW) {
-                p.error_recover("nested modules are not supported", &[SyntaxKind::END_KW]);
-                p.bump()
-            }
             p.error_recover(
-                "expected `let`, `type`, `trait`, `impl`, `wasm`, or `end`",
+                "expected `use`, `let`, `type`, `trait`, `impl`, `module`, `wasm`, or `end`",
                 STATEMENT_RECOVERY,
             );
         }
@@ -74,6 +73,19 @@ fn let_statement(p: &mut Parser<'_, '_>) {
     pattern::pattern(p);
     p.expect(SyntaxKind::EQUAL);
     expression::expr(p);
+    p.finish_node(m);
+}
+
+/// ```bnf
+/// <use_statement> ::= "use" (<ident> | <path>) ("as" <ident>)?
+/// ```
+fn use_statement(p: &mut Parser<'_, '_>) {
+    let m = p.start_node_with_leading_comments(SyntaxKind::USE_STATEMENT);
+    p.expect(SyntaxKind::USE_KW);
+    path_or_ident(p);
+    if p.eat(SyntaxKind::AS_KW) {
+        expect_identifier(p);
+    }
     p.finish_node(m);
 }
 
@@ -177,7 +189,13 @@ fn impl_method_def(p: &mut Parser<'_, '_>) {
 fn can_start_impl_argument(p: &Parser<'_, '_>) -> bool {
     matches!(
         p.current(),
-        Some(SyntaxKind::IDENT | SyntaxKind::L_PAREN | SyntaxKind::L_SQUARE | SyntaxKind::FOR_KW)
+        Some(
+            SyntaxKind::IDENT
+                | SyntaxKind::ROOT_KW
+                | SyntaxKind::L_PAREN
+                | SyntaxKind::L_SQUARE
+                | SyntaxKind::FOR_KW
+        )
     )
 }
 

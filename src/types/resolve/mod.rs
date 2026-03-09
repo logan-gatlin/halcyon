@@ -1,3 +1,11 @@
+//! Resolve phase orchestration.
+//!
+//! This module wires together:
+//! - type-definition collection/lowering,
+//! - trait definition/implementation registration,
+//! - term inference and predicate solving,
+//! - final symbol-table publication.
+
 use std::collections::HashSet;
 
 use indexmap::IndexMap;
@@ -72,24 +80,30 @@ use type_defs::{
 };
 
 #[derive(Debug, Clone)]
-struct TypeDefEntry {
+/// Intermediate representation of a type declaration before full resolution.
+struct PendingTypeDefinitionEntry {
     kind: TypeDefinitionKind,
     parameters: Vec<Path>,
-    def: crate::ir::TypeDef,
+    syntax: crate::ir::TypeDef,
 }
 
 #[derive(Debug, Clone)]
-struct TraitDefEntry {
+/// Intermediate representation of a trait declaration before registration.
+struct PendingTraitDefinitionEntry {
     span: Span,
-    def: TraitDef,
+    trait_definition: TraitDef,
 }
 
 #[derive(Debug, Clone)]
 pub struct ResolvedModule {
+    /// Fully typed module produced by resolve.
     pub module: Module<Type>,
+
+    /// Final inferred/generalized schemes for exported bindings.
     pub schemes: IndexMap<Path, TypeScheme>,
 }
 
+/// Resolve a module with a fresh symbol table.
 pub fn resolve_module(
     module: Module<()>,
     logger: &mut FileLogger,
@@ -98,6 +112,7 @@ pub fn resolve_module(
     resolve_module_with_symbols(&mut symbols, module, logger)
 }
 
+/// Resolve a module using an existing symbol table.
 pub fn resolve_module_with_symbols(
     symbols: &mut SymbolTable,
     module: Module<()>,
@@ -106,6 +121,7 @@ pub fn resolve_module_with_symbols(
     resolve_module_with_symbols_and_schemes(symbols, module, logger).module
 }
 
+/// Resolve a module and return both typed IR and finalized binding schemes.
 pub fn resolve_module_with_symbols_and_schemes(
     symbols: &mut SymbolTable,
     module: Module<()>,
@@ -113,28 +129,31 @@ pub fn resolve_module_with_symbols_and_schemes(
 ) -> ResolvedModule {
     let Module { name, statements } = module;
     let statements = Vec::from(statements);
-    let type_entries = collect_type_entries(&statements);
-    let duplicate_types = type_entries
+    let pending_type_definitions = collect_type_entries(&statements);
+    let duplicate_type_paths = pending_type_definitions
         .keys()
         .filter(|path| symbols.type_definitions().contains_key(*path))
         .cloned()
         .collect::<HashSet<_>>();
-    for (path, entry) in type_entries.iter() {
-        if duplicate_types.contains(path) {
-            log_duplicate_definition(logger, entry.def.span(), "type", path);
+    for (path, entry) in pending_type_definitions.iter() {
+        if duplicate_type_paths.contains(path) {
+            log_duplicate_definition(logger, entry.syntax.span(), "type", path);
         }
     }
 
-    let mut term_definitions = collect_term_definitions(&statements);
-    term_definitions.extend(collect_constructor_definitions(
-        &type_entries,
-        &duplicate_types,
+    let mut pending_term_definitions = collect_term_definitions(&statements);
+    pending_term_definitions.extend(collect_constructor_definitions(
+        &pending_type_definitions,
+        &duplicate_type_paths,
     ));
-    log_term_duplicates(logger, symbols, &term_definitions);
+    log_term_duplicates(logger, symbols, &pending_term_definitions);
 
-    let type_definitions =
-        build_type_definitions(symbols.type_definitions(), &type_entries, logger);
-    for (path, entry) in type_entries.iter() {
+    let type_definitions = build_type_definitions(
+        symbols.type_definitions(),
+        &pending_type_definitions,
+        logger,
+    );
+    for (path, entry) in pending_type_definitions.iter() {
         if symbols.type_definitions().contains_key(path) {
             continue;
         }
@@ -152,23 +171,28 @@ pub fn resolve_module_with_symbols_and_schemes(
         }
     }
 
-    let trait_entries =
-        build_trait_definitions(&statements, &type_entries, &type_definitions, logger);
-    register_trait_definitions(symbols, &trait_entries, logger);
+    let pending_trait_definitions = build_trait_definitions(
+        &statements,
+        &pending_type_definitions,
+        &type_definitions,
+        logger,
+    );
+    register_trait_definitions(symbols, &pending_trait_definitions, logger);
 
-    let mut env = TypeEnv::new();
-    env.extend(
+    let mut type_environment = TypeEnv::new();
+    type_environment.extend(
         symbols
             .terms()
             .iter()
             .map(|(path, scheme)| (path.clone(), scheme.clone())),
     );
-    let constructors = build_sum_constructors(&type_entries, &type_definitions, logger);
-    env.extend(constructors);
+    let constructors = build_sum_constructors(&pending_type_definitions, &type_definitions, logger);
+    type_environment.extend(constructors);
 
-    let mut ctx = InferenceContext::new();
+    let mut inference_context = InferenceContext::new();
     let mut schemes = IndexMap::new();
-    ctx.set_type_definitions(
+    let mut failed_term_paths = HashSet::new();
+    inference_context.set_type_definitions(
         type_definitions
             .iter()
             .map(|(path, def)| (path.clone(), def.clone()))
@@ -180,16 +204,34 @@ pub fn resolve_module_with_symbols_and_schemes(
         match statement {
             Statement::Term(term) => {
                 let known_scheme_paths = schemes.keys().cloned().collect::<HashSet<_>>();
-                let output = match ctx.infer_term(&mut env, &term, &mut schemes) {
+                let output = match inference_context.infer_term(
+                    &mut type_environment,
+                    &term,
+                    &mut schemes,
+                ) {
                     Ok(output) => output,
                     Err(error) => {
                         log_type_error(logger, error);
+                        if let TermKind::Let {
+                            assignee,
+                            scope: ScopeKind::Global,
+                            ..
+                        } = &term.kind
+                        {
+                            failed_term_paths.extend(pattern_binding_paths(assignee));
+                        }
                         typed_statements.push(Statement::Term(fallback_term(&term)));
                         continue;
                     }
                 };
 
-                solve_predicates(logger, &mut ctx, symbols, term.span, &output.predicates);
+                solve_predicates(
+                    logger,
+                    &mut inference_context,
+                    symbols,
+                    term.span,
+                    &output.predicates,
+                );
                 let mut grounded_predicates = Vec::new();
                 for (path, scheme) in schemes.iter() {
                     if known_scheme_paths.contains(path) {
@@ -203,10 +245,16 @@ pub fn resolve_module_with_symbols_and_schemes(
                         }
                     }
                 }
-                solve_predicates(logger, &mut ctx, symbols, term.span, &grounded_predicates);
+                solve_predicates(
+                    logger,
+                    &mut inference_context,
+                    symbols,
+                    term.span,
+                    &grounded_predicates,
+                );
                 typed_statements.push(Statement::Term(normalize_term_types(
                     output.term,
-                    ctx.table_mut(),
+                    inference_context.table_mut(),
                 )));
             }
             Statement::Type {
@@ -244,12 +292,13 @@ pub fn resolve_module_with_symbols_and_schemes(
                 methods,
             } => {
                 let (typed_impl, generated_terms) = ImplProcessingContext {
+                    module_name: &name,
                     logger,
-                    ctx: &mut ctx,
-                    env: &mut env,
+                    inference_context: &mut inference_context,
+                    type_environment: &mut type_environment,
                     symbols,
                     schemes: &mut schemes,
-                    type_entries: &type_entries,
+                    pending_type_definitions: &pending_type_definitions,
                     type_definitions: &type_definitions,
                 }
                 .process(comments, trait_path, arguments, methods);
@@ -260,11 +309,14 @@ pub fn resolve_module_with_symbols_and_schemes(
         }
     }
 
-    for (path, span) in term_definitions.iter() {
+    for (path, span) in pending_term_definitions.iter() {
         if symbols.terms().contains_key(path) {
             continue;
         }
-        match env.get(path).cloned() {
+        if failed_term_paths.contains(path) {
+            continue;
+        }
+        match type_environment.get(path).cloned() {
             Some(scheme) => {
                 symbols.insert_term(path.clone(), scheme);
             }
@@ -286,115 +338,186 @@ pub fn resolve_module_with_symbols_and_schemes(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use std::collections::HashMap;
-
-    use super::*;
-    use crate::Logger;
-    use crate::ir::TypeExprKind;
-
-    fn type_expr(kind: TypeExprKind) -> TypeExpr {
-        TypeExpr {
-            comments: String::new(),
-            kind,
-            span: Span::Generated,
+fn pattern_binding_paths<T>(pattern: &Pattern<T>) -> Vec<Path> {
+    match &pattern.kind {
+        PatternKind::Identifier(path) => vec![path.clone()],
+        PatternKind::Constructor(_, payload) => pattern_binding_paths(payload),
+        PatternKind::Tuple(items) => items.iter().flat_map(pattern_binding_paths).collect(),
+        PatternKind::Array {
+            starting,
+            glob,
+            ending,
+        } => {
+            let mut paths = starting
+                .iter()
+                .chain(ending.iter())
+                .flat_map(pattern_binding_paths)
+                .collect::<Vec<_>>();
+            if let Glob::Named(path) = glob {
+                paths.push(path.clone());
+            }
+            paths
+        }
+        PatternKind::Struct(fields) => fields.values().flat_map(pattern_binding_paths).collect(),
+        PatternKind::TypeHint(inner, _) => pattern_binding_paths(inner),
+        PatternKind::Hole | PatternKind::ConstConstructor(_) | PatternKind::Immediate(_) => {
+            Vec::new()
         }
     }
+}
 
-    #[test]
-    fn instantiate_method_scheme_rejects_extra_type_arguments() {
-        let scheme = Type::v(0).for_all(1).scheme();
-        assert!(impls::instantiate_method_scheme(&scheme, &[Type::Integer]).is_some());
-        assert!(
-            impls::instantiate_method_scheme(&scheme, &[Type::Integer, Type::Boolean]).is_none()
-        );
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::hc_core::compile_core_module;
+    use crate::{
+        Logger,
+        ir,
+        parse,
+    };
+
+    fn resolve_source(
+        source: &str,
+        symbols: &mut SymbolTable,
+    ) -> (ResolvedModule, crate::FileLogger) {
+        let mut logger = Logger::new();
+        let mut file_logger = logger.new_file("test.hc", source);
+        let module = parse::parse(source, &mut file_logger)
+            .and_then(|source_file| source_file.modules().into_iter().next())
+            .and_then(|module| ir::module(module, &mut file_logger))
+            .expect("source should lower to IR module");
+        let resolved = resolve_module_with_symbols_and_schemes(symbols, module, &mut file_logger);
+        (resolved, file_logger)
     }
 
     #[test]
-    fn type_expr_in_def_alias_arity_mismatch_recovers_without_partial_instantiation() {
-        let pair = Path::new("test", "Pair");
-        let mut type_definitions = [(
-            pair.clone(),
-            TypeDefinition {
-                parameters: 1,
-                body: Type::Tuple(vec![Type::v(0), Type::v(0)]).for_all(1),
-                kind: TypeDefinitionKind::Alias,
-            },
-        )]
-        .into_iter()
-        .collect::<IndexMap<_, _>>();
-        let expression = type_expr(TypeExprKind::Instantiation(
-            pair,
-            [
-                type_expr(TypeExprKind::Instantiation(
-                    Path::core("integer"),
-                    [].into(),
-                )),
-                type_expr(TypeExprKind::Instantiation(
-                    Path::core("boolean"),
-                    [].into(),
-                )),
-            ]
-            .into(),
-        ));
+    fn pattern_binding_paths_collect_nested_bindings() {
+        let pattern = Pattern {
+            comments: String::new(),
+            kind: PatternKind::Tuple(
+                [
+                    Pattern {
+                        comments: String::new(),
+                        kind: PatternKind::Identifier(Path::new("demo", "a")),
+                        span: Span::Generated,
+                        type_: (),
+                    },
+                    Pattern {
+                        comments: String::new(),
+                        kind: PatternKind::Array {
+                            starting: [Pattern {
+                                comments: String::new(),
+                                kind: PatternKind::Identifier(Path::new("demo", "b")),
+                                span: Span::Generated,
+                                type_: (),
+                            }]
+                            .into(),
+                            glob: Glob::Named(Path::new("demo", "rest")),
+                            ending: [Pattern {
+                                comments: String::new(),
+                                kind: PatternKind::Identifier(Path::new("demo", "c")),
+                                span: Span::Generated,
+                                type_: (),
+                            }]
+                            .into(),
+                        },
+                        span: Span::Generated,
+                        type_: (),
+                    },
+                ]
+                .into(),
+            ),
+            span: Span::Generated,
+            type_: (),
+        };
 
-        let mut logger = Logger::new();
-        let mut file_logger = logger.new_file("test.hc", "");
-        let lowered = type_defs::type_expr_to_type_in_def(
-            &expression,
-            &HashMap::new(),
-            &IndexMap::new(),
-            &mut type_definitions,
-            &mut Vec::new(),
-            &mut file_logger,
-        );
-
+        let mut paths = pattern_binding_paths(&pattern);
+        paths.sort_by_key(ToString::to_string);
         assert_eq!(
-            lowered,
-            Type::Tuple(vec![Type::v(0), Type::v(0)]).for_all(1)
+            paths,
+            vec![
+                Path::new("demo", "a"),
+                Path::new("demo", "b"),
+                Path::new("demo", "c"),
+                Path::new("demo", "rest"),
+            ]
         );
     }
 
     #[test]
-    fn type_expr_in_def_applied_parameter_recovers_to_parameter_type() {
-        let a = Path::new("test", "a");
-        let expression = type_expr(TypeExprKind::Instantiation(
-            a.clone(),
-            [type_expr(TypeExprKind::Instantiation(
-                Path::core("integer"),
-                [].into(),
-            ))]
-            .into(),
-        ));
+    fn resolve_module_publishes_global_binding_schemes_and_symbols() {
+        let source = "module demo =\n  let id = fn x => x\nend\n";
+        let mut symbols = SymbolTable::new();
+        let (resolved, file_logger) = resolve_source(source, &mut symbols);
 
-        let mut logger = Logger::new();
-        let mut file_logger = logger.new_file("test.hc", "");
-        let lowered = type_defs::type_expr_to_type_in_def(
-            &expression,
-            &[(a, 0)].into_iter().collect(),
-            &IndexMap::new(),
-            &mut IndexMap::new(),
-            &mut Vec::new(),
-            &mut file_logger,
-        );
-
-        assert_eq!(lowered, Type::v(0));
+        assert!(file_logger.is_ok());
+        assert!(resolved.schemes.contains_key(&Path::new("demo", "id")));
+        assert!(symbols.terms().contains_key(&Path::new("demo", "id")));
     }
 
     #[test]
-    fn type_expr_in_def_placeholder_recovers_to_unit() {
-        let mut logger = Logger::new();
-        let mut file_logger = logger.new_file("test.hc", "");
-        let lowered = type_defs::type_expr_to_type_in_def(
-            &type_expr(TypeExprKind::Placeholder),
-            &HashMap::new(),
-            &IndexMap::new(),
-            &mut IndexMap::new(),
-            &mut Vec::new(),
-            &mut file_logger,
+    fn resolve_module_recovers_failed_global_terms_without_publishing_symbol() {
+        let source = "module demo =\n  let bad = missing\nend\n";
+        let mut symbols = SymbolTable::new();
+        let (resolved, file_logger) = resolve_source(source, &mut symbols);
+
+        assert!(!file_logger.is_ok());
+        assert!(!resolved.schemes.contains_key(&Path::new("demo", "bad")));
+        assert!(!symbols.terms().contains_key(&Path::new("demo", "bad")));
+
+        let Some(Statement::Term(term)) = resolved.module.statements.first() else {
+            panic!("expected term statement");
+        };
+        assert_eq!(term.type_, Type::Unit);
+    }
+
+    #[test]
+    fn resolve_module_reports_duplicate_type_against_existing_symbols() {
+        let source = "module demo =\n  type Token = { value: core::integer }\nend\n";
+        let mut symbols = SymbolTable::new();
+        symbols.insert_type(
+            Path::new("demo", "Token"),
+            TypeDefinition {
+                parameters: 0,
+                body: Type::Unit,
+                kind: TypeDefinitionKind::Named,
+            },
         );
 
-        assert_eq!(lowered, Type::Unit);
+        let (_resolved, file_logger) = resolve_source(source, &mut symbols);
+        assert!(
+            file_logger
+                .iter()
+                .any(|diagnostic| diagnostic.message == "Duplicate type definition")
+        );
+    }
+
+    #[test]
+    fn resolve_module_solves_trait_predicates_for_impl_calls() {
+        let source = "module demo =\n  trait Id : a =\n    let id : a -> a\n  end\n  impl Id : core::integer =\n    let id = fn x => x\n  end\n  let value : core::integer = id 1\nend\n";
+        let mut symbols = SymbolTable::new();
+        let mut logger = Logger::new();
+        let _ = compile_core_module(&mut symbols, &mut logger);
+
+        let (resolved, file_logger) = resolve_source(source, &mut symbols);
+        assert!(file_logger.is_ok());
+        assert!(resolved.schemes.contains_key(&Path::new("demo", "value")));
+        assert!(symbols.trait_impls().contains_key(&Path::new("demo", "Id")));
+    }
+
+    #[test]
+    fn resolve_module_reports_unresolved_ground_predicates() {
+        let source = "module demo =\n  trait Eq : a =\n    let eq : a -> a -> core::boolean\n  end\n  let value = eq 1 1\nend\n";
+        let mut symbols = SymbolTable::new();
+        let mut logger = Logger::new();
+        let _ = compile_core_module(&mut symbols, &mut logger);
+
+        let (_resolved, file_logger) = resolve_source(source, &mut symbols);
+        assert!(!file_logger.is_ok());
+        assert!(
+            file_logger
+                .iter()
+                .any(|diagnostic| diagnostic.message == "Unresolved trait constraint")
+        );
     }
 }

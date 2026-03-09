@@ -1089,14 +1089,36 @@ impl Printer {
                     .join(" ");
                 format!("{name} {args}")
             }
-            TypeExprKind::ForAll(params, body) => {
+            TypeExprKind::ForAll(params, constraints, body) => {
                 let param_names = params
                     .iter()
                     .map(|p| self.format_path(p))
                     .collect::<Vec<_>>()
                     .join(" ");
                 let body = self.format_type_expr(body);
-                format!("for {param_names}. {body}")
+                let constraints = if constraints.is_empty() {
+                    String::new()
+                } else {
+                    let constraints = constraints
+                        .iter()
+                        .map(|constraint| {
+                            if constraint.arguments.is_empty() {
+                                self.format_path(&constraint.trait_name)
+                            } else {
+                                let args = constraint
+                                    .arguments
+                                    .iter()
+                                    .map(|arg| self.wrap_type_expr(&self.format_type_expr(arg)))
+                                    .collect::<Vec<_>>()
+                                    .join(" ");
+                                format!("{} {args}", self.format_path(&constraint.trait_name))
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    format!(" where {constraints}")
+                };
+                format!("for {param_names} in {body}{constraints}")
             }
             TypeExprKind::Placeholder => "_".to_string(),
         }

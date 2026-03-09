@@ -9,12 +9,15 @@
 <module>     ::= "module" <ident> "=" <statement>* "end"
 
 <statement>  ::= <let_statement>
+               | <use_statement>
                | <type_statement>
                | <trait_statement>
                | <impl_statement>
+               | <module>
                | <wasm_statement>
 
 <let_statement>  ::= "let" <pattern> "=" <expr>
+<use_statement> ::= "use" (<ident> | <path>) ("as" <ident>)?
 <type_statement> ::= "type" "~"? <ident> (":" <ident>+)? "=" (<type_def> | <type_expr>)
 <trait_statement> ::= "trait" <ident> (":" <ident>+)? "=" <trait_method_decl>* "end"
 <impl_statement> ::= "impl" (<ident> | <path>) ":" <type_expr> ("," <type_expr>)* "=" <impl_method_def>* "end"
@@ -43,10 +46,14 @@ Recursion rules:
 
 ## Type Expressions
 ```bnf
-<type_expr>  ::= "for" <ident>+ "." <type_expr>    -- universal quantifier (rank-1)
-               | <type_term> "->" <type_expr>       -- function type
-               | <type_term> <type_term>+           -- type application
-               | <type_term>
+<type_expr>  ::= "for" <ident>+
+                 "in" <type_expr>
+                 ("where" <trait_constraint> ("," <trait_constraint>)*)?
+                | <type_term> "->" <type_expr>       -- function type
+                | <type_term> <type_term>+           -- type application
+                | <type_term>
+
+<trait_constraint> ::= (<ident> | <path>) <type_term>*
 
 <type_term>  ::= <ident>
                | <path>
@@ -58,6 +65,7 @@ Recursion rules:
 ## Expressions
 ```bnf
 <expr>       ::= "let" <pattern> "=" <expr> "in" <expr>
+               | "use" (<ident> | <path>) ("as" <ident>)? "in" <expr>
                | "fn" <parameter>* "=>" <expr>      -- function definition
                | "fn" <match_arm>+                   -- function shorthand
                | "if" <expr> "then" <expr> "else" <expr>
@@ -161,5 +169,13 @@ Recursion rules:
 - **Literals:** integers (`123`, `0xEF`), reals (`1.0`), strings (`"text"`), glyphs (`'c'`), booleans (`true`, `false`), unit (`()`).
 - **Comments:** `-- line comment`, `(* block comment *)`.
 - **Identifiers:** bare names (`foo`) or bracketed operators (`[+]`, `[ + ]`, `[not]`).
-- **Paths:** `Module::Ident` (each segment may use a bracketed operator identifier).
+- **Paths:** `("root" "::" <ident> ("::" <ident>)*) | (<ident> "::" <ident> ("::" <ident>)*)` (each segment may use a bracketed operator identifier).
+- **Path resolution:** `root::...` is fully qualified; other paths resolve relative to the current module scope.
+- **`use` resolution:**
+  - Module-level `use` applies only to following statements in the same module.
+  - Expression-level `use ... in ...` applies only inside its `in` body.
+  - `use M` opens `M` into the current scope.
+  - `use M as X` adds alias `X` for module path lookups (`X::name`) without opening contents.
+  - `as` alias name collisions are errors.
+  - If multiple opened modules provide the same symbol, the usage is ambiguous and reported as an error.
 - **Operators:** `+`, `-`, `*`, `/`, `%`, `|>`, `<|`, `==`, `!=`, `<`, `<=`, `>`, `>=`, `and`, `or`, `xor`, `not`, `;`.

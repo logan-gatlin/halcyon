@@ -221,6 +221,33 @@ fn all_identifier_texts(parent: &SyntaxNode) -> Vec<String> {
     names
 }
 
+fn alias_name_after_as(parent: &SyntaxNode) -> Option<Spanned<String>> {
+    let tokens = non_trivia_tokens(parent);
+    let as_index = tokens
+        .iter()
+        .position(|token| token.kind() == SyntaxKind::AS_KW)?;
+    let index = as_index + 1;
+    let token = tokens.get(index)?;
+    if token.kind() == SyntaxKind::IDENT {
+        return Some(
+            token
+                .text()
+                .to_string()
+                .with_span(token.text_range().into()),
+        );
+    }
+    if token.kind() == SyntaxKind::L_SQUARE
+        && let (Some(op), Some(end)) = (tokens.get(index + 1), tokens.get(index + 2))
+        && op.kind().is_operator_token()
+        && end.kind() == SyntaxKind::R_SQUARE
+    {
+        return Some(format!("[{}]", op.text()).with_span(
+            rowan::TextRange::new(token.text_range().start(), end.text_range().end()).into(),
+        ));
+    }
+    None
+}
+
 // ── Macro to reduce per-node boilerplate ─────────────────────────────
 
 macro_rules! ast_node {
@@ -294,6 +321,20 @@ impl ImportStatement {
                     .with_span(token.text_range().into())
             })
             .collect()
+    }
+}
+
+ast_node!(UseStatement, USE_STATEMENT);
+impl HasLeadingComments for UseStatement {
+}
+
+impl UseStatement {
+    pub fn target(&self) -> Option<PathOrIdent> {
+        self.syntax.children().find_map(PathOrIdent::cast)
+    }
+
+    pub fn alias_name_spanned(&self) -> Option<Spanned<String>> {
+        alias_name_after_as(&self.syntax)
     }
 }
 
@@ -593,29 +634,73 @@ impl TupleType {
 
 ast_node!(ArrayType, ARRAY_TYPE);
 ast_node!(ForAllType, FORALL_TYPE);
+ast_node!(TypeConstraint, TYPE_CONSTRAINT);
+
+impl TypeConstraint {
+    pub fn trait_name(&self) -> Option<PathOrIdent> {
+        self.syntax.children().find_map(PathOrIdent::cast)
+    }
+
+    pub fn args(&self) -> Vec<TypeExpr> {
+        let Some(trait_name) = self.trait_name() else {
+            return Vec::new();
+        };
+        let args_start = match trait_name {
+            PathOrIdent::Ident(ident) => ident.syntax().text_range().end(),
+            PathOrIdent::Path(path) => path.syntax().text_range().end(),
+        };
+        self.syntax
+            .children()
+            .filter_map(TypeExpr::cast)
+            .filter(|type_expr| type_expr.syntax().text_range().start() >= args_start)
+            .collect()
+    }
+}
 
 impl ForAllType {
     /// The type variable identifiers declared after `for`.
     pub fn params(&self) -> Vec<Ident> {
-        let Some(dot) = child_token(&self.syntax, SyntaxKind::DOT) else {
+        let Some(for_kw) = child_token(&self.syntax, SyntaxKind::FOR_KW) else {
             return Vec::new();
         };
-        let dot_start = dot.text_range().start();
+        let Some(in_kw) = child_token(&self.syntax, SyntaxKind::IN_KW) else {
+            return Vec::new();
+        };
+        let for_end = for_kw.text_range().end();
+        let param_end = in_kw.text_range().start();
         self.syntax
             .children()
             .filter_map(Ident::cast)
-            .filter(|ident| ident.syntax().text_range().end() <= dot_start)
+            .filter(|ident| {
+                let range = ident.syntax().text_range();
+                range.start() >= for_end && range.end() <= param_end
+            })
             .collect()
     }
 
-    /// The body type expression after `.`.
+    pub fn constraints(&self) -> Vec<TypeConstraint> {
+        let Some(where_kw) = child_token(&self.syntax, SyntaxKind::WHERE_KW) else {
+            return Vec::new();
+        };
+        let constraints_start = where_kw.text_range().end();
+        self.syntax
+            .children()
+            .filter_map(TypeConstraint::cast)
+            .filter(|constraint| {
+                let range = constraint.syntax().text_range();
+                range.start() >= constraints_start
+            })
+            .collect()
+    }
+
+    /// The body type expression after `in`.
     pub fn body(&self) -> Option<TypeExpr> {
-        let dot = child_token(&self.syntax, SyntaxKind::DOT)?;
-        let dot_end = dot.text_range().end();
+        let in_kw = child_token(&self.syntax, SyntaxKind::IN_KW)?;
+        let in_end = in_kw.text_range().end();
         self.syntax
             .children()
             .filter_map(TypeExpr::cast)
-            .find(|type_expr| type_expr.syntax().text_range().start() >= dot_end)
+            .find(|type_expr| type_expr.syntax().text_range().start() >= in_end)
     }
 }
 
@@ -644,6 +729,22 @@ impl LetExpr {
         child_node_after_token(&self.syntax, SyntaxKind::EQUAL)
     }
     /// The body after `in` (second Expr child).
+    pub fn body(&self) -> Option<Expr> {
+        child_node_after_token(&self.syntax, SyntaxKind::IN_KW)
+    }
+}
+
+ast_node!(UseExpr, USE_EXPR);
+
+impl UseExpr {
+    pub fn target(&self) -> Option<PathOrIdent> {
+        self.syntax.children().find_map(PathOrIdent::cast)
+    }
+
+    pub fn alias_name_spanned(&self) -> Option<Spanned<String>> {
+        alias_name_after_as(&self.syntax)
+    }
+
     pub fn body(&self) -> Option<Expr> {
         child_node_after_token(&self.syntax, SyntaxKind::IN_KW)
     }
@@ -908,15 +1009,22 @@ impl HasName for Ident {
 ast_node!(Path, PATH);
 
 impl Path {
-    /// All path segments (1 for simple name, 2 for `Module::name`).
+    /// All path segments without the optional `root` prefix.
     /// Bracketed operators are normalized to `[<op>]`.
     pub fn segments(&self) -> Vec<String> {
         all_identifier_texts(&self.syntax)
     }
-    /// For a path like `Module::name`, the module qualifier.
+
+    pub fn is_rooted(&self) -> bool {
+        non_trivia_tokens(&self.syntax)
+            .first()
+            .is_some_and(|token| token.kind() == SyntaxKind::ROOT_KW)
+    }
+
+    /// For a path like `A::B::name`, returns `A::B`.
     pub fn qualifier(&self) -> Option<String> {
         let segs = self.segments();
-        (segs.len() == 2).then(|| segs[0].clone())
+        (segs.len() >= 2).then(|| segs[..segs.len() - 1].join("::"))
     }
     /// The final name segment.
     pub fn name_text(&self) -> Option<String> {
@@ -1085,30 +1193,36 @@ impl TopLevelItem {
 /// A top-level statement inside a module body.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Statement {
+    Use(UseStatement),
     Let(LetStatement),
     Type(TypeStatement),
     Trait(TraitStatement),
     Impl(ImplStatement),
+    Module(Module),
     Wasm(WasmStatement),
 }
 
 impl AstNode for Statement {
     fn cast(node: SyntaxNode) -> Option<Self> {
         match node.kind() {
+            SyntaxKind::USE_STATEMENT => UseStatement::cast(node).map(Self::Use),
             SyntaxKind::LET_STATEMENT => LetStatement::cast(node).map(Self::Let),
             SyntaxKind::TYPE_STATEMENT => TypeStatement::cast(node).map(Self::Type),
             SyntaxKind::TRAIT_STATEMENT => TraitStatement::cast(node).map(Self::Trait),
             SyntaxKind::IMPL_STATEMENT => ImplStatement::cast(node).map(Self::Impl),
+            SyntaxKind::MODULE => Module::cast(node).map(Self::Module),
             SyntaxKind::WASM_STATEMENT => WasmStatement::cast(node).map(Self::Wasm),
             _ => None,
         }
     }
     fn syntax(&self) -> &SyntaxNode {
         match self {
+            Self::Use(n) => n.syntax(),
             Self::Let(n) => n.syntax(),
             Self::Type(n) => n.syntax(),
             Self::Trait(n) => n.syntax(),
             Self::Impl(n) => n.syntax(),
+            Self::Module(n) => n.syntax(),
             Self::Wasm(n) => n.syntax(),
         }
     }
@@ -1188,6 +1302,7 @@ impl AstNode for TypeExpr {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Expr {
     Let(LetExpr),
+    Use(UseExpr),
     Fn(FnExpr),
     FnShorthand(FnShorthandExpr),
     If(IfExpr),
@@ -1210,6 +1325,7 @@ impl AstNode for Expr {
     fn cast(node: SyntaxNode) -> Option<Self> {
         match node.kind() {
             SyntaxKind::LET_EXPR => LetExpr::cast(node).map(Self::Let),
+            SyntaxKind::USE_EXPR => UseExpr::cast(node).map(Self::Use),
             SyntaxKind::FN_EXPR => FnExpr::cast(node).map(Self::Fn),
             SyntaxKind::FN_SHORTHAND_EXPR => FnShorthandExpr::cast(node).map(Self::FnShorthand),
             SyntaxKind::IF_EXPR => IfExpr::cast(node).map(Self::If),
@@ -1232,6 +1348,7 @@ impl AstNode for Expr {
     fn syntax(&self) -> &SyntaxNode {
         match self {
             Self::Let(n) => n.syntax(),
+            Self::Use(n) => n.syntax(),
             Self::Fn(n) => n.syntax(),
             Self::FnShorthand(n) => n.syntax(),
             Self::If(n) => n.syntax(),
@@ -1422,6 +1539,7 @@ fn is_sexpr_ident_token(kind: SyntaxKind) -> bool {
             | SyntaxKind::MODULE_KW
             | SyntaxKind::IMPORT_KW
             | SyntaxKind::USE_KW
+            | SyntaxKind::AS_KW
             | SyntaxKind::END_KW
             | SyntaxKind::MATCH_KW
             | SyntaxKind::WITH_KW
@@ -1442,5 +1560,6 @@ fn is_sexpr_ident_token(kind: SyntaxKind) -> bool {
             | SyntaxKind::FN_KW
             | SyntaxKind::WASM_KW
             | SyntaxKind::FOR_KW
+            | SyntaxKind::ROOT_KW
     )
 }

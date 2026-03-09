@@ -1,3 +1,5 @@
+//! Shared helpers for resolve submodules.
+
 use super::{
     TraitConstraint,
     TraitRef,
@@ -5,6 +7,7 @@ use super::{
     for_each_child_type,
 };
 
+/// Render a trait reference in source-like form for diagnostics.
 pub(super) fn format_trait_ref(trait_ref: &TraitRef) -> String {
     if trait_ref.arguments.is_empty() {
         trait_ref.trait_name.to_string()
@@ -19,21 +22,60 @@ pub(super) fn format_trait_ref(trait_ref: &TraitRef) -> String {
     }
 }
 
+/// Return `true` when a predicate has no type/meta variables.
 pub(super) fn predicate_is_ground(predicate: &TraitConstraint) -> bool {
-    predicate.arguments.iter().all(type_is_ground)
+    predicate.arguments.iter().all(is_ground_type)
 }
 
-fn type_is_ground(type_: &Type) -> bool {
+fn is_ground_type(type_: &Type) -> bool {
     match type_ {
         Type::TypeVar(_) | Type::MetaVar(_) => false,
         _ => {
             let mut is_ground = true;
             for_each_child_type(type_, true, |child| {
-                if is_ground && !type_is_ground(child) {
+                if is_ground && !is_ground_type(child) {
                     is_ground = false;
                 }
             });
             is_ground
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ir::Path;
+
+    #[test]
+    fn format_trait_ref_renders_with_and_without_arguments() {
+        let no_args = TraitRef::new(Path::new("demo", "Eq"), Vec::new());
+        let with_args = TraitRef::new(
+            Path::new("demo", "Eq"),
+            vec![Type::Integer, Type::Array(Box::new(Type::Boolean))],
+        );
+
+        assert_eq!(format_trait_ref(&no_args), "demo::Eq");
+        assert_eq!(format_trait_ref(&with_args), "demo::Eq integer [] boolean");
+    }
+
+    #[test]
+    fn predicate_is_ground_detects_variables_and_nested_ground_types() {
+        let non_ground_type_var = TraitRef::new(Path::new("demo", "Eq"), vec![Type::v(0)]);
+        let non_ground_meta = TraitRef::new(Path::new("demo", "Eq"), vec![Type::MetaVar(0)]);
+        let ground = TraitRef::new(
+            Path::new("demo", "Eq"),
+            vec![Type::Tuple(vec![
+                Type::Integer,
+                Type::Named {
+                    name: Path::new("demo", "Token"),
+                    body: Box::new(Type::Unit),
+                },
+            ])],
+        );
+
+        assert!(!predicate_is_ground(&non_ground_type_var));
+        assert!(!predicate_is_ground(&non_ground_meta));
+        assert!(predicate_is_ground(&ground));
     }
 }

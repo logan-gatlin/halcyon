@@ -53,6 +53,10 @@ pub(crate) fn can_start_identifier(p: &Parser<'_, '_>) -> bool {
     p.at(SyntaxKind::IDENT) || is_bracketed_operator_identifier_start(p)
 }
 
+pub(crate) fn can_start_path_or_ident(p: &Parser<'_, '_>) -> bool {
+    can_start_identifier(p) || p.at(SyntaxKind::ROOT_KW)
+}
+
 pub(crate) fn is_bracketed_operator_identifier_start(p: &Parser<'_, '_>) -> bool {
     p.at(SyntaxKind::L_SQUARE)
         && p.nth(1).is_some_and(SyntaxKind::is_operator_token)
@@ -82,6 +86,17 @@ pub(crate) fn expect_identifier(p: &mut Parser<'_, '_>) {
 /// Parse a simple identifier (bare or bracketed operator) or a qualified path.
 pub(crate) fn path_or_ident(p: &mut Parser<'_, '_>) {
     let checkpoint = p.checkpoint();
+    if p.eat(SyntaxKind::ROOT_KW) {
+        let m = p.start_node_at(checkpoint, SyntaxKind::PATH);
+        p.expect(SyntaxKind::DOUBLE_COLON);
+        expect_identifier(p);
+        while p.eat(SyntaxKind::DOUBLE_COLON) {
+            expect_identifier(p);
+        }
+        p.finish_node(m);
+        return;
+    }
+
     if !identifier(p) {
         p.error_and_bump("expected identifier");
         return;
@@ -91,6 +106,9 @@ pub(crate) fn path_or_ident(p: &mut Parser<'_, '_>) {
         let m = p.start_node_at(checkpoint, SyntaxKind::PATH);
         p.bump();
         expect_identifier(p);
+        while p.eat(SyntaxKind::DOUBLE_COLON) {
+            expect_identifier(p);
+        }
         p.finish_node(m);
     } else {
         let m = p.start_node_at(checkpoint, SyntaxKind::IDENT_NODE);

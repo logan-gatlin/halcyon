@@ -339,6 +339,19 @@ pub fn term(
                 span,
             )
         }
+        ast::Expr::Use(use_expr) => {
+            scope.push_use_scope();
+            let lowered = (|| {
+                scope.register_use(
+                    use_expr.target()?,
+                    use_expr.alias_name_spanned(),
+                    use_expr.span(),
+                )?;
+                term(scope, wasm_type_defs, logger, use_expr.body()?)
+            })();
+            scope.pop_use_scope();
+            lowered?
+        }
         ast::Expr::Fn(fn_expr) => {
             let params = fn_expr.params();
             let body = fn_expr.body()?;
@@ -591,7 +604,7 @@ pub fn term(
             mk(TermKind::Identifier(path), span)
         }
         ast::Expr::Path(path_expr) => {
-            let path = Path::new(path_expr.qualifier()?, path_expr.name_text()?);
+            let path = scope.resolve_path(&path_expr, NameSpace::Term, span)?;
             scope.query_path(path.clone().with_span(span), NameSpace::Term);
             mk(TermKind::Identifier(path), span)
         }

@@ -193,13 +193,32 @@ fn type_expr_name(kind: &crate::ir::TypeExprKind) -> String {
             let strs: Vec<_> = items.iter().map(|a| type_expr_name(&a.kind)).collect();
             format!("({})", strs.join(", "))
         }
-        crate::ir::TypeExprKind::ForAll(params, body) => {
+        crate::ir::TypeExprKind::ForAll(params, constraints, body) => {
             let param_names: Vec<_> = params.iter().map(|p| p.minor.clone()).collect();
-            format!(
-                "for {}. {}",
-                param_names.join(" "),
-                type_expr_name(&body.kind)
-            )
+            let prefix = format!("for {}", param_names.join(" "));
+            let constraints = if constraints.is_empty() {
+                String::new()
+            } else {
+                let constraints = constraints
+                    .iter()
+                    .map(|constraint| {
+                        let args = constraint
+                            .arguments
+                            .iter()
+                            .map(|arg| type_expr_name(&arg.kind))
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                        if args.is_empty() {
+                            constraint.trait_name.minor.clone()
+                        } else {
+                            format!("{} {args}", constraint.trait_name.minor)
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!(" where {constraints}")
+            };
+            format!("{prefix} in {}{constraints}", type_expr_name(&body.kind))
         }
         crate::ir::TypeExprKind::Placeholder => "_".to_string(),
     }

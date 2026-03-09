@@ -62,18 +62,49 @@ pub fn compile_source(
     logger: &mut FileLogger,
     symbols: &mut types::SymbolTable,
 ) -> Box<[Artifact]> {
-    parse::parse(source, logger)
-        .into_iter()
-        .flat_map(|m| m.modules())
-        .flat_map(|m| ir::module(m, logger))
-        .collect::<Box<_>>()
-        .into_iter()
-        .map(|m| types::resolve_module_with_symbols_and_schemes(symbols, m, logger))
-        .collect::<Box<_>>()
-        .into_iter()
-        .map(|m| ir::elaborate_module(m, symbols))
-        .map(|m| asm::compile_module(m, symbols))
-        .collect()
+    fn name_resolution_prelude(symbols: &types::SymbolTable) -> Vec<(ir::Path, ir::NameSpace)> {
+        let mut prelude = Vec::new();
+        prelude.extend(
+            symbols
+                .terms()
+                .keys()
+                .cloned()
+                .map(|path| (path, ir::NameSpace::Term)),
+        );
+        prelude.extend(
+            symbols
+                .type_definitions()
+                .keys()
+                .cloned()
+                .map(|path| (path, ir::NameSpace::Type)),
+        );
+        prelude.extend(
+            symbols
+                .trait_defs()
+                .keys()
+                .cloned()
+                .map(|path| (path, ir::NameSpace::Type)),
+        );
+        prelude
+    }
+
+    let mut artifacts = Vec::new();
+    let Some(source_file) = parse::parse(source, logger) else {
+        return artifacts.into_boxed_slice();
+    };
+    for module in source_file.modules() {
+        let prelude = name_resolution_prelude(symbols);
+        let Some(ir_module) = ir::module_with_prelude(module, logger, &prelude) else {
+            continue;
+        };
+        let resolved = types::resolve_module_with_symbols_and_schemes(symbols, ir_module, logger);
+        if !logger.is_ok() {
+            continue;
+        }
+        let elaborated = ir::elaborate_module(resolved, symbols);
+        artifacts.push(asm::compile_module(elaborated, symbols));
+    }
+    artifacts.into_boxed_slice()
 }
 
 pub fn validate_artifact(

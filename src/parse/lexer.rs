@@ -385,6 +385,7 @@ pub fn tokenize(
             "module" => MODULE_KW,
             "import" => IMPORT_KW,
             "use" => USE_KW,
+            "as" => AS_KW,
             "of" => OF_KW,
             "end" => END_KW,
             "match" => MATCH_KW,
@@ -404,6 +405,8 @@ pub fn tokenize(
             "impl" => IMPL_KW,
             "wasm" => WASM_KW,
             "for" => FOR_KW,
+            "where" => WHERE_KW,
+            "root" => ROOT_KW,
             _ => IDENT,
         };
         iter.push(kind, start);

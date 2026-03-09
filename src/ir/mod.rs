@@ -119,43 +119,24 @@ fn define_sum_constructors(
     Some(())
 }
 
-pub fn module(
-    module_node: ast::Module,
+fn lower_module_statements(
+    module_scope: &mut ModuleScope,
+    module_name: &str,
+    wasm_type_defs: &mut IndexMap<String, WasmType>,
+    statements: &mut Vec<Statement<()>>,
     logger: &mut FileLogger,
-) -> Option<Module<()>> {
-    module_with_prelude(module_node, logger, &[])
-}
-
-pub fn module_with_prelude(
-    module_node: ast::Module,
-    logger: &mut FileLogger,
-    prelude: &[(Path, NameSpace)],
-) -> Option<Module<()>> {
-    let name = module_node.name_text()?;
-    let module_name = name.clone();
-    let mut module_scope = ModuleScope::new(name.clone());
-    for (path, namespace) in prelude {
-        if path.major == module_name {
-            module_scope.predefine(path.clone(), *namespace);
-        }
-    }
-    let mut wasm_type_defs: IndexMap<String, WasmType> = IndexMap::new();
-    let mut statements = Vec::new();
-    for statement in module_node.statements() {
+    ast_statements: &[ast::Statement],
+) -> Option<()> {
+    for statement in ast_statements {
         let comments = statement.leading_comment_text();
         let statement = match statement {
             ast::Statement::Let(let_statement) => {
                 Statement::Term(Term {
                     comments,
                     kind: TermKind::Let {
-                        assignee: pattern(&mut module_scope, logger, let_statement.pattern()?)?,
-                        value: term(
-                            &mut module_scope,
-                            &wasm_type_defs,
-                            logger,
-                            let_statement.value()?,
-                        )?
-                        .into(),
+                        assignee: pattern(module_scope, logger, let_statement.pattern()?)?,
+                        value: term(module_scope, wasm_type_defs, logger, let_statement.value()?)?
+                            .into(),
                         scope: ScopeKind::Global,
                         then: Term::unit().into(),
                         else_: Term::unreachable().into(),
@@ -174,7 +155,7 @@ pub fn module_with_prelude(
                     TypeDeclKind::Named
                 };
                 if kind == TypeDeclKind::Named {
-                    define_sum_constructors(&mut module_scope, &type_def)?;
+                    define_sum_constructors(module_scope, &type_def)?;
                 }
                 let mut parameter_scope = module_scope.nest_scope();
                 Statement::Type {
@@ -232,17 +213,17 @@ pub fn module_with_prelude(
                         module_scope.query_string(ident.name_text_spanned()?, NameSpace::Type)
                     }
                     ast::PathOrIdent::Path(path) => {
-                        module_scope.query_path(
-                            Path::new(path.qualifier()?, path.name_text()?).with_span(path.span()),
-                            NameSpace::Type,
-                        )
+                        let resolved = module_scope
+                            .resolve_path(&path, NameSpace::Type, path.span())?
+                            .with_span(path.span());
+                        module_scope.query_path(resolved, NameSpace::Type)
                     }
                 };
 
                 let arguments = impl_statement
                     .type_args()
                     .into_iter()
-                    .map(|arg| type_expr(&mut module_scope, arg))
+                    .map(|arg| type_expr(module_scope, arg))
                     .collect::<Option<Box<[_]>>>()?;
 
                 let mut impl_scope = module_scope.nest_scope();
@@ -251,8 +232,7 @@ pub fn module_with_prelude(
                     .into_iter()
                     .map(|method| {
                         let method_name = method.name_text_spanned()?;
-                        let trait_method =
-                            Path::new(module_name.clone(), method_name.inner.clone());
+                        let trait_method = trait_path.sibling(&method_name.inner);
                         impl_scope.query_path(
                             trait_method.clone().with_span(method_name.span),
                             NameSpace::Term,
@@ -261,7 +241,7 @@ pub fn module_with_prelude(
                         Some(ImplMethod {
                             trait_method,
                             impl_path,
-                            value: term(&mut impl_scope, &wasm_type_defs, logger, method.value()?)?,
+                            value: term(&mut impl_scope, wasm_type_defs, logger, method.value()?)?,
                             span: method.span(),
                         })
                     })
@@ -277,15 +257,69 @@ pub fn module_with_prelude(
             ast::Statement::Wasm(wasm_statement) => {
                 Statement::Wasm(wasm::build_toplevel(
                     &wasm_statement.sexpr()?,
-                    &module_name,
-                    &mut wasm_type_defs,
+                    module_name,
+                    wasm_type_defs,
                     logger,
-                    &mut module_scope,
+                    module_scope,
                 ))
+            }
+            ast::Statement::Use(use_statement) => {
+                module_scope.register_use(
+                    use_statement.target()?,
+                    use_statement.alias_name_spanned(),
+                    use_statement.span(),
+                )?;
+                continue;
+            }
+            ast::Statement::Module(nested_module) => {
+                module_scope.enter_module(nested_module.name_text_spanned()?);
+                let lowered = lower_module_statements(
+                    module_scope,
+                    module_name,
+                    wasm_type_defs,
+                    statements,
+                    logger,
+                    &nested_module.statements(),
+                );
+                module_scope.leave_module();
+                lowered?;
+                continue;
             }
         };
         statements.push(statement);
     }
+    Some(())
+}
+
+pub fn module(
+    module_node: ast::Module,
+    logger: &mut FileLogger,
+) -> Option<Module<()>> {
+    module_with_prelude(module_node, logger, &[])
+}
+
+pub fn module_with_prelude(
+    module_node: ast::Module,
+    logger: &mut FileLogger,
+    prelude: &[(Path, NameSpace)],
+) -> Option<Module<()>> {
+    let name = module_node.name_text()?;
+    let module_name = name.clone();
+    let mut module_scope = ModuleScope::new(name.clone());
+    for (path, namespace) in prelude {
+        module_scope.predefine(path.clone(), *namespace);
+    }
+    module_scope.register_implicit_open_use(&["core", "prelude"]);
+    let mut wasm_type_defs: IndexMap<String, WasmType> = IndexMap::new();
+    let mut statements = Vec::new();
+    lower_module_statements(
+        &mut module_scope,
+        &module_name,
+        &mut wasm_type_defs,
+        &mut statements,
+        logger,
+        &module_node.statements(),
+    )?;
     module_scope.report_name_resolution_errors(logger);
     Some(Module {
         name,

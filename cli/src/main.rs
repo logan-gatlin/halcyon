@@ -150,6 +150,32 @@ fn decode_hex_nibble(ch: char) -> Option<u32> {
     }
 }
 
+fn name_resolution_prelude(symbols: &SymbolTable) -> Vec<(ir::Path, ir::NameSpace)> {
+    let mut prelude = Vec::new();
+    prelude.extend(
+        symbols
+            .terms()
+            .keys()
+            .cloned()
+            .map(|path| (path, ir::NameSpace::Term)),
+    );
+    prelude.extend(
+        symbols
+            .type_definitions()
+            .keys()
+            .cloned()
+            .map(|path| (path, ir::NameSpace::Type)),
+    );
+    prelude.extend(
+        symbols
+            .trait_defs()
+            .keys()
+            .cloned()
+            .map(|path| (path, ir::NameSpace::Type)),
+    );
+    prelude
+}
+
 fn report_cycle_diagnostic(
     file_logger: &mut halcyon_lib::FileLogger,
     span: halcyon_lib::Span,
@@ -228,12 +254,18 @@ fn compile_file_with_imports(
                     }
                 }
                 ast::TopLevelItem::Module(module) => {
-                    if let Some(ir_module) = ir::module(module, &mut file_logger) {
+                    let prelude = name_resolution_prelude(symbols);
+                    if let Some(ir_module) =
+                        ir::module_with_prelude(module, &mut file_logger, &prelude)
+                    {
                         let resolved = types::resolve_module_with_symbols_and_schemes(
                             symbols,
                             ir_module,
                             &mut file_logger,
                         );
+                        if !file_logger.is_ok() {
+                            continue;
+                        }
                         let elaborated = ir::elaborate_module(resolved, symbols);
                         let artifact = halcyon_lib::asm::compile_module(elaborated, symbols);
                         artifacts.push(validate_artifact(artifact, logger));
@@ -394,7 +426,10 @@ fn generate_docs_for_file_with_imports(
                     }
                 }
                 ast::TopLevelItem::Module(module) => {
-                    if let Some(ir_module) = ir::module(module, &mut file_logger) {
+                    let prelude = name_resolution_prelude(symbols);
+                    if let Some(ir_module) =
+                        ir::module_with_prelude(module, &mut file_logger, &prelude)
+                    {
                         let resolved = types::resolve_module_with_symbols_and_schemes(
                             symbols,
                             ir_module,

@@ -125,7 +125,12 @@ pub fn pattern(
                                 NameSpace::Constructor,
                             )
                         }
-                        ast::PathOrIdent::Path(pat_path) => pat_path.try_into().ok()?,
+                        ast::PathOrIdent::Path(pat_path) => {
+                            let resolved = scope
+                                .resolve_path(&pat_path, NameSpace::Constructor, pat_path.span())?
+                                .with_span(pat_path.span());
+                            scope.query_path(resolved, NameSpace::Constructor)
+                        }
                     },
                     pattern(scope, logger, constructor.payload()?)?.into(),
                 )
@@ -137,13 +142,10 @@ pub fn pattern(
                 )
             }
             ast::Pattern::Path(pat_path) => {
-                PatternKind::ConstConstructor(
-                    scope.query_path(
-                        Path::new(pat_path.qualifier()?, pat_path.name_text()?)
-                            .with_span(pat_path.span()),
-                        NameSpace::Constructor,
-                    ),
-                )
+                let resolved = scope
+                    .resolve_path(&pat_path, NameSpace::Constructor, pat_path.span())?
+                    .with_span(pat_path.span());
+                PatternKind::ConstConstructor(scope.query_path(resolved, NameSpace::Constructor))
             }
         },
     })

@@ -151,6 +151,7 @@ fn is_ident_token(kind: SyntaxKind) -> bool {
             | SyntaxKind::MODULE_KW
             | SyntaxKind::IMPORT_KW
             | SyntaxKind::USE_KW
+            | SyntaxKind::AS_KW
             | SyntaxKind::END_KW
             | SyntaxKind::MATCH_KW
             | SyntaxKind::WITH_KW
@@ -170,5 +171,6 @@ fn is_ident_token(kind: SyntaxKind) -> bool {
             | SyntaxKind::NOT_KW
             | SyntaxKind::FN_KW
             | SyntaxKind::WASM_KW
+            | SyntaxKind::ROOT_KW
     )
 }

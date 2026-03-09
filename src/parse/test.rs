@@ -91,12 +91,12 @@ fn lex_symbols() {
 fn lex_keywords() {
     use SyntaxKind::*;
     let tokens = lex(
-        "module import use end match with let type trait impl do of in if then else and or xor not true false fn wasm for",
+        "module import use as end match with let type trait impl do of in if then else and or xor not true false fn wasm for where root",
     );
     let expected = vec![
-        MODULE_KW, IMPORT_KW, USE_KW, END_KW, MATCH_KW, WITH_KW, LET_KW, TYPE_KW, TRAIT_KW,
+        MODULE_KW, IMPORT_KW, USE_KW, AS_KW, END_KW, MATCH_KW, WITH_KW, LET_KW, TYPE_KW, TRAIT_KW,
         IMPL_KW, DO_KW, OF_KW, IN_KW, IF_KW, THEN_KW, ELSE_KW, AND_KW, OR_KW, XOR_KW, NOT_KW,
-        TRUE_KW, FALSE_KW, FN_KW, WASM_KW, FOR_KW,
+        TRUE_KW, FALSE_KW, FN_KW, WASM_KW, FOR_KW, WHERE_KW, ROOT_KW,
     ];
     assert_eq!(tokens, expected);
 }
@@ -290,6 +290,11 @@ fn parse_module_structure() {
 }
 
 #[test]
+fn parse_nested_module_statement() {
+    assert_no_errors("module Foo =\n  module Bar =\n    let x = 1\n  end\nend");
+}
+
+#[test]
 fn parse_top_level_import_statement() {
     let tree_str = parse_to_string("import \"./dep.hc\"\nmodule Main = end");
     assert!(
@@ -310,6 +315,31 @@ fn parse_top_level_import_multiple_paths() {
 #[test]
 fn parse_import_inside_module_is_error() {
     assert_has_errors("module Main =\n  import \"./dep.hc\"\nend");
+}
+
+#[test]
+fn parse_use_inside_module() {
+    assert_no_errors("module Main =\n  use core\n  let x = default\nend");
+}
+
+#[test]
+fn parse_use_with_alias_inside_module() {
+    assert_no_errors("module Main =\n  use core as c\n  let x = c::default\nend");
+}
+
+#[test]
+fn parse_use_expr() {
+    assert_no_errors("module Main =\n  let x = use core in default\nend");
+}
+
+#[test]
+fn parse_use_expr_with_alias() {
+    assert_no_errors("module Main =\n  let x = use core as c in c::default\nend");
+}
+
+#[test]
+fn parse_top_level_use_is_error() {
+    assert_has_errors("use core\nmodule Main = end");
 }
 
 #[test]
@@ -394,7 +424,7 @@ fn parse_impl_statement_multiple_comma_args() {
 
 #[test]
 fn parse_impl_statement_with_forall_argument() {
-    assert_no_errors("module M =\n  impl Id : for a. a =\n    let id = fn x => x\n  end\nend");
+    assert_no_errors("module M =\n  impl Id : for a in a =\n    let id = fn x => x\n  end\nend");
 }
 
 #[test]
@@ -612,6 +642,75 @@ fn ast_module_statements() {
         matches!(stmts[1], ast::Statement::Type(_)),
         "Second should be Type"
     );
+}
+
+#[test]
+fn ast_use_statement_accessors() {
+    let sf = parse_source_file("module M =\n  use root::core\nend");
+    let m = &sf.modules()[0];
+    let stmts = m.statements();
+    assert_eq!(stmts.len(), 1, "Should have 1 statement");
+    let ast::Statement::Use(ref use_stmt) = stmts[0] else {
+        panic!("expected use statement");
+    };
+    let target = use_stmt.target().expect("use should have target");
+    let ast::PathOrIdent::Path(path) = target else {
+        panic!("expected path target");
+    };
+    assert!(path.is_rooted(), "use target should be rooted");
+    assert_eq!(path.segments(), vec!["core"]);
+}
+
+#[test]
+fn ast_use_statement_alias_accessor() {
+    let sf = parse_source_file("module M =\n  use core as c\nend");
+    let m = &sf.modules()[0];
+    let ast::Statement::Use(ref use_stmt) = m.statements()[0] else {
+        panic!("expected use statement");
+    };
+    assert_eq!(
+        use_stmt
+            .alias_name_spanned()
+            .map(|alias| alias.inner)
+            .as_deref(),
+        Some("c")
+    );
+}
+
+#[test]
+fn ast_use_expr_accessors() {
+    let sf = parse_source_file("module M =\n  let x = use core as c in c::default\nend");
+    let ast::Statement::Let(ref let_stmt) = sf.modules()[0].statements()[0] else {
+        panic!("expected let statement");
+    };
+    let ast::Expr::Use(ref use_expr) = let_stmt.value().expect("let should have value") else {
+        panic!("expected use expression");
+    };
+    let ast::PathOrIdent::Ident(target) = use_expr.target().expect("use should have target") else {
+        panic!("expected ident use target");
+    };
+    assert_eq!(target.name_text().as_deref(), Some("core"));
+    assert_eq!(
+        use_expr
+            .alias_name_spanned()
+            .map(|alias| alias.inner)
+            .as_deref(),
+        Some("c")
+    );
+    assert!(use_expr.body().is_some(), "use expression should have body");
+}
+
+#[test]
+fn ast_module_can_contain_nested_module_statements() {
+    let sf = parse_source_file("module M =\n  module N =\n    let x = 1\n  end\nend");
+    let outer = &sf.modules()[0];
+    let stmts = outer.statements();
+    assert_eq!(stmts.len(), 1, "Should have one statement");
+    let ast::Statement::Module(ref inner) = stmts[0] else {
+        panic!("expected nested module statement");
+    };
+    assert_eq!(inner.name_text().as_deref(), Some("N"));
+    assert_eq!(inner.statements().len(), 1);
 }
 
 #[test]
@@ -996,6 +1095,36 @@ fn ast_path_expr() {
         panic!("expected path");
     };
     assert_eq!(pe.segments().len(), 2);
+    assert_eq!(pe.qualifier().as_deref(), Some("Foo"));
+    assert_eq!(pe.name_text().as_deref(), Some("bar"));
+}
+
+#[test]
+fn ast_path_expr_with_multiple_segments() {
+    let sf = parse_source_file("module M =\n  let x = Foo::Bar::baz\nend");
+    let ast::Statement::Let(ref ls) = sf.modules()[0].statements()[0] else {
+        panic!("expected let");
+    };
+    let ast::Expr::Path(ref pe) = ls.value().unwrap() else {
+        panic!("expected path");
+    };
+    assert_eq!(pe.segments(), vec!["Foo", "Bar", "baz"]);
+    assert_eq!(pe.qualifier().as_deref(), Some("Foo::Bar"));
+    assert_eq!(pe.name_text().as_deref(), Some("baz"));
+    assert!(!pe.is_rooted(), "unrooted path should not be rooted");
+}
+
+#[test]
+fn ast_rooted_path_expr() {
+    let sf = parse_source_file("module M =\n  let x = root::Foo::bar\nend");
+    let ast::Statement::Let(ref ls) = sf.modules()[0].statements()[0] else {
+        panic!("expected let");
+    };
+    let ast::Expr::Path(ref pe) = ls.value().unwrap() else {
+        panic!("expected path");
+    };
+    assert!(pe.is_rooted(), "root-prefixed path should be rooted");
+    assert_eq!(pe.segments(), vec!["Foo", "bar"]);
     assert_eq!(pe.qualifier().as_deref(), Some("Foo"));
     assert_eq!(pe.name_text().as_deref(), Some("bar"));
 }
@@ -1694,7 +1823,7 @@ fn leading_comment_text_concatenated() {
 
 #[test]
 fn parse_forall_type_annotation() {
-    let tree_str = parse_to_string("module M =\n  let (id: for a. a -> a) = fn x => x\nend");
+    let tree_str = parse_to_string("module M =\n  let (id: for a in a -> a) = fn x => x\nend");
     assert!(
         tree_str.contains("FORALL_TYPE"),
         "Should contain FORALL_TYPE"
@@ -1703,22 +1832,22 @@ fn parse_forall_type_annotation() {
 
 #[test]
 fn round_trip_forall_type_annotation() {
-    assert_round_trip("module M =\n  let (id: for a. a -> a) = fn x => x\nend\n");
+    assert_round_trip("module M =\n  let (id: for a in a -> a) = fn x => x\nend\n");
 }
 
 #[test]
 fn round_trip_forall_type_annotation_multi_params() {
-    assert_round_trip("module M =\n  let (f: for a b. a -> b -> a) = fn x y => x\nend\n");
+    assert_round_trip("module M =\n  let (f: for a b in a -> b -> a) = fn x y => x\nend\n");
 }
 
 #[test]
 fn parse_forall_type_annotation_no_errors() {
-    assert_no_errors("module M =\n  let (id: for a. a -> a) = fn x => x\nend");
+    assert_no_errors("module M =\n  let (id: for a in a -> a) = fn x => x\nend");
 }
 
 #[test]
 fn ast_forall_type_accessors() {
-    let sf = parse_source_file("module M =\n  type f = for a b. a -> b\nend");
+    let sf = parse_source_file("module M =\n  type f = for a b in a -> b where Eq a, Show b\nend");
     let ast::Statement::Type(ref ts) = sf.modules()[0].statements()[0] else {
         panic!("expected type statement");
     };
@@ -1733,5 +1862,6 @@ fn ast_forall_type_accessors() {
     assert_eq!(params.len(), 2);
     assert_eq!(params[0].name_text().as_deref(), Some("a"));
     assert_eq!(params[1].name_text().as_deref(), Some("b"));
+    assert_eq!(fa.constraints().len(), 2);
     assert!(fa.body().is_some(), "should have body type");
 }

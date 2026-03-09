@@ -749,14 +749,14 @@ module core =
   let [<=] = fn left right => if left < right then true else left == right
   let [>=] = fn left right => if left > right then true else left == right
 
-  let array_empty : for a . array a = (wasm : for a . array a) => (
+  let array_empty : for a in array a = (wasm : for a in array a) => (
     i32.const 0
     array.new_default any
   )
 
-  let array_concat : for a . array a -> array a -> array a =
-    fn (left : for a . array a) (right : for a . array a) =>
-      (wasm : for a . array a) => (
+  let array_concat : for a in array a -> array a -> array a =
+    fn left right =>
+      (wasm : for a in array a) => (
         (local $left (array any))
         (local $right (array any))
         (local $left_len i32)
@@ -802,9 +802,9 @@ module core =
         get $result
       )
 
-  let array_push : for a . a -> array a -> array a =
-    fn (value : for a . a) (arr : for a . array a) =>
-      (wasm : for a . array a) => (
+  let array_push : for a in a -> array a -> array a =
+    fn value arr =>
+      (wasm : for a in array a) => (
         (local $arr (array any))
         (local $len i32)
         (local $result (array any))
@@ -898,7 +898,7 @@ module core =
     struct.new $unit
   )
 
-  impl add : for a. array a =
+  impl add : for a in array a =
     let [+] = fn left right => array_concat left right
   end
 
@@ -926,7 +926,7 @@ module core =
     let default = ""
   end
 
-  impl default : for a . array a =
+  impl default : for a in array a =
     let default = []
   end
 

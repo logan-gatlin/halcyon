@@ -1,3 +1,5 @@
+//! Diagnostic rendering helpers for resolve/typechecking errors.
+
 use std::collections::HashSet;
 
 use crate::logging::WithContext;
@@ -18,10 +20,10 @@ use super::{
 pub(super) fn log_term_duplicates(
     logger: &mut FileLogger,
     symbols: &SymbolTable,
-    definitions: &[(Path, Span)],
+    candidate_definitions: &[(Path, Span)],
 ) {
     let mut seen = HashSet::new();
-    for (path, span) in definitions.iter() {
+    for (path, span) in candidate_definitions {
         if !seen.insert(path.clone()) {
             continue;
         }
@@ -31,6 +33,7 @@ pub(super) fn log_term_duplicates(
     }
 }
 
+/// Emit a duplicate-definition error for a specific symbol kind.
 pub(super) fn log_duplicate_definition(
     logger: &mut FileLogger,
     span: Span,
@@ -43,6 +46,7 @@ pub(super) fn log_duplicate_definition(
         .done();
 }
 
+/// Emit diagnostics for trait-resolution errors.
 pub(super) fn log_trait_error(
     logger: &mut FileLogger,
     span: Span,
@@ -122,6 +126,7 @@ pub(super) fn log_trait_error(
     }
 }
 
+/// Emit diagnostics for inference/type-checking errors.
 pub(super) fn log_type_error(
     logger: &mut FileLogger,
     error: TypeError,
@@ -162,6 +167,15 @@ pub(super) fn log_type_error(
                 )
                 .done();
         }
+        TypeError::TraitConstraintsNotAllowed { span } => {
+            logger
+                .error("Trait constraints are not allowed in this type")
+                .primary(
+                    "`where` constraints are only valid in quantified type annotations that produce schemes.",
+                    span,
+                )
+                .done();
+        }
         TypeError::NotAFunction { type_, span } => {
             logger
                 .error("Not a function")
@@ -172,6 +186,33 @@ pub(super) fn log_type_error(
             logger
                 .error("Invalid type scheme")
                 .primary("A type scheme could not be instantiated.", span)
+                .done();
+        }
+        TypeError::HigherRankAnnotationRequired { parameter, span } => {
+            logger
+                .error("Higher-rank annotation required")
+                .primary(
+                    format!(
+                        "`{parameter}` needs an explicit type annotation to be used polymorphically; add a `for a in ...` annotation (optionally with `where`) or make its uses monomorphic."
+                    ),
+                    span,
+                )
+                .done();
+        }
+        TypeError::PolymorphicAnnotationMissingConstraints { predicates, span } => {
+            let constraints = predicates
+                .iter()
+                .map(format_trait_ref)
+                .collect::<Vec<_>>()
+                .join(", ");
+            logger
+                .error("Polymorphic annotation is missing trait constraints")
+                .primary(
+                    format!(
+                        "This definition requires trait constraints (`{constraints}`). Add them with `where` (for example `for a in ... where ...`) or remove the explicit annotation."
+                    ),
+                    span,
+                )
                 .done();
         }
         TypeError::Unification { error, span } => {
@@ -196,6 +237,7 @@ pub(super) fn log_type_error(
     }
 }
 
+/// Emit diagnostics for shared type-expression lowering errors.
 pub(super) fn log_type_expr_lower_error(
     logger: &mut FileLogger,
     error: TypeExprLowerError,
@@ -229,6 +271,15 @@ pub(super) fn log_type_expr_lower_error(
                 .error("Invalid placeholder type")
                 .primary(
                     "`_` placeholder types are only allowed in local annotations.",
+                    span,
+                )
+                .done();
+        }
+        TypeExprLowerError::TraitConstraintsNotAllowed { span } => {
+            logger
+                .error("Trait constraints are not allowed in this type")
+                .primary(
+                    "`where` constraints are only valid in quantified type annotations that produce schemes.",
                     span,
                 )
                 .done();

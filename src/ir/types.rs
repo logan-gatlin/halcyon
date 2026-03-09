@@ -14,8 +14,15 @@ pub enum TypeDeclKind {
 pub enum TypeExprKind {
     Tuple(Box<[TypeExpr]>),
     Instantiation(Path, Box<[TypeExpr]>),
-    ForAll(Box<[Path]>, Box<TypeExpr>),
+    ForAll(Box<[Path]>, Box<[TypeExprConstraint]>, Box<TypeExpr>),
     Placeholder,
+}
+
+#[derive(Debug, Clone)]
+pub struct TypeExprConstraint {
+    pub trait_name: Path,
+    pub arguments: Box<[TypeExpr]>,
+    pub span: Span,
 }
 
 impl TypeExprKind {
@@ -119,7 +126,7 @@ pub fn type_expr(
             }
             ast::TypeExpr::Path(path_expr) => {
                 let span = path_expr.span();
-                let path = Path::try_from(path_expr).ok()?;
+                let path = scope.resolve_path(&path_expr, NameSpace::Type, span)?;
                 scope.query_path(path.clone().with_span(span), NameSpace::Type);
                 TypeExprKind::alias(path)
             }
@@ -160,8 +167,36 @@ pub fn type_expr(
                         Some(inner_scope.define(name, NameSpace::Type))
                     })
                     .collect::<Box<[_]>>();
+                let constraints = forall_type
+                    .constraints()
+                    .into_iter()
+                    .map(|constraint| {
+                        let trait_name = match constraint.trait_name()? {
+                            ast::PathOrIdent::Ident(ident) => {
+                                inner_scope
+                                    .query_string(ident.name_text_spanned()?, NameSpace::Type)
+                            }
+                            ast::PathOrIdent::Path(path) => {
+                                let resolved = inner_scope
+                                    .resolve_path(&path, NameSpace::Type, path.span())?
+                                    .with_span(path.span());
+                                inner_scope.query_path(resolved, NameSpace::Type)
+                            }
+                        };
+                        let arguments = constraint
+                            .args()
+                            .into_iter()
+                            .map(|arg| type_expr(&mut inner_scope, arg))
+                            .collect::<Option<Box<[_]>>>()?;
+                        Some(TypeExprConstraint {
+                            trait_name,
+                            arguments,
+                            span: constraint.span(),
+                        })
+                    })
+                    .collect::<Option<Box<[_]>>>()?;
                 let body = type_expr(&mut inner_scope, forall_type.body()?)?;
-                TypeExprKind::ForAll(params, body.into())
+                TypeExprKind::ForAll(params, constraints, body.into())
             }
             ast::TypeExpr::Application(type_application) => {
                 let arguments = type_application
@@ -175,10 +210,10 @@ pub fn type_expr(
                         ast::TypeExpr::Unit(_) => CoreType::Unit.path(),
                         ast::TypeExpr::Path(path_expr) => {
                             let span = path_expr.span();
-                            scope.query_path(
-                                Path::try_from(path_expr).ok()?.with_span(span),
-                                NameSpace::Type,
-                            )
+                            let resolved = scope
+                                .resolve_path(&path_expr, NameSpace::Type, span)?
+                                .with_span(span);
+                            scope.query_path(resolved, NameSpace::Type)
                         }
                         ast::TypeExpr::Ident(ident) => {
                             scope.query_string(ident.name_text_spanned()?, NameSpace::Type)

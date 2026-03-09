@@ -1,3 +1,5 @@
+//! Trait-domain data structures shared by inference and resolution.
+
 use indexmap::IndexMap;
 
 use crate::ir::Path;
@@ -54,7 +56,7 @@ impl From<Type> for TypeScheme {
     }
 }
 
-/// Definition of a trait and its method signatures.
+/// Definition of a trait and its trait-item signatures.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TraitDef {
     pub name: Path,
@@ -84,8 +86,9 @@ impl TraitDef {
     }
 }
 
-pub(crate) fn ordered_trait_methods(def: &TraitDef) -> Vec<(Path, TypeScheme)> {
-    let mut methods = def
+/// Return trait items sorted by stable path key for deterministic lowering.
+pub(crate) fn ordered_trait_methods(trait_definition: &TraitDef) -> Vec<(Path, TypeScheme)> {
+    let mut methods = trait_definition
         .methods
         .iter()
         .map(|(path, scheme)| (path.clone(), scheme.clone()))
@@ -132,4 +135,67 @@ pub enum TraitError {
     NoInstance {
         predicate: TraitConstraint,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn type_scheme_constructors_and_from_type_match() {
+        let scheme = TypeScheme::new(Type::Integer);
+        assert!(scheme.predicates.is_empty());
+        assert_eq!(scheme.type_, Type::Integer);
+
+        let with_predicates = TypeScheme::with_predicates(
+            Type::Boolean,
+            vec![TraitRef::new(
+                Path::new("demo", "Show"),
+                vec![Type::Boolean],
+            )],
+        );
+        assert_eq!(
+            with_predicates.predicates,
+            vec![TraitRef::new(
+                Path::new("demo", "Show"),
+                vec![Type::Boolean]
+            )]
+        );
+
+        let via_from: TypeScheme = Type::Glyph.into();
+        assert_eq!(via_from.type_, Type::Glyph);
+    }
+
+    #[test]
+    fn trait_def_builder_adds_methods() {
+        let trait_def = TraitDef::new(Path::new("demo", "Eq"), 1).method(
+            Path::new("demo", "eq"),
+            Type::curry(&[Type::v(0), Type::v(0), Type::Boolean]).scheme(),
+        );
+
+        assert_eq!(trait_def.methods.len(), 1);
+        assert!(trait_def.methods.contains_key(&Path::new("demo", "eq")));
+    }
+
+    #[test]
+    fn ordered_trait_methods_are_sorted_by_path() {
+        let trait_def = TraitDef {
+            name: Path::new("demo", "Ord"),
+            parameters: 1,
+            methods: [
+                (Path::new("demo", "z"), Type::Integer.scheme()),
+                (Path::new("demo", "a"), Type::Integer.scheme()),
+                (Path::new("demo", "m"), Type::Integer.scheme()),
+            ]
+            .into_iter()
+            .collect(),
+        };
+
+        let ordered = ordered_trait_methods(&trait_def);
+        let names = ordered
+            .into_iter()
+            .map(|(path, _)| path.minor)
+            .collect::<Vec<_>>();
+        assert_eq!(names, vec!["a", "m", "z"]);
+    }
 }

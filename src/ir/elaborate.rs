@@ -245,9 +245,8 @@ fn elaborate_term(
                     .get(&binding)
                     .cloned()
                     .or_else(|| {
-                        context.scheme_env.get(&binding).and_then(|scheme| {
-                            instantiate_predicates_for_scheme(scheme, &binding_type)
-                        })
+                        let scheme = context.scheme_env.get(&binding)?;
+                        instantiate_predicates_for_scheme(scheme, &binding_type)
                     })
                     .unwrap_or_default();
                 let has_non_concrete = predicates
@@ -989,7 +988,15 @@ fn dictionary_args_for_type(
         return None;
     }
     let predicates = instantiate_predicates(&scheme.predicates, &bindings)?;
-    let predicates = sorted_predicates(&predicates);
+    dictionary_args_for_predicates(&predicates, dict_env, symbols)
+}
+
+fn dictionary_args_for_predicates(
+    predicates: &[TraitConstraint],
+    dict_env: &DictEnv,
+    symbols: &SymbolTable,
+) -> Option<Vec<Term<Type>>> {
+    let predicates = sorted_predicates(predicates);
     let mut args = Vec::new();
     for predicate in predicates {
         if let Some(binding) = find_dict_binding(dict_env, &predicate) {
@@ -1064,23 +1071,34 @@ fn dictionary_term_for_predicate(
         );
     };
     let methods = ordered_trait_methods(def);
-    let selected_impl = symbols.select_impl(predicate).ok().flatten();
+    let empty_dict_env: DictEnv = Vec::new();
     let mut fields = IndexMap::new();
     let mut field_types = IndexMap::new();
     for (method_path, scheme) in methods {
         let method_type = scheme.type_.clone();
-        let specialized_path = selected_impl
+        let specialization = symbols
+            .resolve_method_specialization(&method_path, &predicate.arguments)
+            .ok()
+            .flatten();
+        let specialized_path = specialization
             .as_ref()
-            .and_then(|impl_| impl_.methods.get(&method_path).cloned())
+            .map(|specialization| specialization.impl_method_path.clone())
             .unwrap_or_else(|| core_impl_path(&method_path, &predicate.arguments));
+        let mut field_term = Term {
+            comments: String::new(),
+            kind: TermKind::Identifier(specialized_path),
+            span: Span::Generated,
+            type_: method_type.clone(),
+        };
+        if let Some(specialization) = specialization
+            && let Some(dict_args) =
+                dictionary_args_for_predicates(&specialization.predicates, &empty_dict_env, symbols)
+        {
+            field_term = apply_explicit_arguments(field_term, dict_args);
+        }
         fields.insert(
             method_path.minor.clone().with_span(Span::Generated),
-            Term {
-                comments: String::new(),
-                kind: TermKind::Identifier(specialized_path),
-                span: Span::Generated,
-                type_: method_type.clone(),
-            },
+            field_term,
         );
         field_types.insert(method_path.minor, method_type);
     }

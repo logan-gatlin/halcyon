@@ -1,9 +1,9 @@
-use super::instantiation::instantiate_forall_strict;
-use super::*;
-use crate::ir::Path;
+//! Core type representation tests.
+
 use indexmap::IndexMap;
 
-use super::unify::UnificationTable;
+use super::*;
+use crate::ir::Path;
 
 fn named(
     module: &str,
@@ -23,174 +23,252 @@ fn fields(pairs: Vec<(&str, Type)>) -> IndexMap<String, Type> {
         .collect()
 }
 
-fn list_of(inner: Type) -> Type {
-    let list_type = Type::Named {
-        name: Path::new("test", "List"),
-        body: Box::new(Type::Unit),
+#[test]
+fn named_equality_is_nominal() {
+    let left = named("demo", "Box", Type::Integer);
+    let right_same_name = named("demo", "Box", Type::Boolean);
+    let right_other_name = named("demo", "Crate", Type::Integer);
+
+    assert_eq!(left, right_same_name);
+    assert_ne!(left, right_other_name);
+}
+
+#[test]
+fn empty_apply_layers_are_ignored_for_equality() {
+    let base = named("demo", "List", Type::Unit);
+    let wrapped = Type::Apply {
+        constructor: Box::new(Type::Apply {
+            constructor: Box::new(base.clone()),
+            arguments: Vec::new(),
+        }),
+        arguments: Vec::new(),
     };
-    Type::Apply {
-        constructor: Box::new(list_type),
-        arguments: vec![inner],
+
+    assert_eq!(wrapped, base);
+}
+
+#[test]
+fn non_empty_apply_preserves_application() {
+    let applied = Type::Integer.apply(vec![Type::Boolean]);
+    assert!(matches!(applied, Type::Apply { .. }));
+}
+
+#[test]
+fn normalize_empty_apply_strips_nested_empty_layers() {
+    let type_ = Type::Apply {
+        constructor: Box::new(Type::Apply {
+            constructor: Box::new(Type::Integer),
+            arguments: Vec::new(),
+        }),
+        arguments: Vec::new(),
+    };
+    assert_eq!(normalize_empty_apply(type_), Type::Integer);
+}
+
+#[test]
+fn for_each_child_type_respects_named_body_flag() {
+    let type_ = named(
+        "demo",
+        "Pair",
+        Type::Tuple(vec![Type::Integer, Type::Boolean]),
+    );
+
+    let mut without_body = 0;
+    for_each_child_type(&type_, false, |_| without_body += 1);
+
+    let mut with_body = 0;
+    for_each_child_type(&type_, true, |_| with_body += 1);
+
+    assert_eq!(without_body, 0);
+    assert_eq!(with_body, 1);
+}
+
+#[test]
+fn type_transform_walk_tracks_forall_depth() {
+    struct DepthTracker {
+        depth: u32,
+        max_depth: u32,
     }
-}
 
-#[test]
-fn nominal_equality_ignores_body() {
-    let left = named("core", "List", Type::Integer);
-    let right = named("core", "List", Type::Boolean);
-    assert_eq!(left, right);
-}
+    impl TypeTransform for DepthTracker {
+        fn enter_forall(&mut self) {
+            self.depth += 1;
+            self.max_depth = self.max_depth.max(self.depth);
+        }
 
-#[test]
-fn nominal_equality_distinguishes_names() {
-    let left = named("core", "List", Type::Integer);
-    let right = named("core", "Tree", Type::Integer);
-    assert_ne!(left, right);
-}
-
-#[test]
-fn nominal_not_equal_structural() {
-    let fields = [("value".to_string(), Type::Integer)]
-        .into_iter()
-        .collect::<IndexMap<_, _>>();
-    let structural = Type::Struct {
-        fields: fields.clone(),
-    };
-    let nominal = named("core", "Box", Type::Struct { fields });
-    assert_ne!(nominal, structural);
-}
-
-#[test]
-fn apply_empty_arguments_equates_constructor() {
-    let nominal = named("core", "List", Type::Unit);
-    let applied = Type::Apply {
-        constructor: Box::new(nominal.clone()),
-        arguments: vec![],
-    };
-    assert_eq!(applied, nominal);
-
-    let applied_primitive = Type::Apply {
-        constructor: Box::new(Type::Integer),
-        arguments: vec![],
-    };
-    assert_eq!(applied_primitive, Type::Integer);
-}
-
-#[test]
-fn apply_nonempty_arguments_not_equal_constructor() {
-    let applied = Type::Apply {
-        constructor: Box::new(Type::Integer),
-        arguments: vec![Type::Boolean],
-    };
-    assert_ne!(applied, Type::Integer);
-}
-
-#[test]
-fn empty_apply_unifies_like_constructor() {
-    let mut table = UnificationTable::default();
-    let constructor = named("core", "List", Type::Unit);
-    let applied = Type::Apply {
-        constructor: Box::new(constructor.clone()),
-        arguments: vec![],
-    };
-    assert!(table.unify(&applied, &constructor).is_ok());
-}
-
-#[test]
-fn type_transform_canonicalizes_empty_apply() {
-    let apply = Type::Apply {
-        constructor: Box::new(Type::Integer),
-        arguments: vec![],
-    };
-    let transformed = apply
-        .shift_type_vars(0, 0)
-        .expect("identity transform succeeds");
-    assert_eq!(transformed, Type::Integer);
-}
-
-#[test]
-fn applied_named_type_does_not_unify_structurally() {
-    let mut table = UnificationTable::default();
-    let core_function = Type::Named {
-        name: Path::new("core", "function"),
-        body: Box::new(Type::function()),
+        fn leave_forall(&mut self) {
+            self.depth -= 1;
+        }
     }
-    .apply(vec![Type::Integer, Type::Integer]);
-    let direct_function = Type::func(Type::Integer, Type::Integer);
-    assert!(table.unify(&core_function, &direct_function).is_err());
+
+    let type_ = Type::func(Type::v(1), Type::v(0)).for_all(2);
+    let mut tracker = DepthTracker {
+        depth: 0,
+        max_depth: 0,
+    };
+    tracker.walk(&type_);
+
+    assert_eq!(tracker.depth, 0);
+    assert_eq!(tracker.max_depth, 2);
 }
 
 #[test]
-fn named_struct_does_not_unify_with_direct_struct() {
-    let mut table = UnificationTable::default();
-    let named_struct = named(
-        "test",
-        "Point",
+fn named_transform_hook_can_replace_named_node() {
+    struct ExpandNamed;
+
+    impl TypeTransform for ExpandNamed {
+        fn named(
+            &mut self,
+            _name: &Path,
+            body: &Type,
+        ) -> Option<Type> {
+            self.transform(body)
+        }
+    }
+
+    let type_ = named(
+        "demo",
+        "Wrapped",
         Type::Struct {
-            fields: fields(vec![("x", Type::Integer)]),
+            fields: fields(vec![("value", Type::Integer)]),
         },
     );
-    let direct_struct = Type::Struct {
-        fields: fields(vec![("x", Type::Integer)]),
-    };
-    assert!(table.unify(&named_struct, &direct_struct).is_err());
+    let transformed = ExpandNamed
+        .transform(&type_)
+        .expect("transform should succeed");
+
+    assert!(matches!(transformed, Type::Struct { .. }));
 }
 
 #[test]
-fn shift_type_vars_respects_binder() {
-    let original = Type::func(Type::v(0), Type::v(0).for_all(1));
-    let shifted = original.shift_type_vars(1, 0).expect("shift succeeds");
-    let expected = Type::func(Type::v(1), Type::v(0).for_all(1));
+fn apply_transform_hook_can_abort() {
+    struct RejectApply;
+
+    impl TypeTransform for RejectApply {
+        fn apply(
+            &mut self,
+            _constructor: &Type,
+            _arguments: &[Type],
+        ) -> Option<Type> {
+            None
+        }
+    }
+
+    let type_ = Type::array().apply(vec![Type::Integer]);
+    assert!(RejectApply.transform(&type_).is_none());
+}
+
+#[test]
+fn shift_type_vars_respects_cutoff_and_forall() {
+    let original = Type::func(Type::v(0), Type::func(Type::v(1), Type::v(0)).for_all(1));
+    let shifted = original
+        .shift_type_vars(1, 0)
+        .expect("shift should succeed");
+
+    let expected = Type::func(Type::v(1), Type::func(Type::v(2), Type::v(0)).for_all(1));
     assert_eq!(shifted, expected);
 }
 
 #[test]
 fn shift_type_vars_underflow_returns_none() {
-    let original = Type::v(0);
-    assert!(original.shift_type_vars(-1, 0).is_none());
+    assert!(Type::v(0).shift_type_vars(-1, 0).is_none());
 }
 
 #[test]
-fn substitute_type_var_respects_binder() {
-    let original = Type::func(Type::v(0), Type::v(1)).for_all(1);
-    let replaced = original
+fn substitute_type_var_respects_binder_depth() {
+    let type_ = Type::func(Type::v(0), Type::v(1)).for_all(1);
+    let replaced = type_
         .substitute_type_var(0, &Type::Integer)
-        .expect("substitution succeeds");
-    let expected = Type::func(Type::v(0), Type::Integer).for_all(1);
-    assert_eq!(replaced, expected);
+        .expect("substitution should succeed");
+
+    assert_eq!(replaced, Type::func(Type::v(0), Type::Integer).for_all(1));
 }
 
 #[test]
-fn substitute_type_var_shifts_replacement() {
-    let original = Type::v(1).for_all(1);
+fn substitute_type_var_shifts_replacement_under_forall() {
+    let type_ = Type::v(1).for_all(1);
     let replacement = Type::func(Type::v(0), Type::v(0));
-    let replaced = original
+    let replaced = type_
         .substitute_type_var(0, &replacement)
-        .expect("substitution succeeds");
-    let expected = Type::func(Type::v(1), Type::v(1)).for_all(1);
-    assert_eq!(replaced, expected);
+        .expect("substitution should succeed");
+
+    assert_eq!(replaced, Type::func(Type::v(1), Type::v(1)).for_all(1));
 }
 
 #[test]
-fn instantiate_forall_strict_accepts_type_var_arguments() {
-    let instantiated = instantiate_forall_strict(&Type::function(), &[Type::v(0), Type::v(0)])
-        .expect("instantiation succeeds");
-    let expected = Type::func(Type::v(0), Type::v(0));
-    assert_eq!(instantiated, expected);
-}
-
-#[test]
-fn pretty_prints_named_application() {
-    let nominal = named("core", "List", Type::Unit);
-    let applied = Type::Apply {
-        constructor: Box::new(nominal),
-        arguments: vec![Type::Integer],
+fn open_forall_opens_outermost_binder() {
+    let forall = Type::func(Type::v(0), Type::v(1)).for_all(2);
+    let Type::ForAll(body) = forall else {
+        panic!("expected forall type");
     };
-    assert_eq!(applied.pretty(), "core::List integer");
+    let opened = body
+        .open_forall(&Type::Integer)
+        .expect("open_forall should succeed");
+
+    assert_eq!(opened, Type::func(Type::v(0), Type::Integer).for_all(1));
 }
 
 #[test]
-fn pretty_prints_letter_sequence() {
+fn helper_type_constructors_build_expected_shapes() {
+    assert_eq!(Type::array(), Type::Array(Box::new(Type::v(0))).for_all(1));
+    assert_eq!(
+        Type::function(),
+        Type::func(Type::v(1), Type::v(0)).for_all(2)
+    );
+}
+
+#[test]
+fn curry_builds_right_associative_function_types() {
+    assert_eq!(Type::curry(&[]), Type::Unit);
+    assert_eq!(Type::curry(&[Type::Integer]), Type::Integer);
+    assert_eq!(
+        Type::curry(&[Type::Integer, Type::Boolean, Type::String]),
+        Type::func(Type::Integer, Type::func(Type::Boolean, Type::String))
+    );
+}
+
+#[test]
+fn scheme_helpers_attach_predicates() {
+    let predicate = TraitRef::new(Path::new("demo", "Eq"), vec![Type::Integer]);
+    let scheme = Type::Integer.scheme_with_predicates(vec![predicate.clone()]);
+
+    assert_eq!(scheme.type_, Type::Integer);
+    assert_eq!(scheme.predicates, vec![predicate]);
+}
+
+#[test]
+fn pretty_prints_struct_constraint_modes() {
+    let exact = Type::StructConstraint {
+        fields: fields(vec![("x", Type::Integer)]),
+        mode: StructMatch::Exact,
+    };
+    let at_least = Type::StructConstraint {
+        fields: fields(vec![("x", Type::Integer)]),
+        mode: StructMatch::AtLeast,
+    };
+
+    assert_eq!(exact.pretty(), "{x: integer}");
+    assert_eq!(at_least.pretty(), "{x: integer, ..}");
+}
+
+#[test]
+fn pretty_prints_sum_and_function_with_wrapping() {
+    let sum = Type::Sum {
+        variants: fields(vec![
+            ("none", Type::Unit),
+            ("some", Type::Tuple(vec![Type::Integer, Type::Boolean])),
+        ]),
+    };
+    let function = Type::func(sum, Type::Integer);
+
+    assert_eq!(
+        function.pretty(),
+        "(((| none | some (integer, boolean) )) -> integer)"
+    );
+}
+
+#[test]
+fn pretty_prints_type_variable_names_past_z() {
     assert_eq!(Type::v(0).pretty(), "'a");
     assert_eq!(Type::v(25).pretty(), "'z");
     assert_eq!(Type::v(26).pretty(), "'aa");
@@ -198,335 +276,7 @@ fn pretty_prints_letter_sequence() {
 }
 
 #[test]
-fn struct_constraint_exact_matches_named_struct() {
-    let mut table = UnificationTable::default();
-    let named_struct = named(
-        "test",
-        "Point",
-        Type::Struct {
-            fields: fields(vec![("x", Type::Integer), ("y", Type::Boolean)]),
-        },
-    );
-    let constraint = Type::StructConstraint {
-        fields: fields(vec![("y", Type::Boolean), ("x", Type::Integer)]),
-        mode: StructMatch::Exact,
-    };
-    assert!(table.unify(&constraint, &named_struct).is_ok());
-}
-
-#[test]
-fn struct_constraint_exact_rejects_extra_fields() {
-    let mut table = UnificationTable::default();
-    let named_struct = named(
-        "test",
-        "Point",
-        Type::Struct {
-            fields: fields(vec![("x", Type::Integer)]),
-        },
-    );
-    let constraint = Type::StructConstraint {
-        fields: fields(vec![("x", Type::Integer), ("y", Type::Boolean)]),
-        mode: StructMatch::Exact,
-    };
-    assert!(table.unify(&constraint, &named_struct).is_err());
-}
-
-#[test]
-fn struct_constraint_at_least_allows_subset() {
-    let mut table = UnificationTable::default();
-    let named_struct = named(
-        "test",
-        "Point",
-        Type::Struct {
-            fields: fields(vec![("x", Type::Integer), ("y", Type::Boolean)]),
-        },
-    );
-    let constraint = Type::StructConstraint {
-        fields: fields(vec![("x", Type::Integer)]),
-        mode: StructMatch::AtLeast,
-    };
-    assert!(table.unify(&constraint, &named_struct).is_ok());
-}
-
-#[test]
-fn struct_constraint_at_least_rejects_missing() {
-    let mut table = UnificationTable::default();
-    let named_struct = named(
-        "test",
-        "Point",
-        Type::Struct {
-            fields: fields(vec![("x", Type::Integer)]),
-        },
-    );
-    let constraint = Type::StructConstraint {
-        fields: fields(vec![("y", Type::Boolean)]),
-        mode: StructMatch::AtLeast,
-    };
-    assert!(table.unify(&constraint, &named_struct).is_err());
-}
-
-#[test]
-fn struct_constraint_does_not_match_direct_struct_type() {
-    let mut table = UnificationTable::default();
-    let direct_struct = Type::Struct {
-        fields: fields(vec![("x", Type::Integer)]),
-    };
-    let constraint = Type::StructConstraint {
-        fields: fields(vec![("x", Type::Integer)]),
-        mode: StructMatch::Exact,
-    };
-    assert!(table.unify(&constraint, &direct_struct).is_err());
-}
-
-#[test]
-fn struct_constraints_merge_on_meta_var() {
-    let mut table = UnificationTable::default();
-    let meta = table.new_meta(0);
-    let left = Type::StructConstraint {
-        fields: fields(vec![("x", Type::Integer)]),
-        mode: StructMatch::AtLeast,
-    };
-    let right = Type::StructConstraint {
-        fields: fields(vec![("y", Type::Boolean)]),
-        mode: StructMatch::AtLeast,
-    };
-    table.unify(&meta, &left).expect("bind left");
-    table.unify(&meta, &right).expect("merge right");
-    let resolved = table.prune(&meta);
-    let Type::StructConstraint { fields, mode } = resolved else {
-        panic!("expected merged struct constraint");
-    };
-    assert_eq!(mode, StructMatch::AtLeast);
-    assert_eq!(fields.len(), 2);
-    assert!(fields.contains_key("x"));
-    assert!(fields.contains_key("y"));
-}
-
-#[test]
-fn struct_constraints_exact_rejects_extra_at_least_fields() {
-    let mut table = UnificationTable::default();
-    let meta = table.new_meta(0);
-    let exact = Type::StructConstraint {
-        fields: fields(vec![("x", Type::Integer)]),
-        mode: StructMatch::Exact,
-    };
-    let at_least = Type::StructConstraint {
-        fields: fields(vec![("x", Type::Integer), ("y", Type::Boolean)]),
-        mode: StructMatch::AtLeast,
-    };
-    table.unify(&meta, &exact).expect("bind exact");
-    assert!(table.unify(&meta, &at_least).is_err());
-}
-
-#[test]
-fn resolve_trait_instance() {
-    let mut symbols = SymbolTable::new();
-    let eq = Path::new("test", "Eq");
-    symbols
-        .insert_trait(TraitDef {
-            name: eq.clone(),
-            parameters: 1,
-            methods: IndexMap::new(),
-        })
-        .expect("trait def");
-    symbols
-        .insert_impl(TraitImpl {
-            parameters: 0,
-            head: TraitRef::new(eq.clone(), vec![Type::Integer]),
-            predicates: Vec::new(),
-            methods: IndexMap::new(),
-        })
-        .expect("impl");
-
-    let mut table = UnificationTable::default();
-    let unresolved = symbols
-        .resolve_predicates(
-            &mut table,
-            &[TraitRef::new(eq.clone(), vec![Type::Integer])],
-        )
-        .expect("resolve");
-    assert!(unresolved.is_empty());
-}
-
-#[test]
-fn resolve_trait_instance_with_context() {
-    let mut symbols = SymbolTable::new();
-    let eq = Path::new("test", "Eq");
-    symbols
-        .insert_trait(TraitDef {
-            name: eq.clone(),
-            parameters: 1,
-            methods: IndexMap::new(),
-        })
-        .expect("trait def");
-    symbols
-        .insert_impl(TraitImpl {
-            parameters: 0,
-            head: TraitRef::new(eq.clone(), vec![Type::Integer]),
-            predicates: Vec::new(),
-            methods: IndexMap::new(),
-        })
-        .expect("impl eq int");
-    symbols
-        .insert_impl(TraitImpl {
-            parameters: 1,
-            head: TraitRef::new(eq.clone(), vec![list_of(Type::v(0))]),
-            predicates: vec![TraitRef::new(eq.clone(), vec![Type::v(0)])],
-            methods: IndexMap::new(),
-        })
-        .expect("impl eq list");
-
-    let mut table = UnificationTable::default();
-    let unresolved = symbols
-        .resolve_predicates(
-            &mut table,
-            &[TraitRef::new(eq.clone(), vec![list_of(Type::Integer)])],
-        )
-        .expect("resolve");
-    assert!(unresolved.is_empty());
-}
-
-#[test]
-fn resolve_trait_unresolved_predicate_is_retained() {
-    let mut symbols = SymbolTable::new();
-    let show = Path::new("test", "Show");
-    symbols
-        .insert_trait(TraitDef {
-            name: show.clone(),
-            parameters: 1,
-            methods: IndexMap::new(),
-        })
-        .expect("trait def");
-
-    let mut table = UnificationTable::default();
-    let meta = table.new_meta(0);
-    let predicate = TraitRef::new(show.clone(), vec![meta.clone()]);
-    let unresolved = symbols
-        .resolve_predicates(&mut table, std::slice::from_ref(&predicate))
-        .expect("resolve");
-    assert_eq!(unresolved, vec![predicate]);
-}
-
-#[test]
-fn resolve_trait_recursive_predicate_errors() {
-    let mut symbols = SymbolTable::new();
-    let eq = Path::new("test", "Eq");
-    symbols
-        .insert_trait(TraitDef {
-            name: eq.clone(),
-            parameters: 1,
-            methods: IndexMap::new(),
-        })
-        .expect("trait def");
-    symbols
-        .insert_impl(TraitImpl {
-            parameters: 1,
-            head: TraitRef::new(eq.clone(), vec![Type::v(0)]),
-            predicates: vec![TraitRef::new(eq.clone(), vec![Type::v(0)])],
-            methods: IndexMap::new(),
-        })
-        .expect("impl");
-
-    let mut table = UnificationTable::default();
-    let meta = table.new_meta(0);
-    let predicate = TraitRef::new(eq.clone(), vec![meta]);
-    let result = symbols.resolve_predicates(&mut table, &[predicate]);
-    assert!(matches!(result, Err(TraitError::RecursivePredicate { .. })));
-}
-
-#[test]
-fn overlap_detection_rejects_conflicting_instances() {
-    let mut symbols = SymbolTable::new();
-    let eq = Path::new("test", "Eq");
-    symbols
-        .insert_trait(TraitDef {
-            name: eq.clone(),
-            parameters: 1,
-            methods: IndexMap::new(),
-        })
-        .expect("trait def");
-    symbols
-        .insert_impl(TraitImpl {
-            parameters: 1,
-            head: TraitRef::new(eq.clone(), vec![list_of(Type::v(0))]),
-            predicates: Vec::new(),
-            methods: IndexMap::new(),
-        })
-        .expect("impl list");
-
-    let result = symbols.insert_impl(TraitImpl {
-        parameters: 0,
-        head: TraitRef::new(eq.clone(), vec![list_of(Type::Integer)]),
-        predicates: Vec::new(),
-        methods: IndexMap::new(),
-    });
-    assert!(matches!(
-        result,
-        Err(TraitError::OverlappingInstance { .. })
-    ));
-}
-
-#[test]
-fn insert_impl_requires_all_trait_methods() {
-    let mut symbols = SymbolTable::new();
-    let trait_path = Path::new("test", "Eq");
-    let method_path = Path::new("test", "eq");
-    symbols
-        .insert_trait(TraitDef {
-            name: trait_path.clone(),
-            parameters: 1,
-            methods: [(
-                method_path,
-                Type::curry(&[Type::v(0), Type::v(0), Type::Boolean]).scheme(),
-            )]
-            .into_iter()
-            .collect(),
-        })
-        .expect("trait def");
-
-    let result = symbols.insert_impl(TraitImpl {
-        parameters: 0,
-        head: TraitRef::new(trait_path, vec![Type::Integer]),
-        predicates: Vec::new(),
-        methods: IndexMap::new(),
-    });
-    assert!(matches!(result, Err(TraitError::InvalidInstance { .. })));
-}
-
-#[test]
-fn resolve_method_specialization_uses_impl_mapping() {
-    let mut symbols = SymbolTable::new();
-    let trait_path = Path::new("test", "Eq");
-    let method_path = Path::new("test", "eq");
-    let impl_method_path = Path::new("test", "eq_integer");
-    symbols
-        .insert_trait(TraitDef {
-            name: trait_path.clone(),
-            parameters: 1,
-            methods: [(
-                method_path.clone(),
-                Type::curry(&[Type::v(0), Type::v(0), Type::Boolean]).scheme(),
-            )]
-            .into_iter()
-            .collect(),
-        })
-        .expect("trait def");
-    symbols
-        .insert_impl(TraitImpl {
-            parameters: 0,
-            head: TraitRef::new(trait_path.clone(), vec![Type::Integer]),
-            predicates: Vec::new(),
-            methods: [(method_path.clone(), impl_method_path.clone())]
-                .into_iter()
-                .collect(),
-        })
-        .expect("impl");
-
-    let resolved = symbols
-        .resolve_method_specialization(&method_path, &[Type::Integer])
-        .expect("resolve")
-        .expect("specialization");
-    assert_eq!(resolved.trait_name, trait_path);
-    assert_eq!(resolved.impl_method_path, impl_method_path);
-    assert!(resolved.predicates.is_empty());
+fn display_uses_pretty_output() {
+    let type_ = Type::func(Type::Integer, Type::Boolean);
+    assert_eq!(format!("{type_}"), "(integer -> boolean)");
 }

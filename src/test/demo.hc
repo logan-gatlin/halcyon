@@ -1,4 +1,9 @@
+module test =
+	let x = 1
+end
+
 module demo =
-	let default_pair = (core::default, core::default)
-	let (a, b) : (core::integer, core::integer) = default_pair
+	let x = 2
+	use test
+	let y = x
 end

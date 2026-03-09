@@ -564,7 +564,7 @@ impl<'a> Encoder<'a> {
                 ..
             } => {
                 let SemanticType::Function(parameter_type, _) = type_ else {
-                    unreachable!()
+                    unreachable!("expected function type during lowering, got `{type_}`")
                 };
                 let captures = Vec::from(captures);
                 self.create_closure(
@@ -915,10 +915,7 @@ impl ConstructorTable {
                 } else {
                     Some(payload_type.clone())
                 };
-                constructors.insert(
-                    Path::new(path.major.clone(), variant.clone()),
-                    ConstructorInfo { tag, payload },
-                );
+                constructors.insert(path.sibling(variant), ConstructorInfo { tag, payload });
             }
         }
         Self { constructors }

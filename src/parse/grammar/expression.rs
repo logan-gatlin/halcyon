@@ -17,6 +17,7 @@ use super::{
 pub(crate) fn expr(p: &mut Parser<'_, '_>) {
     match p.current() {
         Some(SyntaxKind::LET_KW) => let_expr(p),
+        Some(SyntaxKind::USE_KW) => use_expr(p),
         Some(SyntaxKind::FN_KW) => fn_expr(p),
         Some(SyntaxKind::IF_KW) => if_expr(p),
         Some(SyntaxKind::MATCH_KW) => match_expr(p),
@@ -148,6 +149,7 @@ fn can_start_atom(kind: SyntaxKind) -> bool {
             | SyntaxKind::GLYPH
             | SyntaxKind::TRUE_KW
             | SyntaxKind::FALSE_KW
+            | SyntaxKind::ROOT_KW
             | SyntaxKind::L_PAREN
             | SyntaxKind::L_SQUARE
             | SyntaxKind::L_BRACE
@@ -176,7 +178,7 @@ fn primary(p: &mut Parser<'_, '_>) -> bool {
                 }
 
                 // Identifier or path
-                SyntaxKind::IDENT => {
+                SyntaxKind::IDENT | SyntaxKind::ROOT_KW => {
                     path_or_ident(p);
                     true
                 }
@@ -286,6 +288,19 @@ fn let_expr(p: &mut Parser<'_, '_>) {
     pattern::pattern(p);
     p.expect(SyntaxKind::EQUAL);
     expr(p);
+    p.expect(SyntaxKind::IN_KW);
+    expr(p);
+    p.finish_node(m);
+}
+
+/// `"use" (<ident> | <path>) ("as" <ident>)? "in" expr`
+fn use_expr(p: &mut Parser<'_, '_>) {
+    let m = p.start_node(SyntaxKind::USE_EXPR);
+    p.expect(SyntaxKind::USE_KW);
+    path_or_ident(p);
+    if p.eat(SyntaxKind::AS_KW) {
+        expect_identifier(p);
+    }
     p.expect(SyntaxKind::IN_KW);
     expr(p);
     p.finish_node(m);

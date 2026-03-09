@@ -1,3 +1,9 @@
+//! Global type-system symbol table.
+//!
+//! Stores terms, types, trait definitions, and trait implementations, and
+//! provides trait-instance selection/resolution utilities shared by resolve and
+//! elaboration.
+
 use indexmap::IndexMap;
 
 use crate::ir::Path;
@@ -55,51 +61,65 @@ pub struct SymbolTable {
 
 #[derive(Debug, Clone)]
 pub struct MethodSpecialization {
+    /// Trait that provided the selected method.
     pub trait_name: Path,
+
+    /// Concrete impl method path to call.
     pub impl_method_path: Path,
+
+    /// Context predicates required by the selected impl.
     pub predicates: Vec<TraitConstraint>,
 }
 
 impl SymbolTable {
+    /// Create an empty symbol table.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Insert any symbol kind and return the previous value if present.
     pub fn insert(
         &mut self,
-        s: impl Symbol,
+        symbol: impl Symbol,
     ) -> Option<SymbolKind> {
-        match s.symbol_kind() {
-            SymbolKind::Term(v) => self.terms.insert(s.path(), v).map(Into::into),
-            SymbolKind::Type(v) => self.types.insert(s.path(), v).map(Into::into),
-            SymbolKind::TraitDef(v) => self.trait_defs.insert(s.path(), v).map(Into::into),
+        match symbol.symbol_kind() {
+            SymbolKind::Term(value) => self.terms.insert(symbol.path(), value).map(Into::into),
+            SymbolKind::Type(value) => self.types.insert(symbol.path(), value).map(Into::into),
+            SymbolKind::TraitDef(value) => {
+                self.trait_defs.insert(symbol.path(), value).map(Into::into)
+            }
         }
     }
 
+    /// Insert many symbols.
     pub fn extend<I, S>(
         &mut self,
-        it: I,
+        symbols: I,
     ) where
         I: IntoIterator<Item = S>,
         S: Symbol,
     {
-        for s in it.into_iter() {
-            self.insert(s);
+        for symbol in symbols {
+            self.insert(symbol);
         }
     }
 
+    /// Borrow all term bindings.
     pub fn terms(&self) -> &IndexMap<Path, TypeScheme> {
         &self.terms
     }
 
+    /// Borrow all trait definitions.
     pub fn trait_defs(&self) -> &IndexMap<Path, TraitDef> {
         &self.trait_defs
     }
 
+    /// Borrow all trait implementations grouped by trait path.
     pub fn trait_impls(&self) -> &IndexMap<Path, Vec<TraitImpl>> {
         &self.trait_impls
     }
 
+    /// Insert or replace one term binding.
     pub fn insert_term(
         &mut self,
         path: Path,
@@ -108,10 +128,12 @@ impl SymbolTable {
         self.terms.insert(path, scheme.into())
     }
 
+    /// Borrow all type definitions.
     pub fn type_definitions(&self) -> &IndexMap<Path, TypeDefinition> {
         &self.types
     }
 
+    /// Insert or replace one type definition.
     pub fn insert_type(
         &mut self,
         path: Path,
@@ -120,82 +142,102 @@ impl SymbolTable {
         self.types.insert(path, definition)
     }
 
+    /// Register a new trait definition.
     pub fn insert_trait(
         &mut self,
-        def: TraitDef,
+        trait_definition: TraitDef,
     ) -> Result<(), TraitError> {
-        if self.trait_defs.contains_key(&def.name) {
-            return Err(TraitError::DuplicateTrait(def.name));
+        if self.trait_defs.contains_key(&trait_definition.name) {
+            return Err(TraitError::DuplicateTrait(trait_definition.name));
         }
-        self.trait_defs.insert(def.name.clone(), def);
+        self.trait_defs
+            .insert(trait_definition.name.clone(), trait_definition);
         Ok(())
     }
 
+    /// Register a trait implementation after coherence and shape checks.
     pub fn insert_impl(
         &mut self,
-        impl_: TraitImpl,
+        trait_implementation: TraitImpl,
     ) -> Result<(), TraitError> {
-        let def = self
+        let trait_definition = self
             .trait_defs
-            .get(&impl_.head.trait_name)
-            .ok_or_else(|| TraitError::UnknownTrait(impl_.head.trait_name.clone()))?;
-        if def.parameters != impl_.head.arguments.len() {
+            .get(&trait_implementation.head.trait_name)
+            .ok_or_else(|| {
+                TraitError::UnknownTrait(trait_implementation.head.trait_name.clone())
+            })?;
+        if trait_definition.parameters != trait_implementation.head.arguments.len() {
             return Err(TraitError::ArityMismatch {
-                trait_name: impl_.head.trait_name.clone(),
-                expected: def.parameters,
-                found: impl_.head.arguments.len(),
+                trait_name: trait_implementation.head.trait_name.clone(),
+                expected: trait_definition.parameters,
+                found: trait_implementation.head.arguments.len(),
             });
         }
-        let has_unknown_method = impl_
+        let has_unknown_method = trait_implementation
             .methods
             .keys()
-            .any(|method| !def.methods.contains_key(method));
+            .any(|method| !trait_definition.methods.contains_key(method));
         if has_unknown_method {
             return Err(TraitError::InvalidInstance {
-                trait_name: impl_.head.trait_name.clone(),
+                trait_name: trait_implementation.head.trait_name.clone(),
             });
         }
-        let missing_method = def
+        let missing_method = trait_definition
             .methods
             .keys()
-            .any(|method| !impl_.methods.contains_key(method));
+            .any(|method| !trait_implementation.methods.contains_key(method));
         if missing_method {
             return Err(TraitError::InvalidInstance {
-                trait_name: impl_.head.trait_name.clone(),
+                trait_name: trait_implementation.head.trait_name.clone(),
             });
         }
         let impls = self
             .trait_impls
-            .entry(impl_.head.trait_name.clone())
+            .entry(trait_implementation.head.trait_name.clone())
             .or_default();
         for existing in impls.iter() {
-            if instances_overlap(existing, &impl_)? {
+            if instances_overlap(existing, &trait_implementation)? {
                 return Err(TraitError::OverlappingInstance {
-                    trait_name: impl_.head.trait_name.clone(),
+                    trait_name: trait_implementation.head.trait_name.clone(),
                     left: existing.head.clone(),
-                    right: impl_.head.clone(),
+                    right: trait_implementation.head.clone(),
                 });
             }
         }
-        impls.push(impl_);
+        impls.push(trait_implementation);
         Ok(())
     }
 
+    /// Resolve predicates recursively, returning unresolved residual predicates.
     pub fn resolve_predicates(
         &self,
         table: &mut UnificationTable,
         predicates: &[TraitConstraint],
     ) -> Result<Vec<TraitConstraint>, TraitError> {
+        self.resolve_predicates_with_assumptions(table, predicates, &[])
+    }
+
+    /// Resolve predicates recursively under additional assumed predicates.
+    pub fn resolve_predicates_with_assumptions(
+        &self,
+        table: &mut UnificationTable,
+        predicates: &[TraitConstraint],
+        assumptions: &[TraitConstraint],
+    ) -> Result<Vec<TraitConstraint>, TraitError> {
         let mut unresolved = Vec::new();
         let mut stack = Vec::new();
         for predicate in predicates {
-            for remaining in self.resolve_predicate(table, predicate, &mut stack)? {
+            for remaining in self.resolve_predicate(table, predicate, assumptions, &mut stack)? {
+                if predicate_matches_assumptions(table, &remaining, assumptions) {
+                    continue;
+                }
                 push_unique(&mut unresolved, remaining);
             }
         }
         Ok(unresolved)
     }
 
+    /// Resolve predicates and fail if any remain unresolved.
     pub fn resolve_predicates_strict(
         &self,
         table: &mut UnificationTable,
@@ -209,20 +251,21 @@ impl SymbolTable {
         }
     }
 
+    /// Select a unique implementation matching `predicate`.
     pub fn select_impl(
         &self,
         predicate: &TraitConstraint,
     ) -> Result<Option<TraitImpl>, TraitError> {
         let mut table = UnificationTable::default();
         let normalized = table.normalize_trait_ref(predicate);
-        let def = self
+        let trait_definition = self
             .trait_defs
             .get(&normalized.trait_name)
             .ok_or_else(|| TraitError::UnknownTrait(normalized.trait_name.clone()))?;
-        if def.parameters != normalized.arguments.len() {
+        if trait_definition.parameters != normalized.arguments.len() {
             return Err(TraitError::ArityMismatch {
                 trait_name: normalized.trait_name.clone(),
-                expected: def.parameters,
+                expected: trait_definition.parameters,
                 found: normalized.arguments.len(),
             });
         }
@@ -245,6 +288,7 @@ impl SymbolTable {
         Ok(matched)
     }
 
+    /// Resolve trait method dispatch to a concrete impl method and context predicates.
     pub fn resolve_method_specialization(
         &self,
         method_path: &Path,
@@ -253,7 +297,7 @@ impl SymbolTable {
         let Some((trait_name, _)) = self
             .trait_defs
             .iter()
-            .find(|(_, def)| def.methods.contains_key(method_path))
+            .find(|(_, trait_definition)| trait_definition.methods.contains_key(method_path))
         else {
             return Ok(None);
         };
@@ -285,21 +329,26 @@ impl SymbolTable {
         }))
     }
 
+    /// Internal recursive predicate resolver used by [`Self::resolve_predicates`].
     fn resolve_predicate(
         &self,
         table: &mut UnificationTable,
         predicate: &TraitConstraint,
+        assumptions: &[TraitConstraint],
         stack: &mut Vec<TraitConstraint>,
     ) -> Result<Vec<TraitConstraint>, TraitError> {
+        if predicate_matches_assumptions(table, predicate, assumptions) {
+            return Ok(Vec::new());
+        }
         let normalized = table.normalize_trait_ref(predicate);
-        let def = self
+        let trait_definition = self
             .trait_defs
             .get(&normalized.trait_name)
             .ok_or_else(|| TraitError::UnknownTrait(normalized.trait_name.clone()))?;
-        if def.parameters != normalized.arguments.len() {
+        if trait_definition.parameters != normalized.arguments.len() {
             return Err(TraitError::ArityMismatch {
                 trait_name: normalized.trait_name.clone(),
-                expected: def.parameters,
+                expected: trait_definition.parameters,
                 found: normalized.arguments.len(),
             });
         }
@@ -338,7 +387,10 @@ impl SymbolTable {
             *table = winning_table;
             let mut pending = Vec::new();
             for predicate in context {
-                for remaining in self.resolve_predicate(table, &predicate, stack)? {
+                for remaining in self.resolve_predicate(table, &predicate, assumptions, stack)? {
+                    if predicate_matches_assumptions(table, &remaining, assumptions) {
+                        continue;
+                    }
                     push_unique(&mut pending, remaining);
                 }
             }
@@ -355,10 +407,14 @@ impl SymbolTable {
 /// Definition of a named type with its parameters and body.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TypeDefinitionKind {
+    /// Nominal type; identity is name-based.
     Named,
+
+    /// Alias type; expanded structurally when referenced.
     Alias,
 }
 
+/// Stored type definition with arity, body, and nominal/alias kind.
 #[derive(Debug, Clone)]
 pub struct TypeDefinition {
     pub parameters: usize,
@@ -366,23 +422,26 @@ pub struct TypeDefinition {
     pub kind: TypeDefinitionKind,
 }
 
-struct InstantiatedImpl {
+struct InstantiatedTraitImpl {
     head: TraitRef,
     predicates: Vec<TraitConstraint>,
 }
 
+/// Instantiate a trait impl head/context with fresh metavariables.
 fn instantiate_trait_impl(
     table: &mut UnificationTable,
-    impl_: &TraitImpl,
-) -> Result<InstantiatedImpl, TraitError> {
+    trait_implementation: &TraitImpl,
+) -> Result<InstantiatedTraitImpl, TraitError> {
     let replacements = std::iter::repeat_with(|| table.new_meta(0))
-        .take(impl_.parameters)
+        .take(trait_implementation.parameters)
         .collect::<Vec<_>>();
-    let head = substitute_type_vars_in_trait_ref(&impl_.head, &replacements)?;
-    let predicates = substitute_type_vars_in_predicates(&impl_.predicates, &replacements)?;
-    Ok(InstantiatedImpl { head, predicates })
+    let head = substitute_type_vars_in_trait_ref(&trait_implementation.head, &replacements)?;
+    let predicates =
+        substitute_type_vars_in_predicates(&trait_implementation.predicates, &replacements)?;
+    Ok(InstantiatedTraitImpl { head, predicates })
 }
 
+/// Substitute impl parameters in a trait reference.
 fn substitute_type_vars_in_trait_ref(
     trait_ref: &TraitRef,
     replacements: &[Type],
@@ -403,6 +462,7 @@ fn substitute_type_vars_in_trait_ref(
     })
 }
 
+/// Substitute impl parameters in a predicate list.
 fn substitute_type_vars_in_predicates(
     predicates: &[TraitConstraint],
     replacements: &[Type],
@@ -413,6 +473,7 @@ fn substitute_type_vars_in_predicates(
         .collect()
 }
 
+/// Substitute De Bruijn type variables using `replacements`.
 fn substitute_type_vars(
     type_: &Type,
     replacements: &[Type],
@@ -424,6 +485,7 @@ fn substitute_type_vars(
     Some(current)
 }
 
+/// Check whether `predicate` matches an instantiated impl head.
 fn matches_trait_ref(
     table: &mut UnificationTable,
     predicate: &TraitRef,
@@ -441,6 +503,29 @@ fn matches_trait_ref(
         .is_ok()
 }
 
+/// Return `true` when `predicate` is satisfied by any assumption.
+fn predicate_matches_assumptions(
+    table: &mut UnificationTable,
+    predicate: &TraitConstraint,
+    assumptions: &[TraitConstraint],
+) -> bool {
+    for assumption in assumptions {
+        let mut local_table = table.clone();
+        let normalized_predicate = local_table.normalize_trait_ref(predicate);
+        let normalized_assumption = local_table.normalize_trait_ref(assumption);
+        if matches_trait_ref(
+            &mut local_table,
+            &normalized_predicate,
+            &normalized_assumption,
+        ) {
+            *table = local_table;
+            return true;
+        }
+    }
+    false
+}
+
+/// Conservative overlap check for two impl heads.
 fn instances_overlap(
     left: &TraitImpl,
     right: &TraitImpl,
@@ -460,11 +545,437 @@ fn instances_overlap(
     ))
 }
 
+/// Push `predicate` only if it is not already present.
 fn push_unique(
     predicates: &mut Vec<TraitConstraint>,
     predicate: TraitConstraint,
 ) {
     if !predicates.contains(&predicate) {
         predicates.push(predicate);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use indexmap::IndexMap;
+
+    use super::*;
+
+    fn list_of(inner: Type) -> Type {
+        Type::Named {
+            name: Path::new("demo", "List"),
+            body: Box::new(Type::Unit),
+        }
+        .apply(vec![inner])
+    }
+
+    fn eq_method_scheme() -> TypeScheme {
+        Type::curry(&[Type::v(0), Type::v(0), Type::Boolean]).scheme()
+    }
+
+    fn trait_with_eq_method(name: &str) -> TraitDef {
+        TraitDef {
+            name: Path::new("demo", name),
+            parameters: 1,
+            methods: [(Path::new("demo", "eq"), eq_method_scheme())]
+                .into_iter()
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn insert_and_extend_route_symbols_by_kind() {
+        #[derive(Clone)]
+        struct TermSymbol {
+            path: Path,
+            scheme: TypeScheme,
+        }
+
+        impl Symbol for TermSymbol {
+            fn path(&self) -> Path {
+                self.path.clone()
+            }
+
+            fn symbol_kind(&self) -> SymbolKind {
+                SymbolKind::Term(self.scheme.clone())
+            }
+        }
+
+        #[derive(Clone)]
+        struct TypeSymbol {
+            path: Path,
+            definition: TypeDefinition,
+        }
+
+        impl Symbol for TypeSymbol {
+            fn path(&self) -> Path {
+                self.path.clone()
+            }
+
+            fn symbol_kind(&self) -> SymbolKind {
+                SymbolKind::Type(self.definition.clone())
+            }
+        }
+
+        #[derive(Clone)]
+        struct TraitSymbol {
+            definition: TraitDef,
+        }
+
+        impl Symbol for TraitSymbol {
+            fn path(&self) -> Path {
+                self.definition.name.clone()
+            }
+
+            fn symbol_kind(&self) -> SymbolKind {
+                SymbolKind::TraitDef(self.definition.clone())
+            }
+        }
+
+        let mut symbols = SymbolTable::new();
+        symbols.extend([
+            TermSymbol {
+                path: Path::new("demo", "id"),
+                scheme: Type::func(Type::Integer, Type::Integer).scheme(),
+            },
+            TermSymbol {
+                path: Path::new("demo", "const"),
+                scheme: Type::Integer.scheme(),
+            },
+        ]);
+        symbols.insert(TypeSymbol {
+            path: Path::new("demo", "Token"),
+            definition: Type::Integer.def_named(0),
+        });
+        symbols.insert(TraitSymbol {
+            definition: TraitDef::new(Path::new("demo", "Eq"), 1),
+        });
+
+        assert!(symbols.terms().contains_key(&Path::new("demo", "id")));
+        assert!(
+            symbols
+                .type_definitions()
+                .contains_key(&Path::new("demo", "Token"))
+        );
+        assert!(symbols.trait_defs().contains_key(&Path::new("demo", "Eq")));
+    }
+
+    #[test]
+    fn insert_trait_rejects_duplicates() {
+        let mut symbols = SymbolTable::new();
+        let trait_def = TraitDef::new(Path::new("demo", "Eq"), 1);
+
+        symbols
+            .insert_trait(trait_def.clone())
+            .expect("first trait insertion should succeed");
+        assert!(matches!(
+            symbols.insert_trait(trait_def),
+            Err(TraitError::DuplicateTrait(_))
+        ));
+    }
+
+    #[test]
+    fn insert_impl_validates_trait_shape_and_methods() {
+        let mut symbols = SymbolTable::new();
+        let trait_def = trait_with_eq_method("Eq");
+        symbols
+            .insert_trait(trait_def.clone())
+            .expect("trait insertion should succeed");
+
+        assert!(matches!(
+            symbols.insert_impl(TraitImpl {
+                parameters: 0,
+                head: TraitRef::new(Path::new("demo", "Missing"), vec![Type::Integer]),
+                predicates: Vec::new(),
+                methods: IndexMap::new(),
+            }),
+            Err(TraitError::UnknownTrait(_))
+        ));
+
+        assert!(matches!(
+            symbols.insert_impl(TraitImpl {
+                parameters: 0,
+                head: TraitRef::new(Path::new("demo", "Eq"), vec![Type::Integer, Type::Boolean]),
+                predicates: Vec::new(),
+                methods: IndexMap::new(),
+            }),
+            Err(TraitError::ArityMismatch { .. })
+        ));
+
+        assert!(matches!(
+            symbols.insert_impl(TraitImpl {
+                parameters: 0,
+                head: TraitRef::new(Path::new("demo", "Eq"), vec![Type::Integer]),
+                predicates: Vec::new(),
+                methods: [(Path::new("demo", "unknown"), Path::new("demo", "impl_eq"))]
+                    .into_iter()
+                    .collect(),
+            }),
+            Err(TraitError::InvalidInstance { .. })
+        ));
+
+        assert!(matches!(
+            symbols.insert_impl(TraitImpl {
+                parameters: 0,
+                head: TraitRef::new(Path::new("demo", "Eq"), vec![Type::Integer]),
+                predicates: Vec::new(),
+                methods: IndexMap::new(),
+            }),
+            Err(TraitError::InvalidInstance { .. })
+        ));
+
+        symbols
+            .insert_impl(TraitImpl {
+                parameters: 0,
+                head: TraitRef::new(Path::new("demo", "Eq"), vec![Type::Integer]),
+                predicates: Vec::new(),
+                methods: [(Path::new("demo", "eq"), Path::new("demo", "eq_integer"))]
+                    .into_iter()
+                    .collect(),
+            })
+            .expect("valid impl should insert");
+    }
+
+    #[test]
+    fn overlap_detection_rejects_conflicting_impls() {
+        let mut symbols = SymbolTable::new();
+        symbols
+            .insert_trait(TraitDef::new(Path::new("demo", "Eq"), 1))
+            .expect("trait insertion should succeed");
+
+        symbols
+            .insert_impl(TraitImpl {
+                parameters: 1,
+                head: TraitRef::new(Path::new("demo", "Eq"), vec![list_of(Type::v(0))]),
+                predicates: Vec::new(),
+                methods: IndexMap::new(),
+            })
+            .expect("generic list impl should insert");
+
+        assert!(matches!(
+            symbols.insert_impl(TraitImpl {
+                parameters: 0,
+                head: TraitRef::new(Path::new("demo", "Eq"), vec![list_of(Type::Integer)]),
+                predicates: Vec::new(),
+                methods: IndexMap::new(),
+            }),
+            Err(TraitError::OverlappingInstance { .. })
+        ));
+    }
+
+    #[test]
+    fn resolve_predicates_handles_resolution_assumptions_and_strict_mode() {
+        let mut symbols = SymbolTable::new();
+        symbols
+            .insert_trait(TraitDef::new(Path::new("demo", "Show"), 1))
+            .expect("trait insertion should succeed");
+        symbols
+            .insert_impl(TraitImpl {
+                parameters: 0,
+                head: TraitRef::new(Path::new("demo", "Show"), vec![Type::Integer]),
+                predicates: Vec::new(),
+                methods: IndexMap::new(),
+            })
+            .expect("impl insertion should succeed");
+
+        let mut table = UnificationTable::default();
+        let unresolved = symbols
+            .resolve_predicates(
+                &mut table,
+                &[TraitRef::new(
+                    Path::new("demo", "Show"),
+                    vec![Type::Integer],
+                )],
+            )
+            .expect("resolution should succeed");
+        assert!(unresolved.is_empty());
+
+        let meta = table.new_meta(0);
+        let predicate = TraitRef::new(Path::new("demo", "Show"), vec![meta.clone()]);
+        let unresolved = symbols
+            .resolve_predicates_with_assumptions(
+                &mut table,
+                std::slice::from_ref(&predicate),
+                std::slice::from_ref(&predicate),
+            )
+            .expect("assumption should discharge predicate");
+        assert!(unresolved.is_empty());
+
+        let missing = TraitRef::new(Path::new("demo", "Show"), vec![Type::Boolean]);
+        assert!(matches!(
+            symbols.resolve_predicates_strict(&mut table, &[missing]),
+            Err(TraitError::NoInstance { .. })
+        ));
+    }
+
+    #[test]
+    fn resolve_predicates_detects_recursive_predicates() {
+        let mut symbols = SymbolTable::new();
+        symbols
+            .insert_trait(TraitDef::new(Path::new("demo", "Eq"), 1))
+            .expect("trait insertion should succeed");
+        symbols
+            .insert_impl(TraitImpl {
+                parameters: 1,
+                head: TraitRef::new(Path::new("demo", "Eq"), vec![Type::v(0)]),
+                predicates: vec![TraitRef::new(Path::new("demo", "Eq"), vec![Type::v(0)])],
+                methods: IndexMap::new(),
+            })
+            .expect("recursive impl insertion should succeed");
+
+        let mut table = UnificationTable::default();
+        let predicate = TraitRef::new(Path::new("demo", "Eq"), vec![table.new_meta(0)]);
+        assert!(matches!(
+            symbols.resolve_predicates(&mut table, &[predicate]),
+            Err(TraitError::RecursivePredicate { .. })
+        ));
+    }
+
+    #[test]
+    fn select_impl_returns_none_or_errors_as_expected() {
+        let mut symbols = SymbolTable::new();
+        symbols
+            .insert_trait(TraitDef::new(Path::new("demo", "Eq"), 1))
+            .expect("trait insertion should succeed");
+
+        assert!(matches!(
+            symbols.select_impl(&TraitRef::new(Path::new("demo", "Eq"), vec![Type::Integer])),
+            Ok(None)
+        ));
+
+        symbols
+            .insert_impl(TraitImpl {
+                parameters: 0,
+                head: TraitRef::new(Path::new("demo", "Eq"), vec![Type::Integer]),
+                predicates: Vec::new(),
+                methods: IndexMap::new(),
+            })
+            .expect("impl insertion should succeed");
+
+        let selected = symbols
+            .select_impl(&TraitRef::new(Path::new("demo", "Eq"), vec![Type::Integer]))
+            .expect("selection should succeed")
+            .expect("expected matching impl");
+        assert_eq!(selected.head.arguments, vec![Type::Integer]);
+
+        assert!(matches!(
+            symbols.select_impl(&TraitRef::new(
+                Path::new("demo", "Eq"),
+                vec![Type::Integer, Type::Boolean],
+            )),
+            Err(TraitError::ArityMismatch { .. })
+        ));
+
+        assert!(matches!(
+            symbols.select_impl(&TraitRef::new(
+                Path::new("demo", "Missing"),
+                vec![Type::Integer]
+            )),
+            Err(TraitError::UnknownTrait(_))
+        ));
+    }
+
+    #[test]
+    fn select_impl_detects_ambiguity_when_candidates_are_manually_conflicting() {
+        let mut symbols = SymbolTable::new();
+        let trait_name = Path::new("demo", "Eq");
+        symbols
+            .insert_trait(TraitDef::new(trait_name.clone(), 1))
+            .expect("trait insertion should succeed");
+
+        symbols
+            .trait_impls
+            .entry(trait_name.clone())
+            .or_default()
+            .extend([
+                TraitImpl {
+                    parameters: 0,
+                    head: TraitRef::new(trait_name.clone(), vec![Type::Integer]),
+                    predicates: Vec::new(),
+                    methods: IndexMap::new(),
+                },
+                TraitImpl {
+                    parameters: 0,
+                    head: TraitRef::new(trait_name.clone(), vec![Type::Integer]),
+                    predicates: Vec::new(),
+                    methods: IndexMap::new(),
+                },
+            ]);
+
+        assert!(matches!(
+            symbols.select_impl(&TraitRef::new(trait_name, vec![Type::Integer])),
+            Err(TraitError::AmbiguousInstance { .. })
+        ));
+    }
+
+    #[test]
+    fn resolve_method_specialization_handles_success_and_missing_cases() {
+        let mut symbols = SymbolTable::new();
+        let trait_name = Path::new("demo", "Eq");
+        let method_path = Path::new("demo", "eq");
+        let impl_method = Path::new("demo", "eq_integer");
+        symbols
+            .insert_trait(trait_with_eq_method("Eq"))
+            .expect("trait insertion should succeed");
+
+        assert!(matches!(
+            symbols.resolve_method_specialization(&method_path, &[Type::Integer]),
+            Ok(None)
+        ));
+
+        symbols
+            .insert_impl(TraitImpl {
+                parameters: 0,
+                head: TraitRef::new(trait_name.clone(), vec![Type::Integer]),
+                predicates: Vec::new(),
+                methods: [(method_path.clone(), impl_method.clone())]
+                    .into_iter()
+                    .collect(),
+            })
+            .expect("impl insertion should succeed");
+
+        let specialization = symbols
+            .resolve_method_specialization(&method_path, &[Type::Integer])
+            .expect("resolution should succeed")
+            .expect("expected specialization");
+        assert_eq!(specialization.trait_name, trait_name);
+        assert_eq!(specialization.impl_method_path, impl_method);
+        assert!(specialization.predicates.is_empty());
+
+        assert!(matches!(
+            symbols.resolve_method_specialization(&Path::new("demo", "unknown"), &[Type::Integer]),
+            Ok(None)
+        ));
+    }
+
+    #[test]
+    fn resolve_method_specialization_propagates_context_predicates() {
+        let mut symbols = SymbolTable::new();
+        let trait_name = Path::new("demo", "Eq");
+        let method_path = Path::new("demo", "eq");
+
+        symbols
+            .insert_trait(trait_with_eq_method("Eq"))
+            .expect("trait insertion should succeed");
+        symbols
+            .insert_impl(TraitImpl {
+                parameters: 1,
+                head: TraitRef::new(trait_name.clone(), vec![list_of(Type::v(0))]),
+                predicates: vec![TraitRef::new(trait_name.clone(), vec![Type::v(0)])],
+                methods: [(method_path.clone(), Path::new("demo", "eq_list"))]
+                    .into_iter()
+                    .collect(),
+            })
+            .expect("impl insertion should succeed");
+
+        let specialization = symbols
+            .resolve_method_specialization(&method_path, &[list_of(Type::Integer)])
+            .expect("resolution should succeed")
+            .expect("expected specialization");
+
+        assert_eq!(
+            specialization.predicates,
+            vec![TraitRef::new(trait_name, vec![Type::Integer])]
+        );
     }
 }

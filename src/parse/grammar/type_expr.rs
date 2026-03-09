@@ -1,5 +1,6 @@
 use super::{
     can_start_identifier,
+    can_start_path_or_ident,
     expect_identifier,
     is_bracketed_operator_identifier_start,
     paren_list,
@@ -77,7 +78,7 @@ pub(crate) fn type_expr(p: &mut Parser<'_, '_>) {
     }
 }
 
-/// Parse `for <ident>+ . <type_expr>`.
+/// Parse `for <ident>+ in <type_expr> [where <constraint> (, <constraint>)*]`.
 fn forall_type(p: &mut Parser<'_, '_>) {
     let m = p.start_node(SyntaxKind::FORALL_TYPE);
     p.bump(); // for
@@ -89,8 +90,35 @@ fn forall_type(p: &mut Parser<'_, '_>) {
         expect_identifier(p);
         p.finish_node(im);
     }
-    p.expect(SyntaxKind::DOT);
+
+    p.expect(SyntaxKind::IN_KW);
     type_expr(p);
+
+    if p.eat(SyntaxKind::WHERE_KW) {
+        if !can_start_path_or_ident(p) {
+            p.error_at_current("expected trait constraint after `where`");
+        }
+        while can_start_path_or_ident(p) {
+            forall_type_constraint(p);
+            if !p.eat(SyntaxKind::COMMA) {
+                break;
+            }
+        }
+    }
+
+    p.finish_node(m);
+}
+
+fn forall_type_constraint(p: &mut Parser<'_, '_>) {
+    let m = p.start_node(SyntaxKind::TYPE_CONSTRAINT);
+    path_or_ident(p);
+    while p.current().is_some_and(|kind| kind != SyntaxKind::COMMA)
+        && p.current().is_some_and(can_start_type_atom)
+    {
+        if !type_primary(p) {
+            break;
+        }
+    }
     p.finish_node(m);
 }
 
@@ -150,7 +178,7 @@ fn can_start_type_expr(p: &mut Parser<'_, '_>) -> bool {
 fn can_start_type_atom(kind: SyntaxKind) -> bool {
     matches!(
         kind,
-        SyntaxKind::IDENT | SyntaxKind::L_PAREN | SyntaxKind::L_SQUARE
+        SyntaxKind::IDENT | SyntaxKind::ROOT_KW | SyntaxKind::L_PAREN | SyntaxKind::L_SQUARE
     )
 }
 
@@ -163,7 +191,7 @@ fn type_primary(p: &mut Parser<'_, '_>) -> bool {
         }
         Some(kind) => {
             match kind {
-                SyntaxKind::IDENT => {
+                SyntaxKind::IDENT | SyntaxKind::ROOT_KW => {
                     path_or_ident(p);
                     true
                 }

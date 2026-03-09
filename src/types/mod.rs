@@ -1,8 +1,17 @@
+//! Core type-system model and shared type utilities.
+//!
+//! This module defines Halcyon's semantic [`Type`] representation and the
+//! binder-aware operations used across inference, trait resolution, and
+//! backend lowering.
+
 use indexmap::IndexMap;
 
 use crate::ir::Path;
 
+/// De Bruijn index of a bound `for all` type variable.
 pub type TypeParameterIndex = u32;
+
+/// Identifier of an inference metavariable in the unification table.
 pub type MetaVarId = u32;
 
 /// Structural match mode for struct constraints.
@@ -76,8 +85,8 @@ impl PartialEq for Type {
         other: &Self,
     ) -> bool {
         use Type::*;
-        let left = strip_empty_apply_ref(self);
-        let right = strip_empty_apply_ref(other);
+        let left = strip_empty_apply_layers(self);
+        let right = strip_empty_apply_layers(other);
         match (left, right) {
             (Unit, Unit)
             | (Integer, Integer)
@@ -124,7 +133,7 @@ impl PartialEq for Type {
 impl Eq for Type {
 }
 
-fn strip_empty_apply_ref(mut type_: &Type) -> &Type {
+fn strip_empty_apply_layers(mut type_: &Type) -> &Type {
     while let Type::Apply {
         constructor,
         arguments,
@@ -139,6 +148,7 @@ fn strip_empty_apply_ref(mut type_: &Type) -> &Type {
     type_
 }
 
+/// Canonicalize empty type applications back to their constructor.
 pub(crate) fn normalize_empty_apply(type_: Type) -> Type {
     match type_ {
         Type::Apply {
@@ -149,6 +159,10 @@ pub(crate) fn normalize_empty_apply(type_: Type) -> Type {
     }
 }
 
+/// Visit direct child types of a node.
+///
+/// Named bodies are visited only when `include_named_body` is `true`.
+/// @METHOD
 pub(crate) fn for_each_child_type(
     type_: &Type,
     include_named_body: bool,
@@ -402,27 +416,38 @@ impl TypeTransform for SubstituteTypeVar<'_> {
 }
 
 impl Type {
+    /// Built-in polymorphic array type constructor (`for a in [] a`).
     pub fn array() -> Self {
         Type::Array(Type::v(0).into()).for_all(1)
     }
+
+    /// Built-in polymorphic function type constructor (`for a b in a -> b`).
     pub fn function() -> Self {
         Type::func(Type::v(1), Type::v(0)).for_all(2)
     }
+
+    /// Wrap this type in `count` nested `Type::ForAll` binders.
     pub fn for_all(
         self,
         count: usize,
     ) -> Self {
         (0..count).fold(self, |body, _| Type::ForAll(body.into()))
     }
+
+    /// Build a function type (`t1 -> t2`).
     pub fn func(
         t1: Self,
         t2: Self,
     ) -> Self {
         Self::Function(t1.into(), t2.into())
     }
+
+    /// Build a bound type variable from a De Bruijn index.
     pub fn v(id: u32) -> Self {
         Self::TypeVar(id)
     }
+
+    /// Right-associatively curry a list of types.
     pub fn curry(types: &[Self]) -> Self {
         match types {
             [] => Self::Unit,
@@ -430,6 +455,8 @@ impl Type {
             [p, r @ ..] => Self::func(p.clone(), Self::curry(r)),
         }
     }
+
+    /// Wrap this type as an alias-style type definition.
     pub fn def(
         self,
         parameters: usize,
@@ -440,6 +467,8 @@ impl Type {
             kind: TypeDefinitionKind::Alias,
         }
     }
+
+    /// Wrap this type as a named (nominal) type definition.
     pub fn def_named(
         self,
         parameters: usize,
@@ -450,15 +479,21 @@ impl Type {
             kind: TypeDefinitionKind::Named,
         }
     }
+
+    /// Lift this type into a predicate-free scheme.
     pub fn scheme(self) -> TypeScheme {
         TypeScheme::new(self)
     }
+
+    /// Lift this type into a scheme with attached trait predicates.
     pub fn scheme_with_predicates(
         self,
         predicates: Vec<TraitConstraint>,
     ) -> TypeScheme {
         TypeScheme::with_predicates(self, predicates)
     }
+
+    /// Shift bound type-variable indices by `amount` at/above `cutoff`.
     pub fn shift_type_vars(
         &self,
         amount: i32,
@@ -467,6 +502,7 @@ impl Type {
         ShiftTypeVars { amount, cutoff }.transform(self)
     }
 
+    /// Substitute a single bound type variable with `replacement`.
     pub fn substitute_type_var(
         &self,
         index: TypeParameterIndex,
@@ -480,6 +516,7 @@ impl Type {
         .transform(self)
     }
 
+    /// Open the outermost `for all` binder with `replacement`.
     pub fn open_forall(
         &self,
         replacement: &Type,
@@ -489,6 +526,7 @@ impl Type {
             .shift_type_vars(-1, 0)
     }
 
+    /// Build a type application, canonicalizing empty argument lists.
     pub fn apply(
         self,
         arguments: Vec<Type>,

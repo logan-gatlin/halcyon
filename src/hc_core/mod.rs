@@ -35,6 +35,13 @@ pub fn compile_core_module(
     register_core_primitive_symbols(symbols);
 
     let resolved_modules = resolve_core_source_modules(symbols, logger);
+    if !logger.is_ok() {
+        return Artifact {
+            module_name: CORE_MODULE_NAME.to_string(),
+            ir_module: None,
+            binary: Vec::new(),
+        };
+    }
 
     let mut wasm_module = None;
     for resolved in resolved_modules {
@@ -103,6 +110,8 @@ fn resolve_core_source_modules(
 
     if !file_logger.is_ok() {
         file_logger.escalate_to_bug();
+        logger.consume_file(file_logger);
+        return vec![];
     }
     logger.consume_file(file_logger);
     resolved

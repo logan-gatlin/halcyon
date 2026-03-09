@@ -95,6 +95,125 @@ fn local_grouped_refutable_polymorphic_destructuring_compiles_and_validates() {
 }
 
 #[test]
+fn higher_rank_parameter_annotation_compiles_and_validates() {
+    let source = "module demo =\n\tlet id : for a in a -> a = fn x => x\n\tlet apply = fn (f: for a in a -> a) => (f 1, f true)\n\tlet result = apply id\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let artifacts = compile_source(source, &mut file_logger, &mut symbols);
+    logger.consume_file(file_logger);
+
+    for artifact in artifacts.into_vec() {
+        let _ = validate_artifact(artifact, &mut logger);
+    }
+
+    assert_logger_is_ok(&logger, "Compilation failed");
+}
+
+#[test]
+fn higher_rank_parameter_rejects_unannotated_lambda_argument() {
+    let source = "module demo =\n\tlet apply = fn (f: for a in a -> a) => (f 1, f true)\n\tlet result = apply (fn x => x)\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let modules = parse::parse(source, &mut file_logger)
+        .map(|source_file| source_file.modules())
+        .unwrap_or_default()
+        .into_iter()
+        .flat_map(|module| ir::module(module, &mut file_logger))
+        .collect::<Vec<_>>();
+    for module in modules {
+        let _ = types::resolve_module_with_symbols(&mut symbols, module, &mut file_logger);
+    }
+    assert!(
+        file_logger_has_error_message(&file_logger, "Higher-rank annotation required"),
+        "expected higher-rank annotation diagnostic"
+    );
+    logger.consume_file(file_logger);
+    assert!(!logger.is_ok(), "Compilation should fail");
+}
+
+#[test]
+fn unconstrained_polymorphic_annotation_is_rejected() {
+    let source = "module demo =\n\tlet (f: for a in a -> a -> a) = fn a b => a + b\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let modules = parse::parse(source, &mut file_logger)
+        .map(|source_file| source_file.modules())
+        .unwrap_or_default()
+        .into_iter()
+        .flat_map(|module| ir::module(module, &mut file_logger))
+        .collect::<Vec<_>>();
+    for module in modules {
+        let _ = types::resolve_module_with_symbols(&mut symbols, module, &mut file_logger);
+    }
+    assert!(
+        file_logger_has_error_message(
+            &file_logger,
+            "Polymorphic annotation is missing trait constraints"
+        ),
+        "expected constrained-polymorphism annotation error"
+    );
+    logger.consume_file(file_logger);
+    assert!(!logger.is_ok(), "Compilation should fail");
+}
+
+#[test]
+fn conditional_trait_impl_compiles_and_validates() {
+    let source = "module demo =\n\ttrait doubler : a =\n\t\tlet double : a -> a\n\tend\n\timpl doubler : for a in a where core::add a =\n\t\tlet double = fn x => x + x\n\tend\n\tlet value : core::integer = double 21\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let artifacts = compile_source(source, &mut file_logger, &mut symbols);
+    logger.consume_file(file_logger);
+
+    for artifact in artifacts.into_vec() {
+        let _ = validate_artifact(artifact, &mut logger);
+    }
+
+    assert_logger_is_ok(&logger, "Compilation failed");
+}
+
+#[test]
+fn orphan_rule_rejects_foreign_trait_for_foreign_type() {
+    let source =
+        "module demo =\n\timpl core::default : core::glyph =\n\t\tlet default = 'a'\n\tend\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let _ = compile_source(source, &mut file_logger, &mut symbols);
+    assert!(
+        file_logger_has_error_message(&file_logger, "Invalid trait instance"),
+        "expected orphan-rule trait instance error"
+    );
+    logger.consume_file(file_logger);
+    assert!(!logger.is_ok(), "Compilation should fail");
+}
+
+#[test]
+fn orphan_rule_allows_foreign_trait_for_local_type() {
+    let source = "module demo =\n\ttype Token = { value: core::integer }\n\timpl core::default : Token =\n\t\tlet default = { value = 0 }\n\tend\n\tlet token : Token = core::default\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let artifacts = compile_source(source, &mut file_logger, &mut symbols);
+    logger.consume_file(file_logger);
+
+    for artifact in artifacts.into_vec() {
+        let _ = validate_artifact(artifact, &mut logger);
+    }
+
+    assert_logger_is_ok(&logger, "Compilation failed");
+}
+
+#[test]
 fn core_artifact_validates() {
     let mut symbols = SymbolTable::new();
     let mut logger = Logger::new();
@@ -424,9 +543,275 @@ fn forward_module_path_term_reference_is_rejected() {
 }
 
 #[test]
+fn nested_module_terms_are_inlined_into_toplevel_module() {
+    let source = "module demo =\n\tmodule math =\n\t\tlet add-one = fn x => x + 1\n\tend\n\tlet value : core::integer = math::add-one 41\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let artifacts = compile_source(source, &mut file_logger, &mut symbols);
+    logger.consume_file(file_logger);
+
+    for artifact in artifacts.into_vec() {
+        let _ = validate_artifact(artifact, &mut logger);
+    }
+
+    assert_logger_is_ok(&logger, "Compilation failed");
+}
+
+#[test]
+fn nested_module_paths_fallback_to_absolute_modules() {
+    let source = "module demo =\n\tmodule inner =\n\t\tlet value : core::integer = core::default\n\tend\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let artifacts = compile_source(source, &mut file_logger, &mut symbols);
+    logger.consume_file(file_logger);
+
+    for artifact in artifacts.into_vec() {
+        let _ = validate_artifact(artifact, &mut logger);
+    }
+
+    assert_logger_is_ok(&logger, "Compilation failed");
+}
+
+#[test]
+fn nested_module_paths_can_use_root_for_external_modules() {
+    let source = "module demo =\n\tmodule inner =\n\t\tlet value : root::core::integer = root::core::default\n\tend\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let artifacts = compile_source(source, &mut file_logger, &mut symbols);
+    logger.consume_file(file_logger);
+
+    for artifact in artifacts.into_vec() {
+        let _ = validate_artifact(artifact, &mut logger);
+    }
+
+    assert_logger_is_ok(&logger, "Compilation failed");
+}
+
+#[test]
+fn nested_module_types_are_reachable_via_relative_paths() {
+    let source = "module demo =\n\tmodule model =\n\t\ttype ~Token = root::core::integer\n\tend\n\tlet value : model::Token = 1\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let artifacts = compile_source(source, &mut file_logger, &mut symbols);
+    logger.consume_file(file_logger);
+
+    for artifact in artifacts.into_vec() {
+        let _ = validate_artifact(artifact, &mut logger);
+    }
+
+    assert_logger_is_ok(&logger, "Compilation failed");
+}
+
+#[test]
+fn use_imports_module_symbols_for_following_statements() {
+    let source = "module demo =\n\tuse core\n\tlet value : integer = default\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let artifacts = compile_source(source, &mut file_logger, &mut symbols);
+    logger.consume_file(file_logger);
+
+    for artifact in artifacts.into_vec() {
+        let _ = validate_artifact(artifact, &mut logger);
+    }
+
+    assert_logger_is_ok(&logger, "Compilation failed");
+}
+
+#[test]
+fn use_only_applies_to_following_statements() {
+    let source =
+        "module demo =\n\tlet before = default\n\tuse core\n\tlet after : integer = default\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let _ = compile_source(source, &mut file_logger, &mut symbols);
+    assert!(file_logger_has_error_message(
+        &file_logger,
+        "Undefined term"
+    ));
+}
+
+#[test]
+fn use_imports_nested_modules_for_path_resolution() {
+    let source = "module demo =\n\tmodule M =\n\t\tmodule N =\n\t\t\tlet x = 1\n\t\tend\n\tend\n\tuse M\n\tlet value : core::integer = N::x\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let artifacts = compile_source(source, &mut file_logger, &mut symbols);
+    logger.consume_file(file_logger);
+
+    for artifact in artifacts.into_vec() {
+        let _ = validate_artifact(artifact, &mut logger);
+    }
+
+    assert_logger_is_ok(&logger, "Compilation failed");
+}
+
+#[test]
+fn use_reports_ambiguity_when_multiple_modules_provide_symbol() {
+    let source = "module demo =\n\tmodule A =\n\t\tlet x = 1\n\tend\n\tmodule B =\n\t\tlet x = 2\n\tend\n\tuse A\n\tuse B\n\tlet y = x\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let _ = compile_source(source, &mut file_logger, &mut symbols);
+    assert!(file_logger_has_error_message(
+        &file_logger,
+        "Ambiguous term"
+    ));
+}
+
+#[test]
+fn use_scope_does_not_leak_into_nested_module() {
+    let source = "module demo =\n\tuse core\n\tmodule inner =\n\t\tlet value : integer = default\n\tend\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let _ = compile_source(source, &mut file_logger, &mut symbols);
+    assert!(file_logger_has_error_message(
+        &file_logger,
+        "Undefined type"
+    ));
+}
+
+#[test]
+fn use_alias_binds_module_name_without_opening_contents() {
+    let source = "module demo =\n\tuse core as c\n\tlet value : c::integer = c::default\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let artifacts = compile_source(source, &mut file_logger, &mut symbols);
+    logger.consume_file(file_logger);
+
+    for artifact in artifacts.into_vec() {
+        let _ = validate_artifact(artifact, &mut logger);
+    }
+
+    assert_logger_is_ok(&logger, "Compilation failed");
+}
+
+#[test]
+fn use_alias_does_not_import_unqualified_symbols() {
+    let source = "module demo =\n\tuse core as c\n\tlet value : integer = default\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let _ = compile_source(source, &mut file_logger, &mut symbols);
+    assert!(file_logger_has_error_message(
+        &file_logger,
+        "Undefined type"
+    ));
+}
+
+#[test]
+fn use_alias_name_collisions_are_reported() {
+    let source = "module demo =\n\tmodule A =\n\t\tlet x = 1\n\tend\n\tmodule B =\n\t\tlet x = 2\n\tend\n\tuse A as m\n\tuse B as m\n\tlet value = 0\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let _ = compile_source(source, &mut file_logger, &mut symbols);
+    assert!(file_logger_has_error_message(
+        &file_logger,
+        "Duplicate module alias"
+    ));
+}
+
+#[test]
+fn use_expression_imports_only_inside_in_body() {
+    let source = "module demo =\n\tlet inside : core::integer = use core in default\n\tlet outside = default\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let _ = compile_source(source, &mut file_logger, &mut symbols);
+    assert!(file_logger_has_error_message(
+        &file_logger,
+        "Undefined term"
+    ));
+}
+
+#[test]
+fn use_expression_alias_works() {
+    let source = "module demo =\n\tlet value : core::integer = use core as c in c::default\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let artifacts = compile_source(source, &mut file_logger, &mut symbols);
+    logger.consume_file(file_logger);
+
+    for artifact in artifacts.into_vec() {
+        let _ = validate_artifact(artifact, &mut logger);
+    }
+
+    assert_logger_is_ok(&logger, "Compilation failed");
+}
+
+#[test]
+fn use_expression_alias_collisions_are_reported() {
+    let source = "module demo =\n\tmodule A =\n\t\tlet x = 1\n\tend\n\tmodule B =\n\t\tlet x = 2\n\tend\n\tlet value = use A as m in use B as m in m::x\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let _ = compile_source(source, &mut file_logger, &mut symbols);
+    assert!(file_logger_has_error_message(
+        &file_logger,
+        "Duplicate module alias"
+    ));
+}
+
+#[test]
+fn implicit_core_prelude_is_used_when_available() {
+    let source = "module core =\n\tmodule prelude =\n\t\tlet answer = 1\n\tend\nend\n\nmodule demo =\n\tlet value : root::core::integer = answer\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let artifacts = compile_source(source, &mut file_logger, &mut symbols);
+    logger.consume_file(file_logger);
+
+    for artifact in artifacts.into_vec() {
+        let _ = validate_artifact(artifact, &mut logger);
+    }
+
+    assert_logger_is_ok(&logger, "Compilation failed");
+}
+
+#[test]
+fn missing_core_prelude_is_ignored_for_implicit_use() {
+    let source = "module demo =\n\tlet value = default\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let _ = compile_source(source, &mut file_logger, &mut symbols);
+    assert!(file_logger_has_error_message(
+        &file_logger,
+        "Undefined term"
+    ));
+}
+
+#[test]
 fn forall_annotation_type_checks() {
     let source = "module demo =
-  let id: for a. a -> a = fn x => x
+  let id: for a in a -> a = fn x => x
 end
 ";
     let mut logger = Logger::new();
@@ -456,7 +841,7 @@ fn forall_impl_head_type_checks() {
     let id : t -> t
   end
 
-  impl Id : for a. a =
+  impl Id : for a in a =
     let id = fn x => x
   end
 
