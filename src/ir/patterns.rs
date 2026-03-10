@@ -55,9 +55,15 @@ pub fn pattern(
                 PatternKind::Hole
             }
             ast::Pattern::Ident(pat_ident) => {
-                PatternKind::Identifier(
-                    scope.define(pat_ident.name_text_spanned()?, NameSpace::Term),
-                )
+                let name = pat_ident.name_text_spanned()?;
+                if let Some(path) =
+                    scope.query_string_if_defined(name.clone(), NameSpace::Constructor)
+                {
+                    PatternKind::ConstConstructor(path)
+                } else {
+                    super::lint_snake_case_name(logger, "Let binding", &name.inner, name.span);
+                    PatternKind::Identifier(scope.define(name, NameSpace::Term))
+                }
             }
             ast::Pattern::Literal(pat_literal) => {
                 PatternKind::Immediate(immediate(logger, pat_literal)?)
@@ -79,10 +85,25 @@ pub fn pattern(
                 for child in pat_array.syntax().children() {
                     if let Some(rest) = ast::PatRest::cast(child.clone()) {
                         if !matches!(glob, Glob::None) {
+                            logger
+                                .error("Invalid array pattern")
+                                .primary(
+                                    "Array patterns may contain at most one `..` rest pattern.",
+                                    rest.span(),
+                                )
+                                .done();
                             return None;
                         }
                         glob = match rest.binding_name_spanned() {
-                            Some(name) => Glob::Named(scope.define(name, NameSpace::Term)),
+                            Some(name) => {
+                                super::lint_snake_case_name(
+                                    logger,
+                                    "Let binding",
+                                    &name.inner,
+                                    name.span,
+                                );
+                                Glob::Named(scope.define(name, NameSpace::Term))
+                            }
                             None => Glob::Anonymous,
                         };
                         continue;
@@ -108,10 +129,28 @@ pub fn pattern(
                         .fields()
                         .into_iter()
                         .map(|f| {
-                            Some((
-                                f.name_text_spanned()?,
-                                pattern(scope, logger, f.pattern()?)?,
-                            ))
+                            let field_name = f.name_text_spanned()?;
+                            let field_pattern = match f.pattern() {
+                                Some(inner) => pattern(scope, logger, inner)?,
+                                None if !pat_field_has_equals(&f) => {
+                                    super::lint_snake_case_name(
+                                        logger,
+                                        "Let binding",
+                                        &field_name.inner,
+                                        field_name.span,
+                                    );
+                                    Pattern {
+                                        comments: String::new(),
+                                        kind: PatternKind::Identifier(
+                                            scope.define(field_name.clone(), NameSpace::Term),
+                                        ),
+                                        span: field_name.span,
+                                        type_: (),
+                                    }
+                                }
+                                None => return None,
+                            };
+                            Some((field_name, field_pattern))
                         })
                         .collect::<Option<_>>()?,
                 )
@@ -138,7 +177,7 @@ pub fn pattern(
             ast::Pattern::TypeHint(pat_type_hint) => {
                 PatternKind::TypeHint(
                     pattern(scope, logger, pat_type_hint.pattern()?)?.into(),
-                    type_expr(scope, pat_type_hint.ty()?)?,
+                    type_expr(scope, logger, pat_type_hint.ty()?)?,
                 )
             }
             ast::Pattern::Path(pat_path) => {
@@ -149,4 +188,12 @@ pub fn pattern(
             }
         },
     })
+}
+
+fn pat_field_has_equals(field: &ast::PatField) -> bool {
+    field
+        .syntax()
+        .children_with_tokens()
+        .filter_map(|element| element.into_token())
+        .any(|token| token.kind() == SyntaxKind::EQUAL)
 }

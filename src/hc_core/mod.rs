@@ -4,10 +4,10 @@
     WebAssembly functionality.
 */
 
-mod terms;
+mod symbols;
 mod types;
 
-pub use terms::CoreTerm;
+pub use symbols::CoreSymbol;
 pub use types::CoreType;
 
 use enum_iterator::all;
@@ -15,16 +15,9 @@ use enum_iterator::all;
 use crate::asm;
 
 use crate::Artifact;
-use crate::ir::Path;
 use crate::logging::WithContext;
-use crate::types::symbol_table::{
-    Symbol,
-    SymbolKind,
-};
-use crate::types::{
-    SymbolTable,
-    Type,
-};
+use crate::types::SymbolTable;
+use crate::types::symbol_table::Symbol;
 
 pub const CORE_MODULE_NAME: &str = "core";
 
@@ -32,7 +25,7 @@ pub fn compile_core_module(
     symbols: &mut SymbolTable,
     logger: &mut crate::Logger,
 ) -> Artifact {
-    register_core_primitive_symbols(symbols);
+    register_core_primitive_types(symbols);
 
     let resolved_modules = resolve_core_source_modules(symbols, logger);
     if !logger.is_ok() {
@@ -56,11 +49,8 @@ pub fn compile_core_module(
     }
 }
 
-fn register_core_primitive_symbols(symbols: &mut SymbolTable) {
+fn register_core_primitive_types(symbols: &mut SymbolTable) {
     all::<CoreType>().for_each(|symbol| {
-        symbols.insert(symbol);
-    });
-    all::<CoreTerm>().for_each(|symbol| {
         symbols.insert(symbol);
     });
 }
@@ -115,41 +105,4 @@ fn resolve_core_source_modules(
     }
     logger.consume_file(file_logger);
     resolved
-}
-
-pub(crate) fn core_impl_arguments(arguments: &[Type]) -> Vec<Type> {
-    arguments.iter().map(normalize_impl_argument).collect()
-}
-
-pub(crate) fn core_impl_path(
-    method_path: &Path,
-    arguments: &[Type],
-) -> Path {
-    let args = core_impl_arguments(arguments);
-    let arg_key = args.iter().map(type_key).collect::<Vec<_>>().join("_");
-    let minor = if arg_key.is_empty() {
-        format!("[impl] {} {}", method_path.major, method_path.minor)
-    } else {
-        format!(
-            "[impl] {} {} {}",
-            method_path.major, method_path.minor, arg_key
-        )
-    };
-    Path::new(CORE_MODULE_NAME, minor)
-}
-
-pub(crate) fn normalize_impl_argument(type_: &Type) -> Type {
-    let mut current = type_.clone();
-    while let Type::ForAll(body) = current {
-        current = *body;
-    }
-    current
-}
-
-fn type_key(type_: &Type) -> String {
-    type_
-        .pretty()
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
-        .collect()
 }

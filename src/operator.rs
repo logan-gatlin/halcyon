@@ -1,3 +1,4 @@
+use crate::hc_core::CoreSymbol;
 use crate::ir::Path;
 use crate::types::{
     TraitRef,
@@ -73,11 +74,11 @@ impl Operator for BinaryOp {
     }
     fn type_scheme(&self) -> TypeScheme {
         match self {
-            Self::Star => binary_trait_scheme("multiply"),
-            Self::Slash => binary_trait_scheme("divide"),
-            Self::Percent => binary_trait_scheme("remainder"),
-            Self::Plus => binary_trait_scheme("add"),
-            Self::Minus => binary_trait_scheme("subtract"),
+            Self::Star => binary_trait_scheme(CoreSymbol::TraitMultiply),
+            Self::Slash => binary_trait_scheme(CoreSymbol::TraitDivide),
+            Self::Percent => binary_trait_scheme(CoreSymbol::TraitRemainder),
+            Self::Plus => binary_trait_scheme(CoreSymbol::TraitAdd),
+            Self::Minus => binary_trait_scheme(CoreSymbol::TraitSubtract),
             Self::ComposeLeft => {
                 Type::curry(&[
                     Type::func(Type::v(2), Type::v(1)),
@@ -96,24 +97,30 @@ impl Operator for BinaryOp {
                 .for_all(3)
                 .scheme()
             }
-            Self::Xor => binary_trait_scheme("bitwise"),
-            Self::Or => binary_trait_scheme("bitwise"),
+            Self::Xor => binary_trait_scheme(CoreSymbol::TraitBitwise),
+            Self::Or => binary_trait_scheme(CoreSymbol::TraitBitwise),
             Self::Apply => {
                 Type::curry(&[Type::v(1), Type::func(Type::v(1), Type::v(0)), Type::v(0)])
                     .for_all(2)
                     .scheme()
             }
-            Self::DoubleEqual => binary_trait_scheme_result("equal", Type::Boolean),
-            Self::BangEqual => binary_trait_scheme_result("equal", Type::Boolean),
-            Self::Less => binary_trait_scheme_result("compare", Type::Boolean),
+            Self::DoubleEqual => binary_trait_scheme_result(CoreSymbol::TraitEqual, Type::Boolean),
+            Self::BangEqual => binary_trait_scheme_result(CoreSymbol::TraitEqual, Type::Boolean),
+            Self::Less => binary_trait_scheme_result(CoreSymbol::TraitCompare, Type::Boolean),
             Self::LessEqual => {
-                binary_trait_scheme_result_with(&["compare", "equal"], Type::Boolean)
+                binary_trait_scheme_result_with(
+                    &[CoreSymbol::TraitCompare, CoreSymbol::TraitEqual],
+                    Type::Boolean,
+                )
             }
-            Self::Greater => binary_trait_scheme_result("compare", Type::Boolean),
+            Self::Greater => binary_trait_scheme_result(CoreSymbol::TraitCompare, Type::Boolean),
             Self::GreaterEqual => {
-                binary_trait_scheme_result_with(&["compare", "equal"], Type::Boolean)
+                binary_trait_scheme_result_with(
+                    &[CoreSymbol::TraitCompare, CoreSymbol::TraitEqual],
+                    Type::Boolean,
+                )
             }
-            Self::And => binary_trait_scheme("bitwise"),
+            Self::And => binary_trait_scheme(CoreSymbol::TraitBitwise),
             Self::Semicolon => {
                 Type::curry(&[Type::Unit, Type::v(0), Type::v(0)])
                     .for_all(1)
@@ -173,8 +180,8 @@ impl Operator for UnaryOp {
     }
     fn type_scheme(&self) -> TypeScheme {
         match self {
-            Self::Minus => unary_trait_scheme("subtract"),
-            Self::Not => unary_trait_scheme("bitwise"),
+            Self::Minus => unary_trait_scheme(CoreSymbol::TraitSubtract),
+            Self::Not => unary_trait_scheme(CoreSymbol::TraitBitwise),
         }
     }
 }
@@ -195,36 +202,33 @@ impl std::fmt::Display for UnaryOp {
     }
 }
 
-fn binary_trait_scheme(trait_name: &str) -> TypeScheme {
-    binary_trait_scheme_result(trait_name, Type::v(0))
+fn binary_trait_scheme(trait_symbol: CoreSymbol) -> TypeScheme {
+    binary_trait_scheme_result(trait_symbol, Type::v(0))
 }
 
 fn binary_trait_scheme_result(
-    trait_name: &str,
+    trait_symbol: CoreSymbol,
     result: Type,
 ) -> TypeScheme {
-    binary_trait_scheme_result_with(&[trait_name], result)
+    binary_trait_scheme_result_with(&[trait_symbol], result)
 }
 
 fn binary_trait_scheme_result_with(
-    trait_names: &[&str],
+    trait_symbols: &[CoreSymbol],
     result: Type,
 ) -> TypeScheme {
     Type::curry(&[Type::v(0), Type::v(0), result])
         .for_all(1)
         .scheme_with_predicates(
-            trait_names
+            trait_symbols
                 .iter()
-                .map(|name| TraitRef::new(Path::core(*name), vec![Type::v(0)]))
+                .map(|symbol| TraitRef::new(symbol.path(), vec![Type::v(0)]))
                 .collect(),
         )
 }
 
-fn unary_trait_scheme(trait_name: &str) -> TypeScheme {
+fn unary_trait_scheme(trait_symbol: CoreSymbol) -> TypeScheme {
     Type::func(Type::v(0), Type::v(0))
         .for_all(1)
-        .scheme_with_predicates(vec![TraitRef::new(
-            Path::core(trait_name),
-            vec![Type::v(0)],
-        )])
+        .scheme_with_predicates(vec![TraitRef::new(trait_symbol.path(), vec![Type::v(0)])])
 }

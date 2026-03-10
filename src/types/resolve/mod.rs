@@ -67,12 +67,14 @@ use recovery::{
     normalize_term_types,
 };
 use traits::{
+    build_trait_alias_entries,
     build_trait_definitions,
+    register_trait_aliases,
     register_trait_definitions,
     solve_predicates,
 };
 use type_defs::{
-    build_sum_constructors,
+    build_type_constructors,
     build_type_definitions,
     collect_constructor_definitions,
     collect_term_definitions,
@@ -92,6 +94,13 @@ struct PendingTypeDefinitionEntry {
 struct PendingTraitDefinitionEntry {
     span: Span,
     trait_definition: TraitDef,
+}
+
+#[derive(Debug, Clone)]
+struct PendingTraitAliasEntry {
+    span: Span,
+    alias: Path,
+    target: Path,
 }
 
 #[derive(Debug, Clone)]
@@ -142,10 +151,13 @@ pub fn resolve_module_with_symbols_and_schemes(
     }
 
     let mut pending_term_definitions = collect_term_definitions(&statements);
-    pending_term_definitions.extend(collect_constructor_definitions(
-        &pending_type_definitions,
-        &duplicate_type_paths,
-    ));
+    let pending_constructor_definitions =
+        collect_constructor_definitions(&pending_type_definitions, &duplicate_type_paths);
+    let pending_constructor_paths = pending_constructor_definitions
+        .iter()
+        .map(|(path, _)| path.clone())
+        .collect::<HashSet<_>>();
+    pending_term_definitions.extend(pending_constructor_definitions);
     log_term_duplicates(logger, symbols, &pending_term_definitions);
 
     let type_definitions = build_type_definitions(
@@ -178,6 +190,8 @@ pub fn resolve_module_with_symbols_and_schemes(
         logger,
     );
     register_trait_definitions(symbols, &pending_trait_definitions, logger);
+    let pending_trait_aliases = build_trait_alias_entries(&statements);
+    register_trait_aliases(symbols, &pending_trait_aliases, logger);
 
     let mut type_environment = TypeEnv::new();
     type_environment.extend(
@@ -186,18 +200,21 @@ pub fn resolve_module_with_symbols_and_schemes(
             .iter()
             .map(|(path, scheme)| (path.clone(), scheme.clone())),
     );
-    let constructors = build_sum_constructors(&pending_type_definitions, &type_definitions, logger);
+    let constructors =
+        build_type_constructors(&pending_type_definitions, &type_definitions, logger);
     type_environment.extend(constructors);
 
     let mut inference_context = InferenceContext::new();
     let mut schemes = IndexMap::new();
     let mut failed_term_paths = HashSet::new();
+    let mut resolved_constructor_aliases = Vec::new();
     inference_context.set_type_definitions(
         type_definitions
             .iter()
             .map(|(path, def)| (path.clone(), def.clone()))
             .collect::<IndexMap<_, _>>(),
     );
+    inference_context.set_trait_aliases(symbols.trait_aliases().clone());
 
     let mut typed_statements = Vec::new();
     for statement in statements.into_iter() {
@@ -257,6 +274,41 @@ pub fn resolve_module_with_symbols_and_schemes(
                     inference_context.table_mut(),
                 )));
             }
+            Statement::ConstructorAlias {
+                comments,
+                path,
+                target,
+                span,
+            } => {
+                let Some(target_scheme) = type_environment.get(&target).cloned() else {
+                    failed_term_paths.insert(path.clone());
+                    logger
+                        .error("Unknown constructor alias target")
+                        .primary(
+                            format!(
+                                "`{target}` is not available as a constructor term in this scope."
+                            ),
+                            span,
+                        )
+                        .done();
+                    typed_statements.push(Statement::ConstructorAlias {
+                        comments,
+                        path,
+                        target,
+                        span,
+                    });
+                    continue;
+                };
+                type_environment.insert(path.clone(), target_scheme.clone());
+                schemes.insert(path.clone(), target_scheme);
+                resolved_constructor_aliases.push((path.clone(), target.clone()));
+                typed_statements.push(Statement::ConstructorAlias {
+                    comments,
+                    path,
+                    target,
+                    span,
+                });
+            }
             Statement::Type {
                 comments,
                 path,
@@ -285,6 +337,17 @@ pub fn resolve_module_with_symbols_and_schemes(
                     methods,
                 });
             }
+            Statement::TraitAlias {
+                comments,
+                path,
+                target,
+            } => {
+                typed_statements.push(Statement::TraitAlias {
+                    comments,
+                    path,
+                    target,
+                });
+            }
             Statement::Impl {
                 comments,
                 trait_path,
@@ -309,6 +372,7 @@ pub fn resolve_module_with_symbols_and_schemes(
         }
     }
 
+    let mut published_term_paths = HashSet::new();
     for (path, span) in pending_term_definitions.iter() {
         if symbols.terms().contains_key(path) {
             continue;
@@ -319,6 +383,10 @@ pub fn resolve_module_with_symbols_and_schemes(
         match type_environment.get(path).cloned() {
             Some(scheme) => {
                 symbols.insert_term(path.clone(), scheme);
+                published_term_paths.insert(path.clone());
+                if pending_constructor_paths.contains(path) {
+                    symbols.insert_constructor(path.clone());
+                }
             }
             None => {
                 logger
@@ -326,6 +394,12 @@ pub fn resolve_module_with_symbols_and_schemes(
                     .primary(format!("`{path}` was not assigned a type."), *span)
                     .done();
             }
+        }
+    }
+
+    for (alias, target) in resolved_constructor_aliases {
+        if published_term_paths.contains(&alias) {
+            symbols.insert_constructor_alias(alias, target);
         }
     }
 
@@ -473,7 +547,7 @@ mod tests {
 
     #[test]
     fn resolve_module_reports_duplicate_type_against_existing_symbols() {
-        let source = "module demo =\n  type Token = { value: core::integer }\nend\n";
+        let source = "module demo =\n  type Token = { value: core::Integer }\nend\n";
         let mut symbols = SymbolTable::new();
         symbols.insert_type(
             Path::new("demo", "Token"),
@@ -494,7 +568,7 @@ mod tests {
 
     #[test]
     fn resolve_module_solves_trait_predicates_for_impl_calls() {
-        let source = "module demo =\n  trait Id : a =\n    let id : a -> a\n  end\n  impl Id : core::integer =\n    let id = fn x => x\n  end\n  let value : core::integer = id 1\nend\n";
+        let source = "module demo =\n  trait Id : a =\n    let id : a -> a\n  end\n  impl Id core::Integer =\n    let id = fn x => x\n  end\n  let value : core::Integer = id 1\nend\n";
         let mut symbols = SymbolTable::new();
         let mut logger = Logger::new();
         let _ = compile_core_module(&mut symbols, &mut logger);
@@ -507,7 +581,7 @@ mod tests {
 
     #[test]
     fn resolve_module_reports_unresolved_ground_predicates() {
-        let source = "module demo =\n  trait Eq : a =\n    let eq : a -> a -> core::boolean\n  end\n  let value = eq 1 1\nend\n";
+        let source = "module demo =\n  trait Eq : a =\n    let eq : a -> a -> core::Boolean\n  end\n  let value = eq 1 1\nend\n";
         let mut symbols = SymbolTable::new();
         let mut logger = Logger::new();
         let _ = compile_core_module(&mut symbols, &mut logger);

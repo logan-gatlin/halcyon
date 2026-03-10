@@ -1,6 +1,5 @@
 use indexmap::IndexMap;
 
-use crate::hc_core::core_impl_path;
 use crate::ir::{
     Module,
     Path,
@@ -86,6 +85,19 @@ pub fn elaborate_module(
                     let term = elaborate_term(&mut context, term, &Vec::new());
                     Statement::Term(fix_dict_captures(term, &context.dict_types))
                 }
+                Statement::ConstructorAlias {
+                    comments,
+                    path,
+                    target,
+                    span,
+                } => {
+                    Statement::ConstructorAlias {
+                        comments,
+                        path,
+                        target,
+                        span,
+                    }
+                }
                 Statement::Type {
                     comments,
                     path,
@@ -112,6 +124,17 @@ pub fn elaborate_module(
                         path,
                         parameters,
                         methods,
+                    }
+                }
+                Statement::TraitAlias {
+                    comments,
+                    path,
+                    target,
+                } => {
+                    Statement::TraitAlias {
+                        comments,
+                        path,
+                        target,
                     }
                 }
                 Statement::Impl {
@@ -1048,7 +1071,7 @@ fn dictionary_type_for_predicate(
     predicate: &TraitConstraint,
     symbols: &SymbolTable,
 ) -> Option<Type> {
-    let def = symbols.trait_defs().get(&predicate.trait_name)?;
+    let def = symbols.trait_definition(&predicate.trait_name)?;
     let methods = ordered_trait_methods(def);
     let mut fields = IndexMap::new();
     for (method_path, scheme) in methods {
@@ -1062,7 +1085,7 @@ fn dictionary_term_for_predicate(
     predicate: &TraitConstraint,
     symbols: &SymbolTable,
 ) -> Term<Type> {
-    let Some(def) = symbols.trait_defs().get(&predicate.trait_name) else {
+    let Some(def) = symbols.trait_definition(&predicate.trait_name) else {
         return generated_term(
             TermKind::Struct(IndexMap::new()),
             Type::Struct {
@@ -1083,7 +1106,7 @@ fn dictionary_term_for_predicate(
         let specialized_path = specialization
             .as_ref()
             .map(|specialization| specialization.impl_method_path.clone())
-            .unwrap_or_else(|| core_impl_path(&method_path, &predicate.arguments));
+            .unwrap_or_else(|| method_path.clone());
         let mut field_term = Term {
             comments: String::new(),
             kind: TermKind::Identifier(specialized_path),
@@ -1724,12 +1747,41 @@ mod tests {
         let mut file_logger = logger.new_file("test.hc", source);
         let mut symbols = SymbolTable::new();
         let _ = compile_core_module(&mut symbols, &mut Logger::new());
+        let mut prelude = Vec::new();
+        prelude.extend(
+            symbols
+                .terms()
+                .keys()
+                .cloned()
+                .map(|path| (path, crate::ir::NameSpace::Term)),
+        );
+        prelude.extend(
+            symbols
+                .type_definitions()
+                .keys()
+                .cloned()
+                .map(|path| (path, crate::ir::NameSpace::Type)),
+        );
+        prelude.extend(
+            symbols
+                .trait_defs()
+                .keys()
+                .cloned()
+                .map(|path| (path, crate::ir::NameSpace::Trait)),
+        );
+        prelude.extend(
+            symbols
+                .trait_aliases()
+                .keys()
+                .cloned()
+                .map(|path| (path, crate::ir::NameSpace::Trait)),
+        );
 
         let modules = parse::parse(source, &mut file_logger)
             .map(|m| m.modules())
             .unwrap_or_default()
             .into_iter()
-            .flat_map(|m| crate::ir::module(m, &mut file_logger))
+            .flat_map(|m| crate::ir::module_with_prelude(m, &mut file_logger, &prelude))
             .collect::<Vec<_>>();
 
         let resolved_modules = modules
@@ -1753,12 +1805,41 @@ mod tests {
         let mut file_logger = logger.new_file("test.hc", source);
         let mut symbols = SymbolTable::new();
         let _ = compile_core_module(&mut symbols, &mut Logger::new());
+        let mut prelude = Vec::new();
+        prelude.extend(
+            symbols
+                .terms()
+                .keys()
+                .cloned()
+                .map(|path| (path, crate::ir::NameSpace::Term)),
+        );
+        prelude.extend(
+            symbols
+                .type_definitions()
+                .keys()
+                .cloned()
+                .map(|path| (path, crate::ir::NameSpace::Type)),
+        );
+        prelude.extend(
+            symbols
+                .trait_defs()
+                .keys()
+                .cloned()
+                .map(|path| (path, crate::ir::NameSpace::Trait)),
+        );
+        prelude.extend(
+            symbols
+                .trait_aliases()
+                .keys()
+                .cloned()
+                .map(|path| (path, crate::ir::NameSpace::Trait)),
+        );
 
         let modules = parse::parse(source, &mut file_logger)
             .map(|m| m.modules())
             .unwrap_or_default()
             .into_iter()
-            .flat_map(|m| crate::ir::module(m, &mut file_logger))
+            .flat_map(|m| crate::ir::module_with_prelude(m, &mut file_logger, &prelude))
             .collect::<Vec<_>>();
 
         let mut resolved_modules = modules
@@ -2198,7 +2279,7 @@ mod tests {
 
     #[test]
     fn elaborates_associated_constant_dictionary_argument() {
-        let source = "module demo =\n\ttrait default : a =\n\t\tlet default : a\n\tend\n\timpl default : core::integer =\n\t\tlet default = 7\n\tend\n\tlet value : core::integer = default\nend\n";
+        let source = "module demo =\n\ttrait default : a =\n\t\tlet default : a\n\tend\n\timpl default core::Integer =\n\t\tlet default = 7\n\tend\n\tlet value : core::Integer = default\nend\n";
         let (elaborated, _symbols) = elaborate_source(source);
         let value = find_global_binding(&elaborated.module, "value").expect("value binding");
         assert!(term_has_inline_dict_for(value, "default"));
@@ -2221,7 +2302,7 @@ mod tests {
 
     #[test]
     fn rewrites_local_grouped_refutable_polymorphic_destructuring() {
-        let source = "module demo =\n\tlet result : core::integer =\n\t\tmatch (core::default, core::default, 1) with\n\t\t| (left_local, right_local, 0) => left_local\n\t\t| _ => core::default\nend\n";
+        let source = "module demo =\n\tlet result : core::Integer =\n\t\tmatch (core::default, core::default, 1) with\n\t\t| (left_local, right_local, 0) => left_local\n\t\t| _ => core::default\nend\n";
         let (elaborated, _symbols) = elaborate_source(source);
         let result = find_global_binding(&elaborated.module, "result").expect("result binding");
         assert!(term_has_local_wrapped_binding(result, "left_local#"));

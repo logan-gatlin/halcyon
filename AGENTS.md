@@ -5,8 +5,9 @@
 - Syntax is OCaml-like; see `GRAMMAR.md`.
 - Paths are always `module::name` (two parts).
 - Core types live in the `core` module.
-- Nothing is in scope by default; resolve through core or module scope.
+- The `core::prelude` module contains symbols which are always in scope
 - Do not special-case `core::*` symbols in the compiler. Core types/terms/traits are regular symbols inserted into the symbol table by `hc_core`, and all phases should treat them like any other module symbols.
+- Do not add regression tests for syntax changes
 
 ## Type system (concise formal summary)
 - Core discipline: Hindley-Milner inference with bidirectional checking and first-order unification.

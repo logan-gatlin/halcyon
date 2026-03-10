@@ -131,7 +131,7 @@ module inference =
   let unwrap_or = fn default => fn opt =>
     match opt with
     | None => default
-    | Some of value => value
+    | Some value => value
   -- Instantiates option match function with Some.
   let unwrap_or_some: core::integer = unwrap_or 10 (Some 3)
   -- Instantiates option match function with None.
@@ -143,8 +143,8 @@ module inference =
   -- Infers matches over Result with wildcard patterns.
   let result_default = fn default => fn res =>
     match res with
-    | Ok of value => value
-    | Err of _ => default
+    | Ok value => value
+    | Err _ => default
   -- Instantiates Result matching at concrete types.
   let result_default_use: core::integer = result_default 5 err_string
 

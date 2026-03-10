@@ -73,6 +73,13 @@ pub fn compile_source(
         );
         prelude.extend(
             symbols
+                .constructors()
+                .iter()
+                .cloned()
+                .map(|path| (path, ir::NameSpace::Constructor)),
+        );
+        prelude.extend(
+            symbols
                 .type_definitions()
                 .keys()
                 .cloned()
@@ -83,7 +90,14 @@ pub fn compile_source(
                 .trait_defs()
                 .keys()
                 .cloned()
-                .map(|path| (path, ir::NameSpace::Type)),
+                .map(|path| (path, ir::NameSpace::Trait)),
+        );
+        prelude.extend(
+            symbols
+                .trait_aliases()
+                .keys()
+                .cloned()
+                .map(|path| (path, ir::NameSpace::Trait)),
         );
         prelude
     }

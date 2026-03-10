@@ -67,6 +67,17 @@ pub fn generate(
                         })
                         .collect()
                 }
+                Statement::ConstructorAlias { comments, path, .. } => {
+                    let Some(type_) = schemes.get(path).cloned() else {
+                        return Vec::new();
+                    };
+                    vec![Documentation {
+                        kind: StatementKind::Term,
+                        name: path.clone(),
+                        comments: comments.clone(),
+                        type_,
+                    }]
+                }
                 Statement::Type { comments, path, .. } => {
                     let type_ = symbols
                         .type_definitions()
@@ -114,6 +125,29 @@ pub fn generate(
                     }
                     docs
                 }
+                Statement::TraitAlias {
+                    comments,
+                    path,
+                    target,
+                } => {
+                    let type_ = symbols
+                        .trait_definition(target)
+                        .map(|def| {
+                            let method_types: Vec<Type> = def
+                                .methods
+                                .values()
+                                .map(|scheme| scheme.type_.clone())
+                                .collect();
+                            TypeScheme::new(Type::Tuple(method_types))
+                        })
+                        .unwrap_or_else(|| TypeScheme::new(Type::Unit));
+                    vec![Documentation {
+                        kind: StatementKind::Trait,
+                        name: path.clone(),
+                        comments: comments.clone(),
+                        type_,
+                    }]
+                }
                 Statement::Impl {
                     comments,
                     trait_path,
@@ -122,8 +156,7 @@ pub fn generate(
                 } => {
                     let name = impl_name(trait_path, arguments);
                     let type_ = symbols
-                        .trait_defs()
-                        .get(trait_path)
+                        .trait_definition(trait_path)
                         .map(|def| {
                             TypeScheme::new(
                                 def.methods

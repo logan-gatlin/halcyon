@@ -1,6 +1,9 @@
-use crate::WithSpan;
 use crate::hc_core::CoreType;
 use crate::types::symbol_table::Symbol;
+use crate::{
+    Spanned,
+    WithSpan,
+};
 
 use super::*;
 
@@ -41,8 +44,20 @@ pub struct TypeExpr {
 }
 
 #[derive(Debug, Clone)]
+pub enum StructTypeMember {
+    Field {
+        name: Spanned<String>,
+        type_expr: TypeExpr,
+    },
+    Spread {
+        type_expr: TypeExpr,
+        span: Span,
+    },
+}
+
+#[derive(Debug, Clone)]
 pub enum TypeDefKind {
-    Struct(IndexMap<String, TypeExpr>),
+    Struct(Box<[StructTypeMember]>),
     Sum(IndexMap<String, TypeExpr>),
     Expr(TypeExpr),
 }
@@ -67,6 +82,7 @@ impl TypeDef {
 
 pub fn typedef(
     scope: &mut impl Scope,
+    logger: &mut FileLogger,
     typedef: ast::TypeDef,
 ) -> Option<TypeDef> {
     Some(TypeDef {
@@ -76,9 +92,31 @@ pub fn typedef(
             ast::TypeDef::Struct(struct_def) => {
                 TypeDefKind::Struct(
                     struct_def
-                        .fields()
+                        .members()
                         .into_iter()
-                        .flat_map(|f| Some((f.name_text()?, type_expr(scope, f.ty()?)?)))
+                        .flat_map(|member| {
+                            match member {
+                                ast::StructTypeMemberDecl::Field(field) => {
+                                    let field_name = field.name_text_spanned()?;
+                                    super::lint_snake_case_name(
+                                        logger,
+                                        "Struct field",
+                                        &field_name.inner,
+                                        field_name.span,
+                                    );
+                                    Some(StructTypeMember::Field {
+                                        name: field_name,
+                                        type_expr: type_expr(scope, logger, field.ty()?)?,
+                                    })
+                                }
+                                ast::StructTypeMemberDecl::Spread(spread) => {
+                                    Some(StructTypeMember::Spread {
+                                        type_expr: type_expr(scope, logger, spread.ty()?)?,
+                                        span: spread.span(),
+                                    })
+                                }
+                            }
+                        })
                         .collect(),
                 )
             }
@@ -91,7 +129,7 @@ pub fn typedef(
                             Some((
                                 v.name_text()?,
                                 match v.payload_type() {
-                                    Some(t) => type_expr(scope, t)?,
+                                    Some(t) => type_expr(scope, logger, t)?,
                                     None => {
                                         TypeExpr {
                                             kind: TypeExprKind::alias(CoreType::Unit.path()),
@@ -106,7 +144,7 @@ pub fn typedef(
                 )
             }
             ast::TypeDef::Alias(type_alias) => {
-                TypeDefKind::Expr(type_expr(scope, type_alias.type_expr()?)?)
+                TypeDefKind::Expr(type_expr(scope, logger, type_alias.type_expr()?)?)
             }
         },
     })
@@ -114,13 +152,14 @@ pub fn typedef(
 
 pub fn type_expr(
     scope: &mut impl Scope,
+    logger: &mut FileLogger,
     expr: ast::TypeExpr,
 ) -> Option<TypeExpr> {
     Some(TypeExpr {
         comments: String::new(),
         span: expr.span(),
         kind: match expr {
-            ast::TypeExpr::Unit(_) => TypeExprKind::alias(Path::core("unit")),
+            ast::TypeExpr::Unit(_) => TypeExprKind::alias(CoreType::Unit.path()),
             ast::TypeExpr::Array(_) => {
                 TypeExprKind::Instantiation(CoreType::Array.path(), [].into())
             }
@@ -142,8 +181,8 @@ pub fn type_expr(
                 TypeExprKind::Instantiation(
                     CoreType::Function.path(),
                     [
-                        type_expr(scope, function_type.param_type()?)?,
-                        type_expr(scope, function_type.return_type()?)?,
+                        type_expr(scope, logger, function_type.param_type()?)?,
+                        type_expr(scope, logger, function_type.return_type()?)?,
                     ]
                     .into(),
                 )
@@ -153,7 +192,7 @@ pub fn type_expr(
                     tuple_type
                         .fields()
                         .into_iter()
-                        .flat_map(|f| type_expr(scope, f))
+                        .flat_map(|f| type_expr(scope, logger, f))
                         .collect(),
                 )
             }
@@ -174,19 +213,19 @@ pub fn type_expr(
                         let trait_name = match constraint.trait_name()? {
                             ast::PathOrIdent::Ident(ident) => {
                                 inner_scope
-                                    .query_string(ident.name_text_spanned()?, NameSpace::Type)
+                                    .query_string(ident.name_text_spanned()?, NameSpace::Trait)
                             }
                             ast::PathOrIdent::Path(path) => {
                                 let resolved = inner_scope
-                                    .resolve_path(&path, NameSpace::Type, path.span())?
+                                    .resolve_path(&path, NameSpace::Trait, path.span())?
                                     .with_span(path.span());
-                                inner_scope.query_path(resolved, NameSpace::Type)
+                                inner_scope.query_path(resolved, NameSpace::Trait)
                             }
                         };
                         let arguments = constraint
                             .args()
                             .into_iter()
-                            .map(|arg| type_expr(&mut inner_scope, arg))
+                            .map(|arg| type_expr(&mut inner_scope, logger, arg))
                             .collect::<Option<Box<[_]>>>()?;
                         Some(TypeExprConstraint {
                             trait_name,
@@ -195,17 +234,19 @@ pub fn type_expr(
                         })
                     })
                     .collect::<Option<Box<[_]>>>()?;
-                let body = type_expr(&mut inner_scope, forall_type.body()?)?;
+                let body = type_expr(&mut inner_scope, logger, forall_type.body()?)?;
                 TypeExprKind::ForAll(params, constraints, body.into())
             }
             ast::TypeExpr::Application(type_application) => {
                 let arguments = type_application
                     .args()
                     .into_iter()
-                    .map(|arg| type_expr(scope, arg))
+                    .map(|arg| type_expr(scope, logger, arg))
                     .collect::<Option<Box<[_]>>>()?;
+                let base = type_application.base()?;
+                let base_span = base.span();
                 TypeExprKind::Instantiation(
-                    match type_application.base()? {
+                    match base {
                         ast::TypeExpr::Array(_) => CoreType::Array.path(),
                         ast::TypeExpr::Unit(_) => CoreType::Unit.path(),
                         ast::TypeExpr::Path(path_expr) => {
@@ -222,7 +263,13 @@ pub fn type_expr(
                         | ast::TypeExpr::Application(..)
                         | ast::TypeExpr::ForAll(..)
                         | ast::TypeExpr::Tuple(..) => {
-                            // TODO report error
+                            logger
+                                .error("Invalid type application")
+                                .primary(
+                                    "Type applications must start with a type constructor path (for example `Option a`).",
+                                    base_span,
+                                )
+                                .done();
                             return None;
                         }
                     },

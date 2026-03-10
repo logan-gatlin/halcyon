@@ -26,16 +26,23 @@ pub(crate) fn type_def(p: &mut Parser<'_, '_>) {
     }
 }
 
-/// `"{" (ident ":" type_expr ","?)+ "}"`
+/// `"{" ((ident ":" type_expr) | (".." type_expr))+ "}"`
 fn struct_def(p: &mut Parser<'_, '_>) {
     let m = p.start_node(SyntaxKind::STRUCT_DEF);
     p.expect(SyntaxKind::L_BRACE);
     while !p.at(SyntaxKind::R_BRACE) && !p.at_end() {
-        let fm = p.start_node(SyntaxKind::FIELD_DECL);
-        expect_identifier(p);
-        p.expect(SyntaxKind::COLON);
-        type_expr(p);
-        p.finish_node(fm);
+        if p.at(SyntaxKind::DOT_DOT) {
+            let sm = p.start_node(SyntaxKind::STRUCT_SPREAD_DECL);
+            p.bump();
+            type_expr(p);
+            p.finish_node(sm);
+        } else {
+            let fm = p.start_node(SyntaxKind::FIELD_DECL);
+            expect_identifier(p);
+            p.expect(SyntaxKind::COLON);
+            type_expr(p);
+            p.finish_node(fm);
+        }
         p.eat(SyntaxKind::COMMA);
     }
     p.expect(SyntaxKind::R_BRACE);

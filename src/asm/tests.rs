@@ -67,7 +67,7 @@ fn emits_type_signature_section() {
 
 #[test]
 fn type_signature_preserves_definition_order() {
-    let source = "module demo =\n\ttype First = { x: core::integer }\n\ttype Second = { y: core::integer }\n\tlet f = fn a => a\nend\n";
+    let source = "module demo =\n\ttype First = { x: core::Integer }\n\ttype Second = { y: core::Integer }\n\tlet f = fn a => a\nend\n";
     let (mut modules, symbols) = compile_modules(source);
     let module = modules.pop().unwrap();
     let wasm = encode(lower_module(module, &symbols));

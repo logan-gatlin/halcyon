@@ -277,42 +277,59 @@ impl<'a> Encoder<'a> {
                 let info = constructors
                     .get(&path)
                     .unwrap_or_else(|| unreachable!("Unknown constructor: {path}"));
-                let sum_type: Box<[Type]> = [Type::I32, Type::Any].into();
-                let temporary = self.temporary_name("constructor_pattern");
-                self.new_register(temporary.clone(), scope, lowered_type.clone());
-                self.ref_cast_if_needed(&lowered_type);
-                self.push(i::Set(temporary.clone()));
-                self.extend([
-                    i::Get(temporary),
-                    i::StructGet(sum_type.clone(), 0),
-                    i::I32Const(info.tag as i32),
-                    i::I32Op(NumberOperation::Ne),
-                    i::BreakIf(0),
-                ]);
+                match &info.kind {
+                    ConstructorKind::SumVariant { tag, .. } => {
+                        let sum_type: Box<[Type]> = [Type::I32, Type::Any].into();
+                        let temporary = self.temporary_name("constructor_pattern");
+                        self.new_register(temporary.clone(), scope, lowered_type.clone());
+                        self.ref_cast_if_needed(&lowered_type);
+                        self.push(i::Set(temporary.clone()));
+                        self.extend([
+                            i::Get(temporary),
+                            i::StructGet(sum_type.clone(), 0),
+                            i::I32Const(*tag as i32),
+                            i::I32Op(NumberOperation::Ne),
+                            i::BreakIf(0),
+                        ]);
+                    }
+                    ConstructorKind::Wrap { .. } => {
+                        self.ref_cast_if_needed(&lowered_type);
+                        self.push(i::Drop);
+                    }
+                }
             }
             PatternKind::Constructor(path, inner) => {
                 let info = constructors
                     .get(&path)
                     .unwrap_or_else(|| unreachable!("Unknown constructor: {path}"));
-                let sum_type: Box<[Type]> = [Type::I32, Type::Any].into();
+                match &info.kind {
+                    ConstructorKind::SumVariant { tag, .. } => {
+                        let sum_type: Box<[Type]> = [Type::I32, Type::Any].into();
 
-                let temporary = self.temporary_name("constructor_pattern");
-                self.new_register(temporary.clone(), scope, lowered_type.clone());
-                self.ref_cast_if_needed(&lowered_type);
-                self.push(i::Set(temporary.clone()));
+                        let temporary = self.temporary_name("constructor_pattern");
+                        self.new_register(temporary.clone(), scope, lowered_type.clone());
+                        self.ref_cast_if_needed(&lowered_type);
+                        self.push(i::Set(temporary.clone()));
 
-                self.extend([
-                    i::Get(temporary.clone()),
-                    i::StructGet(sum_type.clone(), 0),
-                    i::I32Const(info.tag as i32),
-                    i::I32Op(NumberOperation::Ne),
-                    i::BreakIf(0),
-                ]);
+                        self.extend([
+                            i::Get(temporary.clone()),
+                            i::StructGet(sum_type.clone(), 0),
+                            i::I32Const(*tag as i32),
+                            i::I32Op(NumberOperation::Ne),
+                            i::BreakIf(0),
+                        ]);
 
-                self.extend([i::Get(temporary), i::StructGet(sum_type, 1)]);
-                let inner_type = lower_type(&inner.type_, symbols);
-                self.ref_cast_if_needed(&inner_type);
-                self.lower_pattern(*inner, scope, symbols, constructors);
+                        self.extend([i::Get(temporary), i::StructGet(sum_type, 1)]);
+                        let inner_type = lower_type(&inner.type_, symbols);
+                        self.ref_cast_if_needed(&inner_type);
+                        self.lower_pattern(*inner, scope, symbols, constructors);
+                    }
+                    ConstructorKind::Wrap { .. } => {
+                        let inner_type = lower_type(&inner.type_, symbols);
+                        self.ref_cast_if_needed(&inner_type);
+                        self.lower_pattern(*inner, scope, symbols, constructors);
+                    }
+                }
             }
             PatternKind::Immediate(const_value) => {
                 match const_value {
@@ -615,39 +632,83 @@ impl<'a> Encoder<'a> {
         info: &ConstructorInfo,
         symbols: &SymbolTable,
     ) {
-        let sum_struct_type: Box<[Type]> = [Type::I32, Type::Any].into();
-        if info.payload.is_none() {
-            self.new_register(
-                path.clone(),
-                ScopeKind::Global,
-                Type::Struct(sum_struct_type.clone()),
-            );
-            self.extend([
-                i::I32Const(info.tag as i32),
-                i::StructNew([].into()),       // Create unit value ()
-                i::StructNew(sum_struct_type), // Create sum struct { tag, value }
-                i::Set(path),
-            ]);
-        } else {
-            let parameter_type = info.payload.clone().unwrap_or_else(|| SemanticType::Unit);
-            let parameter_name = self.temporary_name("cons_param");
-            self.create_closure(
-                symbols,
-                parameter_name.clone(),
-                parameter_type,
-                vec![],
-                |inner_func: &mut Encoder<'_>, _symbols: &SymbolTable| {
-                    inner_func.extend([
-                        i::I32Const(info.tag as i32),
-                        i::Get(parameter_name),
-                        i::StructNew(sum_struct_type.clone()),
+        match &info.kind {
+            ConstructorKind::SumVariant { tag, payload } => {
+                let sum_struct_type: Box<[Type]> = [Type::I32, Type::Any].into();
+                if payload.is_none() {
+                    self.new_register(
+                        path.clone(),
+                        ScopeKind::Global,
+                        Type::Struct(sum_struct_type.clone()),
+                    );
+                    self.extend([
+                        i::I32Const(*tag as i32),
+                        i::StructNew([].into()),       // Create unit value ()
+                        i::StructNew(sum_struct_type), // Create sum struct { tag, value }
+                        i::Set(path),
                     ]);
-                },
-            );
+                } else {
+                    let parameter_type = payload.clone().unwrap_or_else(|| SemanticType::Unit);
+                    let parameter_name = self.temporary_name("cons_param");
+                    self.create_closure(
+                        symbols,
+                        parameter_name.clone(),
+                        parameter_type,
+                        vec![],
+                        |inner_func: &mut Encoder<'_>, _symbols: &SymbolTable| {
+                            inner_func.extend([
+                                i::I32Const(*tag as i32),
+                                i::Get(parameter_name),
+                                i::StructNew(sum_struct_type.clone()),
+                            ]);
+                        },
+                    );
 
-            self.new_register(path.clone(), ScopeKind::Global, Type::closure_type());
-            self.extend([i::Set(path)]);
+                    self.new_register(path.clone(), ScopeKind::Global, Type::closure_type());
+                    self.extend([i::Set(path)]);
+                }
+            }
+            ConstructorKind::Wrap { payload } => {
+                if payload.is_none() {
+                    let register_type = symbols
+                        .terms()
+                        .get(&path)
+                        .map(|scheme| lower_type(&scheme.type_, symbols))
+                        .unwrap_or(Type::Any);
+                    self.new_register(path.clone(), ScopeKind::Global, register_type);
+                    self.extend([i::StructNew([].into()), i::Set(path)]);
+                } else {
+                    let parameter_type = payload.clone().unwrap_or_else(|| SemanticType::Unit);
+                    let parameter_name = self.temporary_name("wrap_param");
+                    self.create_closure(
+                        symbols,
+                        parameter_name.clone(),
+                        parameter_type,
+                        vec![],
+                        |inner_func: &mut Encoder<'_>, _symbols: &SymbolTable| {
+                            inner_func.extend([i::Get(parameter_name)]);
+                        },
+                    );
+                    self.new_register(path.clone(), ScopeKind::Global, Type::closure_type());
+                    self.extend([i::Set(path)]);
+                }
+            }
         }
+    }
+
+    pub(crate) fn lower_constructor_alias(
+        &mut self,
+        path: Path,
+        target: Path,
+        symbols: &SymbolTable,
+    ) {
+        let register_type = symbols
+            .terms()
+            .get(&path)
+            .map(|scheme| lower_type(&scheme.type_, symbols))
+            .unwrap_or(Type::Any);
+        self.new_register(path.clone(), ScopeKind::Global, register_type);
+        self.extend([i::Get(target), i::Set(path)]);
     }
 
     pub(crate) fn lower_trait_method_dispatch(
@@ -893,8 +954,18 @@ pub(crate) fn emit_string_compare(
 
 #[derive(Debug, Clone)]
 pub(crate) struct ConstructorInfo {
-    pub tag: usize,
-    pub payload: Option<SemanticType>,
+    pub kind: ConstructorKind,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum ConstructorKind {
+    SumVariant {
+        tag: usize,
+        payload: Option<SemanticType>,
+    },
+    Wrap {
+        payload: Option<SemanticType>,
+    },
 }
 
 #[derive(Debug, Clone, Default)]
@@ -906,16 +977,53 @@ impl ConstructorTable {
     pub(crate) fn from_symbols(symbols: &SymbolTable) -> Self {
         let mut constructors = IndexMap::new();
         for (path, definition) in symbols.type_definitions().iter() {
-            let Some(variants) = sum_variants(definition) else {
+            if let Some(variants) = sum_variants(definition) {
+                for (tag, (variant, payload_type)) in variants.iter().enumerate() {
+                    let payload = if is_unit_type(payload_type, symbols) {
+                        None
+                    } else {
+                        Some(payload_type.clone())
+                    };
+                    constructors.insert(
+                        path.sibling(variant),
+                        ConstructorInfo {
+                            kind: ConstructorKind::SumVariant { tag, payload },
+                        },
+                    );
+                }
                 continue;
-            };
-            for (tag, (variant, payload_type)) in variants.iter().enumerate() {
-                let payload = if is_unit_type(payload_type, symbols) {
+            }
+
+            if definition.kind == crate::types::TypeDefinitionKind::Named {
+                let args = (0..definition.parameters)
+                    .map(|index| SemanticType::v((definition.parameters - 1 - index) as u32))
+                    .collect::<Vec<_>>();
+                let payload_type = instantiate_named_body(&definition.body, &args)
+                    .unwrap_or_else(|| definition.body.clone());
+                let payload = if is_unit_type(&payload_type, symbols) {
                     None
                 } else {
-                    Some(payload_type.clone())
+                    Some(payload_type)
                 };
-                constructors.insert(path.sibling(variant), ConstructorInfo { tag, payload });
+                constructors.insert(
+                    path.clone(),
+                    ConstructorInfo {
+                        kind: ConstructorKind::Wrap { payload },
+                    },
+                );
+            }
+        }
+        for (alias, target) in symbols.constructor_aliases() {
+            let mut current = target;
+            let mut visited = std::collections::HashSet::new();
+            while let Some(next) = symbols.constructor_aliases().get(current) {
+                if !visited.insert(current.clone()) {
+                    break;
+                }
+                current = next;
+            }
+            if let Some(info) = constructors.get(current).cloned() {
+                constructors.insert(alias.clone(), info);
             }
         }
         Self { constructors }

@@ -104,11 +104,11 @@ impl PrettyPrint for Type {
             Array(type_) => {
                 format!(
                     "{array} [{items}]",
-                    array = "array".italic().blue(),
+                    array = "Array".italic().blue(),
                     items = type_.pretty(),
                 )
             }
-            Function { .. } => "function".italic().blue().to_string(),
+            Function { .. } => "Fn".italic().blue().to_string(),
         }
     }
 }

@@ -114,6 +114,15 @@ pub(super) fn log_trait_error(
                 .primary(format!("Instance for `{trait_name}` is invalid."), span)
                 .done();
         }
+        TraitError::InvalidAliasTarget { alias, target } => {
+            logger
+                .error("Invalid trait alias")
+                .primary(
+                    format!("`{alias}` cannot alias `{target}` because `{target}` is not a trait."),
+                    span,
+                )
+                .done();
+        }
         TraitError::NoInstance { predicate } => {
             logger
                 .error("Missing trait instance")

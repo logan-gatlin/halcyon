@@ -115,6 +115,7 @@ pub enum SyntaxKind {
     SUM_DEF,
     VARIANT,
     FIELD_DECL,
+    STRUCT_SPREAD_DECL,
     TYPE_ALIAS_DEF,
 
     FUNCTION_TYPE,
@@ -293,6 +294,7 @@ impl std::fmt::Display for SyntaxKind {
                 SUM_DEF => "sum definition",
                 VARIANT => "variant",
                 FIELD_DECL => "field declaration",
+                STRUCT_SPREAD_DECL => "struct spread declaration",
                 TYPE_ALIAS_DEF => "type alias",
                 FUNCTION_TYPE => "function type",
                 TYPE_APPLICATION => "type application",

@@ -81,6 +81,9 @@ pub enum TypeError {
 
 #[cfg(test)]
 mod tests {
+    use enum_iterator::all;
+
+    use crate::hc_core::CoreType;
     use crate::ir::{
         Glob,
         ImmediateValue,
@@ -89,6 +92,7 @@ mod tests {
         TypeExprKind,
     };
     use crate::types::TypeDefinitionKind;
+    use crate::types::symbol_table::Symbol;
     use crate::{
         Span,
         WithSpan,
@@ -157,7 +161,7 @@ mod tests {
             vec![param.clone()],
             Vec::new(),
             type_inst(
-                Path::core("function"),
+                CoreType::Function.path(),
                 vec![
                     type_inst(param.clone(), Vec::new()),
                     type_inst(param, Vec::new()),
@@ -167,18 +171,7 @@ mod tests {
     }
 
     fn core_type_definitions() -> IndexMap<Path, TypeDefinition> {
-        [
-            (Path::core("unit"), Type::Unit.def(0)),
-            (Path::core("integer"), Type::Integer.def(0)),
-            (Path::core("real"), Type::Real.def(0)),
-            (Path::core("boolean"), Type::Boolean.def(0)),
-            (Path::core("string"), Type::String.def(0)),
-            (Path::core("glyph"), Type::Glyph.def(0)),
-            (Path::core("array"), Type::array().def(1)),
-            (Path::core("function"), Type::function().def(2)),
-        ]
-        .into_iter()
-        .collect()
+        all::<CoreType>().map(|t| (t.path(), t.typedef())).collect()
     }
 
     #[test]
@@ -584,7 +577,7 @@ mod tests {
         bindings.clear();
         let hint_pattern = pattern(PatternKind::TypeHint(
             Box::new(pattern(PatternKind::Identifier(Path::new("demo", "value")))),
-            type_inst(Path::core("integer"), Vec::new()),
+            type_inst(CoreType::Integer.path(), Vec::new()),
         ));
         infer_pattern(&mut ctx, &env, &hint_pattern, &Type::Integer, &mut bindings)
             .expect("type-hinted pattern should infer");
@@ -598,9 +591,24 @@ mod tests {
         let mut bindings = Vec::new();
         let none = Path::new("demo", "None");
         let some = Path::new("demo", "Some");
+        let vec2 = Path::new("demo", "Vec2");
 
         env.insert(none.clone(), Type::Boolean);
         env.insert(some.clone(), Type::func(Type::Integer, Type::Boolean));
+        env.insert(
+            vec2.clone(),
+            Type::func(
+                Type::Struct {
+                    fields: [
+                        ("x".to_string(), Type::Integer),
+                        ("y".to_string(), Type::Integer),
+                    ]
+                    .into_iter()
+                    .collect(),
+                },
+                Type::Boolean,
+            ),
+        );
 
         infer_pattern(
             &mut ctx,
@@ -622,6 +630,38 @@ mod tests {
             &mut bindings,
         )
         .expect("constructor pattern should infer");
+
+        bindings.clear();
+        infer_pattern(
+            &mut ctx,
+            &env,
+            &pattern(PatternKind::Constructor(
+                vec2,
+                Box::new(pattern(PatternKind::Struct(
+                    [
+                        (
+                            "x".to_string().with_span(Span::Generated),
+                            pattern(PatternKind::Identifier(Path::new("demo", "x"))),
+                        ),
+                        (
+                            "y".to_string().with_span(Span::Generated),
+                            pattern(PatternKind::Identifier(Path::new("demo", "y"))),
+                        ),
+                    ]
+                    .into_iter()
+                    .collect(),
+                ))),
+            )),
+            &Type::Boolean,
+            &mut bindings,
+        )
+        .expect("constructor struct payload pattern should infer");
+        let normalized_bindings = bindings
+            .iter()
+            .map(|(path, type_)| (path.clone(), ctx.table.normalize(type_)))
+            .collect::<Vec<_>>();
+        assert!(normalized_bindings.contains(&(Path::new("demo", "x"), Type::Integer)));
+        assert!(normalized_bindings.contains(&(Path::new("demo", "y"), Type::Integer)));
 
         assert!(matches!(
             infer_pattern(
@@ -1059,7 +1099,11 @@ fn first_forall_type_hint(pattern: &Pattern<()>) -> Option<&TypeExpr> {
     }
 }
 
-fn predicate_key(predicate: &TraitConstraint) -> String {
+fn predicate_key(
+    predicate: &TraitConstraint,
+    canonical_trait_name: impl Fn(&Path) -> Path,
+) -> String {
+    let trait_name = canonical_trait_name(&predicate.trait_name);
     let args = predicate
         .arguments
         .iter()
@@ -1067,21 +1111,36 @@ fn predicate_key(predicate: &TraitConstraint) -> String {
         .collect::<Vec<_>>()
         .join(" ");
     if args.is_empty() {
-        predicate.trait_name.to_string()
+        trait_name.to_string()
     } else {
-        format!("{} {args}", predicate.trait_name)
+        format!("{} {args}", trait_name)
     }
 }
 
 fn inferred_predicates_covered_by_annotation(
+    context: &InferenceContext,
     inferred: &[TraitConstraint],
     annotation: &[TraitConstraint],
 ) -> bool {
-    let mut inferred_keys = inferred.iter().map(predicate_key).collect::<Vec<_>>();
+    let mut inferred_keys = inferred
+        .iter()
+        .map(|predicate| {
+            predicate_key(predicate, |trait_name| {
+                context.canonical_trait_name(trait_name)
+            })
+        })
+        .collect::<Vec<_>>();
     inferred_keys.sort();
     inferred_keys.dedup();
 
-    let mut annotation_keys = annotation.iter().map(predicate_key).collect::<Vec<_>>();
+    let mut annotation_keys = annotation
+        .iter()
+        .map(|predicate| {
+            predicate_key(predicate, |trait_name| {
+                context.canonical_trait_name(trait_name)
+            })
+        })
+        .collect::<Vec<_>>();
     annotation_keys.sort();
     annotation_keys.dedup();
 
@@ -1178,6 +1237,7 @@ pub struct InferenceContext {
     table: UnificationTable,
     level: u32,
     type_definitions: IndexMap<Path, TypeDefinition>,
+    trait_aliases: IndexMap<Path, Path>,
     skolem_salt: usize,
     unannotated_parameter_argument_types: Vec<(Path, Option<Type>)>,
 }
@@ -1218,6 +1278,29 @@ impl InferenceContext {
         definitions: IndexMap<Path, TypeDefinition>,
     ) {
         self.type_definitions = definitions;
+    }
+
+    pub fn set_trait_aliases(
+        &mut self,
+        aliases: IndexMap<Path, Path>,
+    ) {
+        self.trait_aliases = aliases;
+    }
+
+    pub fn canonical_trait_name(
+        &self,
+        trait_name: &Path,
+    ) -> Path {
+        let mut current = trait_name.clone();
+        let mut seen = Vec::new();
+        while let Some(next) = self.trait_aliases.get(&current) {
+            if seen.contains(&current) {
+                break;
+            }
+            seen.push(current.clone());
+            current = next.clone();
+        }
+        current
     }
 
     /// Borrow the unification table.
@@ -1627,6 +1710,7 @@ pub fn infer_term(
                     typed_value.predicates.clone(),
                 );
                 if !inferred_predicates_covered_by_annotation(
+                    ctx,
                     &inferred.predicates,
                     &annotation.predicates,
                 ) {
@@ -2002,7 +2086,16 @@ fn infer_pattern(
                 }
             };
             unify_with_span(&mut ctx.table, expected, &result_type, pattern.span)?;
-            let typed_payload = infer_pattern(ctx, env, payload, &param_type, bindings)?;
+            let payload_expected = match (&payload.kind, ctx.table.normalize(&param_type)) {
+                (PatternKind::Struct(_), Type::Struct { fields }) => {
+                    Type::StructConstraint {
+                        fields,
+                        mode: StructMatch::Exact,
+                    }
+                }
+                (_, other) => other,
+            };
+            let typed_payload = infer_pattern(ctx, env, payload, &payload_expected, bindings)?;
             Ok(Pattern {
                 comments: pattern.comments.clone(),
                 kind: PatternKind::Constructor(path.clone(), Box::new(typed_payload)),

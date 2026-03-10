@@ -2,11 +2,7 @@ use crate::asm::{
     Instruction as WasmInstruction,
     Type as WasmType,
 };
-use crate::operator::{
-    BinaryOp,
-    Operator,
-    UnaryOp,
-};
+use crate::hc_core::CoreSymbol;
 use crate::parse::ast::AstNode;
 use crate::types::Type;
 use crate::{
@@ -182,34 +178,34 @@ pub fn immediate(
     })
 }
 
-fn binary_op_path(kind: SyntaxKind) -> Option<Path> {
+fn binary_op_name(kind: SyntaxKind) -> Option<&'static str> {
     Some(match kind {
-        SyntaxKind::STAR => BinaryOp::Star.path(),
-        SyntaxKind::SLASH => BinaryOp::Slash.path(),
-        SyntaxKind::PERCENT => BinaryOp::Percent.path(),
-        SyntaxKind::PLUS => BinaryOp::Plus.path(),
-        SyntaxKind::MINUS => BinaryOp::Minus.path(),
-        SyntaxKind::COMPOSE_LEFT => BinaryOp::ComposeLeft.path(),
-        SyntaxKind::COMPOSE_RIGHT => BinaryOp::ComposeRight.path(),
-        SyntaxKind::XOR_KW => BinaryOp::Xor.path(),
-        SyntaxKind::OR_KW => BinaryOp::Or.path(),
-        SyntaxKind::PIPE_ARROW => BinaryOp::Apply.path(),
-        SyntaxKind::DOUBLE_EQUAL => BinaryOp::DoubleEqual.path(),
-        SyntaxKind::BANG_EQUAL => BinaryOp::BangEqual.path(),
-        SyntaxKind::LESS => BinaryOp::Less.path(),
-        SyntaxKind::LESS_EQUAL => BinaryOp::LessEqual.path(),
-        SyntaxKind::GREATER => BinaryOp::Greater.path(),
-        SyntaxKind::GREATER_EQUAL => BinaryOp::GreaterEqual.path(),
-        SyntaxKind::AND_KW => BinaryOp::And.path(),
-        SyntaxKind::SEMICOLON => BinaryOp::Semicolon.path(),
+        SyntaxKind::STAR => "[*]",
+        SyntaxKind::SLASH => "[/]",
+        SyntaxKind::PERCENT => "[%]",
+        SyntaxKind::PLUS => "[+]",
+        SyntaxKind::MINUS => "[-]",
+        SyntaxKind::COMPOSE_LEFT => "[>>]",
+        SyntaxKind::COMPOSE_RIGHT => "[<<]",
+        SyntaxKind::XOR_KW => "[xor]",
+        SyntaxKind::OR_KW => "[or]",
+        SyntaxKind::PIPE_ARROW => "[|>]",
+        SyntaxKind::DOUBLE_EQUAL => "[==]",
+        SyntaxKind::BANG_EQUAL => "[!=]",
+        SyntaxKind::LESS => "[<]",
+        SyntaxKind::LESS_EQUAL => "[<=]",
+        SyntaxKind::GREATER => "[>]",
+        SyntaxKind::GREATER_EQUAL => "[>=]",
+        SyntaxKind::AND_KW => "[and]",
+        SyntaxKind::SEMICOLON => "[;]",
         _ => return None,
     })
 }
 
-fn unary_op_path(kind: SyntaxKind) -> Option<Path> {
+fn unary_op_name(kind: SyntaxKind) -> Option<&'static str> {
     Some(match kind {
-        SyntaxKind::MINUS => UnaryOp::Minus.path(),
-        SyntaxKind::NOT_KW => UnaryOp::Not.path(),
+        SyntaxKind::MINUS => "[~]",
+        SyntaxKind::NOT_KW => "[not]",
         _ => return None,
     })
 }
@@ -239,7 +235,7 @@ fn curry(
             let param_name = param.name_text_spanned()?;
             let param_span = param_name.span;
             let parameter_type = match param.ty() {
-                Some(type_expr_node) => Some(type_expr(scope, type_expr_node)?),
+                Some(type_expr_node) => Some(type_expr(scope, logger, type_expr_node)?),
                 None => None,
             };
             let mut inner_scope = scope.nest_function_scope();
@@ -270,12 +266,12 @@ fn array_term(
     array_expr: ast::ArrayExpr,
 ) -> Option<UntypedTerm> {
     let span = array_expr.span();
-    let empty = Path::core("array_empty");
+    let empty = CoreSymbol::ArrayEmpty.path();
     let mut current = mk(TermKind::Identifier(empty), span);
 
     for child in array_expr.syntax().children() {
         if let Some(splat) = ast::ArraySplat::cast(child.clone()) {
-            let concat_path = Path::core("array_concat");
+            let concat_path = CoreSymbol::ArrayConcat.path();
             let elem = term(scope, wasm_type_defs, logger, splat.expr()?)?;
             let elem_span = elem.span;
             current = mk(
@@ -293,7 +289,7 @@ fn array_term(
                 elem_span,
             );
         } else if let Some(expr) = ast::Expr::cast(child) {
-            let push_path = Path::core("array_push");
+            let push_path = CoreSymbol::ArrayPush.path();
             let elem = term(scope, wasm_type_defs, logger, expr)?;
             let elem_span = elem.span;
             current = mk(
@@ -488,7 +484,7 @@ pub fn term(
             )
         }
         ast::Expr::InlineWasm(inline_wasm_expr) => {
-            let asserted_type = type_expr(scope, inline_wasm_expr.asserted_type()?)?;
+            let asserted_type = type_expr(scope, logger, inline_wasm_expr.asserted_type()?)?;
             let inline_wasm = {
                 let mut inline_scope = scope.nest_scope();
                 wasm::build_inline_expression(
@@ -515,8 +511,11 @@ pub fn term(
                 let rhs = term(scope, wasm_type_defs, logger, binary_expr.rhs()?)?;
                 mk(TermKind::Semicolon(lhs.into(), rhs.into()), span)
             } else {
-                let op_path = binary_op_path(op_kind)?;
                 let op_span: Span = op_token.text_range().into();
+                let op_path = scope.query_string(
+                    binary_op_name(op_kind)?.to_string().with_span(op_span),
+                    NameSpace::Term,
+                );
                 let lhs = term(scope, wasm_type_defs, logger, binary_expr.lhs()?)?;
                 let rhs = term(scope, wasm_type_defs, logger, binary_expr.rhs()?)?;
                 mk(
@@ -537,8 +536,13 @@ pub fn term(
         }
         ast::Expr::Unary(unary_expr) => {
             let op_token = unary_expr.op_token()?;
-            let op_path = unary_op_path(op_token.kind())?;
             let op_span: Span = op_token.text_range().into();
+            let op_path = scope.query_string(
+                unary_op_name(op_token.kind())?
+                    .to_string()
+                    .with_span(op_span),
+                NameSpace::Term,
+            );
             let operand = term(scope, wasm_type_defs, logger, unary_expr.operand()?)?;
             mk(
                 TermKind::Call {
@@ -592,7 +596,24 @@ pub fn term(
             let mut fields = IndexMap::new();
             for field in struct_expr.fields() {
                 let name = field.name_text_spanned()?;
-                let value = term(scope, wasm_type_defs, logger, field.value()?)?;
+                let value_expr = match field.value() {
+                    Some(value) => value,
+                    None if !struct_field_has_assignment_token(&field) => {
+                        logger
+                            .error("Invalid struct field")
+                            .primary(
+                                format!(
+                                    "Field `{}` requires a value (`{}` = ... or `{}`: ...).",
+                                    name.inner, name.inner, name.inner
+                                ),
+                                field.span(),
+                            )
+                            .done();
+                        return None;
+                    }
+                    None => return None,
+                };
+                let value = term(scope, wasm_type_defs, logger, value_expr)?;
                 fields.insert(name, value);
             }
             mk(TermKind::Struct(fields), span)
@@ -609,4 +630,12 @@ pub fn term(
             mk(TermKind::Identifier(path), span)
         }
     })
+}
+
+fn struct_field_has_assignment_token(field: &ast::StructField) -> bool {
+    field
+        .syntax()
+        .children_with_tokens()
+        .filter_map(|element| element.into_token())
+        .any(|token| matches!(token.kind(), SyntaxKind::EQUAL | SyntaxKind::COLON))
 }

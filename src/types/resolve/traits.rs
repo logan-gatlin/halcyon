@@ -16,6 +16,7 @@ use super::type_defs::{
 use super::{
     FileLogger,
     Path,
+    PendingTraitAliasEntry,
     PendingTraitDefinitionEntry,
     PendingTypeDefinitionEntry,
     Span,
@@ -111,6 +112,36 @@ pub(super) fn register_trait_definitions(
     }
 }
 
+pub(super) fn build_trait_alias_entries(
+    statements: &[Statement<()>]
+) -> Vec<PendingTraitAliasEntry> {
+    statements
+        .iter()
+        .filter_map(|statement| {
+            let Statement::TraitAlias { path, target, .. } = statement else {
+                return None;
+            };
+            Some(PendingTraitAliasEntry {
+                span: Span::Generated,
+                alias: path.clone(),
+                target: target.clone(),
+            })
+        })
+        .collect()
+}
+
+pub(super) fn register_trait_aliases(
+    symbols: &mut SymbolTable,
+    entries: &[PendingTraitAliasEntry],
+    logger: &mut FileLogger,
+) {
+    for entry in entries {
+        if let Err(error) = symbols.insert_trait_alias(entry.alias.clone(), entry.target.clone()) {
+            log_trait_error(logger, entry.span, error);
+        }
+    }
+}
+
 /// Attempt to solve accumulated trait predicates and emit diagnostics on failure.
 pub(super) fn solve_predicates(
     logger: &mut FileLogger,
@@ -174,6 +205,8 @@ fn trait_method_term_scheme(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hc_core::CoreType;
+    use crate::types::symbol_table::Symbol;
     use crate::types::{
         TraitRef,
         Type,
@@ -196,8 +229,8 @@ mod tests {
 
     fn core_like_type_definitions() -> IndexMap<Path, TypeDefinition> {
         [
-            (Path::core("function"), Type::function().def(2)),
-            (Path::core("boolean"), Type::Boolean.def(0)),
+            (CoreType::Function.path(), Type::function().def(2)),
+            (CoreType::Boolean.path(), Type::Boolean.def(0)),
         ]
         .into_iter()
         .collect()
@@ -206,7 +239,7 @@ mod tests {
     #[test]
     fn build_trait_definitions_quantifies_methods_over_trait_parameters() {
         let statements = parse_statements(
-            "module demo =\n  trait Eq : a =\n    let eq : a -> a -> core::boolean\n  end\nend\n",
+            "module demo =\n  trait Eq : a =\n    let eq : a -> a -> core::Boolean\n  end\nend\n",
         );
         let mut logger = Logger::new();
         let mut file_logger = logger.new_file("test.hc", "");
@@ -237,7 +270,7 @@ mod tests {
     #[test]
     fn register_trait_definitions_inserts_trait_and_method_terms() {
         let statements = parse_statements(
-            "module demo =\n  trait Eq : a =\n    let eq : a -> a -> core::boolean\n  end\nend\n",
+            "module demo =\n  trait Eq : a =\n    let eq : a -> a -> core::Boolean\n  end\nend\n",
         );
         let mut logger = Logger::new();
         let mut file_logger = logger.new_file("test.hc", "");

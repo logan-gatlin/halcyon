@@ -488,6 +488,12 @@ pub fn lower_module(
     let mut init_func = module.new_function(init_name.clone());
 
     for (path, info) in constructor_table.constructors_for_module(&ir_module.name) {
+        if !symbols.terms().contains_key(&path) {
+            continue;
+        }
+        if symbols.constructor_aliases().contains_key(&path) {
+            continue;
+        }
         init_func.lower_constructor(path, &info, symbols);
     }
 
@@ -512,10 +518,16 @@ pub fn lower_module(
                 init_func.lower_ir(term, symbols, &constructor_table);
                 init_func.push(Instruction::Drop);
             }
+            Statement::ConstructorAlias { path, target, .. } => {
+                init_func.lower_constructor_alias(path, target, symbols);
+            }
             Statement::Wasm(declarations) => {
                 lower_wasm_declarations(init_func.module, &ir_module.name, declarations);
             }
-            Statement::Type { .. } | Statement::Trait { .. } | Statement::Impl { .. } => {}
+            Statement::Type { .. }
+            | Statement::Trait { .. }
+            | Statement::TraitAlias { .. }
+            | Statement::Impl { .. } => {}
         }
     }
     module.start = init_name;

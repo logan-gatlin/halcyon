@@ -66,10 +66,18 @@ pub fn module(p: &mut Parser<'_, '_>) {
 
 /// ```bnf
 /// <let_statement> ::= "let" <pattern> "=" <expr>
+///                   | "let" "|" <ident> "=" (<ident> | <path>)
 /// ```
 fn let_statement(p: &mut Parser<'_, '_>) {
     let m = p.start_node_with_leading_comments(SyntaxKind::LET_STATEMENT);
     p.expect(SyntaxKind::LET_KW);
+    if p.eat(SyntaxKind::PIPE) {
+        expect_identifier(p);
+        p.expect(SyntaxKind::EQUAL);
+        path_or_ident(p);
+        p.finish_node(m);
+        return;
+    }
     pattern::pattern(p);
     p.expect(SyntaxKind::EQUAL);
     expression::expr(p);
@@ -115,13 +123,20 @@ fn type_statement(p: &mut Parser<'_, '_>) {
 }
 
 /// ```bnf
-/// <trait_statement> ::= "trait" <ident> (":" <ident>+)? "=" <trait_method_decl>* "end"
+/// <trait_statement> ::= "trait" "~"? <ident> (":" <ident>+)? "=" (<trait_method_decl>* "end" | (<ident> | <path>))
 /// <trait_method_decl> ::= "let" <ident> ":" <type_expr>
 /// ```
 fn trait_statement(p: &mut Parser<'_, '_>) {
     let m = p.start_node_with_leading_comments(SyntaxKind::TRAIT_STATEMENT);
     p.expect(SyntaxKind::TRAIT_KW);
+    let is_alias = p.eat(SyntaxKind::TILDE);
     expect_identifier(p);
+    if is_alias {
+        p.expect(SyntaxKind::EQUAL);
+        path_or_ident(p);
+        p.finish_node(m);
+        return;
+    }
     if p.eat(SyntaxKind::COLON) {
         if !can_start_identifier(p) {
             p.error_at_current("expected trait type parameter");
@@ -149,14 +164,13 @@ fn trait_method_decl(p: &mut Parser<'_, '_>) {
 }
 
 /// ```bnf
-/// <impl_statement> ::= "impl" (<ident> | <path>) ":" <type_expr> ("," <type_expr>)* "=" <impl_method_def>* "end"
+/// <impl_statement> ::= "impl" (<ident> | <path>) <type_expr> ("," <type_expr>)* "=" <impl_method_def>* "end"
 /// <impl_method_def> ::= "let" <ident> "=" <expr>
 /// ```
 fn impl_statement(p: &mut Parser<'_, '_>) {
     let m = p.start_node_with_leading_comments(SyntaxKind::IMPL_STATEMENT);
     p.expect(SyntaxKind::IMPL_KW);
     path_or_ident(p);
-    p.expect(SyntaxKind::COLON);
     if !can_start_impl_argument(p) {
         p.error_at_current("expected at least one impl type argument");
     }

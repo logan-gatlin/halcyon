@@ -96,6 +96,7 @@ impl std::fmt::Display for Path {
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum NameSpace {
     Constructor,
+    Trait,
     Type,
     Term,
     Wasm,
@@ -161,6 +162,7 @@ impl std::fmt::Display for NameSpace {
             "{}",
             match self {
                 NameSpace::Constructor => "constructor",
+                NameSpace::Trait => "trait",
                 NameSpace::Type => "type",
                 NameSpace::Term => "term",
                 NameSpace::Wasm => "register",
@@ -220,6 +222,11 @@ pub trait Scope {
         string: Spanned<String>,
         namespace: NameSpace,
     ) -> Path;
+    fn query_string_if_defined(
+        &mut self,
+        string: Spanned<String>,
+        namespace: NameSpace,
+    ) -> Option<Path>;
     fn query_path(
         &mut self,
         path: Spanned<Path>,
@@ -363,9 +370,7 @@ impl ModuleScope {
                 });
                 return Some(());
             }
-            let Some(frame) = self.current_use_frame_mut() else {
-                return None;
-            };
+            let frame = self.current_use_frame_mut()?;
             frame.aliases.insert(
                 alias.inner,
                 UseAlias {
@@ -376,9 +381,7 @@ impl ModuleScope {
             return Some(());
         }
 
-        let Some(frame) = self.current_use_frame_mut() else {
-            return None;
-        };
+        let frame = self.current_use_frame_mut()?;
         frame.imports.push(UseImport {
             module_segments: module_segments.into_boxed_slice(),
         });
@@ -405,9 +408,8 @@ impl ModuleScope {
     }
 
     fn current_use_frame_mut(&mut self) -> Option<&mut UseScopeFrame> {
-        self.use_scopes
-            .last_mut()
-            .and_then(|scopes| scopes.last_mut())
+        let scopes = self.use_scopes.last_mut()?;
+        scopes.last_mut()
     }
 
     fn active_use_frames(&self) -> &[UseScopeFrame] {
@@ -798,6 +800,57 @@ impl Scope for ModuleScope {
             }
         }
     }
+    fn query_string_if_defined(
+        &mut self,
+        string: Spanned<String>,
+        namespace: NameSpace,
+    ) -> Option<Path> {
+        match self
+            .locals
+            .get(&ScopedString {
+                string: string.inner.clone(),
+                namespace,
+            })
+            .cloned()
+        {
+            Some(binding) => {
+                self.usages
+                    .entry(ScopedPath {
+                        path: binding.path.clone(),
+                        namespace,
+                    })
+                    .or_default()
+                    .push(string.span);
+                Some(binding.path)
+            }
+            None => {
+                let path = self.global_path_for_name(&string.inner);
+                let scoped_path = ScopedPath {
+                    path: path.clone(),
+                    namespace,
+                };
+                if self.definitions.contains_key(&scoped_path) {
+                    self.usages
+                        .entry(scoped_path)
+                        .or_default()
+                        .push(string.span);
+                    Some(path)
+                } else {
+                    let tail_segments = vec![string.inner.clone()];
+                    if let Some(use_path) = self.resolve_from_use_imports(
+                        &tail_segments,
+                        namespace,
+                        string.inner,
+                        string.span,
+                    ) {
+                        Some(self.query_path(use_path.with_span(string.span), namespace))
+                    } else {
+                        None
+                    }
+                }
+            }
+        }
+    }
     fn resolve_path(
         &mut self,
         path: &ast::Path,
@@ -901,6 +954,13 @@ impl<'a> Scope for LocalScope<'a> {
     ) -> Path {
         self.module.query_string(string, namespace)
     }
+    fn query_string_if_defined(
+        &mut self,
+        string: Spanned<String>,
+        namespace: NameSpace,
+    ) -> Option<Path> {
+        self.module.query_string_if_defined(string, namespace)
+    }
     fn query_path(
         &mut self,
         path: Spanned<Path>,
@@ -960,6 +1020,13 @@ impl<S: Scope> Scope for LocalFunctionScope<S> {
         namespace: NameSpace,
     ) -> Path {
         self.0.query_string(string, namespace)
+    }
+    fn query_string_if_defined(
+        &mut self,
+        string: Spanned<String>,
+        namespace: NameSpace,
+    ) -> Option<Path> {
+        self.0.query_string_if_defined(string, namespace)
     }
 
     fn query_path(

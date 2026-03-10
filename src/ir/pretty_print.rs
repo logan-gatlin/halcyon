@@ -114,6 +114,9 @@ impl Printer {
     ) {
         match statement {
             Statement::Term(term) => self.term(term),
+            Statement::ConstructorAlias { path, target, .. } => {
+                self.constructor_alias_statement(path, target)
+            }
             Statement::Type {
                 path,
                 parameters,
@@ -127,6 +130,7 @@ impl Printer {
                 methods,
                 ..
             } => self.trait_statement(path, parameters, methods),
+            Statement::TraitAlias { path, target, .. } => self.trait_alias_statement(path, target),
             Statement::Impl {
                 trait_path,
                 arguments,
@@ -166,6 +170,30 @@ impl Printer {
         self.line("end");
     }
 
+    fn trait_alias_statement(
+        &mut self,
+        path: &Path,
+        target: &Path,
+    ) {
+        self.line(format!(
+            "trait ~{} = {}",
+            self.format_path(path),
+            self.format_path(target)
+        ));
+    }
+
+    fn constructor_alias_statement(
+        &mut self,
+        path: &Path,
+        target: &Path,
+    ) {
+        self.line(format!(
+            "let | {} = {}",
+            self.format_path(path),
+            self.format_path(target)
+        ));
+    }
+
     fn impl_statement(
         &mut self,
         trait_path: &Path,
@@ -177,7 +205,7 @@ impl Printer {
             .map(|arg| self.format_type_expr(arg))
             .collect::<Vec<_>>()
             .join(", ");
-        self.line(format!("impl {} : {args} =", self.format_path(trait_path)));
+        self.line(format!("impl {} {args} =", self.format_path(trait_path)));
         self.indented(|printer| {
             for method in methods {
                 let method_name = printer.format_path(&method.trait_method);
@@ -979,15 +1007,26 @@ impl Printer {
         def: &TypeDef,
     ) {
         match def.kind() {
-            TypeDefKind::Struct(fields) => {
+            TypeDefKind::Struct(members) => {
                 self.line("{");
                 self.indented(|printer| {
-                    if fields.is_empty() {
+                    if members.is_empty() {
                         printer.line("{}");
                         return;
                     }
-                    for (name, type_expr) in fields.iter() {
-                        printer.line(format!("{name}: {}", printer.format_type_expr(type_expr)));
+                    for member in members.iter() {
+                        match member {
+                            StructTypeMember::Field { name, type_expr } => {
+                                printer.line(format!(
+                                    "{}: {}",
+                                    name.inner,
+                                    printer.format_type_expr(type_expr)
+                                ));
+                            }
+                            StructTypeMember::Spread { type_expr, .. } => {
+                                printer.line(format!("..{}", printer.format_type_expr(type_expr)));
+                            }
+                        }
                     }
                 });
                 self.line("}");
@@ -1017,14 +1056,21 @@ impl Printer {
         def: &TypeDef,
     ) -> Option<String> {
         match def.kind() {
-            TypeDefKind::Struct(fields) => {
-                let fields = fields
+            TypeDefKind::Struct(members) => {
+                let members = members
                     .iter()
-                    .map(|(name, type_expr)| {
-                        format!("{name}: {}", self.format_type_expr(type_expr))
+                    .map(|member| {
+                        match member {
+                            StructTypeMember::Field { name, type_expr } => {
+                                format!("{}: {}", name.inner, self.format_type_expr(type_expr))
+                            }
+                            StructTypeMember::Spread { type_expr, .. } => {
+                                format!("..{}", self.format_type_expr(type_expr))
+                            }
+                        }
                     })
                     .collect::<Vec<_>>();
-                Some(format!("{{ {} }}", fields.join(", ")))
+                Some(format!("{{ {} }}", members.join(", ")))
             }
             TypeDefKind::Sum(variants) => {
                 if variants.is_empty() {
@@ -1063,17 +1109,17 @@ impl Printer {
             }
             TypeExprKind::Instantiation(path, args) => {
                 let is_core = path.major == "core";
-                if is_core && path.minor == "unit" && args.is_empty() {
+                if is_core && path.minor == "Unit" && args.is_empty() {
                     return "()".to_string();
                 }
-                if is_core && path.minor == "array" && args.is_empty() {
+                if is_core && path.minor == "Array" && args.is_empty() {
                     return "[]".to_string();
                 }
-                if is_core && path.minor == "array" && args.len() == 1 {
+                if is_core && path.minor == "Array" && args.len() == 1 {
                     let inner = self.format_type_expr(&args[0]);
                     return format!("[] {}", self.wrap_type_expr(&inner));
                 }
-                if is_core && path.minor == "function" && args.len() == 2 {
+                if is_core && path.minor == "Fn" && args.len() == 2 {
                     let param = self.wrap_type_expr(&self.format_type_expr(&args[0]));
                     let result = self.format_type_expr(&args[1]);
                     return format!("{param} -> {result}");
@@ -1143,7 +1189,7 @@ impl Printer {
             PatternKind::ConstConstructor(path) => self.format_path(path),
             PatternKind::Constructor(path, payload) => {
                 let payload = self.wrap_pattern(&self.format_pattern(payload));
-                format!("{} of {payload}", self.format_path(path))
+                format!("{} {payload}", self.format_path(path))
             }
             PatternKind::Tuple(items) => {
                 let items = items

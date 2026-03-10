@@ -4,7 +4,10 @@ use std::path::{
     PathBuf,
 };
 
-use halcyon_lib::parse::ast;
+use halcyon_lib::parse::ast::{
+    self,
+    AstNode,
+};
 use halcyon_lib::types::SymbolTable;
 use halcyon_lib::{
     Artifact,
@@ -161,6 +164,13 @@ fn name_resolution_prelude(symbols: &SymbolTable) -> Vec<(ir::Path, ir::NameSpac
     );
     prelude.extend(
         symbols
+            .constructors()
+            .iter()
+            .cloned()
+            .map(|path| (path, ir::NameSpace::Constructor)),
+    );
+    prelude.extend(
+        symbols
             .type_definitions()
             .keys()
             .cloned()
@@ -254,6 +264,7 @@ fn compile_file_with_imports(
                     }
                 }
                 ast::TopLevelItem::Module(module) => {
+                    let module_span = module.span();
                     let prelude = name_resolution_prelude(symbols);
                     if let Some(ir_module) =
                         ir::module_with_prelude(module, &mut file_logger, &prelude)
@@ -269,6 +280,14 @@ fn compile_file_with_imports(
                         let elaborated = ir::elaborate_module(resolved, symbols);
                         let artifact = halcyon_lib::asm::compile_module(elaborated, symbols);
                         artifacts.push(validate_artifact(artifact, logger));
+                    } else if file_logger.is_ok() {
+                        file_logger
+                            .error("IR lowering failed")
+                            .primary(
+                                "Module lowering failed without a specific diagnostic.",
+                                module_span,
+                            )
+                            .done();
                     }
                 }
             }
@@ -426,6 +445,7 @@ fn generate_docs_for_file_with_imports(
                     }
                 }
                 ast::TopLevelItem::Module(module) => {
+                    let module_span = module.span();
                     let prelude = name_resolution_prelude(symbols);
                     if let Some(ir_module) =
                         ir::module_with_prelude(module, &mut file_logger, &prelude)
@@ -437,6 +457,14 @@ fn generate_docs_for_file_with_imports(
                         );
                         let docs = documentation::generate(&resolved, symbols);
                         all_docs.push((resolved.module.name.clone(), docs));
+                    } else if file_logger.is_ok() {
+                        file_logger
+                            .error("IR lowering failed")
+                            .primary(
+                                "Module lowering failed without a specific diagnostic.",
+                                module_span,
+                            )
+                            .done();
                     }
                 }
             }

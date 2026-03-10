@@ -261,6 +261,12 @@ fn round_trip_struct() {
 }
 
 #[test]
+fn round_trip_struct_spread() {
+    let src = "module M =\n  type circle = { radius: int, ..point }\nend\n";
+    assert_round_trip(src);
+}
+
+#[test]
 fn round_trip_array() {
     let src = "module M =\n  let xs = [1 2 3]\nend\n";
     assert_round_trip(src);
@@ -388,7 +394,7 @@ fn parse_type_sum() {
 #[test]
 fn parse_trait_statement() {
     let tree_str = parse_to_string(
-        "module M =\n  trait Eq : a =\n    let eq : a -> a -> core::boolean\n  end\nend",
+        "module M =\n  trait Eq : a =\n    let eq : a -> a -> core::Boolean\n  end\nend",
     );
     assert!(
         tree_str.contains("TRAIT_STATEMENT"),
@@ -401,9 +407,22 @@ fn parse_trait_statement() {
 }
 
 #[test]
+fn parse_trait_alias_statement() {
+    let tree_str = parse_to_string("module M =\n  trait ~Eq = core::Equal\nend");
+    assert!(
+        tree_str.contains("TRAIT_STATEMENT"),
+        "Should contain TRAIT_STATEMENT"
+    );
+    assert!(
+        !tree_str.contains("TRAIT_METHOD_DECL"),
+        "Trait alias should not contain TRAIT_METHOD_DECL"
+    );
+}
+
+#[test]
 fn parse_impl_statement() {
     let tree_str = parse_to_string(
-        "module M =\n  impl Eq : core::integer =\n    let eq = fn x y => x == y\n  end\nend",
+        "module M =\n  impl Eq core::Integer =\n    let eq = fn x y => x == y\n  end\nend",
     );
     assert!(
         tree_str.contains("IMPL_STATEMENT"),
@@ -418,13 +437,13 @@ fn parse_impl_statement() {
 #[test]
 fn parse_impl_statement_multiple_comma_args() {
     assert_no_errors(
-        "module M =\n  impl Pair : core::integer, core::string =\n    let show = fn p => p\n  end\nend",
+        "module M =\n  impl Pair core::Integer, core::String =\n    let show = fn p => p\n  end\nend",
     );
 }
 
 #[test]
 fn parse_impl_statement_with_forall_argument() {
-    assert_no_errors("module M =\n  impl Id : for a in a =\n    let id = fn x => x\n  end\nend");
+    assert_no_errors("module M =\n  impl Id for a in a =\n    let id = fn x => x\n  end\nend");
 }
 
 #[test]
@@ -532,11 +551,39 @@ fn parse_struct_def() {
 }
 
 #[test]
+fn parse_struct_def_with_spread() {
+    let tree_str = parse_to_string("module M =\n  type circle = { radius: int, ..point }\nend");
+    assert!(tree_str.contains("STRUCT_DEF"), "Should contain STRUCT_DEF");
+    assert!(
+        tree_str.contains("STRUCT_SPREAD_DECL"),
+        "Should contain STRUCT_SPREAD_DECL"
+    );
+}
+
+#[test]
 fn parse_pattern_type_hint() {
     let tree_str = parse_to_string("module M =\n  let (x: int) = 42\nend");
     assert!(
         tree_str.contains("PAT_TYPE_HINT"),
         "Should contain PAT_TYPE_HINT"
+    );
+}
+
+#[test]
+fn parse_constructor_pattern_juxtaposition() {
+    let tree_str = parse_to_string(
+        "module M =\n  let x = match opt with\n    | Some value => value\n    | None => 0\nend",
+    );
+    assert!(
+        tree_str.contains("PAT_CONSTRUCTOR"),
+        "Should contain PAT_CONSTRUCTOR"
+    );
+}
+
+#[test]
+fn parse_constructor_pattern_with_of_is_error() {
+    assert_has_errors(
+        "module M =\n  let x = match opt with\n    | Some of value => value\n    | None => 0\nend",
     );
 }
 
@@ -760,7 +807,7 @@ fn parse_wasm_requires_fat_arrow() {
 
 #[test]
 fn ast_inline_wasm_expr_has_type_and_instructions() {
-    let sf = parse_source_file("module M =\n  let x = (wasm : core::integer) => (get x)\nend");
+    let sf = parse_source_file("module M =\n  let x = (wasm : core::Integer) => (get x)\nend");
     let ast::Statement::Let(ref let_stmt) = sf.modules()[0].statements()[0] else {
         panic!("expected let statement");
     };
@@ -832,6 +879,37 @@ fn ast_type_statement_accessors() {
 }
 
 #[test]
+fn ast_struct_type_members_include_spreads() {
+    let sf = parse_source_file("module M =\n  type circle = { radius: int, ..point }\nend");
+    let m = &sf.modules()[0];
+    let stmts = m.statements();
+    let ast::Statement::Type(ref type_stmt) = stmts[0] else {
+        panic!("expected type statement");
+    };
+    let ast::TypeDef::Struct(ref sd) = type_stmt.type_def().expect("should have type def") else {
+        panic!("expected struct type def");
+    };
+
+    let members = sd.members();
+    assert_eq!(members.len(), 2);
+    match &members[0] {
+        ast::StructTypeMemberDecl::Field(field) => {
+            assert_eq!(field.name_text().as_deref(), Some("radius"));
+            assert!(field.ty().is_some());
+        }
+        ast::StructTypeMemberDecl::Spread(_) => panic!("first member should be a field"),
+    }
+    match &members[1] {
+        ast::StructTypeMemberDecl::Spread(spread) => {
+            assert!(spread.ty().is_some());
+        }
+        ast::StructTypeMemberDecl::Field(_) => panic!("second member should be a spread"),
+    }
+    assert_eq!(sd.fields().len(), 1);
+    assert_eq!(sd.spreads().len(), 1);
+}
+
+#[test]
 fn ast_type_statement_alias_marker() {
     let sf = parse_source_file("module M =\n  type ~pair: a b = (a, b)\nend");
     let m = &sf.modules()[0];
@@ -855,7 +933,7 @@ fn parse_tilde_type_alias_rejects_struct_rhs() {
 #[test]
 fn ast_trait_statement_accessors() {
     let sf = parse_source_file(
-        "module M =\n  trait Eq : a =\n    let eq : a -> a -> core::boolean\n  end\nend",
+        "module M =\n  trait Eq : a =\n    let eq : a -> a -> core::Boolean\n  end\nend",
     );
     let m = &sf.modules()[0];
     let ast::Statement::Trait(ref trait_stmt) = m.statements()[0] else {
@@ -872,9 +950,23 @@ fn ast_trait_statement_accessors() {
 }
 
 #[test]
+fn ast_trait_alias_statement_accessors() {
+    let sf = parse_source_file("module M =\n  trait ~Eq = core::Equal\nend");
+    let m = &sf.modules()[0];
+    let ast::Statement::Trait(ref trait_stmt) = m.statements()[0] else {
+        panic!("expected trait statement");
+    };
+    assert!(trait_stmt.is_alias());
+    let Some(ast::PathOrIdent::Path(alias_target)) = trait_stmt.alias_target() else {
+        panic!("expected path alias target");
+    };
+    assert_eq!(alias_target.segments(), vec!["core", "Equal"]);
+}
+
+#[test]
 fn ast_impl_statement_accessors() {
     let sf = parse_source_file(
-        "module M =\n  impl Eq : core::integer =\n    let eq = fn x y => x == y\n  end\nend",
+        "module M =\n  impl Eq core::Integer =\n    let eq = fn x y => x == y\n  end\nend",
     );
     let m = &sf.modules()[0];
     let ast::Statement::Impl(ref impl_stmt) = m.statements()[0] else {
@@ -1297,6 +1389,31 @@ fn ast_pattern_type_hint() {
         }
         other => panic!("expected tuple or type hint, got: {other:?}"),
     }
+}
+
+#[test]
+fn ast_constructor_pattern_payload() {
+    let sf = parse_source_file(
+        "module M =\n  let x = match opt with\n    | Some value => value\n    | None => 0\nend",
+    );
+    let ast::Statement::Let(ref ls) = sf.modules()[0].statements()[0] else {
+        panic!("expected let");
+    };
+    let ast::Expr::Match(ref match_expr) = ls.value().unwrap() else {
+        panic!("expected match");
+    };
+    let first_arm = &match_expr.arms()[0];
+    let ast::Pattern::Constructor(constructor) = first_arm.pattern().unwrap() else {
+        panic!("expected constructor pattern");
+    };
+    let ast::PathOrIdent::Ident(head) = constructor.head().unwrap() else {
+        panic!("expected constructor head identifier");
+    };
+    assert_eq!(head.name_text().as_deref(), Some("Some"));
+    let ast::Pattern::Ident(payload) = constructor.payload().unwrap() else {
+        panic!("expected identifier payload");
+    };
+    assert_eq!(payload.name_text().as_deref(), Some("value"));
 }
 
 #[test]

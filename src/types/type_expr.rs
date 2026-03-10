@@ -336,12 +336,14 @@ fn lower_instantiation(
 #[cfg(test)]
 mod tests {
     use crate::Span;
+    use crate::hc_core::CoreType;
     use crate::ir::{
         Path,
         TypeExpr,
         TypeExprConstraint,
         TypeExprKind,
     };
+    use crate::types::symbol_table::Symbol;
 
     use super::{
         TraitRef,
@@ -376,7 +378,7 @@ mod tests {
     #[test]
     fn named_definition_instantiation_stays_nominal() {
         let pair = Path::new("demo", "Pair");
-        let int = Path::core("integer");
+        let int = CoreType::Integer.path();
         let lowered = lower_type_expr(
             &expr(TypeExprKind::Instantiation(
                 pair.clone(),
@@ -413,7 +415,7 @@ mod tests {
     #[test]
     fn alias_definition_instantiation_is_structural() {
         let pair = Path::new("demo", "Pair");
-        let int = Path::core("integer");
+        let int = CoreType::Integer.path();
         let lowered = lower_type_expr(
             &expr(TypeExprKind::Instantiation(
                 pair.clone(),
@@ -461,7 +463,7 @@ mod tests {
     #[test]
     fn type_parameter_application_reports_error_and_recovers_to_parameter() {
         let a = Path::new("demo", "a");
-        let int = Path::core("integer");
+        let int = CoreType::Integer.path();
         let lowered = lower_type_expr(
             &expr(TypeExprKind::ForAll(
                 [a.clone()].into(),
@@ -486,7 +488,7 @@ mod tests {
     #[test]
     fn invalid_type_application_reports_error_and_keeps_lowered_shape() {
         let pair = Path::new("demo", "Pair");
-        let int = Path::core("integer");
+        let int = CoreType::Integer.path();
         let lowered = lower_type_expr(
             &expr(TypeExprKind::Instantiation(
                 pair.clone(),
@@ -534,11 +536,11 @@ mod tests {
                 pair.clone(),
                 [
                     expr(TypeExprKind::Instantiation(
-                        Path::core("integer"),
+                        CoreType::Integer.path(),
                         [].into(),
                     )),
                     expr(TypeExprKind::Instantiation(
-                        Path::core("boolean"),
+                        CoreType::Boolean.path(),
                         [].into(),
                     )),
                 ]
@@ -627,7 +629,7 @@ mod tests {
     #[test]
     fn lower_type_scheme_expr_collects_forall_constraints() {
         let a = Path::new("demo", "a");
-        let function = Path::core("function");
+        let function = CoreType::Function.path();
         let lowered = lower_type_scheme_expr(
             &expr(TypeExprKind::ForAll(
                 [a.clone()].into(),
@@ -671,7 +673,7 @@ mod tests {
     fn lower_type_scheme_expr_for_non_forall_has_no_predicates() {
         let lowered = lower_type_scheme_expr(
             &expr(TypeExprKind::Instantiation(
-                Path::core("integer"),
+                CoreType::Integer.path(),
                 [].into(),
             )),
             &mut |_| TypeExprSymbol::Definition(Type::Integer.def(0)),

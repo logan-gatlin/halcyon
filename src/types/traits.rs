@@ -132,6 +132,10 @@ pub enum TraitError {
     InvalidInstance {
         trait_name: Path,
     },
+    InvalidAliasTarget {
+        alias: Path,
+        target: Path,
+    },
     NoInstance {
         predicate: TraitConstraint,
     },

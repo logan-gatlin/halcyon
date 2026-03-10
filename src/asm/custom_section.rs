@@ -577,6 +577,7 @@ fn collect_imported_types(
 mod tests {
     #![allow(clippy::unwrap_used)]
     use super::*;
+    use crate::hc_core::CoreSymbol;
 
     fn decode_section(encoded: &[u8]) -> TypeSignatureSection {
         let mut pos = 0;
@@ -694,7 +695,7 @@ mod tests {
             TypeScheme::with_predicates(
                 applied,
                 vec![TraitRef {
-                    trait_name: Path::core("equal"),
+                    trait_name: CoreSymbol::TraitEqual.path(),
                     arguments: vec![SemanticType::Integer],
                 }],
             ),

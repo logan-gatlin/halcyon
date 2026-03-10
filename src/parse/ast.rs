@@ -248,6 +248,33 @@ fn alias_name_after_as(parent: &SyntaxNode) -> Option<Spanned<String>> {
     None
 }
 
+fn alias_name_after_pipe(parent: &SyntaxNode) -> Option<Spanned<String>> {
+    let tokens = non_trivia_tokens(parent);
+    let pipe_index = tokens
+        .iter()
+        .position(|token| token.kind() == SyntaxKind::PIPE)?;
+    let index = pipe_index + 1;
+    let token = tokens.get(index)?;
+    if token.kind() == SyntaxKind::IDENT {
+        return Some(
+            token
+                .text()
+                .to_string()
+                .with_span(token.text_range().into()),
+        );
+    }
+    if token.kind() == SyntaxKind::L_SQUARE
+        && let (Some(op), Some(end)) = (tokens.get(index + 1), tokens.get(index + 2))
+        && op.kind().is_operator_token()
+        && end.kind() == SyntaxKind::R_SQUARE
+    {
+        return Some(format!("[{}]", op.text()).with_span(
+            rowan::TextRange::new(token.text_range().start(), end.text_range().end()).into(),
+        ));
+    }
+    None
+}
+
 // ── Macro to reduce per-node boilerplate ─────────────────────────────
 
 macro_rules! ast_node {
@@ -343,6 +370,35 @@ impl HasLeadingComments for LetStatement {
 }
 
 impl LetStatement {
+    pub fn is_pattern_alias(&self) -> bool {
+        let tokens = non_trivia_tokens(&self.syntax);
+        matches!(
+            (
+                tokens.first().map(|token| token.kind()),
+                tokens.get(1).map(|token| token.kind())
+            ),
+            (Some(SyntaxKind::LET_KW), Some(SyntaxKind::PIPE))
+        )
+    }
+
+    pub fn alias_name_spanned(&self) -> Option<Spanned<String>> {
+        if !self.is_pattern_alias() {
+            return None;
+        }
+        alias_name_after_pipe(&self.syntax)
+    }
+
+    pub fn alias_target(&self) -> Option<PathOrIdent> {
+        if !self.is_pattern_alias() {
+            return None;
+        }
+        let equal = child_token(&self.syntax, SyntaxKind::EQUAL)?;
+        self.syntax
+            .children()
+            .filter_map(PathOrIdent::cast)
+            .find(|target| target.syntax().text_range().start() >= equal.text_range().end())
+    }
+
     pub fn pattern(&self) -> Option<Pattern> {
         child_node(&self.syntax)
     }
@@ -428,6 +484,21 @@ impl HasLeadingComments for TraitStatement {
 }
 
 impl TraitStatement {
+    pub fn is_alias(&self) -> bool {
+        non_trivia_tokens(&self.syntax)
+            .into_iter()
+            .take_while(|token| token.kind() != SyntaxKind::EQUAL)
+            .any(|token| token.kind() == SyntaxKind::TILDE)
+    }
+
+    pub fn alias_target(&self) -> Option<PathOrIdent> {
+        let equal = child_token(&self.syntax, SyntaxKind::EQUAL)?;
+        self.syntax
+            .children()
+            .filter_map(PathOrIdent::cast)
+            .find(|target| target.syntax().text_range().start() >= equal.text_range().end())
+    }
+
     pub fn trait_params(&self) -> Vec<Spanned<String>> {
         let tokens = non_trivia_tokens(&self.syntax);
         let mut params = Vec::new();
@@ -492,13 +563,13 @@ impl ImplStatement {
     }
 
     pub fn type_args(&self) -> Vec<TypeExpr> {
-        let Some(colon) = child_token(&self.syntax, SyntaxKind::COLON) else {
+        let Some(trait_name) = self.trait_name() else {
             return Vec::new();
         };
         let Some(equal) = child_token(&self.syntax, SyntaxKind::EQUAL) else {
             return Vec::new();
         };
-        let start = colon.text_range().end();
+        let start = trait_name.syntax().text_range().end();
         let end = equal.text_range().start();
         self.syntax
             .children()
@@ -552,8 +623,42 @@ impl ImplMethodDef {
 ast_node!(StructDef, STRUCT_DEF);
 
 impl StructDef {
-    pub fn fields(&self) -> Vec<FieldDecl> {
+    pub fn members(&self) -> Vec<StructTypeMemberDecl> {
         child_nodes(&self.syntax)
+    }
+
+    pub fn fields(&self) -> Vec<FieldDecl> {
+        self.syntax.children().filter_map(FieldDecl::cast).collect()
+    }
+
+    pub fn spreads(&self) -> Vec<StructSpreadDecl> {
+        self.syntax
+            .children()
+            .filter_map(StructSpreadDecl::cast)
+            .collect()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum StructTypeMemberDecl {
+    Field(FieldDecl),
+    Spread(StructSpreadDecl),
+}
+
+impl AstNode for StructTypeMemberDecl {
+    fn cast(node: SyntaxNode) -> Option<Self> {
+        match node.kind() {
+            SyntaxKind::FIELD_DECL => FieldDecl::cast(node).map(Self::Field),
+            SyntaxKind::STRUCT_SPREAD_DECL => StructSpreadDecl::cast(node).map(Self::Spread),
+            _ => None,
+        }
+    }
+
+    fn syntax(&self) -> &SyntaxNode {
+        match self {
+            Self::Field(field) => field.syntax(),
+            Self::Spread(spread) => spread.syntax(),
+        }
     }
 }
 
@@ -581,6 +686,14 @@ impl HasName for FieldDecl {
 }
 
 impl FieldDecl {
+    pub fn ty(&self) -> Option<TypeExpr> {
+        self.syntax.children().find_map(TypeExpr::cast)
+    }
+}
+
+ast_node!(StructSpreadDecl, STRUCT_SPREAD_DECL);
+
+impl StructSpreadDecl {
     pub fn ty(&self) -> Option<TypeExpr> {
         self.syntax.children().find_map(TypeExpr::cast)
     }
@@ -1086,7 +1199,7 @@ impl PatConstructor {
     pub fn head(&self) -> Option<PathOrIdent> {
         self.syntax.children().find_map(PathOrIdent::cast)
     }
-    /// The payload pattern after `of` (second Pattern child).
+    /// The payload pattern after the constructor head (second Pattern child).
     pub fn payload(&self) -> Option<Pattern> {
         nth_child_node(&self.syntax, 1)
     }
@@ -1159,6 +1272,13 @@ impl PathOrIdent {
         match self {
             Self::Ident(_) => None,
             Self::Path(p) => p.qualifier(),
+        }
+    }
+
+    pub fn syntax(&self) -> &SyntaxNode {
+        match self {
+            Self::Ident(ident) => ident.syntax(),
+            Self::Path(path) => path.syntax(),
         }
     }
 }

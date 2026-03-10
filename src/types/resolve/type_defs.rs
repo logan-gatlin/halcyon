@@ -5,9 +5,12 @@ use std::collections::{
     HashSet,
 };
 
+use crate::ir::StructTypeMember;
 use crate::logging::WithContext;
 use indexmap::IndexMap;
 
+use super::super::StructMatch;
+use super::super::instantiation::instantiate_forall_strict;
 use super::super::type_expr::{
     TypeExprSymbol,
     lower_type_expr,
@@ -77,6 +80,9 @@ pub(super) fn collect_term_definitions(statements: &[Statement<()>]) -> Vec<(Pat
                 };
                 definitions.extend(collect_pattern_bindings(assignee));
             }
+            Statement::ConstructorAlias { path, span, .. } => {
+                definitions.push((path.clone(), *span));
+            }
             Statement::Trait { methods, .. } => {
                 definitions.extend(
                     methods
@@ -91,13 +97,13 @@ pub(super) fn collect_term_definitions(statements: &[Statement<()>]) -> Vec<(Pat
                         .map(|method| (method.impl_path.clone(), method.span)),
                 );
             }
-            Statement::Type { .. } | Statement::Wasm(_) => {}
+            Statement::Type { .. } | Statement::TraitAlias { .. } | Statement::Wasm(_) => {}
         }
     }
     definitions
 }
 
-/// Collect constructor symbols contributed by non-duplicate sum types.
+/// Collect constructor symbols contributed by non-duplicate named types.
 pub(super) fn collect_constructor_definitions(
     entries: &IndexMap<Path, PendingTypeDefinitionEntry>,
     duplicates: &HashSet<Path>,
@@ -105,16 +111,18 @@ pub(super) fn collect_constructor_definitions(
     entries
         .iter()
         .filter(|(path, _)| !duplicates.contains(*path))
-        .filter_map(|(path, entry)| {
-            let TypeDefKind::Sum(variants) = entry.syntax.kind() else {
-                return None;
-            };
-            Some((path, variants, entry.syntax.span()))
-        })
-        .flat_map(|(path, variants, span)| {
-            variants
-                .iter()
-                .map(move |(variant, _)| (path.sibling(variant), span))
+        .filter(|(_, entry)| entry.kind == TypeDefinitionKind::Named)
+        .flat_map(|(path, entry)| {
+            let span = entry.syntax.span();
+            match entry.syntax.kind() {
+                TypeDefKind::Sum(variants) => {
+                    variants
+                        .iter()
+                        .map(move |(variant, _)| (path.sibling(variant), span))
+                        .collect::<Vec<_>>()
+                }
+                TypeDefKind::Struct(_) | TypeDefKind::Expr(_) => vec![(path.clone(), span)],
+            }
         })
         .collect()
 }
@@ -133,8 +141,8 @@ pub(super) fn build_type_definitions(
     definitions
 }
 
-/// Build constructor schemes for every resolved named sum type.
-pub(super) fn build_sum_constructors(
+/// Build constructor schemes for every resolved named type.
+pub(super) fn build_type_constructors(
     entries: &IndexMap<Path, PendingTypeDefinitionEntry>,
     type_definitions: &IndexMap<Path, TypeDefinition>,
     logger: &mut FileLogger,
@@ -146,10 +154,6 @@ pub(super) fn build_sum_constructors(
         if entry.kind != TypeDefinitionKind::Named {
             continue;
         }
-        let TypeDefKind::Sum(variants) = entry.syntax.kind() else {
-            continue;
-        };
-
         let param_map = param_index_map(&entry.parameters);
         let definition = type_definitions
             .get(path)
@@ -166,24 +170,53 @@ pub(super) fn build_sum_constructors(
         let args = type_vars_for_params(entry.parameters.len());
         let result_type = base.apply(args);
 
-        for (variant, type_expr) in variants.iter() {
-            let payload_type = type_expr_to_type_in_def(
-                type_expr,
-                &param_map,
-                entries,
-                &mut type_definitions,
-                &mut Vec::new(),
-                logger,
-            );
-            let constructor_type = if matches!(payload_type, Type::Unit) {
-                result_type.clone()
-            } else {
-                Type::func(payload_type, result_type.clone())
-            };
-            let scheme_type = constructor_type.for_all(entry.parameters.len());
-            let constructor_path = path.sibling(variant);
-            if seen_paths.insert(constructor_path.clone()) {
-                constructors.push((constructor_path, scheme_type.scheme()));
+        match entry.syntax.kind() {
+            TypeDefKind::Sum(variants) => {
+                for (variant, type_expr) in variants.iter() {
+                    let payload_type = type_expr_to_type_in_def(
+                        type_expr,
+                        &param_map,
+                        entries,
+                        &mut type_definitions,
+                        &mut Vec::new(),
+                        logger,
+                    );
+                    let constructor_type = if matches!(payload_type, Type::Unit) {
+                        result_type.clone()
+                    } else {
+                        Type::func(payload_type, result_type.clone())
+                    };
+                    let scheme_type = constructor_type.for_all(entry.parameters.len());
+                    let constructor_path = path.sibling(variant);
+                    if seen_paths.insert(constructor_path.clone()) {
+                        constructors.push((constructor_path, scheme_type.scheme()));
+                    }
+                }
+            }
+            TypeDefKind::Struct(_) | TypeDefKind::Expr(_) => {
+                let payload_type = instantiate_forall_strict(
+                    &definition.body,
+                    &type_vars_for_params(entry.parameters.len()),
+                )
+                .unwrap_or(Type::Unit);
+                let payload_type = match payload_type {
+                    Type::Struct { fields } => {
+                        Type::StructConstraint {
+                            fields,
+                            mode: StructMatch::Exact,
+                        }
+                    }
+                    other => other,
+                };
+                let constructor_type = if matches!(payload_type, Type::Unit) {
+                    result_type
+                } else {
+                    Type::func(payload_type, result_type)
+                };
+                let scheme_type = constructor_type.for_all(entry.parameters.len());
+                if seen_paths.insert(path.clone()) {
+                    constructors.push((path.clone(), scheme_type.scheme()));
+                }
             }
         }
     }
@@ -428,19 +461,15 @@ fn type_def_kind_to_type(
     logger: &mut FileLogger,
 ) -> Type {
     match kind {
-        TypeDefKind::Struct(fields) => {
-            let mut typed_fields = IndexMap::new();
-            for (name, type_expr) in fields.iter() {
-                let field_type = type_expr_to_type_in_def(
-                    type_expr,
-                    param_map,
-                    entries,
-                    type_definitions,
-                    stack,
-                    logger,
-                );
-                typed_fields.insert(name.clone(), field_type);
-            }
+        TypeDefKind::Struct(members) => {
+            let typed_fields = lower_struct_type_members(
+                members,
+                param_map,
+                entries,
+                type_definitions,
+                stack,
+                logger,
+            );
             Type::Struct {
                 fields: typed_fields,
             }
@@ -473,6 +502,128 @@ fn type_def_kind_to_type(
             )
         }
     }
+}
+
+fn lower_struct_type_members(
+    members: &[StructTypeMember],
+    param_map: &HashMap<Path, u32>,
+    entries: &IndexMap<Path, PendingTypeDefinitionEntry>,
+    type_definitions: &mut IndexMap<Path, TypeDefinition>,
+    stack: &mut Vec<Path>,
+    logger: &mut FileLogger,
+) -> IndexMap<String, Type> {
+    let mut typed_fields = IndexMap::new();
+    let mut field_first_spans = HashMap::new();
+
+    for member in members {
+        match member {
+            StructTypeMember::Field { name, type_expr } => {
+                let field_type = type_expr_to_type_in_def(
+                    type_expr,
+                    param_map,
+                    entries,
+                    type_definitions,
+                    stack,
+                    logger,
+                );
+                if let Some(first_span) = field_first_spans.get(&name.inner).copied() {
+                    log_duplicate_struct_field(logger, &name.inner, first_span, name.span);
+                    continue;
+                }
+                field_first_spans.insert(name.inner.clone(), name.span);
+                typed_fields.insert(name.inner.clone(), field_type);
+            }
+            StructTypeMember::Spread { type_expr, span } => {
+                let spread_type = type_expr_to_type_in_def(
+                    type_expr,
+                    param_map,
+                    entries,
+                    type_definitions,
+                    stack,
+                    logger,
+                );
+                let Some(spread_fields) = spread_type_fields(spread_type.clone()) else {
+                    log_invalid_struct_spread(logger, *span, &spread_type);
+                    continue;
+                };
+                for (field_name, field_type) in spread_fields {
+                    if let Some(first_span) = field_first_spans.get(&field_name).copied() {
+                        log_duplicate_struct_field(logger, &field_name, first_span, *span);
+                        continue;
+                    }
+                    field_first_spans.insert(field_name.clone(), *span);
+                    typed_fields.insert(field_name, field_type);
+                }
+            }
+        }
+    }
+
+    typed_fields
+}
+
+fn spread_type_fields(type_: Type) -> Option<IndexMap<String, Type>> {
+    match type_ {
+        Type::Struct { fields } => Some(fields),
+        Type::Named { body, .. } => {
+            instantiate_forall_strict(&body, &[]).and_then(spread_type_fields)
+        }
+        Type::Apply {
+            constructor,
+            arguments,
+        } => {
+            let (base, mut flattened_arguments) = split_apply_type(*constructor);
+            flattened_arguments.extend(arguments);
+            let Type::Named { body, .. } = base else {
+                return None;
+            };
+            instantiate_forall_strict(&body, &flattened_arguments).and_then(spread_type_fields)
+        }
+        _ => None,
+    }
+}
+
+fn split_apply_type(type_: Type) -> (Type, Vec<Type>) {
+    match type_ {
+        Type::Apply {
+            constructor,
+            arguments,
+        } => {
+            let (base, mut flattened) = split_apply_type(*constructor);
+            flattened.extend(arguments);
+            (base, flattened)
+        }
+        other => (other, Vec::new()),
+    }
+}
+
+fn log_duplicate_struct_field(
+    logger: &mut FileLogger,
+    field_name: &str,
+    first_span: Span,
+    duplicate_span: Span,
+) {
+    logger
+        .error("Duplicate struct field")
+        .primary(
+            format!("`{field_name}` is already defined in this struct type."),
+            duplicate_span,
+        )
+        .secondary("First defined here.", first_span)
+        .done();
+}
+
+fn log_invalid_struct_spread(
+    logger: &mut FileLogger,
+    spread_span: Span,
+    spread_type: &Type,
+) {
+    logger
+        .error("Invalid struct spread")
+        .primary(
+            format!("`..` expects a struct type, but this resolves to `{spread_type}`."),
+            spread_span,
+        )
+        .done();
 }
 
 struct TypeDefinitionExprLowerer<'a> {
@@ -546,11 +697,13 @@ impl TypeDefinitionExprLowerer<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hc_core::CoreType;
     use crate::ir::{
         TypeExprConstraint,
         TypeExprKind,
     };
     use crate::types::TraitRef;
+    use crate::types::symbol_table::Symbol;
     use crate::{
         Logger,
         ir,
@@ -578,7 +731,7 @@ mod tests {
     #[test]
     fn collect_type_entries_keeps_first_definition_per_path() {
         let statements = parse_module_statements(
-            "module demo =\n  type Token = { value: core::integer }\n  type Token = { value: core::boolean }\nend\n",
+            "module demo =\n  type Token = { value: core::Integer }\n  type Token = { value: core::Boolean }\nend\n",
         );
         let entries = collect_type_entries(&statements);
 
@@ -592,7 +745,7 @@ mod tests {
     #[test]
     fn collect_term_and_constructor_definitions_include_all_sources() {
         let statements = parse_module_statements(
-            "module demo =\n  type Option: a = | Some a | None\n  trait Eq : a =\n    let eq : a -> a -> core::boolean\n  end\n  impl Eq : core::integer =\n    let eq = fn x => x\n  end\n  let value = 1\nend\n",
+            "module demo =\n  type Option: a = | Some a | None\n  type Int = core::Integer\n  trait Eq : a =\n    let eq : a -> a -> core::Boolean\n  end\n  impl Eq core::Integer =\n    let eq = fn x => x\n  end\n  let value = 1\nend\n",
         );
         let entries = collect_type_entries(&statements);
         let duplicates = HashSet::new();
@@ -619,6 +772,11 @@ mod tests {
             constructors
                 .iter()
                 .any(|(path, _)| path == &Path::new("demo", "None"))
+        );
+        assert!(
+            constructors
+                .iter()
+                .any(|(path, _)| path == &Path::new("demo", "Int"))
         );
     }
 
@@ -661,21 +819,137 @@ mod tests {
     }
 
     #[test]
-    fn build_sum_constructors_generates_constructor_schemes() {
-        let statements =
-            parse_module_statements("module demo =\n  type Option: a = | Some a | None\nend\n");
+    fn build_type_definitions_expand_struct_spreads() {
+        let statements = parse_module_statements(
+            "module demo =\n  type Value = ()\n  type Vector2 = { x: Value, y: Value }\n  type Circle = { radius: Value, ..Vector2 }\n  type Box: a = { inner: a }\n  type Box2 = { ..Box Value }\nend\n",
+        );
+        let entries = collect_type_entries(&statements);
+        let mut logger = Logger::new();
+        let mut file_logger = logger.new_file("test.hc", "");
+        let defs = build_type_definitions(&IndexMap::new(), &entries, &mut file_logger);
+
+        let circle = defs
+            .get(&Path::new("demo", "Circle"))
+            .expect("Circle definition should exist");
+        let Type::Struct { fields } = &circle.body else {
+            panic!("Circle should lower to a struct");
+        };
+        assert_eq!(
+            fields.keys().cloned().collect::<Vec<_>>(),
+            vec!["radius".to_string(), "x".to_string(), "y".to_string()]
+        );
+
+        let box2 = defs
+            .get(&Path::new("demo", "Box2"))
+            .expect("Box2 definition should exist");
+        let Type::Struct { fields } = &box2.body else {
+            panic!("Box2 should lower to a struct");
+        };
+        assert_eq!(
+            fields.keys().cloned().collect::<Vec<_>>(),
+            vec!["inner".to_string()]
+        );
+        assert!(file_logger.is_ok());
+    }
+
+    #[test]
+    fn build_type_definitions_report_duplicate_struct_fields_from_spreads() {
+        let statements = parse_module_statements(
+            "module demo =\n  type Value = ()\n  type Base = { x: Value, y: Value }\n  type Dup = { x: Value, ..Base }\nend\n",
+        );
+        let entries = collect_type_entries(&statements);
+        let mut logger = Logger::new();
+        let mut file_logger = logger.new_file("test.hc", "");
+        let defs = build_type_definitions(&IndexMap::new(), &entries, &mut file_logger);
+
+        assert!(
+            file_logger
+                .iter()
+                .any(|diagnostic| diagnostic.message == "Duplicate struct field")
+        );
+
+        let dup = defs
+            .get(&Path::new("demo", "Dup"))
+            .expect("Dup definition should exist");
+        let Type::Struct { fields } = &dup.body else {
+            panic!("Dup should lower to a struct");
+        };
+        assert_eq!(
+            fields.keys().cloned().collect::<Vec<_>>(),
+            vec!["x".to_string(), "y".to_string()]
+        );
+    }
+
+    #[test]
+    fn build_type_definitions_report_duplicate_explicit_struct_fields() {
+        let statements = parse_module_statements(
+            "module demo =\n  type Value = ()\n  type Dup = { x: Value, x: Value }\nend\n",
+        );
+        let entries = collect_type_entries(&statements);
+        let mut logger = Logger::new();
+        let mut file_logger = logger.new_file("test.hc", "");
+        let defs = build_type_definitions(&IndexMap::new(), &entries, &mut file_logger);
+
+        assert!(
+            file_logger
+                .iter()
+                .any(|diagnostic| diagnostic.message == "Duplicate struct field")
+        );
+
+        let dup = defs
+            .get(&Path::new("demo", "Dup"))
+            .expect("Dup definition should exist");
+        let Type::Struct { fields } = &dup.body else {
+            panic!("Dup should lower to a struct");
+        };
+        assert_eq!(
+            fields.keys().cloned().collect::<Vec<_>>(),
+            vec!["x".to_string()]
+        );
+    }
+
+    #[test]
+    fn build_type_definitions_report_invalid_non_struct_spreads() {
+        let statements = parse_module_statements(
+            "module demo =\n  type NotStruct = | Unit\n  type Bad = { ..NotStruct }\nend\n",
+        );
+        let entries = collect_type_entries(&statements);
+        let mut logger = Logger::new();
+        let mut file_logger = logger.new_file("test.hc", "");
+        let defs = build_type_definitions(&IndexMap::new(), &entries, &mut file_logger);
+
+        assert!(
+            file_logger
+                .iter()
+                .any(|diagnostic| diagnostic.message == "Invalid struct spread")
+        );
+
+        let bad = defs
+            .get(&Path::new("demo", "Bad"))
+            .expect("Bad definition should exist");
+        let Type::Struct { fields } = &bad.body else {
+            panic!("Bad should lower to a struct");
+        };
+        assert!(fields.is_empty());
+    }
+
+    #[test]
+    fn build_type_constructors_generates_constructor_schemes() {
+        let statements = parse_module_statements(
+            "module demo =\n  type Option: a = | Some a | None\n  type Int = core::Integer\nend\n",
+        );
         let entries = collect_type_entries(&statements);
         let mut logger = Logger::new();
         let mut file_logger = logger.new_file("test.hc", "");
         let mut defs = [
-            (Path::core("function"), Type::function().def(2)),
-            (Path::core("array"), Type::array().def(1)),
+            (CoreType::Function.path(), Type::function().def(2)),
+            (CoreType::Array.path(), Type::array().def(1)),
         ]
         .into_iter()
         .collect::<IndexMap<_, _>>();
         defs.extend(build_type_definitions(&defs, &entries, &mut file_logger));
 
-        let constructors = build_sum_constructors(&entries, &defs, &mut file_logger);
+        let constructors = build_type_constructors(&entries, &defs, &mut file_logger);
         assert!(
             constructors
                 .iter()
@@ -685,6 +959,11 @@ mod tests {
             constructors
                 .iter()
                 .any(|(path, _)| path == &Path::new("demo", "None"))
+        );
+        assert!(
+            constructors
+                .iter()
+                .any(|(path, _)| path == &Path::new("demo", "Int"))
         );
     }
 

@@ -17,10 +17,11 @@
                | <wasm_statement>
 
 <let_statement>  ::= "let" <pattern> "=" <expr>
+                   | "let" "|" <ident> "=" (<ident> | <path>)
 <use_statement> ::= "use" (<ident> | <path>) ("as" <ident>)?
 <type_statement> ::= "type" "~"? <ident> (":" <ident>+)? "=" (<type_def> | <type_expr>)
-<trait_statement> ::= "trait" <ident> (":" <ident>+)? "=" <trait_method_decl>* "end"
-<impl_statement> ::= "impl" (<ident> | <path>) ":" <type_expr> ("," <type_expr>)* "=" <impl_method_def>* "end"
+<trait_statement> ::= "trait" "~"? <ident> (":" <ident>+)? "=" (<trait_method_decl>* "end" | (<ident> | <path>))
+<impl_statement> ::= "impl" (<ident> | <path>) <type_expr> ("," <type_expr>)* "=" <impl_method_def>* "end"
 <trait_method_decl> ::= "let" <ident> ":" <type_expr>
 <impl_method_def> ::= "let" <ident> "=" <expr>
 <wasm_statement> ::= "wasm" "=>" <sexpr>
@@ -28,7 +29,7 @@
 
 ## Type Definitions
 ```bnf
-<type_def>   ::= "{" <field_decl>+ "}"           -- record definition
+<type_def>   ::= "{" <struct_member>+ "}"        -- record definition
                | ("|" <variant>)+                  -- sum type
                | <type_expr>                        -- named type body
 
@@ -36,11 +37,18 @@ Type declarations are split by the `~` marker:
 - `type Name ... = <type_def>` defines a nominal named type.
 - `type ~Name ... = <type_expr>` defines a structural type alias.
 
+Trait declarations may also use `~`:
+- `trait Name ... = ... end` defines a trait.
+- `trait ~Alias = <trait>` defines a trait alias to an existing trait.
+
 Recursion rules:
 - Recursive type aliases are rejected.
 - Recursive nominal definitions are allowed only for sum types (`| ...`).
 
-<field_decl> ::= <ident> ":" <type_expr> ("," <ident> ":" <type_expr>)* ","?
+<struct_member> ::= <field_decl>
+                  | ".." <type_expr>
+
+<field_decl> ::= <ident> ":" <type_expr>
 <variant>    ::= <ident> <type_expr>?
 ```
 
@@ -104,7 +112,7 @@ Recursion rules:
 <pattern>    ::= <pattern> ":" <type_expr>          -- type hint
                | <ident>
                | <path>
-               | <path> "of" <pattern>              -- constructor match
+               | <path> <pattern>                   -- constructor match
                | <literal>
                | "(" <pattern> ("," <pattern>)* ")"
                | "[" <pat_array_elem>* "]"

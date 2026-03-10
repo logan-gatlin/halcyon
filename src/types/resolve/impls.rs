@@ -122,7 +122,12 @@ impl ImplProcessingContext<'_> {
             parameter_offset += forall_count;
         }
 
-        let orphan_rule_satisfied = trait_path.major == self.module_name
+        let canonical_trait_path = self
+            .symbols
+            .canonical_trait_path(&trait_path)
+            .unwrap_or_else(|| trait_path.clone());
+
+        let orphan_rule_satisfied = canonical_trait_path.major == self.module_name
             || argument_types
                 .iter()
                 .any(|argument| type_contains_local_nominal_type(argument, self.module_name));
@@ -131,7 +136,7 @@ impl ImplProcessingContext<'_> {
                 .error("Invalid trait instance")
                 .primary(
                     format!(
-                        "`{trait_path}` and all impl-head types are defined outside module `{}`. Define the trait locally or use at least one local named type in the impl head.",
+                        "`{canonical_trait_path}` and all impl-head types are defined outside module `{}`. Define the trait locally or use at least one local named type in the impl head.",
                         self.module_name
                     ),
                     arguments
@@ -142,12 +147,19 @@ impl ImplProcessingContext<'_> {
                 .done();
         }
 
-        let trait_definition = self.symbols.trait_defs().get(&trait_path).cloned();
+        let trait_definition = self.symbols.trait_definition(&trait_path).cloned();
         let mut typed_methods = Vec::new();
         let mut generated_terms = Vec::new();
         let mut method_map = IndexMap::new();
 
         for method in methods {
+            let method_name = method
+                .trait_method
+                .minor
+                .rsplit_once(Path::DELIMETER)
+                .map(|(_, name)| name)
+                .unwrap_or_else(|| method.trait_method.minor.as_str());
+            let canonical_trait_method = canonical_trait_path.sibling(method_name);
             let (mut typed_value, mut predicates) = match self.inference_context.infer_term(
                 self.type_environment,
                 &method.value,
@@ -161,7 +173,7 @@ impl ImplProcessingContext<'_> {
             };
 
             if let Some(trait_definition) = trait_definition.as_ref()
-                && let Some(method_scheme) = trait_definition.methods.get(&method.trait_method)
+                && let Some(method_scheme) = trait_definition.methods.get(&canonical_trait_method)
             {
                 let found = argument_types.len();
                 if found == trait_definition.parameters {
@@ -172,7 +184,7 @@ impl ImplProcessingContext<'_> {
                             .primary(
                                 format!(
                                     "`{}` expects {expected} type arguments but got {found}.",
-                                    method.trait_method
+                                    canonical_trait_method
                                 ),
                                 method.span,
                             )
@@ -242,7 +254,7 @@ impl ImplProcessingContext<'_> {
                 .insert(method.impl_path.clone(), scheme.clone());
             self.schemes.insert(method.impl_path.clone(), scheme);
 
-            method_map.insert(method.trait_method.clone(), method.impl_path.clone());
+            method_map.insert(canonical_trait_method.clone(), method.impl_path.clone());
             generated_terms.push(build_impl_method_binding(
                 method.impl_path.clone(),
                 method.span,
@@ -250,7 +262,7 @@ impl ImplProcessingContext<'_> {
                 typed_value.clone(),
             ));
             typed_methods.push(ImplMethod {
-                trait_method: method.trait_method,
+                trait_method: canonical_trait_method,
                 impl_path: method.impl_path,
                 value: typed_value,
                 span: method.span,
@@ -263,7 +275,7 @@ impl ImplProcessingContext<'_> {
             .unwrap_or(Span::Generated);
         let trait_impl = TraitImpl {
             parameters: impl_parameters,
-            head: TraitRef::new(trait_path.clone(), argument_types),
+            head: TraitRef::new(canonical_trait_path.clone(), argument_types),
             predicates: impl_context_predicates,
             methods: method_map,
         };

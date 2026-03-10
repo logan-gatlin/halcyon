@@ -762,6 +762,7 @@ dependencies = [
  "enum-iterator",
  "indexmap",
  "indoc",
+ "inflections",
  "itertools",
  "multipeek",
  "paste",
@@ -955,6 +956,12 @@ checksum = "79cf5c93f93228cf8efb3ba362535fb11199ac548a09ce117c9b1adc3030d706"
 dependencies = [
  "rustversion",
 ]
+
+[[package]]
+name = "inflections"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a257582fdcde896fd96463bf2d40eefea0580021c0712a0e2b028b60b47a837a"
 
 [[package]]
 name = "io-extras"
