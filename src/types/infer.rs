@@ -810,7 +810,7 @@ mod tests {
     }
 
     #[test]
-    fn higher_rank_parameter_requires_annotation_for_lambda_argument() {
+    fn higher_rank_parameter_accepts_unannotated_lambda_argument() {
         let mut ctx = InferenceContext::new();
         ctx.set_type_definitions(core_type_definitions());
         let mut env = TypeEnv::new();
@@ -855,10 +855,13 @@ mod tests {
             else_: term(TermKind::Unreachable).into(),
         });
 
-        assert!(matches!(
-            ctx.infer_term(&mut env, &let_term, &mut schemes),
-            Err(TypeError::HigherRankAnnotationRequired { parameter, .. }) if parameter == x_path
-        ));
+        let typed = ctx
+            .infer_term(&mut env, &let_term, &mut schemes)
+            .expect("higher-rank unannotated lambda argument should infer");
+        assert_eq!(
+            typed.term.type_,
+            Type::Tuple(vec![Type::Integer, Type::Boolean])
+        );
     }
 
     #[test]
@@ -974,7 +977,7 @@ mod tests {
     }
 
     #[test]
-    fn check_term_requires_annotation_for_forall_expected_parameter() {
+    fn check_term_accepts_unannotated_lambda_for_forall_expected_parameter() {
         let mut ctx = InferenceContext::new();
         let mut env = TypeEnv::new();
         let mut schemes = IndexMap::new();
@@ -986,10 +989,48 @@ mod tests {
             body: term(TermKind::Identifier(Path::new("demo", "x"))).into(),
         });
 
+        let checked = check_term(&mut ctx, &mut env, &lambda, &expected, &mut schemes)
+            .expect("unannotated lambda should check against forall expected type");
+        match checked.term.type_ {
+            Type::Function(parameter, result) => {
+                assert_eq!(parameter, result, "identity function should preserve type");
+            }
+            other => panic!("expected function type, got {other}"),
+        }
+    }
+
+    #[test]
+    fn check_term_requires_annotation_for_forall_parameter_type() {
+        let mut ctx = InferenceContext::new();
+        let mut env = TypeEnv::new();
+        let mut schemes = IndexMap::new();
+        let parameter = Path::new("demo", "x");
+        let expected = Type::func(Type::func(Type::v(0), Type::v(0)).for_all(1), Type::Integer);
+        let lambda = term(TermKind::Function {
+            parameter_name: parameter.clone().with_span(Span::Generated),
+            parameter_type: None,
+            captures: [].into(),
+            body: term(TermKind::Immediate(ImmediateValue::Integer(0))).into(),
+        });
+
         assert!(matches!(
             check_term(&mut ctx, &mut env, &lambda, &expected, &mut schemes),
-            Err(TypeError::HigherRankAnnotationRequired { .. })
+            Err(TypeError::HigherRankAnnotationRequired { parameter: found, .. }) if found == parameter
         ));
+    }
+
+    #[test]
+    fn type_contains_forall_detects_root_and_ignores_named_bodies() {
+        let root_forall = Type::func(Type::v(0), Type::v(0)).for_all(1);
+        let nested_forall = Type::Tuple(vec![Type::Integer, root_forall.clone()]);
+        let nominal_with_forall_body = Type::Named {
+            name: Path::new("demo", "Box"),
+            body: Box::new(root_forall.clone()),
+        };
+
+        assert!(type_contains_forall(&root_forall));
+        assert!(type_contains_forall(&nested_forall));
+        assert!(!type_contains_forall(&nominal_with_forall_body));
     }
 
     #[test]
@@ -1049,6 +1090,117 @@ mod tests {
         ctx.infer_term(&mut env, &with_constraints, &mut schemes)
             .expect("annotation with constraints should pass");
     }
+
+    #[test]
+    fn strict_forall_annotation_rejects_monomorphic_value() {
+        let mut ctx = InferenceContext::new();
+        let mut env = TypeEnv::new();
+        let mut schemes = IndexMap::new();
+        let binding = Path::new("demo", "a");
+        let param = Path::new("demo", "t");
+
+        let let_term = term(TermKind::Let {
+            assignee: pattern(PatternKind::TypeHint(
+                Box::new(pattern(PatternKind::Identifier(binding.clone()))),
+                type_forall(
+                    vec![param.clone()],
+                    Vec::new(),
+                    type_inst(param, Vec::new()),
+                ),
+            )),
+            scope: ScopeKind::Local,
+            value: term(TermKind::Immediate(ImmediateValue::Integer(1))).into(),
+            then: term(TermKind::Identifier(binding)).into(),
+            else_: term(TermKind::Unreachable).into(),
+        });
+
+        assert!(matches!(
+            ctx.infer_term(&mut env, &let_term, &mut schemes),
+            Err(TypeError::Unification { .. })
+        ));
+    }
+
+    #[test]
+    fn polymorphic_annotation_checks_all_nested_forall_hints() {
+        let mut ctx = InferenceContext::new();
+        ctx.set_type_definitions(core_type_definitions());
+        let mut env = TypeEnv::new();
+        let mut schemes = IndexMap::new();
+        let source = Path::new("demo", "source");
+        let binding = Path::new("demo", "poly");
+        let outer_param = Path::new("demo", "a");
+        let inner_param = Path::new("demo", "b");
+        let eq_trait = Path::new("demo", "Eq");
+
+        env.insert(
+            source.clone(),
+            Type::v(0)
+                .for_all(1)
+                .scheme_with_predicates(vec![TraitRef::new(eq_trait.clone(), vec![Type::v(0)])]),
+        );
+
+        let assignee = pattern(PatternKind::TypeHint(
+            Box::new(pattern(PatternKind::TypeHint(
+                Box::new(pattern(PatternKind::Identifier(binding.clone()))),
+                type_forall(
+                    vec![inner_param.clone()],
+                    Vec::new(),
+                    type_inst(inner_param.clone(), Vec::new()),
+                ),
+            ))),
+            type_forall(
+                vec![outer_param.clone()],
+                vec![type_constraint(
+                    eq_trait.clone(),
+                    vec![type_inst(outer_param.clone(), Vec::new())],
+                )],
+                type_inst(outer_param.clone(), Vec::new()),
+            ),
+        ));
+
+        let missing_nested_constraints = term(TermKind::Let {
+            assignee,
+            scope: ScopeKind::Local,
+            value: term(TermKind::Identifier(source.clone())).into(),
+            then: term(TermKind::Identifier(binding.clone())).into(),
+            else_: term(TermKind::Unreachable).into(),
+        });
+        assert!(matches!(
+            ctx.infer_term(&mut env, &missing_nested_constraints, &mut schemes),
+            Err(TypeError::PolymorphicAnnotationMissingConstraints { .. })
+        ));
+
+        let assignee = pattern(PatternKind::TypeHint(
+            Box::new(pattern(PatternKind::TypeHint(
+                Box::new(pattern(PatternKind::Identifier(binding.clone()))),
+                type_forall(
+                    vec![inner_param.clone()],
+                    vec![type_constraint(
+                        eq_trait.clone(),
+                        vec![type_inst(inner_param.clone(), Vec::new())],
+                    )],
+                    type_inst(inner_param, Vec::new()),
+                ),
+            ))),
+            type_forall(
+                vec![outer_param.clone()],
+                vec![type_constraint(
+                    eq_trait,
+                    vec![type_inst(outer_param.clone(), Vec::new())],
+                )],
+                type_inst(outer_param, Vec::new()),
+            ),
+        ));
+        let with_nested_constraints = term(TermKind::Let {
+            assignee,
+            scope: ScopeKind::Local,
+            value: term(TermKind::Identifier(source)).into(),
+            then: term(TermKind::Identifier(binding)).into(),
+            else_: term(TermKind::Unreachable).into(),
+        });
+        ctx.infer_term(&mut env, &with_nested_constraints, &mut schemes)
+            .expect("all nested polymorphic hints should validate constraints");
+    }
 }
 
 fn unify_with_span(
@@ -1063,40 +1215,251 @@ fn unify_with_span(
 }
 
 fn type_contains_forall(type_: &Type) -> bool {
-    let mut contains_forall = false;
-    for_each_child_type(type_, true, |child| {
-        if matches!(child, Type::ForAll(_)) {
-            contains_forall = true;
-        }
-    });
-    contains_forall
+    matches!(type_, Type::ForAll(_)) || {
+        let mut contains_forall = false;
+        for_each_child_type(type_, false, |child| {
+            if !contains_forall && type_contains_forall(child) {
+                contains_forall = true;
+            }
+        });
+        contains_forall
+    }
 }
 
-fn first_forall_type_hint(pattern: &Pattern<()>) -> Option<&TypeExpr> {
+fn top_level_forall_type_hint(pattern: &Pattern<()>) -> Option<&TypeExpr> {
+    match &pattern.kind {
+        PatternKind::TypeHint(_, type_expr)
+            if matches!(type_expr.kind, TypeExprKind::ForAll(_, _, _)) =>
+        {
+            Some(type_expr)
+        }
+        _ => None,
+    }
+}
+
+fn collect_forall_type_hints<'a>(
+    pattern: &'a Pattern<()>,
+    type_hints: &mut Vec<&'a TypeExpr>,
+) {
     match &pattern.kind {
         PatternKind::TypeHint(inner, type_expr) => {
             if matches!(type_expr.kind, TypeExprKind::ForAll(_, _, _)) {
-                Some(type_expr)
-            } else {
-                first_forall_type_hint(inner)
+                type_hints.push(type_expr);
+            }
+            collect_forall_type_hints(inner, type_hints);
+        }
+        PatternKind::Constructor(_, payload) => collect_forall_type_hints(payload, type_hints),
+        PatternKind::Tuple(items) => {
+            for item in items.iter() {
+                collect_forall_type_hints(item, type_hints);
             }
         }
-        PatternKind::Constructor(_, payload) => first_forall_type_hint(payload),
-        PatternKind::Tuple(items) => items.iter().find_map(first_forall_type_hint),
         PatternKind::Array {
             starting, ending, ..
         } => {
-            starting
-                .iter()
-                .chain(ending.iter())
-                .find_map(first_forall_type_hint)
+            for item in starting.iter().chain(ending.iter()) {
+                collect_forall_type_hints(item, type_hints);
+            }
         }
-        PatternKind::Struct(fields) => fields.values().find_map(first_forall_type_hint),
+        PatternKind::Struct(fields) => {
+            for value in fields.values() {
+                collect_forall_type_hints(value, type_hints);
+            }
+        }
         PatternKind::Hole
         | PatternKind::Identifier(_)
         | PatternKind::ConstConstructor(_)
-        | PatternKind::Immediate(_) => None,
+        | PatternKind::Immediate(_) => {}
     }
+}
+
+fn rigidify_meta_vars_for_annotation_check(
+    type_: &Type,
+    replacements: &mut HashMap<MetaVarId, Type>,
+) -> Type {
+    match type_ {
+        Type::Unit
+        | Type::Integer
+        | Type::Real
+        | Type::Boolean
+        | Type::String
+        | Type::Glyph
+        | Type::TypeVar(_) => type_.clone(),
+        Type::MetaVar(id) => {
+            replacements
+                .entry(*id)
+                .or_insert_with(|| {
+                    Type::Named {
+                        name: Path::new("[annotation-meta]", format!("#{id}")),
+                        body: Box::new(Type::Unit),
+                    }
+                })
+                .clone()
+        }
+        Type::ForAll(body) => {
+            Type::ForAll(Box::new(rigidify_meta_vars_for_annotation_check(
+                body,
+                replacements,
+            )))
+        }
+        Type::Named { name, body } => {
+            Type::Named {
+                name: name.clone(),
+                body: Box::new(rigidify_meta_vars_for_annotation_check(body, replacements)),
+            }
+        }
+        Type::StructConstraint { fields, mode } => {
+            Type::StructConstraint {
+                fields: fields
+                    .iter()
+                    .map(|(name, type_)| {
+                        (
+                            name.clone(),
+                            rigidify_meta_vars_for_annotation_check(type_, replacements),
+                        )
+                    })
+                    .collect(),
+                mode: *mode,
+            }
+        }
+        Type::Struct { fields } => {
+            Type::Struct {
+                fields: fields
+                    .iter()
+                    .map(|(name, type_)| {
+                        (
+                            name.clone(),
+                            rigidify_meta_vars_for_annotation_check(type_, replacements),
+                        )
+                    })
+                    .collect(),
+            }
+        }
+        Type::Array(inner) => {
+            Type::Array(Box::new(rigidify_meta_vars_for_annotation_check(
+                inner,
+                replacements,
+            )))
+        }
+        Type::Tuple(items) => {
+            Type::Tuple(
+                items
+                    .iter()
+                    .map(|item| rigidify_meta_vars_for_annotation_check(item, replacements))
+                    .collect(),
+            )
+        }
+        Type::Sum { variants } => {
+            Type::Sum {
+                variants: variants
+                    .iter()
+                    .map(|(name, type_)| {
+                        (
+                            name.clone(),
+                            rigidify_meta_vars_for_annotation_check(type_, replacements),
+                        )
+                    })
+                    .collect(),
+            }
+        }
+        Type::Function(parameter, result) => {
+            Type::Function(
+                Box::new(rigidify_meta_vars_for_annotation_check(
+                    parameter,
+                    replacements,
+                )),
+                Box::new(rigidify_meta_vars_for_annotation_check(
+                    result,
+                    replacements,
+                )),
+            )
+        }
+        Type::Apply {
+            constructor,
+            arguments,
+        } => {
+            Type::Apply {
+                constructor: Box::new(rigidify_meta_vars_for_annotation_check(
+                    constructor,
+                    replacements,
+                )),
+                arguments: arguments
+                    .iter()
+                    .map(|argument| rigidify_meta_vars_for_annotation_check(argument, replacements))
+                    .collect(),
+            }
+        }
+    }
+}
+
+fn instantiate_leading_foralls_with_metas(
+    table: &mut UnificationTable,
+    type_: &Type,
+    level: u32,
+    span: Span,
+) -> Result<Type, TypeError> {
+    let mut current = table.normalize(type_);
+    while let Type::ForAll(body) = current {
+        let fresh = table.new_meta(level);
+        current = body
+            .open_forall(&fresh)
+            .ok_or(TypeError::InvalidScheme { span })?;
+    }
+    Ok(current)
+}
+
+fn skolemize_leading_foralls_for_annotation_check(
+    table: &mut UnificationTable,
+    type_: &Type,
+    span: Span,
+) -> Result<Type, TypeError> {
+    let mut current = table.normalize(type_);
+    let mut index = 0usize;
+    while let Type::ForAll(body) = current {
+        let skolem = Type::Named {
+            name: Path::new("[annotation-skolem]", format!("#{index}")),
+            body: Box::new(Type::Unit),
+        };
+        index += 1;
+        current = body
+            .open_forall(&skolem)
+            .ok_or(TypeError::InvalidScheme { span })?;
+    }
+    Ok(current)
+}
+
+fn ensure_forall_annotation_is_compatible_with_inferred(
+    context: &InferenceContext,
+    inferred: &TypeScheme,
+    annotation: &TypeScheme,
+    span: Span,
+) -> Result<(), TypeError> {
+    let mut trial_table = context.table.clone();
+    let normalized_inferred = trial_table.normalize(&inferred.type_);
+    let rigidified_inferred =
+        rigidify_meta_vars_for_annotation_check(&normalized_inferred, &mut HashMap::new());
+    let inferred_instance = instantiate_leading_foralls_with_metas(
+        &mut trial_table,
+        &rigidified_inferred,
+        context.level,
+        span,
+    )?;
+    let annotation_expected =
+        skolemize_leading_foralls_for_annotation_check(&mut trial_table, &annotation.type_, span)?;
+    trial_table
+        .unify(&inferred_instance, &annotation_expected)
+        .map_err(|error| {
+            let error = match error {
+                UnifyError::Mismatch { .. } => {
+                    UnifyError::Mismatch {
+                        left: inferred.type_.clone(),
+                        right: annotation.type_.clone(),
+                    }
+                }
+                other => other,
+            };
+            TypeError::Unification { error, span }
+        })
 }
 
 fn predicate_key(
@@ -1702,22 +2065,35 @@ pub fn infer_term(
             let outer_level = ctx.level;
             ctx.level += 1;
             let typed_value = infer_term(ctx, env, value, schemes)?;
-            if let Some(type_expr) = first_forall_type_hint(assignee) {
-                let annotation = type_expr_to_scheme(ctx, type_expr)?;
+            let mut forall_type_hints = Vec::new();
+            collect_forall_type_hints(assignee, &mut forall_type_hints);
+            if !forall_type_hints.is_empty() {
                 let inferred = ctx.generalize_with_predicates(
                     &typed_value.term.type_,
                     outer_level,
                     typed_value.predicates.clone(),
                 );
-                if !inferred_predicates_covered_by_annotation(
-                    ctx,
-                    &inferred.predicates,
-                    &annotation.predicates,
-                ) {
-                    return Err(TypeError::PolymorphicAnnotationMissingConstraints {
-                        predicates: inferred.predicates,
-                        span: type_expr.span,
-                    });
+                for type_expr in forall_type_hints {
+                    let annotation = type_expr_to_scheme(ctx, type_expr)?;
+                    if !inferred_predicates_covered_by_annotation(
+                        ctx,
+                        &inferred.predicates,
+                        &annotation.predicates,
+                    ) {
+                        return Err(TypeError::PolymorphicAnnotationMissingConstraints {
+                            predicates: inferred.predicates,
+                            span: type_expr.span,
+                        });
+                    }
+                }
+                if let Some(type_expr) = top_level_forall_type_hint(assignee) {
+                    let annotation = type_expr_to_scheme(ctx, type_expr)?;
+                    ensure_forall_annotation_is_compatible_with_inferred(
+                        ctx,
+                        &inferred,
+                        &annotation,
+                        type_expr.span,
+                    )?;
                 }
             }
             let mut bindings = Vec::new();
@@ -1812,18 +2188,6 @@ fn check_term(
     schemes: &mut IndexMap<Path, TypeScheme>,
 ) -> Result<InferenceOutput, TypeError> {
     let normalized_expected = inference_context.table.normalize(expected);
-    if let TermKind::Function {
-        parameter_name,
-        parameter_type: None,
-        ..
-    } = &term.kind
-        && matches!(&normalized_expected, Type::ForAll(_))
-    {
-        return Err(TypeError::HigherRankAnnotationRequired {
-            parameter: parameter_name.inner.clone(),
-            span: term.span,
-        });
-    }
     let expected = inference_context.skolemize_forall(&normalized_expected, term.span)?;
     if let (
         TermKind::Function {

@@ -28,18 +28,16 @@ pub(super) fn predicate_is_ground(predicate: &TraitConstraint) -> bool {
 }
 
 fn is_ground_type(type_: &Type) -> bool {
-    match type_ {
-        Type::TypeVar(_) | Type::MetaVar(_) => false,
-        _ => {
-            let mut is_ground = true;
-            for_each_child_type(type_, true, |child| {
-                if is_ground && !is_ground_type(child) {
-                    is_ground = false;
-                }
-            });
-            is_ground
-        }
+    if matches!(type_, Type::TypeVar(_) | Type::MetaVar(_)) {
+        return false;
     }
+    let mut is_ground = true;
+    for_each_child_type(type_, false, |child| {
+        if is_ground && !is_ground_type(child) {
+            is_ground = false;
+        }
+    });
+    is_ground
 }
 
 #[cfg(test)]
@@ -77,5 +75,29 @@ mod tests {
         assert!(!predicate_is_ground(&non_ground_type_var));
         assert!(!predicate_is_ground(&non_ground_meta));
         assert!(predicate_is_ground(&ground));
+    }
+
+    #[test]
+    fn predicate_is_ground_treats_applied_named_types_as_ground_by_arguments() {
+        let generic_box = Type::Named {
+            name: Path::new("demo", "Box"),
+            body: Box::new(
+                Type::Struct {
+                    fields: [("value".to_string(), Type::v(0))].into_iter().collect(),
+                }
+                .for_all(1),
+            ),
+        };
+        let ground = TraitRef::new(
+            Path::new("demo", "Show"),
+            vec![generic_box.clone().apply(vec![Type::Integer])],
+        );
+        let non_ground = TraitRef::new(
+            Path::new("demo", "Show"),
+            vec![generic_box.apply(vec![Type::MetaVar(0)])],
+        );
+
+        assert!(predicate_is_ground(&ground));
+        assert!(!predicate_is_ground(&non_ground));
     }
 }

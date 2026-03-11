@@ -594,4 +594,20 @@ mod tests {
                 .any(|diagnostic| diagnostic.message == "Unresolved trait constraint")
         );
     }
+
+    #[test]
+    fn resolve_module_reports_unresolved_ground_predicates_for_applied_named_types() {
+        let source = "module demo =\n  type Box: a = { value: a }\n  trait Show : a =\n    let show : a -> core::String\n  end\n  let boxed : Box core::Integer = { value = 1 }\n  let rendered = show boxed\nend\n";
+        let mut symbols = SymbolTable::new();
+        let mut logger = Logger::new();
+        let _ = compile_core_module(&mut symbols, &mut logger);
+
+        let (_resolved, file_logger) = resolve_source(source, &mut symbols);
+        assert!(!file_logger.is_ok());
+        assert!(
+            file_logger
+                .iter()
+                .any(|diagnostic| diagnostic.message == "Unresolved trait constraint")
+        );
+    }
 }

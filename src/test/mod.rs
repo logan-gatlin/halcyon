@@ -189,19 +189,20 @@ fn higher_rank_parameter_annotation_compiles_and_validates() {
 }
 
 #[test]
-fn higher_rank_parameter_rejects_unannotated_lambda_argument() {
+fn higher_rank_parameter_accepts_unannotated_lambda_argument() {
     let source = "module demo =\n\tlet apply = fn (f: for a in a -> a) => (f 1, f true)\n\tlet result = apply (fn x => x)\nend\n";
     let mut symbols = SymbolTable::new();
     let mut logger = Logger::new();
     let _core = compile_core_module(&mut symbols, &mut logger);
     let mut file_logger = logger.new_file("demo.hc", source);
-    let _ = compile_source(source, &mut file_logger, &mut symbols);
-    assert!(
-        file_logger_has_error_message(&file_logger, "Higher-rank annotation required"),
-        "expected higher-rank annotation diagnostic"
-    );
+    let artifacts = compile_source(source, &mut file_logger, &mut symbols);
     logger.consume_file(file_logger);
-    assert!(!logger.is_ok(), "Compilation should fail");
+
+    for artifact in artifacts.into_vec() {
+        let _ = validate_artifact(artifact, &mut logger);
+    }
+
+    assert_logger_is_ok(&logger, "Compilation failed");
 }
 
 #[test]
@@ -218,6 +219,22 @@ fn unconstrained_polymorphic_annotation_is_rejected() {
             "Polymorphic annotation is missing trait constraints"
         ),
         "expected constrained-polymorphism annotation error"
+    );
+    logger.consume_file(file_logger);
+    assert!(!logger.is_ok(), "Compilation should fail");
+}
+
+#[test]
+fn strict_forall_value_annotation_is_enforced() {
+    let source = "module demo =\n\tlet a: for a in a = 1\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let _ = compile_source(source, &mut file_logger, &mut symbols);
+    assert!(
+        file_logger_has_error_message(&file_logger, "Type mismatch"),
+        "expected strict annotation type mismatch"
     );
     logger.consume_file(file_logger);
     assert!(!logger.is_ok(), "Compilation should fail");
