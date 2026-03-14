@@ -1,0 +1,63 @@
+name: Build Wasm NPM Package
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - stable
+
+permissions:
+  contents: write
+
+jobs:
+  wasm-npm-package:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install wasm-pack
+        uses: jetli/wasm-pack-action@v0.4.0
+
+      - name: Build wasm-bindgen package for npm bundlers
+        run: wasm-pack build --release --target bundler --out-dir pkg/npm
+
+      - name: Create npm tarball
+        run: npm pack
+        working-directory: pkg/npm
+
+      - name: Upload generated npm package directory
+        uses: actions/upload-artifact@v4
+        with:
+          name: halcyon-npm-package
+          path: pkg/npm
+
+      - name: Upload npm tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: halcyon-npm-tarball
+          path: pkg/npm/*.tgz
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: stable-${{ github.sha }}
+          name: Stable NPM Package (${{ github.sha }})
+          body: |
+            Automated npm-compatible wasm package built from the latest commit on `stable`.
+            Commit: `${{ github.sha }}`
+          files: pkg/npm/*.tgz
