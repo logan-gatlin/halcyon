@@ -123,6 +123,21 @@ pub(super) fn log_trait_error(
                 )
                 .done();
         }
+        TraitError::KindMismatch {
+            trait_name,
+            expected,
+            found,
+        } => {
+            logger
+                .error("Invalid trait argument kind")
+                .primary(
+                    format!(
+                        "`{trait_name}` expects kind `{expected}` but this argument has kind `{found}`."
+                    ),
+                    span,
+                )
+                .done();
+        }
         TraitError::NoInstance { predicate } => {
             logger
                 .error("Missing trait instance")
@@ -181,6 +196,33 @@ pub(super) fn log_type_error(
                 .error("Trait constraints are not allowed in this type")
                 .primary(
                     "`where` constraints are only valid in quantified type annotations that produce schemes.",
+                    span,
+                )
+                .done();
+        }
+        TypeError::InvalidTraitApplication {
+            name,
+            expected,
+            found,
+            span,
+        } => {
+            logger
+                .error("Invalid trait application")
+                .primary(
+                    format!("`{name}` expects {expected} type arguments but got {found}."),
+                    span,
+                )
+                .done();
+        }
+        TypeError::KindMismatch {
+            expected,
+            found,
+            span,
+        } => {
+            logger
+                .error("Kind mismatch")
+                .primary(
+                    format!("Expected kind `{expected}` but found `{found}`."),
                     span,
                 )
                 .done();
@@ -254,9 +296,9 @@ pub(super) fn log_type_expr_lower_error(
     match error {
         TypeExprLowerError::TypeParameterApplied { name, found, span } => {
             logger
-                .error("Type parameters cannot be applied")
+                .error("Invalid type application")
                 .primary(
-                    format!("`{name}` is a type parameter but is applied to {found} arguments."),
+                    format!("Type parameter `{name}` cannot take {found} type arguments."),
                     span,
                 )
                 .done();

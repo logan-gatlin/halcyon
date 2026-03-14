@@ -160,16 +160,32 @@ pub fn immediate(
         }
         SyntaxKind::STRING => {
             let text = token.text();
-            // Strip surrounding quotes
-            let inner = text.strip_prefix('"')?.strip_suffix('"')?;
-            ImmediateValue::String(inner.to_string())
+            let span: Span = token.text_range().into();
+            let Some(decoded) = crate::parse::lexer::decode_quoted_string_literal(text) else {
+                logger
+                    .error("Failed to parse string literal.")
+                    .primary(
+                        "This string literal contains an invalid escape sequence.",
+                        span,
+                    )
+                    .done();
+                return None;
+            };
+            ImmediateValue::String(decoded)
         }
         SyntaxKind::GLYPH => {
             let text = token.text();
-            let inner = text.strip_prefix('\'')?;
-            let inner = inner.strip_suffix('\'')?;
-            let mut chars = inner.chars();
-            let ch = chars.next()?;
+            let span: Span = token.text_range().into();
+            let Some(ch) = crate::parse::lexer::decode_quoted_glyph_literal(text) else {
+                logger
+                    .error("Failed to parse glyph literal.")
+                    .primary(
+                        "Glyph literals must decode to exactly one character and use valid escapes.",
+                        span,
+                    )
+                    .done();
+                return None;
+            };
             ImmediateValue::Glyph(ch)
         }
         SyntaxKind::TRUE_KW => ImmediateValue::Boolean(true),

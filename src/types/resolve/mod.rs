@@ -41,6 +41,7 @@ use super::{
     TraitError,
     TraitImpl,
     TraitRef,
+    Kind,
     Type,
     TypeDefinition,
     TypeDefinitionKind,
@@ -172,14 +173,15 @@ pub fn resolve_module_with_symbols_and_schemes(
         if let Some(definition) = type_definitions.get(path) {
             symbols.insert_type(path.clone(), definition.clone());
         } else {
-            symbols.insert_type(
-                path.clone(),
-                TypeDefinition {
-                    parameters: entry.parameters.len(),
-                    body: Type::Unit,
-                    kind: entry.kind,
-                },
-            );
+                symbols.insert_type(
+                    path.clone(),
+                    TypeDefinition {
+                        parameters: entry.parameters.len(),
+                        parameter_kinds: vec![Kind::Type; entry.parameters.len()],
+                        body: Type::Unit,
+                        kind: entry.kind,
+                    },
+                );
         }
     }
 
@@ -187,6 +189,7 @@ pub fn resolve_module_with_symbols_and_schemes(
         &statements,
         &pending_type_definitions,
         &type_definitions,
+        symbols.trait_defs(),
         logger,
     );
     register_trait_definitions(symbols, &pending_trait_definitions, logger);
@@ -215,6 +218,18 @@ pub fn resolve_module_with_symbols_and_schemes(
             .collect::<IndexMap<_, _>>(),
     );
     inference_context.set_trait_aliases(symbols.trait_aliases().clone());
+    inference_context.set_trait_parameter_kinds(
+        symbols
+            .trait_defs()
+            .iter()
+            .map(|(path, definition)| {
+                (
+                    path.clone(),
+                    definition.parameter_kinds.clone(),
+                )
+            })
+            .collect(),
+    );
 
     let mut typed_statements = Vec::new();
     for statement in statements.into_iter() {
@@ -553,6 +568,7 @@ mod tests {
             Path::new("demo", "Token"),
             TypeDefinition {
                 parameters: 0,
+                parameter_kinds: Vec::new(),
                 body: Type::Unit,
                 kind: TypeDefinitionKind::Named,
             },

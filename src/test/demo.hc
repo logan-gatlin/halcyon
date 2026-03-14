@@ -1,3 +1,4 @@
-module demo =
-	let a: for a in a = 1
-end
+bundle demo
+let () = println "hi"
+
+let a = [1, 2, 3]

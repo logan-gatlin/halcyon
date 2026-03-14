@@ -185,7 +185,11 @@ fn can_start_type_expr(p: &mut Parser<'_, '_>) -> bool {
 fn can_start_type_atom(kind: SyntaxKind) -> bool {
     matches!(
         kind,
-        SyntaxKind::IDENT | SyntaxKind::ROOT_KW | SyntaxKind::L_PAREN | SyntaxKind::L_SQUARE
+        SyntaxKind::IDENT
+            | SyntaxKind::ROOT_KW
+            | SyntaxKind::BUNDLE_KW
+            | SyntaxKind::L_PAREN
+            | SyntaxKind::L_SQUARE
     )
 }
 
@@ -198,7 +202,7 @@ fn type_primary(p: &mut Parser<'_, '_>) -> bool {
         }
         Some(kind) => {
             match kind {
-                SyntaxKind::IDENT | SyntaxKind::ROOT_KW => {
+                SyntaxKind::IDENT | SyntaxKind::ROOT_KW | SyntaxKind::BUNDLE_KW => {
                     path_or_ident(p);
                     true
                 }

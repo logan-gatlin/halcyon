@@ -148,6 +148,7 @@ fn is_ident_token(kind: SyntaxKind) -> bool {
     matches!(
         kind,
         SyntaxKind::IDENT
+            | SyntaxKind::MINUS
             | SyntaxKind::MODULE_KW
             | SyntaxKind::IMPORT_KW
             | SyntaxKind::USE_KW

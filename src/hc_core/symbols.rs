@@ -6,7 +6,6 @@ pub enum CoreSymbol {
     ArrayConcat,
     ArrayPush,
     Default,
-    PrintString,
     TraitAdd,
     TraitSubtract,
     TraitMultiply,
@@ -21,11 +20,10 @@ pub enum CoreSymbol {
 impl CoreSymbol {
     pub fn path(&self) -> Path {
         Path::core(match self {
-            CoreSymbol::ArrayEmpty => "array_empty",
-            CoreSymbol::ArrayConcat => "array_concat",
-            CoreSymbol::ArrayPush => "array_push",
+            CoreSymbol::ArrayEmpty => "array::empty",
+            CoreSymbol::ArrayConcat => "array::concat",
+            CoreSymbol::ArrayPush => "array::push",
             CoreSymbol::Default => "default",
-            CoreSymbol::PrintString => "print_string",
             CoreSymbol::TraitAdd => "ops::Add",
             CoreSymbol::TraitSubtract => "ops::Subtract",
             CoreSymbol::TraitMultiply => "ops::Multiply",

@@ -383,6 +383,7 @@ pub fn tokenize(
             "do" => DO_KW,
             "in" => IN_KW,
             "module" => MODULE_KW,
+            "bundle" => BUNDLE_KW,
             "import" => IMPORT_KW,
             "use" => USE_KW,
             "as" => AS_KW,
@@ -440,101 +441,197 @@ fn parse_delimited(
     Some(buffer)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EscapeDecodeErrorKind {
+    UnterminatedEscape,
+    UnknownEscape(char),
+    InvalidHexByte,
+    InvalidHexWord,
+    InvalidUnicodeScalar,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct EscapeDecodeError {
+    offset: usize,
+    width: usize,
+    kind: EscapeDecodeErrorKind,
+}
+
+fn hex_nibble(ch: char) -> Option<u32> {
+    match ch {
+        '0'..='9' => Some((ch as u32) - ('0' as u32)),
+        'a'..='f' => Some((ch as u32) - ('a' as u32) + 10),
+        'A'..='F' => Some((ch as u32) - ('A' as u32) + 10),
+        _ => None,
+    }
+}
+
+fn decode_escaped_literal_body(body: &str) -> Result<String, EscapeDecodeError> {
+    let mut decoded = String::with_capacity(body.len());
+    let mut cursor = 0;
+    while cursor < body.len() {
+        let Some(ch) = body[cursor..].chars().next() else {
+            break;
+        };
+
+        if ch != '\\' {
+            decoded.push(ch);
+            cursor += ch.len_utf8();
+            continue;
+        }
+
+        let escape_start = cursor;
+        cursor += ch.len_utf8();
+        let Some(escaped) = body[cursor..].chars().next() else {
+            return Err(EscapeDecodeError {
+                offset: escape_start,
+                width: 1,
+                kind: EscapeDecodeErrorKind::UnterminatedEscape,
+            });
+        };
+        cursor += escaped.len_utf8();
+
+        match escaped {
+            'n' => decoded.push('\n'),
+            'r' => decoded.push('\r'),
+            't' => decoded.push('\t'),
+            'b' => decoded.push('\x08'),
+            '\\' => decoded.push('\\'),
+            '0' => decoded.push('\0'),
+            '"' => decoded.push('"'),
+            '\'' => decoded.push('\''),
+            'x' => {
+                let mut value = 0u32;
+                for _ in 0..2 {
+                    let Some(digit) = body[cursor..].chars().next() else {
+                        return Err(EscapeDecodeError {
+                            offset: escape_start,
+                            width: cursor - escape_start,
+                            kind: EscapeDecodeErrorKind::InvalidHexByte,
+                        });
+                    };
+                    let Some(nibble) = hex_nibble(digit) else {
+                        return Err(EscapeDecodeError {
+                            offset: escape_start,
+                            width: cursor + digit.len_utf8() - escape_start,
+                            kind: EscapeDecodeErrorKind::InvalidHexByte,
+                        });
+                    };
+                    cursor += digit.len_utf8();
+                    value = (value << 4) | nibble;
+                }
+                decoded.push(char::from_u32(value).unwrap_or_else(|| unreachable!()));
+            }
+            'w' => {
+                let mut value = 0u32;
+                for _ in 0..4 {
+                    let Some(digit) = body[cursor..].chars().next() else {
+                        return Err(EscapeDecodeError {
+                            offset: escape_start,
+                            width: cursor - escape_start,
+                            kind: EscapeDecodeErrorKind::InvalidHexWord,
+                        });
+                    };
+                    let Some(nibble) = hex_nibble(digit) else {
+                        return Err(EscapeDecodeError {
+                            offset: escape_start,
+                            width: cursor + digit.len_utf8() - escape_start,
+                            kind: EscapeDecodeErrorKind::InvalidHexWord,
+                        });
+                    };
+                    cursor += digit.len_utf8();
+                    value = (value << 4) | nibble;
+                }
+
+                let Some(unicode) = char::from_u32(value) else {
+                    return Err(EscapeDecodeError {
+                        offset: escape_start,
+                        width: cursor - escape_start,
+                        kind: EscapeDecodeErrorKind::InvalidUnicodeScalar,
+                    });
+                };
+                decoded.push(unicode);
+            }
+            other => {
+                return Err(EscapeDecodeError {
+                    offset: escape_start,
+                    width: cursor - escape_start,
+                    kind: EscapeDecodeErrorKind::UnknownEscape(other),
+                });
+            }
+        }
+    }
+
+    Ok(decoded)
+}
+
+pub fn decode_quoted_string_literal(text: &str) -> Option<String> {
+    let inner = text.strip_prefix('"')?.strip_suffix('"')?;
+    decode_escaped_literal_body(inner).ok()
+}
+
+pub fn decode_quoted_glyph_literal(text: &str) -> Option<char> {
+    let inner = text.strip_prefix('\'')?.strip_suffix('\'')?;
+    let decoded = decode_escaped_literal_body(inner).ok()?;
+    let mut chars = decoded.chars();
+    let ch = chars.next()?;
+    chars.next().is_none().then_some(ch)
+}
+
 fn bake_string(
-    mut start: usize,
+    start: usize,
     logger: &mut FileLogger,
     s: &str,
 ) -> Option<String> {
-    let collect_hex_bytes = |arr: &[Option<char>]| {
-        arr.iter()
-            .flatten()
-            .map(|c| c.to_ascii_lowercase())
-            .flat_map(|c| {
-                if c.is_ascii_digit() {
-                    Some(c as u32 - '0' as u32)
-                } else if ('a'..='f').contains(&c) {
-                    Some(c as u32 - 'a' as u32 + 10)
-                } else {
-                    None
-                }
-            })
-            .collect()
-    };
-    let mut baked = String::with_capacity(s.len());
-    let mut iter = s.chars();
-    while let Some(next) = iter.next() {
-        start += next.len_utf8();
-        baked.push(if next == '\\' {
-            let Some(next) = iter.next() else {
-                let span = Span::new(start - 1, 2);
-                logger
-                    .error("Unknown escape sequence")
-                    .primary(
-                        "This sequence starts with a \\, but is not a recognized escape sequence.",
-                        span
-                    )
-                    .done();
-                return None;
-            };
-            start += next.len_utf8();
-            match next {
-                'n' => '\n',
-                'r' => '\r',
-                't' => '\t',
-                'b' => '\x08',
-                '\\' => '\\',
-                '0' => '\0',
-                '"' => '"',
-                '\'' => '\'',
-                'x' => {
-                    let chars = [iter.next(), iter.next()];
-                    let length = chars.iter().fold(0, |acc, x| {
-                        if let Some(x) = x {
-                            acc + x.len_utf8()
-                        } else {
-                            acc
-                        }
-                    });
-                    let bytes: Vec<_> = collect_hex_bytes(&chars);
-                    if bytes.len() != 2 {
-                        let span = Span::new(start - 1, 4);
-                        logger.error("Unknown escape sequence")
-                            .primary(
-                                "This sequence starts with \\x, but is not followed by two hexadecimal digits.",
-                                span
-                            ).done();
-                        return None;
-                    }
-                    start += length;
-                    unsafe { char::from_u32_unchecked(bytes[0] << 4 | bytes[1]) }
-                }
-                'w' => {
-                    let bytes =
-                        collect_hex_bytes(&[iter.next(), iter.next(), iter.next(), iter.next()]);
-                    if bytes.len() != 4 {
-                        let span = Span::new(start - 1, 6);
-                        logger.error("Unknown escape sequence")
-                            .primary("This sequence starts with \\w, but is not followed by 4 hex digits.", span).done();
-                        return None;
-                    }
-                    start += 4;
-                    unsafe {
-                        char::from_u32_unchecked(
-                            bytes[0] << 12 | bytes[1] << 8 | bytes[2] << 4 | bytes[3],
+    match decode_escaped_literal_body(s) {
+        Ok(baked) => Some(baked),
+        Err(error) => {
+            let span = Span::new(start + 1 + error.offset, error.width.max(1));
+            match error.kind {
+                EscapeDecodeErrorKind::UnterminatedEscape => {
+                    logger
+                        .error("Unknown escape sequence")
+                        .primary(
+                            "This sequence starts with a \\, but is not a recognized escape sequence.",
+                            span,
                         )
-                    }
+                        .done();
                 }
-                c => {
-                    let span = Span::new(start - 1, 2);
-                    logger.error("Unknown escape sequence").primary(
-                        format!("The \\{c} sequence here is not recognized."), span
-                    ).done();
-                    return None;
+                EscapeDecodeErrorKind::UnknownEscape(ch) => {
+                    logger
+                        .error("Unknown escape sequence")
+                        .primary(format!("The \\{ch} sequence here is not recognized."), span)
+                        .done();
+                }
+                EscapeDecodeErrorKind::InvalidHexByte => {
+                    logger
+                        .error("Unknown escape sequence")
+                        .primary(
+                            "This sequence starts with \\x, but is not followed by two hexadecimal digits.",
+                            span,
+                        )
+                        .done();
+                }
+                EscapeDecodeErrorKind::InvalidHexWord => {
+                    logger
+                        .error("Unknown escape sequence")
+                        .primary(
+                            "This sequence starts with \\w, but is not followed by 4 hex digits.",
+                            span,
+                        )
+                        .done();
+                }
+                EscapeDecodeErrorKind::InvalidUnicodeScalar => {
+                    logger
+                        .error("Unknown escape sequence")
+                        .primary(
+                            "This \\w escape does not encode a valid unicode scalar value.",
+                            span,
+                        )
+                        .done();
                 }
             }
-        } else {
-            next
-        })
+            None
+        }
     }
-    Some(baked)
 }

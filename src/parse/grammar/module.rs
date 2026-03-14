@@ -24,6 +24,21 @@ const STATEMENT_RECOVERY: &[SyntaxKind] = &[
     SyntaxKind::MODULE_KW,
 ];
 
+pub fn can_start_statement(p: &Parser<'_, '_>) -> bool {
+    matches!(
+        p.current(),
+        Some(
+            SyntaxKind::USE_KW
+                | SyntaxKind::LET_KW
+                | SyntaxKind::TYPE_KW
+                | SyntaxKind::TRAIT_KW
+                | SyntaxKind::IMPL_KW
+                | SyntaxKind::WASM_KW
+                | SyntaxKind::MODULE_KW
+        )
+    )
+}
+
 pub fn statement(p: &mut Parser<'_, '_>) {
     match p.current() {
         Some(SyntaxKind::USE_KW) => use_statement(p),
@@ -206,6 +221,7 @@ fn can_start_impl_argument(p: &Parser<'_, '_>) -> bool {
         Some(
             SyntaxKind::IDENT
                 | SyntaxKind::ROOT_KW
+                | SyntaxKind::BUNDLE_KW
                 | SyntaxKind::L_PAREN
                 | SyntaxKind::L_SQUARE
                 | SyntaxKind::FOR_KW

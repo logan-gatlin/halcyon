@@ -12,6 +12,7 @@ use indexmap::{
 
 use super::*;
 use crate::types::{
+    Kind,
     StructMatch,
     TraitConstraint,
     TraitRef,
@@ -305,6 +306,20 @@ impl TypeSignatureSection {
         }
     }
 
+    fn encode_kind(
+        kind: &Kind,
+        sink: &mut Vec<u8>,
+    ) {
+        match kind {
+            Kind::Type => 0usize.encode(sink),
+            Kind::Arrow(parameter, result) => {
+                1usize.encode(sink);
+                Self::encode_kind(parameter, sink);
+                Self::encode_kind(result, sink);
+            }
+        }
+    }
+
     #[cfg(test)]
     fn rebuild_index_map(&mut self) {
         self.index_map.clear();
@@ -356,11 +371,16 @@ impl TypeSignatureSection {
                 _ => return None,
             };
             let parameters = dec.decode_usize()?;
+            let mut parameter_kinds = Vec::with_capacity(parameters);
+            for _ in 0..parameters {
+                parameter_kinds.push(Self::decode_kind(dec)?);
+            }
             let body = Self::decode_type(dec, &reverse_index)?;
             defined_types.insert(
                 path,
                 TypeDefinition {
                     parameters,
+                    parameter_kinds,
                     body,
                     kind,
                 },
@@ -480,6 +500,14 @@ impl TypeSignatureSection {
         })
     }
 
+    fn decode_kind(dec: &mut Decoder) -> Option<Kind> {
+        Some(match dec.decode_usize()? {
+            0 => Kind::Type,
+            1 => Kind::arrow(Self::decode_kind(dec)?, Self::decode_kind(dec)?),
+            _ => return None,
+        })
+    }
+
     fn decode_scheme(
         dec: &mut Decoder,
         reverse_index: &[Path],
@@ -528,6 +556,14 @@ impl Encode for TypeSignatureSection {
                 TypeDefinitionKind::Alias => 1usize.encode(&mut data),
             }
             t.parameters.encode(&mut data);
+            let parameter_kinds = if t.parameter_kinds.len() == t.parameters {
+                t.parameter_kinds.clone()
+            } else {
+                vec![Kind::Type; t.parameters]
+            };
+            for kind in parameter_kinds.iter() {
+                Self::encode_kind(kind, &mut data);
+            }
             self.encode_type(&t.body, &mut data);
         }
         self.defined_terms.len().encode(&mut data);
@@ -595,6 +631,7 @@ mod tests {
             path.clone(),
             TypeDefinition {
                 parameters: 0,
+                parameter_kinds: Vec::new(),
                 body: type_.clone(),
                 kind: TypeDefinitionKind::Named,
             },
@@ -686,6 +723,7 @@ mod tests {
             path.clone(),
             TypeDefinition {
                 parameters: 1,
+                parameter_kinds: vec![crate::types::Kind::Type],
                 body: body.clone(),
                 kind: TypeDefinitionKind::Named,
             },

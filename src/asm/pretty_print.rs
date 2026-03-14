@@ -235,7 +235,10 @@ impl PrettyPrint for Instruction {
                 format!("ref.cast.array [{}]", inner.pretty())
             }
             I32Store8 => "i32.store8".into(),
+            I32Load => "i32.load".into(),
             I32Store => "i32.store".into(),
+            I64Load => "i64.load".into(),
+            I64ExtendI32U => "i64.extend_i32_u".into(),
             Call(path) => format!("call {}", path.pretty()),
         }
     }

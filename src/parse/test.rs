@@ -5,10 +5,14 @@ use super::ast::{
     HasLeadingComments,
     HasName,
 };
-use super::lexer::tokenize;
+use super::lexer::{
+    decode_quoted_glyph_literal,
+    decode_quoted_string_literal,
+    tokenize,
+};
 use super::{
-    SyntaxKind,
     parse,
+    SyntaxKind,
 };
 use crate::logging::Logger;
 
@@ -91,12 +95,12 @@ fn lex_symbols() {
 fn lex_keywords() {
     use SyntaxKind::*;
     let tokens = lex(
-        "module import use as end match with let type trait impl do of in if then else and or xor not true false fn wasm for where root",
+        "module bundle import use as end match with let type trait impl do of in if then else and or xor not true false fn wasm for where root",
     );
     let expected = vec![
-        MODULE_KW, IMPORT_KW, USE_KW, AS_KW, END_KW, MATCH_KW, WITH_KW, LET_KW, TYPE_KW, TRAIT_KW,
-        IMPL_KW, DO_KW, OF_KW, IN_KW, IF_KW, THEN_KW, ELSE_KW, AND_KW, OR_KW, XOR_KW, NOT_KW,
-        TRUE_KW, FALSE_KW, FN_KW, WASM_KW, FOR_KW, WHERE_KW, ROOT_KW,
+        MODULE_KW, BUNDLE_KW, IMPORT_KW, USE_KW, AS_KW, END_KW, MATCH_KW, WITH_KW, LET_KW, TYPE_KW,
+        TRAIT_KW, IMPL_KW, DO_KW, OF_KW, IN_KW, IF_KW, THEN_KW, ELSE_KW, AND_KW, OR_KW, XOR_KW,
+        NOT_KW, TRUE_KW, FALSE_KW, FN_KW, WASM_KW, FOR_KW, WHERE_KW, ROOT_KW,
     ];
     assert_eq!(tokens, expected);
 }
@@ -149,12 +153,55 @@ fn lex_strings() {
 }
 
 #[test]
+fn decode_string_literal_all_escape_sequences() {
+    let cases = [
+        (r#""\n""#, "\n"),
+        (r#""\r""#, "\r"),
+        (r#""\t""#, "\t"),
+        (r#""\b""#, "\x08"),
+        (r#""\\""#, "\\"),
+        (r#""\0""#, "\0"),
+        (r#""\"""#, "\""),
+        (r#""\'""#, "'"),
+        (r#""\x41""#, "A"),
+        (r#""\w03BB""#, "\u{03BB}"),
+    ];
+
+    for (literal, expected) in cases {
+        assert_eq!(
+            decode_quoted_string_literal(literal).as_deref(),
+            Some(expected)
+        );
+    }
+}
+
+#[test]
 fn lex_glyphs() {
     let tokens = lex_with_text(r#"'a' 'b' 'c'"#);
     assert_eq!(
         tokens.iter().map(|(_, t)| *t).collect::<Vec<_>>(),
         vec!["'a'", "'b'", "'c'"]
     );
+}
+
+#[test]
+fn decode_glyph_literal_all_escape_sequences() {
+    let cases = [
+        (r#"'\n'"#, '\n'),
+        (r#"'\r'"#, '\r'),
+        (r#"'\t'"#, '\t'),
+        (r#"'\b'"#, '\x08'),
+        (r#"'\\'"#, '\\'),
+        (r#"'\0'"#, '\0'),
+        (r#"'\"'"#, '"'),
+        (r#"'\''"#, '\''),
+        (r#"'\x41'"#, 'A'),
+        (r#"'\w03BB'"#, '\u{03BB}'),
+    ];
+
+    for (literal, expected) in cases {
+        assert_eq!(decode_quoted_glyph_literal(literal), Some(expected));
+    }
 }
 
 #[test]
@@ -345,12 +392,12 @@ fn parse_use_expr_with_alias() {
 
 #[test]
 fn parse_top_level_use_is_error() {
-    assert_has_errors("use core\nmodule Main = end");
+    assert_no_errors("use core\nmodule Main = end");
 }
 
 #[test]
 fn parse_top_level_statement_is_error() {
-    assert_has_errors("let x = 1");
+    assert_no_errors("let x = 1");
 }
 
 #[test]
@@ -659,9 +706,9 @@ fn ast_source_file_items_preserve_order() {
     let items = sf.items();
     assert_eq!(items.len(), 4, "Should have 4 top-level items");
     assert!(matches!(items[0], ast::TopLevelItem::Import(_)));
-    assert!(matches!(items[1], ast::TopLevelItem::Module(_)));
+    assert!(matches!(items[1], ast::TopLevelItem::Statement(_)));
     assert!(matches!(items[2], ast::TopLevelItem::Import(_)));
-    assert!(matches!(items[3], ast::TopLevelItem::Module(_)));
+    assert!(matches!(items[3], ast::TopLevelItem::Statement(_)));
 }
 
 #[test]
@@ -705,6 +752,26 @@ fn ast_use_statement_accessors() {
         panic!("expected path target");
     };
     assert!(path.is_rooted(), "use target should be rooted");
+    assert_eq!(path.segments(), vec!["core"]);
+}
+
+#[test]
+fn ast_use_statement_bundle_rooted_accessors() {
+    let sf = parse_source_file("module M =\n  use bundle::core\nend");
+    let m = &sf.modules()[0];
+    let stmts = m.statements();
+    assert_eq!(stmts.len(), 1, "Should have 1 statement");
+    let ast::Statement::Use(ref use_stmt) = stmts[0] else {
+        panic!("expected use statement");
+    };
+    let target = use_stmt.target().expect("use should have target");
+    let ast::PathOrIdent::Path(path) = target else {
+        panic!("expected path target");
+    };
+    assert!(
+        path.is_bundle_rooted(),
+        "use target should be bundle-rooted"
+    );
     assert_eq!(path.segments(), vec!["core"]);
 }
 
@@ -1222,6 +1289,25 @@ fn ast_rooted_path_expr() {
 }
 
 #[test]
+fn ast_bundle_rooted_path_expr() {
+    let sf = parse_source_file("module M =\n  let x = bundle::Foo::bar\nend");
+    let ast::Statement::Let(ref ls) = sf.modules()[0].statements()[0] else {
+        panic!("expected let");
+    };
+    let ast::Expr::Path(ref pe) = ls.value().unwrap() else {
+        panic!("expected path");
+    };
+    assert!(
+        pe.is_bundle_rooted(),
+        "bundle-prefixed path should be bundle-rooted"
+    );
+    assert!(!pe.is_rooted(), "bundle-prefixed path should not be root::");
+    assert_eq!(pe.segments(), vec!["Foo", "bar"]);
+    assert_eq!(pe.qualifier().as_deref(), Some("Foo"));
+    assert_eq!(pe.name_text().as_deref(), Some("bar"));
+}
+
+#[test]
 fn ast_bracket_operator_ident_expr() {
     assert_no_errors("module M =\n  let x = [+]\nend");
     let sf = parse_source_file("module M =\n  let x = [+]\nend");
@@ -1330,6 +1416,19 @@ fn ast_paren_expr_tuple() {
     };
     assert!(pe.is_tuple(), "should be tuple");
     assert_eq!(pe.inner_exprs().len(), 3);
+}
+
+#[test]
+fn ast_paren_expr_singleton_tuple_with_trailing_comma() {
+    let sf = parse_source_file("module M =\n  let x = (1,)\nend");
+    let ast::Statement::Let(ref ls) = sf.modules()[0].statements()[0] else {
+        panic!("expected let");
+    };
+    let ast::Expr::Paren(ref pe) = ls.value().unwrap() else {
+        panic!("expected paren");
+    };
+    assert!(pe.is_tuple(), "should be singleton tuple");
+    assert_eq!(pe.inner_exprs().len(), 1);
 }
 
 #[test]
@@ -1468,6 +1567,23 @@ fn ast_type_application_multiple_args() {
 }
 
 #[test]
+fn ast_type_singleton_tuple_with_trailing_comma() {
+    let sf = parse_source_file("module M =\n  type one = (int,)\nend");
+    let ast::Statement::Type(ref ts) = sf.modules()[0].statements()[0] else {
+        panic!("expected type");
+    };
+    let ast::TypeDef::Alias(ref alias) = ts.type_def().unwrap() else {
+        panic!("expected alias");
+    };
+    let te = alias.type_expr().unwrap();
+    let ast::TypeExpr::Tuple(ref tuple) = te else {
+        panic!("expected tuple type, got: {te:?}");
+    };
+    assert!(tuple.is_tuple(), "should be singleton tuple type");
+    assert_eq!(tuple.fields().len(), 1);
+}
+
+#[test]
 fn ast_missing_children_return_none() {
     // Parse something with errors — accessors should return None
     // for missing parts rather than panicking
@@ -1537,6 +1653,19 @@ fn ast_pattern_enum_dispatch() {
     assert!(matches!(patterns[0], ast::Pattern::Ident(_)));
     assert!(matches!(patterns[1], ast::Pattern::Tuple(_)));
     assert!(matches!(patterns[2], ast::Pattern::Array(_)));
+}
+
+#[test]
+fn ast_pattern_singleton_tuple_with_trailing_comma() {
+    let sf = parse_source_file("module M =\n  let (x,) = (1,)\nend");
+    let ast::Statement::Let(ref ls) = sf.modules()[0].statements()[0] else {
+        panic!("expected let");
+    };
+    let ast::Pattern::Tuple(ref tuple) = ls.pattern().expect("should have pattern") else {
+        panic!("expected tuple pattern");
+    };
+    assert!(tuple.is_tuple(), "should be singleton tuple pattern");
+    assert_eq!(tuple.patterns().len(), 1);
 }
 
 // ═══════════════════════════════════════════════════════════════════════

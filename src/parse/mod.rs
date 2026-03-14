@@ -61,6 +61,7 @@ pub enum SyntaxKind {
     REAL,
 
     MODULE_KW,
+    BUNDLE_KW,
     IMPORT_KW,
     USE_KW,
     AS_KW,
@@ -98,6 +99,7 @@ pub enum SyntaxKind {
     // Note: do not introduce new node kinds that duplicate existing token kinds.
     // The parser may reuse token kinds (IDENT, STRING, INTEGER, REAL) for nodes.
     SOURCE_FILE,
+    BUNDLE_DECLARATION,
     MODULE,
     IMPORT_STATEMENT,
     USE_STATEMENT,
@@ -248,6 +250,7 @@ impl std::fmt::Display for SyntaxKind {
                 INTEGER => "integer",
                 REAL => "real",
                 MODULE_KW => "module",
+                BUNDLE_KW => "bundle",
                 IMPORT_KW => "import",
                 USE_KW => "use",
                 AS_KW => "as",
@@ -280,6 +283,7 @@ impl std::fmt::Display for SyntaxKind {
                 BLOCK_COMMENT => "block comment",
                 TOKEN_ERROR => "[ERROR]",
                 SOURCE_FILE => "source file",
+                BUNDLE_DECLARATION => "bundle declaration",
                 MODULE => "module",
                 IMPORT_STATEMENT => "import statement",
                 USE_STATEMENT => "use statement",

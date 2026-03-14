@@ -4,7 +4,10 @@ use indexmap::IndexMap;
 
 use crate::ir::Path;
 
-use super::Type;
+use super::{
+    Kind,
+    Type,
+};
 
 /// A trait constraint applied to type arguments.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,6 +64,7 @@ impl From<Type> for TypeScheme {
 pub struct TraitDef {
     pub name: Path,
     pub parameters: usize,
+    pub parameter_kinds: Vec<Kind>,
     pub methods: IndexMap<Path, TypeScheme>,
 }
 
@@ -72,6 +76,7 @@ impl TraitDef {
         Self {
             name,
             parameters,
+            parameter_kinds: vec![Kind::Type; parameters],
             methods: Default::default(),
         }
     }
@@ -136,6 +141,11 @@ pub enum TraitError {
         alias: Path,
         target: Path,
     },
+    KindMismatch {
+        trait_name: Path,
+        expected: Kind,
+        found: Kind,
+    },
     NoInstance {
         predicate: TraitConstraint,
     },
@@ -186,6 +196,7 @@ mod tests {
         let trait_def = TraitDef {
             name: Path::new("demo", "Ord"),
             parameters: 1,
+            parameter_kinds: vec![Kind::Type],
             methods: [
                 (Path::new("demo", "z"), Type::Integer.scheme()),
                 (Path::new("demo", "a"), Type::Integer.scheme()),

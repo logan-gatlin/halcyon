@@ -22,7 +22,11 @@ use crate::ir::{
     TypeExprKind,
 };
 
-use super::instantiation::instantiate_predicates;
+use super::instantiation::{
+    instantiate_forall_strict,
+    instantiate_predicates,
+    peel_leading_foralls,
+};
 use super::type_expr::{
     TypeExprLowerError,
     TypeExprSymbol,
@@ -31,6 +35,7 @@ use super::type_expr::{
 };
 use super::{
     MetaVarId,
+    Kind,
     StructMatch,
     TraitConstraint,
     TraitRef,
@@ -64,6 +69,19 @@ pub enum TypeError {
     InvalidPlaceholderType { span: Span },
     /// Trait constraints were written where only plain types are allowed.
     TraitConstraintsNotAllowed { span: Span },
+    /// Trait constraint application arity mismatch.
+    InvalidTraitApplication {
+        name: Path,
+        expected: usize,
+        found: usize,
+        span: Span,
+    },
+    /// Kind mismatch.
+    KindMismatch {
+        expected: Kind,
+        found: Kind,
+        span: Span,
+    },
     /// Non-function type used in call position.
     NotAFunction { type_: Type, span: Span },
     /// Failed to instantiate a type scheme.
@@ -700,6 +718,7 @@ mod tests {
                     pair.clone(),
                     TypeDefinition {
                         parameters: 0,
+                        parameter_kinds: Vec::new(),
                         body: Type::Tuple(vec![Type::Integer, Type::Boolean]),
                         kind: TypeDefinitionKind::Named,
                     },
@@ -708,6 +727,7 @@ mod tests {
                     Path::new("demo", "PairAlias"),
                     TypeDefinition {
                         parameters: 0,
+                        parameter_kinds: Vec::new(),
                         body: Type::Tuple(vec![Type::Integer, Type::Boolean]),
                         kind: TypeDefinitionKind::Alias,
                     },
@@ -1601,6 +1621,7 @@ pub struct InferenceContext {
     level: u32,
     type_definitions: IndexMap<Path, TypeDefinition>,
     trait_aliases: IndexMap<Path, Path>,
+    trait_parameter_kinds: IndexMap<Path, Vec<Kind>>,
     skolem_salt: usize,
     unannotated_parameter_argument_types: Vec<(Path, Option<Type>)>,
 }
@@ -1648,6 +1669,13 @@ impl InferenceContext {
         aliases: IndexMap<Path, Path>,
     ) {
         self.trait_aliases = aliases;
+    }
+
+    pub fn set_trait_parameter_kinds(
+        &mut self,
+        kinds: IndexMap<Path, Vec<Kind>>,
+    ) {
+        self.trait_parameter_kinds = kinds;
     }
 
     pub fn canonical_trait_name(
@@ -1784,26 +1812,24 @@ impl InferenceContext {
         scheme: &TypeScheme,
         span: Span,
     ) -> Result<SchemeInstance, TypeError> {
-        let mut current = scheme.type_.clone();
-        let mut predicates = scheme.predicates.clone();
-        loop {
-            match current {
-                Type::ForAll(body) => {
-                    let fresh = self.fresh_meta();
-                    current = body
-                        .open_forall(&fresh)
-                        .ok_or(TypeError::InvalidScheme { span })?;
-                    predicates = instantiate_predicates(&predicates, std::slice::from_ref(&fresh))
-                        .ok_or(TypeError::InvalidScheme { span })?;
-                }
-                other => {
-                    return Ok(SchemeInstance {
-                        type_: other,
-                        predicates,
-                    });
-                }
-            }
+        let (count, body) = peel_leading_foralls(&scheme.type_);
+        if count == 0 {
+            return Ok(SchemeInstance {
+                type_: body,
+                predicates: scheme.predicates.clone(),
+            });
         }
+        let metas = (0..count)
+            .map(|_| self.table.new_meta(self.level))
+            .collect::<Vec<_>>();
+        let type_ = instantiate_forall_strict(&scheme.type_, &metas)
+            .ok_or(TypeError::InvalidScheme { span })?;
+        let predicates = instantiate_predicates(&scheme.predicates, &metas)
+            .ok_or(TypeError::InvalidScheme { span })?;
+        Ok(SchemeInstance {
+            type_,
+            predicates,
+        })
     }
 
     pub fn generalize_at(
@@ -1849,8 +1875,7 @@ impl InferenceContext {
         .transform(&normalized_type)
         .unwrap_or_else(|| normalized_type.clone())
         .for_all(free_meta_vars.len());
-        let predicates =
-            replace_meta_vars_in_predicates(&normalized_predicates, &meta_var_to_type_var);
+        let predicates = replace_meta_vars_in_predicates(&normalized_predicates, &meta_var_to_type_var);
         type_.scheme_with_predicates(predicates)
     }
 

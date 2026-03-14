@@ -150,6 +150,7 @@ fn can_start_atom(kind: SyntaxKind) -> bool {
             | SyntaxKind::TRUE_KW
             | SyntaxKind::FALSE_KW
             | SyntaxKind::ROOT_KW
+            | SyntaxKind::BUNDLE_KW
             | SyntaxKind::L_PAREN
             | SyntaxKind::L_SQUARE
             | SyntaxKind::L_BRACE
@@ -178,7 +179,7 @@ fn primary(p: &mut Parser<'_, '_>) -> bool {
                 }
 
                 // Identifier or path
-                SyntaxKind::IDENT | SyntaxKind::ROOT_KW => {
+                SyntaxKind::IDENT | SyntaxKind::ROOT_KW | SyntaxKind::BUNDLE_KW => {
                     path_or_ident(p);
                     true
                 }
@@ -220,7 +221,7 @@ fn primary(p: &mut Parser<'_, '_>) -> bool {
 
 // ── Compound primaries ───────────────────────────────────────────────
 
-/// `"(" ")"` (unit), `"(" expr ")"` (paren), or `"(" expr "," ... ")"` (tuple).
+/// `"(" ")"` (unit), `"(" expr ")"` (paren), `"(" expr "," ")"` (singleton tuple), or `"(" expr "," ... ")"` (tuple).
 fn paren_or_tuple(p: &mut Parser<'_, '_>) {
     paren_list(p, SyntaxKind::UNIT, SyntaxKind::PAREN_EXPR, expr);
 }

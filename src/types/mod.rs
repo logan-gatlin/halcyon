@@ -25,8 +25,9 @@ pub enum StructMatch {
 ///
 /// Invariants:
 /// - `Type::Named` is primarily nominal (name-based equality/unification).
-/// - `type ~Alias = ...` declarations are expanded to their structural body during
-///   lowering and are represented by that body rather than `Type::Named`.
+/// - `type ~Alias = ...` declarations may remain as `Type::Named` during
+///   inference-oriented lowering to preserve constructor shape; fully applied
+///   aliases are expanded when a structural view is required.
 /// - `Type::StructConstraint` is a partial structural view used for record access
 ///   and pattern checking; it intentionally does not represent a first-class record
 ///   declaration.
@@ -463,6 +464,7 @@ impl Type {
     ) -> TypeDefinition {
         TypeDefinition {
             parameters,
+            parameter_kinds: vec![Kind::Type; parameters],
             body: self,
             kind: TypeDefinitionKind::Alias,
         }
@@ -475,6 +477,7 @@ impl Type {
     ) -> TypeDefinition {
         TypeDefinition {
             parameters,
+            parameter_kinds: vec![Kind::Type; parameters],
             body: self,
             kind: TypeDefinitionKind::Named,
         }
@@ -562,7 +565,7 @@ impl Type {
                 let name = type_var_name(param_names.len() as u32);
                 let mut next_params = param_names.to_vec();
                 next_params.push(name.clone());
-                format!("forall {name}. {}", body.pretty_with_context(&next_params))
+                format!("for {name} in {}", body.pretty_with_context(&next_params))
             }
             Type::Named { name, .. } => format!("{name}"),
             Type::StructConstraint { fields, mode } => {
@@ -653,6 +656,8 @@ impl Type {
                 | Type::Array(_)
                 | Type::Tuple(_)
                 | Type::Struct { .. }
+                | Type::Sum { .. }
+                | Type::Function(_, _)
                 | Type::Apply { .. }
         )
     }
@@ -720,6 +725,7 @@ fn pretty_record_fields(
 }
 
 mod instantiation;
+mod kind;
 mod type_expr;
 
 pub mod infer;
@@ -727,6 +733,8 @@ pub mod resolve;
 pub mod symbol_table;
 pub mod traits;
 pub mod unify;
+
+pub use kind::Kind;
 
 pub use symbol_table::{
     MethodSpecialization,

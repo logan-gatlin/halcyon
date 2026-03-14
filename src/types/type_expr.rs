@@ -5,13 +5,13 @@
 
 use std::collections::HashMap;
 
-use crate::Span;
 use crate::ir::{
     Path,
     TypeExpr,
     TypeExprConstraint,
     TypeExprKind,
 };
+use crate::Span;
 
 use super::instantiation::instantiate_forall_strict;
 use super::{
@@ -70,12 +70,36 @@ pub(crate) struct LoweredTypeSchemeExpr {
     pub errors: Vec<TypeExprLowerError>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AliasLowering {
+    Expand,
+    PreserveConstructors,
+}
+
 pub(crate) fn lower_type_expr(
     expr: &TypeExpr,
     lookup_symbol: &mut impl FnMut(&Path) -> TypeExprSymbol,
     lower_placeholder: &mut impl FnMut(Span) -> Option<Type>,
 ) -> LoweredTypeExpr {
-    lower_type_expr_dyn(expr, lookup_symbol, lower_placeholder)
+    lower_type_expr_dyn(
+        expr,
+        lookup_symbol,
+        lower_placeholder,
+        AliasLowering::Expand,
+    )
+}
+
+pub(crate) fn lower_type_expr_preserving_alias_constructors(
+    expr: &TypeExpr,
+    lookup_symbol: &mut impl FnMut(&Path) -> TypeExprSymbol,
+    lower_placeholder: &mut impl FnMut(Span) -> Option<Type>,
+) -> LoweredTypeExpr {
+    lower_type_expr_dyn(
+        expr,
+        lookup_symbol,
+        lower_placeholder,
+        AliasLowering::PreserveConstructors,
+    )
 }
 
 pub(crate) fn lower_type_scheme_expr(
@@ -83,18 +107,46 @@ pub(crate) fn lower_type_scheme_expr(
     lookup_symbol: &mut impl FnMut(&Path) -> TypeExprSymbol,
     lower_placeholder: &mut impl FnMut(Span) -> Option<Type>,
 ) -> LoweredTypeSchemeExpr {
-    lower_type_scheme_expr_dyn(expr, lookup_symbol, lower_placeholder)
+    lower_type_scheme_expr_dyn(
+        expr,
+        lookup_symbol,
+        lower_placeholder,
+        AliasLowering::Expand,
+    )
+}
+
+pub(crate) fn lower_type_scheme_expr_preserving_alias_constructors(
+    expr: &TypeExpr,
+    lookup_symbol: &mut impl FnMut(&Path) -> TypeExprSymbol,
+    lower_placeholder: &mut impl FnMut(Span) -> Option<Type>,
+) -> LoweredTypeSchemeExpr {
+    lower_type_scheme_expr_dyn(
+        expr,
+        lookup_symbol,
+        lower_placeholder,
+        AliasLowering::PreserveConstructors,
+    )
 }
 
 fn lower_type_expr_dyn(
     expr: &TypeExpr,
     lookup_symbol: &mut dyn FnMut(&Path) -> TypeExprSymbol,
     lower_placeholder: &mut dyn FnMut(Span) -> Option<Type>,
+    alias_lowering: AliasLowering,
 ) -> LoweredTypeExpr {
     match &expr.kind {
-        TypeExprKind::Tuple(items) => lower_tuple(items, lookup_symbol, lower_placeholder),
+        TypeExprKind::Tuple(items) => {
+            lower_tuple(items, lookup_symbol, lower_placeholder, alias_lowering)
+        }
         TypeExprKind::Instantiation(path, args) => {
-            lower_instantiation(path, args, expr.span, lookup_symbol, lower_placeholder)
+            lower_instantiation(
+                path,
+                args,
+                expr.span,
+                lookup_symbol,
+                lower_placeholder,
+                alias_lowering,
+            )
         }
         TypeExprKind::ForAll(params, constraints, body) => {
             let count = params.len();
@@ -122,6 +174,7 @@ fn lower_type_expr_dyn(
                         })
                 },
                 lower_placeholder,
+                alias_lowering,
             );
             if let Some(constraint) = constraints.first() {
                 body.errors
@@ -152,6 +205,7 @@ fn lower_type_scheme_expr_dyn(
     expr: &TypeExpr,
     lookup_symbol: &mut dyn FnMut(&Path) -> TypeExprSymbol,
     lower_placeholder: &mut dyn FnMut(Span) -> Option<Type>,
+    alias_lowering: AliasLowering,
 ) -> LoweredTypeSchemeExpr {
     match &expr.kind {
         TypeExprKind::ForAll(params, constraints, body) => {
@@ -180,6 +234,7 @@ fn lower_type_scheme_expr_dyn(
                         })
                 },
                 lower_placeholder,
+                alias_lowering,
             );
             let mut current_predicates = Vec::new();
             for constraint in constraints.iter() {
@@ -202,6 +257,7 @@ fn lower_type_scheme_expr_dyn(
                             })
                     },
                     lower_placeholder,
+                    alias_lowering,
                 );
                 current_predicates.push(predicate);
                 lowered_body.errors.append(&mut errors);
@@ -212,7 +268,8 @@ fn lower_type_scheme_expr_dyn(
             lowered_body
         }
         _ => {
-            let lowered = lower_type_expr_dyn(expr, lookup_symbol, lower_placeholder);
+            let lowered =
+                lower_type_expr_dyn(expr, lookup_symbol, lower_placeholder, alias_lowering);
             LoweredTypeSchemeExpr {
                 scheme: TypeScheme::new(lowered.type_),
                 errors: lowered.errors,
@@ -225,13 +282,15 @@ fn lower_trait_constraint(
     constraint: &TypeExprConstraint,
     lookup_symbol: &mut dyn FnMut(&Path) -> TypeExprSymbol,
     lower_placeholder: &mut dyn FnMut(Span) -> Option<Type>,
+    alias_lowering: AliasLowering,
 ) -> (TraitConstraint, Vec<TypeExprLowerError>) {
     let mut errors = Vec::new();
     let arguments = constraint
         .arguments
         .iter()
         .map(|argument| {
-            let mut lowered = lower_type_expr_dyn(argument, lookup_symbol, lower_placeholder);
+            let mut lowered =
+                lower_type_expr_dyn(argument, lookup_symbol, lower_placeholder, alias_lowering);
             errors.append(&mut lowered.errors);
             lowered.type_
         })
@@ -249,22 +308,34 @@ fn lower_tuple(
     items: &[TypeExpr],
     lookup_symbol: &mut dyn FnMut(&Path) -> TypeExprSymbol,
     lower_placeholder: &mut dyn FnMut(Span) -> Option<Type>,
+    alias_lowering: AliasLowering,
 ) -> LoweredTypeExpr {
-    items.iter().fold(
-        LoweredTypeExpr {
-            type_: Type::Tuple(Vec::new()),
-            errors: Vec::new(),
-        },
-        |mut lowered, item| {
-            let mut item_lowered = lower_type_expr_dyn(item, lookup_symbol, lower_placeholder);
-            let Type::Tuple(ref mut tuple_items) = lowered.type_ else {
-                return lowered;
-            };
-            tuple_items.push(item_lowered.type_);
-            lowered.errors.append(&mut item_lowered.errors);
-            lowered
-        },
-    )
+    match items {
+        [] => {
+            LoweredTypeExpr {
+                type_: Type::Unit,
+                errors: Vec::new(),
+            }
+        }
+        _ => {
+            items.iter().fold(
+                LoweredTypeExpr {
+                    type_: Type::Tuple(Vec::new()),
+                    errors: Vec::new(),
+                },
+                |mut lowered, item| {
+                    let mut item_lowered =
+                        lower_type_expr_dyn(item, lookup_symbol, lower_placeholder, alias_lowering);
+                    let Type::Tuple(ref mut tuple_items) = lowered.type_ else {
+                        return lowered;
+                    };
+                    tuple_items.push(item_lowered.type_);
+                    lowered.errors.append(&mut item_lowered.errors);
+                    lowered
+                },
+            )
+        }
+    }
 }
 
 fn lower_instantiation(
@@ -273,30 +344,23 @@ fn lower_instantiation(
     span: Span,
     lookup_symbol: &mut dyn FnMut(&Path) -> TypeExprSymbol,
     lower_placeholder: &mut dyn FnMut(Span) -> Option<Type>,
+    alias_lowering: AliasLowering,
 ) -> LoweredTypeExpr {
     let mut errors = Vec::new();
     let arguments = args
         .iter()
         .map(|arg| {
-            let mut lowered = lower_type_expr_dyn(arg, lookup_symbol, lower_placeholder);
+            let mut lowered =
+                lower_type_expr_dyn(arg, lookup_symbol, lower_placeholder, alias_lowering);
             errors.append(&mut lowered.errors);
             lowered.type_
         })
         .collect::<Vec<_>>();
 
     let lowered_type = match lookup_symbol(path) {
-        TypeExprSymbol::TypeParameter(index) => {
-            if !arguments.is_empty() {
-                errors.push(TypeExprLowerError::TypeParameterApplied {
-                    name: path.clone(),
-                    found: arguments.len(),
-                    span,
-                });
-            }
-            Type::v(index)
-        }
+        TypeExprSymbol::TypeParameter(index) => Type::v(index).apply(arguments),
         TypeExprSymbol::Definition(definition) => {
-            if definition.parameters != arguments.len() {
+            if arguments.len() > definition.parameters {
                 errors.push(TypeExprLowerError::InvalidTypeApplication {
                     name: path.clone(),
                     expected: definition.parameters,
@@ -313,8 +377,26 @@ fn lower_instantiation(
                     .apply(arguments)
                 }
                 TypeDefinitionKind::Alias => {
-                    instantiate_forall_strict(&definition.body, &arguments)
-                        .unwrap_or(definition.body)
+                    if arguments.len() < definition.parameters {
+                        Type::Named {
+                            name: path.clone(),
+                            body: Box::new(definition.body),
+                        }
+                        .apply(arguments)
+                    } else {
+                        let expanded = instantiate_forall_strict(&definition.body, &arguments)
+                            .unwrap_or(definition.body);
+                        match alias_lowering {
+                            AliasLowering::Expand => expanded,
+                            AliasLowering::PreserveConstructors if definition.parameters > 0 => {
+                                Type::Named {
+                                    name: path.clone(),
+                                    body: Box::new(expanded),
+                                }
+                            }
+                            _ => expanded,
+                        }
+                    }
                 }
             }
         }
@@ -335,7 +417,6 @@ fn lower_instantiation(
 
 #[cfg(test)]
 mod tests {
-    use crate::Span;
     use crate::hc_core::CoreType;
     use crate::ir::{
         Path,
@@ -344,16 +425,19 @@ mod tests {
         TypeExprKind,
     };
     use crate::types::symbol_table::Symbol;
+    use crate::types::Kind;
+    use crate::Span;
 
     use super::{
+        lower_type_expr,
+        lower_type_expr_preserving_alias_constructors,
+        lower_type_scheme_expr,
         TraitRef,
         Type,
         TypeDefinition,
         TypeDefinitionKind,
         TypeExprLowerError,
         TypeExprSymbol,
-        lower_type_expr,
-        lower_type_scheme_expr,
     };
 
     fn expr(kind: TypeExprKind) -> TypeExpr {
@@ -388,6 +472,7 @@ mod tests {
                 if path == &pair {
                     TypeExprSymbol::Definition(TypeDefinition {
                         parameters: 1,
+                        parameter_kinds: vec![Kind::Type],
                         body: Type::Tuple(vec![Type::v(0), Type::v(0)]).for_all(1),
                         kind: TypeDefinitionKind::Named,
                     })
@@ -425,6 +510,7 @@ mod tests {
                 if path == &pair {
                     TypeExprSymbol::Definition(TypeDefinition {
                         parameters: 1,
+                        parameter_kinds: vec![Kind::Type],
                         body: Type::Tuple(vec![Type::v(0), Type::v(0)]).for_all(1),
                         kind: TypeDefinitionKind::Alias,
                     })
@@ -445,6 +531,84 @@ mod tests {
     }
 
     #[test]
+    fn alias_instantiation_can_preserve_constructor_shape() {
+        let pair = Path::new("demo", "Pair");
+        let int = CoreType::Integer.path();
+        let lowered = lower_type_expr_preserving_alias_constructors(
+            &expr(TypeExprKind::Instantiation(
+                pair.clone(),
+                [expr(TypeExprKind::Instantiation(int.clone(), [].into()))].into(),
+            )),
+            &mut |path| {
+                if path == &pair {
+                    TypeExprSymbol::Definition(TypeDefinition {
+                        parameters: 2,
+                        parameter_kinds: vec![Kind::Type, Kind::Type],
+                        body: Type::Tuple(vec![Type::v(1), Type::v(0)]).for_all(2),
+                        kind: TypeDefinitionKind::Alias,
+                    })
+                } else if path == &int {
+                    TypeExprSymbol::Definition(Type::Integer.def(0))
+                } else {
+                    TypeExprSymbol::Unknown
+                }
+            },
+            &mut |_| None,
+        );
+
+        assert!(lowered.errors.is_empty());
+        let Type::Apply {
+            constructor,
+            arguments,
+        } = lowered.type_
+        else {
+            panic!("expected preserved alias constructor application");
+        };
+        assert!(matches!(*constructor, Type::Named { name, .. } if name == pair));
+        assert_eq!(arguments, vec![Type::Integer]);
+    }
+
+    #[test]
+    fn alias_instantiation_preserves_constructor_when_fully_applied() {
+        let pair = Path::new("demo", "Pair");
+        let int = CoreType::Integer.path();
+        let bool_ = CoreType::Boolean.path();
+        let lowered = lower_type_expr_preserving_alias_constructors(
+            &expr(TypeExprKind::Instantiation(
+                pair.clone(),
+                [
+                    expr(TypeExprKind::Instantiation(int.clone(), [].into())),
+                    expr(TypeExprKind::Instantiation(bool_.clone(), [].into())),
+                ]
+                .into(),
+            )),
+            &mut |path| {
+                if path == &pair {
+                    TypeExprSymbol::Definition(TypeDefinition {
+                        parameters: 2,
+                        parameter_kinds: vec![Kind::Type, Kind::Type],
+                        body: Type::Tuple(vec![Type::v(1), Type::v(0)]).for_all(2),
+                        kind: TypeDefinitionKind::Alias,
+                    })
+                } else if path == &int {
+                    TypeExprSymbol::Definition(Type::Integer.def(0))
+                } else if path == &bool_ {
+                    TypeExprSymbol::Definition(Type::Boolean.def(0))
+                } else {
+                    TypeExprSymbol::Unknown
+                }
+            },
+            &mut |_| None,
+        );
+
+        assert!(lowered.errors.is_empty());
+        assert!(
+            matches!(lowered.type_, Type::Named { ref name, .. } if name == &pair),
+            "fully applied alias should be wrapped in Named under PreserveConstructors"
+        );
+    }
+
+    #[test]
     fn unknown_symbols_recover_to_placeholder_nominal_types() {
         let missing = Path::new("demo", "Missing");
         let lowered = lower_type_expr(
@@ -461,7 +625,7 @@ mod tests {
     }
 
     #[test]
-    fn type_parameter_application_reports_error_and_recovers_to_parameter() {
+    fn type_parameter_application_lowers_to_applied_parameter() {
         let a = Path::new("demo", "a");
         let int = CoreType::Integer.path();
         let lowered = lower_type_expr(
@@ -470,23 +634,80 @@ mod tests {
                 [].into(),
                 expr(TypeExprKind::Instantiation(
                     a.clone(),
-                    [expr(TypeExprKind::Instantiation(int, [].into()))].into(),
+                    [expr(TypeExprKind::Instantiation(int.clone(), [].into()))].into(),
                 ))
                 .into(),
             )),
-            &mut |_| TypeExprSymbol::Unknown,
+            &mut |path| {
+                if path == &int {
+                    TypeExprSymbol::Definition(Type::Integer.def(0))
+                } else {
+                    TypeExprSymbol::Unknown
+                }
+            },
             &mut |_| None,
         );
 
-        assert_eq!(lowered.type_, Type::v(0).for_all(1));
-        assert!(matches!(
-            lowered.errors.as_slice(),
-            [TypeExprLowerError::TypeParameterApplied { name, found: 1, .. }] if name == &a
-        ));
+        assert!(lowered.errors.is_empty());
+        assert_eq!(
+            lowered.type_,
+            Type::v(0).apply(vec![Type::Integer]).for_all(1)
+        );
     }
 
     #[test]
     fn invalid_type_application_reports_error_and_keeps_lowered_shape() {
+        let pair = Path::new("demo", "Pair");
+        let int = CoreType::Integer.path();
+        let bool_ = CoreType::Boolean.path();
+        let lowered = lower_type_expr(
+            &expr(TypeExprKind::Instantiation(
+                pair.clone(),
+                [
+                    expr(TypeExprKind::Instantiation(int.clone(), [].into())),
+                    expr(TypeExprKind::Instantiation(bool_.clone(), [].into())),
+                ]
+                .into(),
+            )),
+            &mut |path| {
+                if path == &pair {
+                    TypeExprSymbol::Definition(TypeDefinition {
+                        parameters: 1,
+                        parameter_kinds: vec![Kind::Type],
+                        body: Type::Tuple(vec![Type::v(0), Type::v(0)]).for_all(1),
+                        kind: TypeDefinitionKind::Named,
+                    })
+                } else if path == &int {
+                    TypeExprSymbol::Definition(Type::Integer.def(0))
+                } else if path == &bool_ {
+                    TypeExprSymbol::Definition(Type::Boolean.def(0))
+                } else {
+                    TypeExprSymbol::Unknown
+                }
+            },
+            &mut |_| None,
+        );
+
+        assert!(matches!(
+            lowered.errors.as_slice(),
+            [TypeExprLowerError::InvalidTypeApplication {
+                name,
+                expected: 1,
+                found: 2,
+                ..
+            }] if name == &pair
+        ));
+        assert!(matches!(
+            lowered.type_,
+            Type::Apply {
+                constructor: _,
+                arguments: _
+            }
+        ));
+    }
+
+    #[test]
+    fn partial_named_type_application_is_allowed() {
         let pair = Path::new("demo", "Pair");
         let int = CoreType::Integer.path();
         let lowered = lower_type_expr(
@@ -498,6 +719,7 @@ mod tests {
                 if path == &pair {
                     TypeExprSymbol::Definition(TypeDefinition {
                         parameters: 2,
+                        parameter_kinds: vec![Kind::Type, Kind::Type],
                         body: Type::Tuple(vec![Type::v(1), Type::v(0)]).for_all(2),
                         kind: TypeDefinitionKind::Named,
                     })
@@ -510,22 +732,54 @@ mod tests {
             &mut |_| None,
         );
 
-        assert!(matches!(
-            lowered.errors.as_slice(),
-            [TypeExprLowerError::InvalidTypeApplication {
-                name,
-                expected: 2,
-                found: 1,
-                ..
-            }] if name == &pair
-        ));
-        assert!(matches!(
-            lowered.type_,
-            Type::Apply {
-                constructor: _,
-                arguments: _
-            }
-        ));
+        assert!(lowered.errors.is_empty());
+        let Type::Apply {
+            constructor,
+            arguments,
+        } = lowered.type_
+        else {
+            panic!("expected partially applied named type");
+        };
+        assert!(matches!(*constructor, Type::Named { name, .. } if name == pair));
+        assert_eq!(arguments, vec![Type::Integer]);
+    }
+
+    #[test]
+    fn partial_alias_type_application_preserves_constructor_shape() {
+        let pair = Path::new("demo", "Pair");
+        let int = CoreType::Integer.path();
+        let lowered = lower_type_expr(
+            &expr(TypeExprKind::Instantiation(
+                pair.clone(),
+                [expr(TypeExprKind::Instantiation(int.clone(), [].into()))].into(),
+            )),
+            &mut |path| {
+                if path == &pair {
+                    TypeExprSymbol::Definition(TypeDefinition {
+                        parameters: 2,
+                        parameter_kinds: vec![Kind::Type, Kind::Type],
+                        body: Type::Tuple(vec![Type::v(1), Type::v(0)]).for_all(2),
+                        kind: TypeDefinitionKind::Alias,
+                    })
+                } else if path == &int {
+                    TypeExprSymbol::Definition(Type::Integer.def(0))
+                } else {
+                    TypeExprSymbol::Definition(Type::Unit.def(0))
+                }
+            },
+            &mut |_| None,
+        );
+
+        assert!(lowered.errors.is_empty());
+        let Type::Apply {
+            constructor,
+            arguments,
+        } = lowered.type_
+        else {
+            panic!("expected partially applied alias constructor");
+        };
+        assert!(matches!(*constructor, Type::Named { name, .. } if name == pair));
+        assert_eq!(arguments, vec![Type::Integer]);
     }
 
     #[test]
@@ -550,6 +804,7 @@ mod tests {
                 if path == &pair {
                     TypeExprSymbol::Definition(TypeDefinition {
                         parameters: 1,
+                        parameter_kinds: vec![Kind::Type],
                         body: Type::Tuple(vec![Type::v(0), Type::v(0)]).for_all(1),
                         kind: TypeDefinitionKind::Alias,
                     })
@@ -725,5 +980,33 @@ mod tests {
 
         let lowered = lower_type_expr(&tuple, &mut |_| TypeExprSymbol::Unknown, &mut |_| None);
         assert_eq!(lowered.errors.len(), 2);
+    }
+
+    #[test]
+    fn singleton_tuple_type_term_lowers_as_singleton_tuple() {
+        let grouped = expr(TypeExprKind::Tuple(
+            [expr(TypeExprKind::Instantiation(
+                CoreType::Integer.path(),
+                [].into(),
+            ))]
+            .into(),
+        ));
+
+        let lowered = lower_type_expr(
+            &grouped,
+            &mut |_| TypeExprSymbol::Definition(Type::Integer.def(0)),
+            &mut |_| None,
+        );
+
+        assert_eq!(lowered.type_, Type::Tuple(vec![Type::Integer]));
+    }
+
+    #[test]
+    fn empty_tuple_type_term_lowers_to_unit() {
+        let unit = expr(TypeExprKind::Tuple([].into()));
+
+        let lowered = lower_type_expr(&unit, &mut |_| TypeExprSymbol::Unknown, &mut |_| None);
+
+        assert_eq!(lowered.type_, Type::Unit);
     }
 }

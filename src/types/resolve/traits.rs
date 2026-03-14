@@ -6,6 +6,12 @@ use crate::logging::WithContext;
 use indexmap::IndexMap;
 
 use super::super::infer::InferenceContext;
+use super::super::kind::{
+    constructor_kind,
+    infer_scheme_kind,
+    KindError,
+    SchemeKindError,
+};
 use super::common::format_trait_ref;
 use super::diagnostics::log_trait_error;
 use super::type_defs::{
@@ -15,6 +21,7 @@ use super::type_defs::{
 };
 use super::{
     FileLogger,
+    Kind,
     Path,
     PendingTraitAliasEntry,
     PendingTraitDefinitionEntry,
@@ -33,9 +40,22 @@ pub(super) fn build_trait_definitions(
     statements: &[Statement<()>],
     pending_type_definitions: &IndexMap<Path, PendingTypeDefinitionEntry>,
     type_definitions: &IndexMap<Path, TypeDefinition>,
+    trait_definitions: &IndexMap<Path, TraitDef>,
     logger: &mut FileLogger,
 ) -> Vec<PendingTraitDefinitionEntry> {
     let mut resolved_type_definitions = type_definitions.clone();
+    let mut known_trait_kinds = trait_definitions
+        .iter()
+        .map(|(path, definition)| {
+            (
+                path.clone(),
+                normalize_parameter_kinds(
+                    definition.parameter_kinds.clone(),
+                    definition.parameters,
+                ),
+            )
+        })
+        .collect::<IndexMap<_, _>>();
     let mut seen_traits = HashSet::new();
     statements
         .iter()
@@ -57,31 +77,166 @@ pub(super) fn build_trait_definitions(
                 .first()
                 .map(|method| method.span)
                 .unwrap_or(Span::Generated);
-            let methods = method_decls
-                .iter()
-                .map(|method| {
-                    let mut scheme = type_expr_to_scheme_in_def(
-                        &method.type_expr,
-                        &trait_parameter_indices,
-                        pending_type_definitions,
-                        &mut resolved_type_definitions,
-                        &mut Vec::new(),
-                        logger,
-                    );
-                    scheme.type_ = scheme.type_.for_all(parameters.len());
-                    (method.path.clone(), scheme)
-                })
-                .collect();
+            let mut inferred_parameter_kinds = vec![None; parameters.len()];
+            let mut methods = IndexMap::new();
+            for method in method_decls.iter() {
+                let mut scheme = type_expr_to_scheme_in_def(
+                    &method.type_expr,
+                    &trait_parameter_indices,
+                    pending_type_definitions,
+                    &mut resolved_type_definitions,
+                    &mut Vec::new(),
+                    logger,
+                );
+                scheme.type_ = scheme.type_.for_all(parameters.len());
+                match infer_scheme_kind(
+                    &scheme,
+                    parameters.len(),
+                    &|type_path| {
+                        resolved_type_definitions.get(type_path).map(|definition| {
+                            constructor_kind(definition.parameters, &definition.parameter_kinds)
+                        })
+                    },
+                    &|trait_name| known_trait_kinds.get(trait_name).cloned(),
+                ) {
+                    Ok(inferred) => {
+                        if inferred.kind != Kind::Type {
+                            logger
+                                .error("Invalid trait method kind")
+                                .primary(
+                                    format!(
+                                        "`{}` resolves to kind `{}` but trait methods must resolve to `Type`.",
+                                        method.path, inferred.kind
+                                    ),
+                                    method.span,
+                                )
+                                .done();
+                        }
+                        merge_parameter_kinds(
+                            &mut inferred_parameter_kinds,
+                            &inferred.parameter_kinds,
+                            path,
+                            method.span,
+                            logger,
+                        );
+                    }
+                    Err(error) => {
+                        log_trait_scheme_kind_error(logger, path, &method.path, method.span, error);
+                    }
+                }
+                methods.insert(method.path.clone(), scheme);
+            }
+            let parameter_kinds = inferred_parameter_kinds
+                .into_iter()
+                .map(|kind| kind.unwrap_or(Kind::Type))
+                .collect::<Vec<_>>();
+            known_trait_kinds.insert(path.clone(), parameter_kinds.clone());
             Some(PendingTraitDefinitionEntry {
                 span,
                 trait_definition: TraitDef {
                     name: path.clone(),
                     parameters: parameters.len(),
+                    parameter_kinds,
                     methods,
                 },
             })
         })
         .collect()
+}
+
+fn normalize_parameter_kinds(
+    mut kinds: Vec<Kind>,
+    parameter_count: usize,
+) -> Vec<Kind> {
+    if kinds.len() < parameter_count {
+        kinds.extend(std::iter::repeat_n(
+            Kind::Type,
+            parameter_count - kinds.len(),
+        ));
+    }
+    kinds.truncate(parameter_count);
+    kinds
+}
+
+fn merge_parameter_kinds(
+    inferred: &mut [Option<Kind>],
+    current: &[Kind],
+    trait_path: &Path,
+    span: Span,
+    logger: &mut FileLogger,
+) {
+    for (slot, inferred_kind) in inferred.iter_mut().zip(current.iter()) {
+        if let Some(existing) = slot {
+            if existing != inferred_kind {
+                logger
+                    .error("Inconsistent trait parameter kinds")
+                    .primary(
+                        format!(
+                            "`{trait_path}` infers conflicting kinds `{}` and `{}` for the same trait parameter.",
+                            existing,
+                            inferred_kind
+                        ),
+                        span,
+                    )
+                    .done();
+            }
+            continue;
+        }
+        *slot = Some(inferred_kind.clone());
+    }
+}
+
+fn log_trait_scheme_kind_error(
+    logger: &mut FileLogger,
+    trait_path: &Path,
+    method_path: &Path,
+    span: Span,
+    error: SchemeKindError,
+) {
+    match error {
+        SchemeKindError::Kind(kind_error) => {
+            let message = match kind_error {
+                KindError::Mismatch { left, right } => format!(
+                    "`{method_path}` in trait `{trait_path}` has incompatible kinds `{left}` and `{right}`."
+                ),
+                KindError::Occurs { in_kind, .. } => format!(
+                    "`{method_path}` in trait `{trait_path}` has recursive kind `{in_kind}`."
+                ),
+            };
+            logger
+                .error("Invalid trait method kind")
+                .primary(message, span)
+                .done();
+        }
+        SchemeKindError::PredicateArityMismatch {
+            trait_name,
+            expected,
+            found,
+        } => {
+            logger
+                .error("Invalid trait constraint application")
+                .primary(
+                    format!("`{trait_name}` expects {expected} type arguments but got {found}."),
+                    span,
+                )
+                .done();
+        }
+        SchemeKindError::PredicateKindMismatch {
+            trait_name,
+            expected,
+            found,
+        } => {
+            logger
+                .error("Invalid trait constraint kind")
+                .primary(
+                    format!(
+                        "`{trait_name}` expects kind `{expected}` but this argument has kind `{found}`."
+                    ),
+                    span,
+                )
+                .done();
+        }
+    }
 }
 
 /// Register trait definitions and publish trait method schemes into term symbols.
@@ -212,9 +367,9 @@ mod tests {
         Type,
     };
     use crate::{
-        Logger,
         ir,
         parse,
+        Logger,
     };
 
     fn parse_statements(source: &str) -> Vec<Statement<()>> {
@@ -248,6 +403,7 @@ mod tests {
             &statements,
             &IndexMap::new(),
             &core_like_type_definitions(),
+            &IndexMap::new(),
             &mut file_logger,
         );
 
@@ -265,6 +421,69 @@ mod tests {
             method_scheme.type_,
             Type::func(Type::v(0), Type::func(Type::v(0), Type::Boolean)).for_all(1)
         );
+        assert_eq!(trait_def.parameter_kinds, vec![Kind::Type]);
+    }
+
+    #[test]
+    fn build_trait_definitions_infers_higher_kinded_parameters() {
+        let statements = parse_statements(
+            "module demo =\n  trait Monad : m =\n    let map : for a b in (a -> b) -> m a -> m b\n  end\nend\n",
+        );
+        let mut logger = Logger::new();
+        let mut file_logger = logger.new_file("test.hc", "");
+
+        let built = build_trait_definitions(
+            &statements,
+            &IndexMap::new(),
+            &core_like_type_definitions(),
+            &IndexMap::new(),
+            &mut file_logger,
+        );
+
+        assert_eq!(built.len(), 1);
+        let trait_def = &built[0].trait_definition;
+        assert_eq!(trait_def.name, Path::new("demo", "Monad"));
+        assert_eq!(
+            trait_def.parameter_kinds,
+            vec![Kind::arrow(Kind::Type, Kind::Type)]
+        );
+    }
+
+    #[test]
+    fn build_trait_definitions_keep_map_as_two_argument_function() {
+        let statements = parse_statements(
+            "module demo =\n  trait Monad : m =\n    let map : for a b in (a -> b) -> m a -> m b\n  end\nend\n",
+        );
+        let mut logger = Logger::new();
+        let mut file_logger = logger.new_file("test.hc", "");
+
+        let built = build_trait_definitions(
+            &statements,
+            &IndexMap::new(),
+            &core_like_type_definitions(),
+            &IndexMap::new(),
+            &mut file_logger,
+        );
+
+        assert_eq!(built.len(), 1);
+        let trait_def = &built[0].trait_definition;
+        let method_scheme = trait_def
+            .methods
+            .get(&Path::new("demo", "map"))
+            .expect("method scheme should exist");
+
+        let mut foralls = 0usize;
+        let mut body = &method_scheme.type_;
+        while let Type::ForAll(next) = body {
+            foralls += 1;
+            body = next;
+        }
+
+        assert_eq!(foralls, 3);
+        let Type::Function(_, result) = body else {
+            panic!("expected map to lower as a function type");
+        };
+        assert!(matches!(**result, Type::Function(_, _)));
     }
 
     #[test]
@@ -278,6 +497,7 @@ mod tests {
             &statements,
             &IndexMap::new(),
             &core_like_type_definitions(),
+            &IndexMap::new(),
             &mut file_logger,
         );
 
@@ -292,11 +512,9 @@ mod tests {
             .terms()
             .get(&method_path)
             .expect("method term scheme should be published");
-        assert!(
-            term_scheme
-                .predicates
-                .contains(&TraitRef::new(trait_path, vec![Type::v(0)]))
-        );
+        assert!(term_scheme
+            .predicates
+            .contains(&TraitRef::new(trait_path, vec![Type::v(0)])));
     }
 
     #[test]
@@ -322,11 +540,9 @@ mod tests {
         );
 
         assert!(!file_logger.is_ok());
-        assert!(
-            file_logger
-                .iter()
-                .any(|diagnostic| diagnostic.message == "Unresolved trait constraint")
-        );
+        assert!(file_logger
+            .iter()
+            .any(|diagnostic| diagnostic.message == "Unresolved trait constraint"));
     }
 
     #[test]

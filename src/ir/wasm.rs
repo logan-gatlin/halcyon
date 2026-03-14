@@ -667,7 +667,10 @@ fn parse_instruction(
         "ref.cast_struct" => parse_ref_cast_struct(cursor, op_span, env, logger),
         "ref.cast_array" => parse_ref_cast_array(cursor, op_span, env, logger),
         "i32.store8" => Some(Instruction::I32Store8),
+        "i32.load" => Some(Instruction::I32Load),
         "i32.store" => Some(Instruction::I32Store),
+        "i64.load" => Some(Instruction::I64Load),
+        "i64.extend_i32_u" => Some(Instruction::I64ExtendI32U),
         _ => {
             parse_number_op(op).map_or_else(
                 || {
@@ -688,11 +691,7 @@ fn parse_const(
     op_span: Span,
     logger: &mut FileLogger,
 ) -> Option<Instruction> {
-    let Some(item) = cursor.next() else {
-        log_expected(logger, op_span, "immediate value");
-        return None;
-    };
-    parse_immediate(item, logger).map(Instruction::Const)
+    parse_immediate_argument(cursor, op_span, logger).map(Instruction::Const)
 }
 
 fn parse_i32_const(
@@ -700,11 +699,7 @@ fn parse_i32_const(
     op_span: Span,
     logger: &mut FileLogger,
 ) -> Option<Instruction> {
-    let Some(item) = cursor.next() else {
-        log_expected(logger, op_span, "integer literal");
-        return None;
-    };
-    let value = parse_integer_literal_from_item(item, logger)?;
+    let (value, _) = parse_signed_integer_argument(cursor, op_span, "integer literal", logger)?;
     match i32::try_from(value) {
         Ok(value) => Some(Instruction::I32Const(value)),
         Err(_) => {
@@ -719,11 +714,7 @@ fn parse_i64_const(
     op_span: Span,
     logger: &mut FileLogger,
 ) -> Option<Instruction> {
-    let Some(item) = cursor.next() else {
-        log_expected(logger, op_span, "integer literal");
-        return None;
-    };
-    let value = parse_integer_literal_from_item(item, logger)?;
+    let (value, _) = parse_signed_integer_argument(cursor, op_span, "integer literal", logger)?;
     Some(Instruction::Const(ImmediateValue::Integer(value)))
 }
 
@@ -732,11 +723,7 @@ fn parse_f32_const(
     op_span: Span,
     logger: &mut FileLogger,
 ) -> Option<Instruction> {
-    let Some(item) = cursor.next() else {
-        log_expected(logger, op_span, "numeric literal");
-        return None;
-    };
-    let value = parse_float_literal_from_item(item, logger)?;
+    let value = parse_signed_float_argument(cursor, op_span, logger)?;
     Some(Instruction::F32Const(value as f32))
 }
 
@@ -745,11 +732,7 @@ fn parse_f64_const(
     op_span: Span,
     logger: &mut FileLogger,
 ) -> Option<Instruction> {
-    let Some(item) = cursor.next() else {
-        log_expected(logger, op_span, "numeric literal");
-        return None;
-    };
-    let value = parse_float_literal_from_item(item, logger)?;
+    let value = parse_signed_float_argument(cursor, op_span, logger)?;
     Some(Instruction::Const(ImmediateValue::Real(value)))
 }
 
@@ -1066,17 +1049,13 @@ fn parse_usize_argument(
     context: &str,
     logger: &mut FileLogger,
 ) -> Option<usize> {
-    let Some(item) = cursor.next() else {
-        log_expected(logger, op_span, context);
-        return None;
-    };
-    let value = parse_integer_literal_from_item(item, logger)?;
+    let (value, span) = parse_signed_integer_argument(cursor, op_span, context, logger)?;
     if value < 0 {
-        log_invalid(logger, item.span(), "Expected a non-negative integer.");
+        log_invalid(logger, span, "Expected a non-negative integer.");
         return None;
     }
     usize::try_from(value).ok().or_else(|| {
-        log_invalid(logger, item.span(), "The value does not fit in a usize.");
+        log_invalid(logger, span, "The value does not fit in a usize.");
         None
     })
 }
@@ -1295,6 +1274,94 @@ fn parse_memory_limits(
             .done();
     }
     Some((initial_size, maximum_size))
+}
+
+fn parse_immediate_argument(
+    cursor: &mut Cursor<'_>,
+    op_span: Span,
+    logger: &mut FileLogger,
+) -> Option<ImmediateValue> {
+    let Some(item) = cursor.next() else {
+        log_expected(logger, op_span, "immediate value");
+        return None;
+    };
+    if is_minus_item(item) {
+        let Some(next) = cursor.next() else {
+            log_expected(logger, op_span, "immediate value");
+            return None;
+        };
+        return match parse_immediate(next, logger)? {
+            ImmediateValue::Integer(value) => {
+                value
+                    .checked_neg()
+                    .map(ImmediateValue::Integer)
+                    .or_else(|| {
+                        log_invalid(logger, next.span(), "Integer literal is out of range.");
+                        None
+                    })
+            }
+            ImmediateValue::Real(value) => Some(ImmediateValue::Real(-value)),
+            _ => {
+                log_invalid(
+                    logger,
+                    next.span(),
+                    "Only numeric immediates can be negative.",
+                );
+                None
+            }
+        };
+    }
+    parse_immediate(item, logger)
+}
+
+fn parse_signed_integer_argument(
+    cursor: &mut Cursor<'_>,
+    op_span: Span,
+    expected: &str,
+    logger: &mut FileLogger,
+) -> Option<(i64, Span)> {
+    let Some(item) = cursor.next() else {
+        log_expected(logger, op_span, expected);
+        return None;
+    };
+    if is_minus_item(item) {
+        let Some(next) = cursor.next() else {
+            log_expected(logger, op_span, expected);
+            return None;
+        };
+        let value = parse_integer_literal_from_item(next, logger)?;
+        return value
+            .checked_neg()
+            .map(|value| (value, item.span()))
+            .or_else(|| {
+                log_invalid(logger, next.span(), "Integer literal is out of range.");
+                None
+            });
+    }
+    parse_integer_literal_from_item(item, logger).map(|value| (value, item.span()))
+}
+
+fn parse_signed_float_argument(
+    cursor: &mut Cursor<'_>,
+    op_span: Span,
+    logger: &mut FileLogger,
+) -> Option<f64> {
+    let Some(item) = cursor.next() else {
+        log_expected(logger, op_span, "numeric literal");
+        return None;
+    };
+    if is_minus_item(item) {
+        let Some(next) = cursor.next() else {
+            log_expected(logger, op_span, "numeric literal");
+            return None;
+        };
+        return parse_float_literal_from_item(next, logger).map(|value| -value);
+    }
+    parse_float_literal_from_item(item, logger)
+}
+
+fn is_minus_item(item: &SexprItem) -> bool {
+    matches!(item, SexprItem::Atom(SexprAtom::Ident(token)) if token.text() == "-")
 }
 
 fn parse_immediate(
@@ -1680,7 +1747,7 @@ fn log_invalid(
 }
 
 fn string_token_value(text: &str) -> Option<String> {
-    Some(text.strip_prefix('"')?.strip_suffix('"')?.to_string())
+    crate::parse::lexer::decode_quoted_string_literal(text)
 }
 
 fn parse_integer_literal(text: &str) -> Option<i64> {

@@ -41,6 +41,7 @@ pub(crate) fn can_start_pattern(kind: SyntaxKind) -> bool {
             | SyntaxKind::TRUE_KW
             | SyntaxKind::FALSE_KW
             | SyntaxKind::ROOT_KW
+            | SyntaxKind::BUNDLE_KW
             | SyntaxKind::L_PAREN
             | SyntaxKind::L_SQUARE
             | SyntaxKind::L_BRACE
@@ -66,7 +67,9 @@ fn pattern_primary(p: &mut Parser<'_, '_>) {
                 }
 
                 // Identifier, path, or constructor
-                SyntaxKind::IDENT | SyntaxKind::ROOT_KW => ident_or_constructor(p),
+                SyntaxKind::IDENT | SyntaxKind::ROOT_KW | SyntaxKind::BUNDLE_KW => {
+                    ident_or_constructor(p)
+                }
 
                 // Tuple or grouping
                 SyntaxKind::L_PAREN => paren_pattern(p),

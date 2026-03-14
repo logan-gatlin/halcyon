@@ -8,6 +8,10 @@ pub mod map;
 pub mod operator;
 pub mod parse;
 pub mod types;
+use parse::ast::{
+    AstNode,
+    HasName,
+};
 pub use parse::tokenize;
 
 #[cfg(test)]
@@ -22,7 +26,8 @@ pub use crate::hc_core::compile_core_module;
 /// Grabs the version number from Cargo.toml at compile time
 pub const COMPILER_VERSION_STRING: &str = env!("CARGO_PKG_VERSION");
 pub const WASM_MAGIC_NUMBER: [u8; 4] = [0, b'a', b's', b'm'];
-pub const CORE_MODULE_NAME: &str = "core";
+pub const CORE_BUNDLE_NAME: &str = "core";
+pub const CORE_MODULE_NAME: &str = CORE_BUNDLE_NAME;
 
 #[derive(Debug, Clone)]
 pub struct Artifact {
@@ -102,23 +107,54 @@ pub fn compile_source(
         prelude
     }
 
-    let mut artifacts = Vec::new();
     let Some(source_file) = parse::parse(source, logger) else {
-        return artifacts.into_boxed_slice();
+        return Vec::new().into_boxed_slice();
     };
-    for module in source_file.modules() {
-        let prelude = name_resolution_prelude(symbols);
-        let Some(ir_module) = ir::module_with_prelude(module, logger, &prelude) else {
-            continue;
-        };
-        let resolved = types::resolve_module_with_symbols_and_schemes(symbols, ir_module, logger);
-        if !logger.is_ok() {
-            continue;
+
+    let mut bundle_name = "_".to_string();
+    let mut saw_bundle_declaration = false;
+    let mut statements = Vec::new();
+    for item in source_file.items() {
+        match item {
+            parse::ast::TopLevelItem::Bundle(bundle_declaration) => {
+                if saw_bundle_declaration {
+                    logger
+                        .error("Duplicate bundle declaration")
+                        .primary(
+                            "A source file may only declare one bundle.",
+                            bundle_declaration.span(),
+                        )
+                        .done();
+                    continue;
+                }
+                saw_bundle_declaration = true;
+                bundle_name = bundle_declaration
+                    .name_text()
+                    .unwrap_or_else(|| "_".to_string());
+            }
+            parse::ast::TopLevelItem::Import(_) => {}
+            parse::ast::TopLevelItem::Statement(statement) => statements.push(statement),
         }
-        let elaborated = ir::elaborate_module(resolved, symbols);
-        artifacts.push(asm::compile_module(elaborated, symbols));
     }
-    artifacts.into_boxed_slice()
+
+    if !logger.is_ok() {
+        return Vec::new().into_boxed_slice();
+    }
+
+    let prelude = name_resolution_prelude(symbols);
+    let Some(ir_bundle) =
+        ir::bundle_statements_with_prelude(bundle_name, &statements, logger, &prelude)
+    else {
+        return Vec::new().into_boxed_slice();
+    };
+
+    let resolved = types::resolve_module_with_symbols_and_schemes(symbols, ir_bundle, logger);
+    if !logger.is_ok() {
+        return Vec::new().into_boxed_slice();
+    }
+
+    let elaborated = ir::elaborate_module(resolved, symbols);
+    vec![asm::compile_module(elaborated, symbols)].into_boxed_slice()
 }
 
 pub fn validate_artifact(

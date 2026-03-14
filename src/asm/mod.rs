@@ -417,10 +417,25 @@ pub enum Instruction {
     /// Stack: `[address: i32, value: i32] -> []`
     I32Store8,
 
+    /// Load an i32 from linear memory.
+    ///
+    /// Stack: `[address: i32] -> [value: i32]`
+    I32Load,
+
     /// Store an i32 to linear memory.
     ///
     /// Stack: `[address: i32, value: i32] -> []`
     I32Store,
+
+    /// Load an i64 from linear memory.
+    ///
+    /// Stack: `[address: i32] -> [value: i64]`
+    I64Load,
+
+    /// Zero-extend i32 to i64.
+    ///
+    /// Stack: `[value: i32] -> [value: i64]`
+    I64ExtendI32U,
 }
 
 #[derive(Debug, Clone, Default)]

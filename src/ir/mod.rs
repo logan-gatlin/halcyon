@@ -458,6 +458,14 @@ pub fn module(
     module_with_prelude(module_node, logger, &[])
 }
 
+pub fn bundle_statements(
+    bundle_name: String,
+    statements: &[ast::Statement],
+    logger: &mut FileLogger,
+) -> Option<Module<()>> {
+    bundle_statements_with_prelude(bundle_name, statements, logger, &[])
+}
+
 pub fn module_with_prelude(
     module_node: ast::Module,
     logger: &mut FileLogger,
@@ -465,26 +473,33 @@ pub fn module_with_prelude(
 ) -> Option<Module<()>> {
     let name = module_node.name_text_spanned()?;
     lint_kebab_case_name(logger, "Module", &name.inner, name.span);
-    let name = name.inner;
-    let module_name = name.clone();
-    let mut module_scope = ModuleScope::new(name.clone());
+    bundle_statements_with_prelude(name.inner, &module_node.statements(), logger, prelude)
+}
+
+pub fn bundle_statements_with_prelude(
+    bundle_name: String,
+    ast_statements: &[ast::Statement],
+    logger: &mut FileLogger,
+    prelude: &[(Path, NameSpace)],
+) -> Option<Module<()>> {
+    let mut module_scope = ModuleScope::new(bundle_name.clone());
     for (path, namespace) in prelude {
         module_scope.predefine(path.clone(), *namespace);
     }
-    module_scope.register_implicit_open_use(&["core", "prelude"]);
+    module_scope.register_implicit_open_use(&[crate::CORE_MODULE_NAME, "prelude"]);
     let mut wasm_type_defs: IndexMap<String, WasmType> = IndexMap::new();
-    let mut statements = Vec::new();
+    let mut lowered_statements = Vec::new();
     lower_module_statements(
         &mut module_scope,
-        &module_name,
+        &bundle_name,
         &mut wasm_type_defs,
-        &mut statements,
+        &mut lowered_statements,
         logger,
-        &module_node.statements(),
+        ast_statements,
     )?;
     module_scope.report_name_resolution_errors(logger);
     Some(Module {
-        name,
-        statements: statements.into_boxed_slice(),
+        name: bundle_name,
+        statements: lowered_statements.into_boxed_slice(),
     })
 }

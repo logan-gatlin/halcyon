@@ -338,26 +338,48 @@ impl ModuleScope {
         alias: Option<Spanned<String>>,
         _span: Span,
     ) -> Option<()> {
-        let (segments, is_rooted) = match target {
-            ast::PathOrIdent::Ident(ident) => (vec![ident.name_text()?], false),
-            ast::PathOrIdent::Path(path) => (path.segments(), path.is_rooted()),
+        enum PathPrefix {
+            None,
+            Root,
+            Bundle,
+        }
+
+        let (segments, path_prefix) = match target {
+            ast::PathOrIdent::Ident(ident) => (vec![ident.name_text()?], PathPrefix::None),
+            ast::PathOrIdent::Path(path) => {
+                let path_prefix = if path.is_rooted() {
+                    PathPrefix::Root
+                } else if path.is_bundle_rooted() {
+                    PathPrefix::Bundle
+                } else {
+                    PathPrefix::None
+                };
+                (path.segments(), path_prefix)
+            }
         };
         if segments.is_empty() {
             return None;
         }
 
-        let module_segments = if is_rooted {
-            segments
-        } else {
-            let mut relative_segments =
-                Vec::with_capacity(1 + self.module_path.len() + segments.len());
-            relative_segments.push(self.module_name.clone());
-            relative_segments.extend(self.module_path.iter().cloned());
-            relative_segments.extend(segments.iter().cloned());
-            if self.has_definition_with_prefix(&relative_segments) {
-                relative_segments
-            } else {
-                segments
+        let module_segments = match path_prefix {
+            PathPrefix::Root => segments,
+            PathPrefix::Bundle => {
+                let mut bundle_segments = Vec::with_capacity(1 + segments.len());
+                bundle_segments.push(self.module_name.clone());
+                bundle_segments.extend(segments);
+                bundle_segments
+            }
+            PathPrefix::None => {
+                let mut relative_segments =
+                    Vec::with_capacity(1 + self.module_path.len() + segments.len());
+                relative_segments.push(self.module_name.clone());
+                relative_segments.extend(self.module_path.iter().cloned());
+                relative_segments.extend(segments.iter().cloned());
+                if self.has_definition_with_prefix(&relative_segments) {
+                    relative_segments
+                } else {
+                    segments
+                }
             }
         };
 
@@ -564,6 +586,15 @@ impl ModuleScope {
         if path.is_rooted() {
             return Path::from_segments(&segments);
         }
+        if path.is_bundle_rooted() {
+            if segments.is_empty() {
+                return None;
+            }
+            return Some(Path::new(
+                self.module_name.clone(),
+                segments.join(Path::DELIMETER),
+            ));
+        }
 
         let mut scoped_segments = Vec::with_capacity(1 + self.module_path.len() + segments.len());
         scoped_segments.push(self.module_name.clone());
@@ -752,11 +783,10 @@ impl Scope for ModuleScope {
             Some(binding) => {
                 if namespace == NameSpace::Term {
                     let current_depth = self.capture_buffer.len();
-                    if current_depth > 0
-                        && binding.function_depth < current_depth
-                        && let Some(buffer) = self.capture_buffer.last_mut()
-                    {
-                        buffer.insert(binding.path.clone());
+                    if current_depth > 0 && binding.function_depth < current_depth {
+                        for buffer in self.capture_buffer.iter_mut().skip(binding.function_depth) {
+                            buffer.insert(binding.path.clone());
+                        }
                     }
                 }
                 self.usages

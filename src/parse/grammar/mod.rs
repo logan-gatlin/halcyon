@@ -7,21 +7,42 @@ mod type_expr;
 use super::SyntaxKind;
 use super::parser::Parser;
 
-/// Parse a complete source file: top-level `import` and `module` items.
+/// Parse a complete source file.
 pub fn source_file(p: &mut Parser<'_, '_>) {
     let m = p.start_node_before_trivia(SyntaxKind::SOURCE_FILE);
-    const TOP_LEVEL_RECOVERY: &[SyntaxKind] = &[SyntaxKind::IMPORT_KW, SyntaxKind::MODULE_KW];
+    const TOP_LEVEL_RECOVERY: &[SyntaxKind] = &[
+        SyntaxKind::BUNDLE_KW,
+        SyntaxKind::IMPORT_KW,
+        SyntaxKind::USE_KW,
+        SyntaxKind::LET_KW,
+        SyntaxKind::TYPE_KW,
+        SyntaxKind::TRAIT_KW,
+        SyntaxKind::IMPL_KW,
+        SyntaxKind::WASM_KW,
+        SyntaxKind::MODULE_KW,
+    ];
     while !p.at_end() {
-        if p.at(SyntaxKind::IMPORT_KW) {
-            import_statement(p);
-        } else if p.at(SyntaxKind::MODULE_KW) {
-            module::module(p);
-        } else {
-            p.error_recover("expected `import` or `module`", TOP_LEVEL_RECOVERY);
+        match p.current() {
+            Some(SyntaxKind::BUNDLE_KW) => bundle_declaration(p),
+            Some(SyntaxKind::IMPORT_KW) => import_statement(p),
+            _ if module::can_start_statement(p) => module::statement(p),
+            _ => {
+                p.error_recover(
+                    "expected `bundle`, `import`, or a top-level statement",
+                    TOP_LEVEL_RECOVERY,
+                )
+            }
         }
     }
     // Attach any trailing trivia to the root node.
     p.skip_trivia();
+    p.finish_node(m);
+}
+
+fn bundle_declaration(p: &mut Parser<'_, '_>) {
+    let m = p.start_node_with_leading_comments(SyntaxKind::BUNDLE_DECLARATION);
+    p.expect(SyntaxKind::BUNDLE_KW);
+    expect_identifier(p);
     p.finish_node(m);
 }
 
@@ -54,7 +75,7 @@ pub(crate) fn can_start_identifier(p: &Parser<'_, '_>) -> bool {
 }
 
 pub(crate) fn can_start_path_or_ident(p: &Parser<'_, '_>) -> bool {
-    can_start_identifier(p) || p.at(SyntaxKind::ROOT_KW)
+    can_start_identifier(p) || p.at_any(&[SyntaxKind::ROOT_KW, SyntaxKind::BUNDLE_KW])
 }
 
 pub(crate) fn is_bracketed_operator_identifier_start(p: &Parser<'_, '_>) -> bool {
@@ -86,7 +107,7 @@ pub(crate) fn expect_identifier(p: &mut Parser<'_, '_>) {
 /// Parse a simple identifier (bare or bracketed operator) or a qualified path.
 pub(crate) fn path_or_ident(p: &mut Parser<'_, '_>) {
     let checkpoint = p.checkpoint();
-    if p.eat(SyntaxKind::ROOT_KW) {
+    if p.eat(SyntaxKind::ROOT_KW) || p.eat(SyntaxKind::BUNDLE_KW) {
         let m = p.start_node_at(checkpoint, SyntaxKind::PATH);
         p.expect(SyntaxKind::DOUBLE_COLON);
         expect_identifier(p);
@@ -123,7 +144,8 @@ pub(crate) fn literal(p: &mut Parser<'_, '_>) {
     p.finish_node(m);
 }
 
-/// Parse a parenthesized list: `()` (unit) or `(item, ...)` (tuple/grouping).
+/// Parse a parenthesized list: `()` (unit) or `(item, ...)` (tuple/grouping),
+/// including trailing-comma forms like `(item,)`.
 pub(crate) fn paren_list(
     p: &mut Parser<'_, '_>,
     unit_kind: SyntaxKind,

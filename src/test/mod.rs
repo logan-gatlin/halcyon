@@ -60,7 +60,7 @@ fn demo_reports_missing_trait_instance() {
 
 #[test]
 fn associated_constant_trait_item_compiles() {
-    let source = "module demo =\n\ttrait default : a =\n\t\tlet default : a\n\tend\n\timpl default core::Integer =\n\t\tlet default = 42\n\tend\n\tlet value : core::Integer = default\nend\n";
+    let source = "module demo =\n\ttrait DefaultValue : a =\n\t\tlet default : a\n\tend\n\timpl DefaultValue core::Integer =\n\t\tlet default = 42\n\tend\n\tlet value : core::Integer = default\nend\n";
     let mut symbols = SymbolTable::new();
     let mut logger = Logger::new();
     let _core = compile_core_module(&mut symbols, &mut logger);
@@ -122,7 +122,7 @@ fn trait_alias_target_must_be_trait() {
 
 #[test]
 fn trait_alias_is_available_to_later_modules_through_use_imports() {
-    let source = "module first =\n\ttrait Eq : a =\n\t\tlet eq : a -> a -> a\n\tend\n\ttrait ~Equal = Eq\nend\n\nmodule second =\n\tuse first\n\ttype Token = { value: Integer }\n\timpl Equal Token =\n\t\tlet eq = fn x _ => x\n\tend\n\tlet value = eq { value = 1 } { value = 2 }\nend\n";
+    let source = "bundle demo\nmodule first =\n\ttrait Eq : a =\n\t\tlet eq : a -> a -> a\n\tend\n\ttrait ~Equal = Eq\nend\n\nmodule second =\n\tuse root::demo::first\n\ttype Token = { value: Integer }\n\timpl Equal Token =\n\t\tlet eq = fn x _ => x\n\tend\n\tlet value = eq { value = 1 } { value = 2 }\nend\n";
     let mut symbols = SymbolTable::new();
     let mut logger = Logger::new();
     let _core = compile_core_module(&mut symbols, &mut logger);
@@ -242,7 +242,90 @@ fn strict_forall_value_annotation_is_enforced() {
 
 #[test]
 fn conditional_trait_impl_compiles_and_validates() {
-    let source = "module demo =\n\ttrait doubler : a =\n\t\tlet double : a -> a\n\tend\n\timpl doubler for a in a where core::ops::Add a =\n\t\tlet double = fn x => x + x\n\tend\n\tlet value : core::Integer = double 21\nend\n";
+    let source = "module demo =\n\ttrait Doubler : a =\n\t\tlet double : a -> a\n\tend\n\timpl Doubler for a in a where core::ops::Add a =\n\t\tlet double = fn x => x + x\n\tend\n\tlet value : core::Integer = double 21\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let artifacts = compile_source(source, &mut file_logger, &mut symbols);
+    logger.consume_file(file_logger);
+
+    for artifact in artifacts.into_vec() {
+        let _ = validate_artifact(artifact, &mut logger);
+    }
+
+    assert_logger_is_ok(&logger, "Compilation failed");
+}
+
+#[test]
+fn higher_kinded_trait_impl_compiles_and_validates() {
+    let source = "module demo =\n\ttrait Monad : m =\n\t\tlet map : for a b in (a -> b) -> m a -> m b\n\tend\n\timpl Monad core::opt::Option =\n\t\tlet map = core::opt::map\n\tend\n\tlet result : core::opt::Option core::Integer = map (fn x => x + 1) (core::opt::Some 1)\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let artifacts = compile_source(source, &mut file_logger, &mut symbols);
+    logger.consume_file(file_logger);
+
+    for artifact in artifacts.into_vec() {
+        let _ = validate_artifact(artifact, &mut logger);
+    }
+
+    assert_logger_is_ok(&logger, "Compilation failed");
+}
+
+#[test]
+fn higher_kinded_trait_map_and_flatten_impl_compiles_and_validates() {
+    let source = "module demo =\n\ttrait Monad : m =\n\t\tlet map : for a b in (a -> b) -> m a -> m b\n\t\tlet flatten : for a in m (m a) -> m a\n\tend\n\timpl Monad core::opt::Option =\n\t\tlet map = core::opt::map\n\t\tlet flatten = fn opt => match opt with\n\t\t\t| core::opt::Some value => value\n\t\t\t| core::opt::None => core::opt::None\n\tend\n\tlet result : core::opt::Option core::Integer = flatten (map (fn x => core::opt::Some (x + 1)) (core::opt::Some 1))\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let artifacts = compile_source(source, &mut file_logger, &mut symbols);
+    logger.consume_file(file_logger);
+
+    for artifact in artifacts.into_vec() {
+        let _ = validate_artifact(artifact, &mut logger);
+    }
+
+    assert_logger_is_ok(&logger, "Compilation failed");
+}
+
+#[test]
+fn higher_kinded_trait_impl_rejects_wrong_kind_argument() {
+    let source = "module demo =\n\ttrait Monad : m =\n\t\tlet map : for a b in (a -> b) -> m a -> m b\n\tend\n\timpl Monad core::Integer =\n\t\tlet map = fn f value => f value\n\tend\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let _ = compile_source(source, &mut file_logger, &mut symbols);
+    assert!(
+        file_logger_has_error_message(&file_logger, "Invalid trait argument kind"),
+        "expected wrong-kind trait argument error"
+    );
+    logger.consume_file(file_logger);
+    assert!(!logger.is_ok(), "Compilation should fail");
+}
+
+#[test]
+fn higher_kinded_annotation_rejects_constructor_kind_where_type_is_required() {
+    let source = "module demo =\n\tlet value : core::opt::Option = core::opt::Some 1\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let _ = compile_source(source, &mut file_logger, &mut symbols);
+    assert!(
+        file_logger_has_error_message(&file_logger, "Kind mismatch"),
+        "expected annotation kind mismatch"
+    );
+    logger.consume_file(file_logger);
+    assert!(!logger.is_ok(), "Compilation should fail");
+}
+
+#[test]
+fn core_monad_methods_dispatch_for_option_array_and_result() {
+    let source = "module demo =\n\tlet opt_map : core::opt::Option core::Integer = core::hkt::map (fn x => x + 1) (core::opt::Some 1)\n\tlet opt_flatten : core::opt::Option core::Integer = core::hkt::flatten (core::opt::Some (core::opt::Some 1))\n\tlet opt_bind : core::opt::Option core::Integer = core::hkt::flatten (core::hkt::map (fn x => core::opt::Some (x + 1)) (core::opt::Some 1))\n\tlet res_bind : core::result::Result core::String core::Integer = core::hkt::flatten (core::hkt::map (fn x => core::result::Ok (x + 1)) (core::result::Ok 1))\nend\n";
     let mut symbols = SymbolTable::new();
     let mut logger = Logger::new();
     let _core = compile_core_module(&mut symbols, &mut logger);
@@ -537,6 +620,75 @@ fn infix_operator_uses_standard_name_resolution() {
 }
 
 #[test]
+fn nested_function_captures_propagate_to_intermediate_lambdas() {
+    let source =
+        "module demo =\n\tlet compose = fn first second value => first (second value)\nend\n";
+    let mut logger = Logger::new();
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let module = parse::parse(source, &mut file_logger)
+        .and_then(|source_file| source_file.modules().into_iter().next())
+        .and_then(|module| ir::module(module, &mut file_logger))
+        .expect("expected module");
+    logger.consume_file(file_logger);
+    assert_logger_is_ok(&logger, "IR construction should succeed");
+
+    let Some(ir::Statement::Term(term)) = module.statements.first() else {
+        panic!("expected first statement to be a term");
+    };
+    let ir::TermKind::Let {
+        value,
+        scope: ir::ScopeKind::Global,
+        ..
+    } = &term.kind
+    else {
+        panic!("expected global let statement");
+    };
+    let ir::TermKind::Function {
+        parameter_name: first,
+        body: second_fn,
+        ..
+    } = &value.kind
+    else {
+        panic!("expected outer function");
+    };
+    let ir::TermKind::Function {
+        parameter_name: second,
+        captures: second_captures,
+        body: value_fn,
+        ..
+    } = &second_fn.kind
+    else {
+        panic!("expected middle function");
+    };
+    assert!(
+        second_captures
+            .iter()
+            .any(|(capture, _)| capture == &first.inner),
+        "middle function should capture outer parameter"
+    );
+
+    let ir::TermKind::Function {
+        captures: value_captures,
+        ..
+    } = &value_fn.kind
+    else {
+        panic!("expected inner function");
+    };
+    assert!(
+        value_captures
+            .iter()
+            .any(|(capture, _)| capture == &first.inner),
+        "inner function should capture first parameter"
+    );
+    assert!(
+        value_captures
+            .iter()
+            .any(|(capture, _)| capture == &second.inner),
+        "inner function should capture second parameter"
+    );
+}
+
+#[test]
 fn plus_operator_resolves_through_prelude_aliases() {
     let source = "module demo =\n\tmodule ops =\n\t\tlet [+] = fn left right => left\n\tend\n\tmodule prelude =\n\t\tlet [+] = ops::[+]\n\tend\n\tuse prelude\n\tlet value = 1 + 2\nend\n";
     let mut logger = Logger::new();
@@ -611,8 +763,8 @@ fn toplevel_wasm_function_declaration_is_lowered() {
 }
 
 #[test]
-fn core_print_string_compiles() {
-    let source = "module demo =\n\tlet _ = core::print_string \"hello\"\nend\n";
+fn prelude_print_compiles() {
+    let source = "module demo =\n\tlet _ = print \"hello\"\nend\n";
     let mut symbols = SymbolTable::new();
     let mut logger = Logger::new();
     let _core = compile_core_module(&mut symbols, &mut logger);
@@ -768,7 +920,7 @@ fn forward_type_reference_is_rejected() {
 
 #[test]
 fn forward_module_path_term_reference_is_rejected() {
-    let source = "module demo =\n\tlet a = demo::b\n\tlet b = 1\nend\n";
+    let source = "bundle demo\nlet a = demo::b\nlet b = 1\n";
     let mut symbols = SymbolTable::new();
     let mut logger = Logger::new();
     let _core = compile_core_module(&mut symbols, &mut logger);
@@ -832,6 +984,23 @@ fn nested_module_paths_can_use_root_for_external_modules() {
 }
 
 #[test]
+fn nested_module_paths_can_use_bundle_for_current_bundle_roots() {
+    let source = "bundle demo\nmodule first =\n\tlet value : core::Integer = 41\nend\nmodule outer =\n\tmodule first =\n\t\tlet value : core::Integer = 0\n\tend\n\tlet local : core::Integer = first::value\n\tlet absolute : core::Integer = bundle::first::value\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let artifacts = compile_source(source, &mut file_logger, &mut symbols);
+    logger.consume_file(file_logger);
+
+    for artifact in artifacts.into_vec() {
+        let _ = validate_artifact(artifact, &mut logger);
+    }
+
+    assert_logger_is_ok(&logger, "Compilation failed");
+}
+
+#[test]
 fn nested_module_types_are_reachable_via_relative_paths() {
     let source = "module demo =\n\tmodule model =\n\t\ttype ~Token = root::core::Integer\n\tend\n\tlet value : model::Token = 1\nend\n";
     let mut symbols = SymbolTable::new();
@@ -850,7 +1019,24 @@ fn nested_module_types_are_reachable_via_relative_paths() {
 
 #[test]
 fn use_imports_module_symbols_for_following_statements() {
-    let source = "module demo =\n\tuse core\n\tlet value = print_string \"hello\"\nend\n";
+    let source = "module demo =\n\tuse core\n\tlet value = array::empty\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let artifacts = compile_source(source, &mut file_logger, &mut symbols);
+    logger.consume_file(file_logger);
+
+    for artifact in artifacts.into_vec() {
+        let _ = validate_artifact(artifact, &mut logger);
+    }
+
+    assert_logger_is_ok(&logger, "Compilation failed");
+}
+
+#[test]
+fn use_bundle_imports_symbols_from_bundle_root_modules() {
+    let source = "bundle demo\nmodule first =\n\tlet value : core::Integer = 1\nend\nmodule second =\n\tuse bundle::first\n\tlet result : core::Integer = value\nend\n";
     let mut symbols = SymbolTable::new();
     let mut logger = Logger::new();
     let _core = compile_core_module(&mut symbols, &mut logger);
@@ -867,7 +1053,8 @@ fn use_imports_module_symbols_for_following_statements() {
 
 #[test]
 fn use_only_applies_to_following_statements() {
-    let source = "module demo =\n\tlet before = print_string \"hello\"\n\tuse core\n\tlet after = print_string \"hello\"\nend\n";
+    let source =
+        "module demo =\n\tmodule helper =\n\t\tlet token = 1\n\tend\n\tlet before = token\n\tuse helper\n\tlet after = token\nend\n";
     let mut symbols = SymbolTable::new();
     let mut logger = Logger::new();
     let _core = compile_core_module(&mut symbols, &mut logger);
@@ -912,7 +1099,8 @@ fn use_reports_ambiguity_when_multiple_modules_provide_symbol() {
 
 #[test]
 fn use_scope_does_not_leak_into_nested_module() {
-    let source = "module demo =\n\tuse core\n\tmodule inner =\n\t\tlet value = print_string \"hello\"\n\tend\nend\n";
+    let source =
+        "module demo =\n\tmodule helper =\n\t\tlet token = 1\n\tend\n\tuse helper\n\tmodule inner =\n\t\tlet value = token\n\tend\nend\n";
     let mut symbols = SymbolTable::new();
     let mut logger = Logger::new();
     let _core = compile_core_module(&mut symbols, &mut logger);
@@ -926,7 +1114,7 @@ fn use_scope_does_not_leak_into_nested_module() {
 
 #[test]
 fn use_alias_binds_module_name_without_opening_contents() {
-    let source = "module demo =\n\tuse core as c\n\tlet value = c::print_string \"hello\"\nend\n";
+    let source = "module demo =\n\tuse core as c\n\tlet value = c::array::empty\nend\n";
     let mut symbols = SymbolTable::new();
     let mut logger = Logger::new();
     let _core = compile_core_module(&mut symbols, &mut logger);
@@ -943,7 +1131,7 @@ fn use_alias_binds_module_name_without_opening_contents() {
 
 #[test]
 fn use_alias_does_not_import_unqualified_symbols() {
-    let source = "module demo =\n\tuse core as c\n\tlet value = print_string \"hello\"\nend\n";
+    let source = "module demo =\n\tmodule helper =\n\t\tlet token = 1\n\tend\n\tuse helper as h\n\tlet value = token\nend\n";
     let mut symbols = SymbolTable::new();
     let mut logger = Logger::new();
     let _core = compile_core_module(&mut symbols, &mut logger);
@@ -971,7 +1159,8 @@ fn use_alias_name_collisions_are_reported() {
 
 #[test]
 fn use_expression_imports_only_inside_in_body() {
-    let source = "module demo =\n\tlet inside = use core in print_string \"hello\"\n\tlet outside = print_string \"hello\"\nend\n";
+    let source =
+        "module demo =\n\tmodule helper =\n\t\tlet token = 1\n\tend\n\tlet inside = use helper in token\n\tlet outside = token\nend\n";
     let mut symbols = SymbolTable::new();
     let mut logger = Logger::new();
     let _core = compile_core_module(&mut symbols, &mut logger);
@@ -985,7 +1174,7 @@ fn use_expression_imports_only_inside_in_body() {
 
 #[test]
 fn use_expression_alias_works() {
-    let source = "module demo =\n\tlet value = use core as c in c::print_string \"hello\"\nend\n";
+    let source = "module demo =\n\tlet value = use core as c in c::array::empty\nend\n";
     let mut symbols = SymbolTable::new();
     let mut logger = Logger::new();
     let _core = compile_core_module(&mut symbols, &mut logger);
@@ -1016,7 +1205,7 @@ fn use_expression_alias_collisions_are_reported() {
 
 #[test]
 fn implicit_core_prelude_is_used_when_available() {
-    let source = "module core =\n\tmodule prelude =\n\t\tlet answer = 1\n\tend\nend\n\nmodule demo =\n\tlet value : root::core::Integer = answer\nend\n";
+    let source = "bundle core\nmodule prelude =\n\tlet answer = 1\nend\n\nmodule demo =\n\tlet value = answer\nend\n";
     let mut symbols = SymbolTable::new();
     let mut logger = Logger::new();
     let _core = compile_core_module(&mut symbols, &mut logger);
@@ -1074,17 +1263,16 @@ end
 
 #[test]
 fn forall_impl_head_type_checks() {
-    let source = "module demo =
-  trait Id : t =
-    let id : t -> t
-  end
-
-  impl Id for a in a =
-    let id = fn x => x
-  end
-
-  let value = id 1
+    let source = "bundle demo
+trait Id : t =
+  let id : t -> t
 end
+
+impl Id for a in a =
+  let id = fn x => x
+end
+
+let value = id 1
 ";
     let mut symbols = SymbolTable::new();
     let mut logger = Logger::new();
@@ -1115,7 +1303,7 @@ end
 
 #[test]
 fn constructor_alias_creates_term_and_pattern_name() {
-    let source = "module demo =\n\ttype Option : a = | None | Some a\n\tlet | Just = Some\n\tlet make = Just 1\n\tlet unwrap_or = fn fallback value =>\n\t\tmatch value with\n\t\t| Just inner => inner\n\t\t| None => fallback\n\tlet result : core::Integer = unwrap_or 0 (Just 7)\nend\n";
+    let source = "bundle demo\ntype Option : a = | None | Some a\nlet | Just = Some\nlet make = Just 1\nlet unwrap_or = fn fallback value =>\n\tmatch value with\n\t| Just inner => inner\n\t| None => fallback\nlet result : core::Integer = unwrap_or 0 (Just 7)\n";
     let mut symbols = SymbolTable::new();
     let mut logger = Logger::new();
     let _core = compile_core_module(&mut symbols, &mut logger);
@@ -1140,7 +1328,7 @@ fn constructor_alias_creates_term_and_pattern_name() {
 
 #[test]
 fn constructor_alias_is_available_via_use_imports() {
-    let source = "module first =\n\ttype Option : a = | None | Some a\n\tlet | Just = Some\n\tlet | Nothing = None\nend\n\nmodule second =\n\tuse first\n\tlet value = Just 3\n\tlet result : core::Integer =\n\t\tmatch value with\n\t\t| Just n => n\n\t\t| Nothing => 0\nend\n";
+    let source = "bundle demo\nmodule first =\n\ttype Option : a = | None | Some a\n\tlet | Just = Some\n\tlet | Nothing = None\nend\n\nmodule second =\n\tuse root::demo::first\n\tlet value = Just 3\n\tlet result : core::Integer =\n\t\tmatch value with\n\t\t| Just n => n\n\t\t| Nothing => 0\nend\n";
     let mut symbols = SymbolTable::new();
     let mut logger = Logger::new();
     let _core = compile_core_module(&mut symbols, &mut logger);
@@ -1186,7 +1374,7 @@ fn constructor_alias_name_lints_when_not_pascal_case() {
 
 #[test]
 fn named_type_expression_def_produces_wrapper_constructor() {
-    let source = "module demo =\n\ttype Int = core::Integer\n\tlet wrapped : Int = Int 1\n\tlet unwrap = fn (value: Int) =>\n\t\tmatch value with\n\t\t| Int inner => inner\n\tlet result : core::Integer = unwrap wrapped\nend\n";
+    let source = "bundle demo\ntype Int = core::Integer\nlet wrapped : Int = Int 1\nlet unwrap = fn (value: Int) =>\n\tmatch value with\n\t| Int inner => inner\nlet result : core::Integer = unwrap wrapped\n";
     let mut symbols = SymbolTable::new();
     let mut logger = Logger::new();
     let _core = compile_core_module(&mut symbols, &mut logger);
@@ -1211,7 +1399,7 @@ fn named_type_expression_def_produces_wrapper_constructor() {
 
 #[test]
 fn sum_type_does_not_publish_typename_constructor() {
-    let source = "module demo =\n\ttype Option : a = | None | Some a\n\tlet value : Option core::Integer = Some 1\nend\n";
+    let source = "bundle demo\ntype Option : a = | None | Some a\nlet value : Option core::Integer = Some 1\n";
     let mut symbols = SymbolTable::new();
     let mut logger = Logger::new();
     let _core = compile_core_module(&mut symbols, &mut logger);
@@ -1224,11 +1412,9 @@ fn sum_type_does_not_publish_typename_constructor() {
     }
 
     assert_logger_is_ok(&logger, "sum constructors should still compile");
-    assert!(
-        !symbols
-            .constructors()
-            .contains(&Path::new("demo", "Option"))
-    );
+    assert!(!symbols
+        .constructors()
+        .contains(&Path::new("demo", "Option")));
     assert!(symbols.constructors().contains(&Path::new("demo", "Some")));
     assert!(symbols.constructors().contains(&Path::new("demo", "None")));
 }

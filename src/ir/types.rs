@@ -188,13 +188,15 @@ pub fn type_expr(
                 )
             }
             ast::TypeExpr::Tuple(tuple_type) => {
-                TypeExprKind::Tuple(
-                    tuple_type
-                        .fields()
-                        .into_iter()
-                        .flat_map(|f| type_expr(scope, logger, f))
-                        .collect(),
-                )
+                let mut fields = tuple_type
+                    .fields()
+                    .into_iter()
+                    .map(|field| type_expr(scope, logger, field))
+                    .collect::<Option<Vec<_>>>()?;
+                if !tuple_type.is_tuple() {
+                    return fields.pop();
+                }
+                TypeExprKind::Tuple(fields.into())
             }
             ast::TypeExpr::ForAll(forall_type) => {
                 let mut inner_scope = scope.nest_scope();

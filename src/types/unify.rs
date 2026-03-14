@@ -305,23 +305,31 @@ impl UnificationTable {
                     arguments: right_arguments,
                 },
             ) => {
-                if left_arguments.len() != right_arguments.len() {
-                    return Err(UnifyError::Mismatch {
-                        left: Type::Apply {
-                            constructor: left_constructor,
-                            arguments: left_arguments,
-                        },
-                        right: Type::Apply {
-                            constructor: right_constructor,
-                            arguments: right_arguments,
-                        },
-                    });
-                }
-                self.unify(&left_constructor, &right_constructor)?;
-                left_arguments
+                let shared_arguments = left_arguments.len().min(right_arguments.len());
+                for (left, right) in left_arguments
                     .iter()
                     .zip(right_arguments.iter())
-                    .try_for_each(|(left, right)| self.unify(left, right))
+                    .take(shared_arguments)
+                {
+                    self.unify(left, right)?;
+                }
+
+                if left_arguments.len() == right_arguments.len() {
+                    return self.unify(&left_constructor, &right_constructor);
+                }
+
+                if left_arguments.len() < right_arguments.len() {
+                    let remaining_right_arguments =
+                        right_arguments.into_iter().skip(shared_arguments).collect();
+                    let lifted_right_constructor =
+                        (*right_constructor).apply(remaining_right_arguments);
+                    return self.unify(&left_constructor, &lifted_right_constructor);
+                }
+
+                let remaining_left_arguments =
+                    left_arguments.into_iter().skip(shared_arguments).collect();
+                let lifted_left_constructor = (*left_constructor).apply(remaining_left_arguments);
+                self.unify(&lifted_left_constructor, &right_constructor)
             }
             (left, right) => Err(UnifyError::Mismatch { left, right }),
         }
@@ -800,6 +808,65 @@ mod tests {
 
         assert!(table.unify(&left, &right).is_err());
         assert!(table.unify(&left, &wrong_arity).is_err());
+    }
+
+    #[test]
+    fn unify_apply_can_bind_meta_constructor_from_right_suffix() {
+        let mut table = UnificationTable::default();
+        let constructor_meta = table.new_meta(0);
+        let left = constructor_meta.clone().apply(vec![Type::Integer]);
+        let right = named("demo", "Result", Type::Unit)
+            .apply(vec![Type::Integer, Type::Boolean]);
+
+        table
+            .unify(&left, &right)
+            .expect("application spine should infer constructor prefix");
+
+        assert_eq!(
+            table.prune(&constructor_meta),
+            named("demo", "Result", Type::Unit).apply(vec![Type::Boolean])
+        );
+    }
+
+    #[test]
+    fn unify_apply_can_bind_meta_constructor_from_left_suffix() {
+        let mut table = UnificationTable::default();
+        let constructor_meta = table.new_meta(0);
+        let left = named("demo", "Result", Type::Unit)
+            .apply(vec![Type::Integer, Type::Boolean]);
+        let right = constructor_meta.clone().apply(vec![Type::Integer]);
+
+        table
+            .unify(&left, &right)
+            .expect("application spine should infer constructor suffix");
+
+        assert_eq!(
+            table.prune(&constructor_meta),
+            named("demo", "Result", Type::Unit).apply(vec![Type::Boolean])
+        );
+    }
+
+    #[test]
+    fn unify_function_with_higher_kinded_result_type() {
+        let mut table = UnificationTable::default();
+        let input_meta = table.new_meta(0);
+        let constructor_meta = table.new_meta(0);
+        let argument_meta = table.new_meta(0);
+        let expected = Type::func(
+            input_meta,
+            constructor_meta.clone().apply(vec![argument_meta.clone()]),
+        );
+        let actual = Type::func(
+            Type::Integer,
+            named("core", "Option", Type::Unit).apply(vec![Type::Integer]),
+        );
+
+        assert!(table.unify(&expected, &actual).is_ok());
+        assert_eq!(
+            table.prune(&constructor_meta),
+            named("core", "Option", Type::Unit)
+        );
+        assert_eq!(table.prune(&argument_meta), Type::Integer);
     }
 
     #[test]

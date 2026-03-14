@@ -313,13 +313,25 @@ impl SourceFile {
             .collect()
     }
 
+    pub fn bundle_declaration(&self) -> Option<BundleDeclaration> {
+        child_node(&self.syntax)
+    }
+
     pub fn modules(&self) -> Vec<Module> {
+        child_nodes(&self.syntax)
+    }
+
+    pub fn statements(&self) -> Vec<Statement> {
         child_nodes(&self.syntax)
     }
 
     pub fn imports(&self) -> Vec<ImportStatement> {
         child_nodes(&self.syntax)
     }
+}
+
+ast_node!(BundleDeclaration, BUNDLE_DECLARATION);
+impl HasName for BundleDeclaration {
 }
 
 ast_node!(Module, MODULE);
@@ -743,6 +755,10 @@ impl TupleType {
     pub fn fields(&self) -> Vec<TypeExpr> {
         self.syntax.children().filter_map(TypeExpr::cast).collect()
     }
+
+    pub fn is_tuple(&self) -> bool {
+        self.fields().len() > 1 || node_has_token(&self.syntax, SyntaxKind::COMMA)
+    }
 }
 
 ast_node!(ArrayType, ARRAY_TYPE);
@@ -1061,14 +1077,15 @@ ast_node!(ParenExpr, PAREN_EXPR);
 
 impl ParenExpr {
     /// The expressions inside the parentheses.
-    /// - 1 element: grouping
+    /// - 1 element without comma: grouping
+    /// - 1 element with comma: singleton tuple
     /// - 2+ elements: tuple
     pub fn inner_exprs(&self) -> Vec<Expr> {
         self.syntax.children().filter_map(Expr::cast).collect()
     }
     /// True if this contains commas (i.e. is a tuple).
     pub fn is_tuple(&self) -> bool {
-        self.inner_exprs().len() > 1
+        self.inner_exprs().len() > 1 || node_has_token(&self.syntax, SyntaxKind::COMMA)
     }
 }
 
@@ -1134,6 +1151,12 @@ impl Path {
             .is_some_and(|token| token.kind() == SyntaxKind::ROOT_KW)
     }
 
+    pub fn is_bundle_rooted(&self) -> bool {
+        non_trivia_tokens(&self.syntax)
+            .first()
+            .is_some_and(|token| token.kind() == SyntaxKind::BUNDLE_KW)
+    }
+
     /// For a path like `A::B::name`, returns `A::B`.
     pub fn qualifier(&self) -> Option<String> {
         let segs = self.segments();
@@ -1169,6 +1192,10 @@ ast_node!(PatTuple, PAT_TUPLE);
 impl PatTuple {
     pub fn patterns(&self) -> Vec<Pattern> {
         self.syntax.children().filter_map(Pattern::cast).collect()
+    }
+
+    pub fn is_tuple(&self) -> bool {
+        self.patterns().len() > 1 || node_has_token(&self.syntax, SyntaxKind::COMMA)
     }
 }
 
@@ -1289,23 +1316,25 @@ impl PathOrIdent {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TopLevelItem {
+    Bundle(BundleDeclaration),
     Import(ImportStatement),
-    Module(Module),
+    Statement(Statement),
 }
 
 impl TopLevelItem {
     fn cast(node: SyntaxNode) -> Option<Self> {
         match node.kind() {
+            SyntaxKind::BUNDLE_DECLARATION => BundleDeclaration::cast(node).map(Self::Bundle),
             SyntaxKind::IMPORT_STATEMENT => ImportStatement::cast(node).map(Self::Import),
-            SyntaxKind::MODULE => Module::cast(node).map(Self::Module),
-            _ => None,
+            _ => Statement::cast(node).map(Self::Statement),
         }
     }
 
     pub fn span(&self) -> Span {
         match self {
+            Self::Bundle(bundle) => bundle.span(),
             Self::Import(import) => import.span(),
-            Self::Module(module) => module.span(),
+            Self::Statement(statement) => statement.span(),
         }
     }
 }
@@ -1656,6 +1685,7 @@ fn is_sexpr_ident_token(kind: SyntaxKind) -> bool {
     matches!(
         kind,
         SyntaxKind::IDENT
+            | SyntaxKind::MINUS
             | SyntaxKind::MODULE_KW
             | SyntaxKind::IMPORT_KW
             | SyntaxKind::USE_KW

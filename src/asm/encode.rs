@@ -472,12 +472,29 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
                         memory_index: 0,
                     }));
                 }
+                i::I32Load => {
+                    function_body.instruction(&winstr::I32Load(wasm_encoder::MemArg {
+                        offset: 0,
+                        align: 2,
+                        memory_index: 0,
+                    }));
+                }
                 i::I32Store => {
                     function_body.instruction(&winstr::I32Store(wasm_encoder::MemArg {
                         offset: 0,
                         align: 2,
                         memory_index: 0,
                     }));
+                }
+                i::I64Load => {
+                    function_body.instruction(&winstr::I64Load(wasm_encoder::MemArg {
+                        offset: 0,
+                        align: 3,
+                        memory_index: 0,
+                    }));
+                }
+                i::I64ExtendI32U => {
+                    function_body.instruction(&winstr::I64ExtendI32U);
                 }
                 i::Call(path) => {
                     if let Some(&idx) = func_namespace.get(path) {

@@ -2,9 +2,11 @@
 
 ## Program Structure
 ```bnf
-<file>       ::= <top_level_item>*
-<top_level_item> ::= <import_statement>
-                   | <module>
+<file>       ::= <file_item>*
+<file_item>  ::= <bundle_declaration>
+               | <import_statement>
+               | <statement>
+<bundle_declaration> ::= "bundle" <ident>
 <import_statement> ::= "import" <string> ("," <string>)*
 <module>     ::= "module" <ident> "=" <statement>* "end"
 
@@ -26,6 +28,12 @@
 <impl_method_def> ::= "let" <ident> "=" <expr>
 <wasm_statement> ::= "wasm" "=>" <sexpr>
 ```
+
+- `bundle` declarations are source-file level and may appear at most once per file.
+- Top-level statements are part of the bundle scope; a `module ... end` wrapper is optional.
+- `import` is only valid at source-file top level.
+- CLI bundle compilation requires the root file to start with `bundle <name>`; imported files belong to that bundle and must not redeclare `bundle`.
+- `compile_source` accepts files without a `bundle` declaration and uses implicit bundle name `_`.
 
 ## Type Definitions
 ```bnf
@@ -178,7 +186,8 @@ Recursion rules:
 - **Comments:** `-- line comment`, `(* block comment *)`.
 - **Identifiers:** bare names (`foo`) or bracketed operators (`[+]`, `[ + ]`, `[not]`).
 - **Paths:** `("root" "::" <ident> ("::" <ident>)*) | (<ident> "::" <ident> ("::" <ident>)*)` (each segment may use a bracketed operator identifier).
-- **Path resolution:** `root::...` is fully qualified; other paths resolve relative to the current module scope.
+- **Resolved path shape:** internally paths are `major::minor`, where `major` is the bundle name and `minor` is the declaration path inside that bundle.
+- **Path resolution:** `root::...` is fully qualified; non-rooted paths resolve relative to the current module scope first, then may resolve through `use`, then fall back to absolute `<bundle>::...`.
 - **`use` resolution:**
   - Module-level `use` applies only to following statements in the same module.
   - Expression-level `use ... in ...` applies only inside its `in` body.
@@ -186,4 +195,4 @@ Recursion rules:
   - `use M as X` adds alias `X` for module path lookups (`X::name`) without opening contents.
   - `as` alias name collisions are errors.
   - If multiple opened modules provide the same symbol, the usage is ambiguous and reported as an error.
-- **Operators:** `+`, `-`, `*`, `/`, `%`, `|>`, `<|`, `==`, `!=`, `<`, `<=`, `>`, `>=`, `and`, `or`, `xor`, `not`, `;`.
+- **Operators:** `+`, `-`, `*`, `/`, `%`, `|>`, `>>`, '<<', `==`, `!=`, `<`, `<=`, `>`, `>=`, `and`, `or`, `xor`, `not`, `;`.

@@ -384,17 +384,19 @@ fn elaborate_identifier(
     type_: Type,
     dict_env: &DictEnv,
 ) -> Option<Term<Type>> {
+    let is_trait_item = is_trait_item_path(context, &path);
     let scheme = context.scheme_env.get(&path)?;
-    let args = dictionary_args_for_type(scheme, &type_, dict_env, context.symbols)?;
+    let args = dictionary_args_for_type(
+        scheme,
+        &type_,
+        dict_env,
+        context.symbols,
+        is_trait_item,
+    )?;
     if args.is_empty() {
         return None;
     }
 
-    let is_trait_item = context
-        .symbols
-        .trait_defs()
-        .values()
-        .any(|def| def.methods.contains_key(&path));
     if is_trait_item
         && args.len() == 1
         && let Some(dict) = args.first().cloned()
@@ -957,11 +959,24 @@ fn apply_dictionary_args(
     let TermKind::Identifier(path) = &callee.kind else {
         return Err(callee);
     };
+    let is_trait_item = is_trait_item_path(context, path);
     let scheme = context.scheme_env.get(path).ok_or(callee.clone())?;
     let call_type = Type::func(argument.type_.clone(), result_type.clone());
-    let args = dictionary_args_for_type(scheme, &call_type, dict_env, context.symbols)
-        .ok_or(callee.clone())?;
+    let args =
+        dictionary_args_for_type(scheme, &call_type, dict_env, context.symbols, is_trait_item)
+            .ok_or(callee.clone())?;
     Ok(apply_explicit_arguments(callee, args))
+}
+
+fn is_trait_item_path(
+    context: &ElaborationContext<'_>,
+    path: &Path,
+) -> bool {
+    context
+        .symbols
+        .trait_defs()
+        .values()
+        .any(|def| def.methods.contains_key(path))
 }
 
 fn apply_explicit_arguments(
@@ -1001,6 +1016,7 @@ fn dictionary_args_for_type(
     type_: &Type,
     dict_env: &DictEnv,
     symbols: &SymbolTable,
+    include_concrete_predicates: bool,
 ) -> Option<Vec<Term<Type>>> {
     if scheme.predicates.is_empty() {
         return Some(vec![]);
@@ -1008,10 +1024,16 @@ fn dictionary_args_for_type(
     let (scheme_body, var_count) = peel_forall(&scheme.type_);
     let mut bindings = vec![None; var_count];
     if !match_scheme_to_type_relaxed(&scheme_body, type_, &mut bindings) {
+        println!("match_scheme_to_type_relaxed failed");
         return None;
     }
-    let predicates = instantiate_predicates(&scheme.predicates, &bindings)?;
-    dictionary_args_for_predicates(&predicates, dict_env, symbols)
+    let predicates = scheme.predicates.iter()
+        .filter(|predicate| include_concrete_predicates || !predicate_is_concrete(predicate))
+        .map(|predicate| substitute_type_vars_in_trait_ref(predicate, &bindings))
+        .collect::<Option<Vec<_>>>()?;
+    let args = dictionary_args_for_predicates(&predicates, dict_env, symbols);
+    println!("dictionary_args_for_type args: {:?}", args.as_ref().map(|v| v.len()));
+    args
 }
 
 fn dictionary_args_for_predicates(
@@ -2271,15 +2293,20 @@ mod tests {
     #[test]
     fn inlines_dictionary_at_callsite() {
         let source = "module demo =\n\tlet double = fn x => x + x\n\tlet result = double 3\nend\n";
-        let (elaborated, _symbols) = elaborate_source(source);
+        let (elaborated, symbols) = elaborate_source(source);
+        let double_scheme = symbols.terms().get(&crate::ir::Path::new("demo", "double")).expect("scheme");
+        println!("double scheme: {:?}", double_scheme);
         let result = find_global_binding(&elaborated.module, "result").expect("result binding");
+        let double = find_global_binding(&elaborated.module, "double").expect("double binding");
+        println!("double type: {}", double.type_.pretty());
+        println!("result term: {:?}", result.kind);
         assert!(term_has_inline_dict_for(result, "double"));
         assert_eq!(inline_dict_field_count_for(result, "double"), Some(1));
     }
 
     #[test]
     fn elaborates_associated_constant_dictionary_argument() {
-        let source = "module demo =\n\ttrait default : a =\n\t\tlet default : a\n\tend\n\timpl default core::Integer =\n\t\tlet default = 7\n\tend\n\tlet value : core::Integer = default\nend\n";
+        let source = "module demo =\n\ttrait DefaultValue : a =\n\t\tlet default : a\n\tend\n\timpl DefaultValue core::Integer =\n\t\tlet default = 7\n\tend\n\tlet value : core::Integer = default\nend\n";
         let (elaborated, _symbols) = elaborate_source(source);
         let value = find_global_binding(&elaborated.module, "value").expect("value binding");
         assert!(term_has_inline_dict_for(value, "default"));
@@ -2308,5 +2335,13 @@ mod tests {
         assert!(term_has_local_wrapped_binding(result, "left_local#"));
         assert!(term_has_local_wrapped_binding(result, "right_local#"));
         assert!(term_has_refutable_group_guard_with_fallback(result));
+    }
+
+    #[test]
+    fn does_not_inline_concrete_dictionary_for_non_trait_identifier() {
+        let source = "module demo =\n\tlet append_newline = fn value => value + \"\\n\"\n\tlet alias = append_newline\nend\n";
+        let (elaborated, _symbols) = elaborate_source(source);
+        let alias = find_global_binding(&elaborated.module, "alias").expect("alias binding");
+        assert!(!term_has_inline_dict_for(alias, "append_newline"));
     }
 }

@@ -503,7 +503,10 @@ impl Printer {
                 format!("ref.cast.array {}", self.format_wasm_type(inner))
             }
             WasmInstruction::I32Store8 => "i32.store8".to_string(),
+            WasmInstruction::I32Load => "i32.load".to_string(),
             WasmInstruction::I32Store => "i32.store".to_string(),
+            WasmInstruction::I64Load => "i64.load".to_string(),
+            WasmInstruction::I64ExtendI32U => "i64.extend_i32_u".to_string(),
         }
     }
 

@@ -70,13 +70,16 @@ pub fn pattern(
             }
             ast::Pattern::Unit(_) => PatternKind::Immediate(ImmediateValue::Unit),
             ast::Pattern::Tuple(pat_tuple) => {
-                PatternKind::Tuple(
-                    pat_tuple
-                        .patterns()
-                        .into_iter()
-                        .map(|p| pattern(scope, logger, p))
-                        .collect::<Option<_>>()?,
-                )
+                let mut patterns = pat_tuple
+                    .patterns()
+                    .into_iter()
+                    .map(|pattern_node| pattern(scope, logger, pattern_node))
+                    .collect::<Option<Vec<_>>>()?;
+                if !pat_tuple.is_tuple() {
+                    let inner = patterns.pop()?;
+                    return Some(inner);
+                }
+                PatternKind::Tuple(patterns.into())
             }
             ast::Pattern::Array(pat_array) => {
                 let mut starting = Vec::new();

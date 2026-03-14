@@ -263,7 +263,7 @@ fn pretty_prints_sum_and_function_with_wrapping() {
 
     assert_eq!(
         function.pretty(),
-        "(((| none | some (integer, boolean) )) -> integer)"
+        "((| none | some (integer, boolean) ) -> integer)"
     );
 }
 

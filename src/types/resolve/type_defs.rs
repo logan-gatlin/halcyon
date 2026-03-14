@@ -9,17 +9,24 @@ use crate::ir::StructTypeMember;
 use crate::logging::WithContext;
 use indexmap::IndexMap;
 
-use super::super::StructMatch;
 use super::super::instantiation::instantiate_forall_strict;
+use super::super::kind::{
+    constructor_kind,
+    infer_scheme_kind,
+    KindError,
+    SchemeKindError,
+};
 use super::super::type_expr::{
-    TypeExprSymbol,
     lower_type_expr,
     lower_type_scheme_expr,
+    TypeExprSymbol,
 };
+use super::super::StructMatch;
 use super::diagnostics::log_type_expr_lower_error;
 use super::{
     FileLogger,
     Glob,
+    Kind,
     Path,
     Pattern,
     PatternKind,
@@ -160,6 +167,7 @@ pub(super) fn build_type_constructors(
             .cloned()
             .unwrap_or(TypeDefinition {
                 parameters: entry.parameters.len(),
+                parameter_kinds: vec![Kind::Type; entry.parameters.len()],
                 body: Type::Unit,
                 kind: TypeDefinitionKind::Named,
             });
@@ -324,6 +332,7 @@ fn resolve_type_definition(
     let Some(entry) = entries.get(path) else {
         return TypeDefinition {
             parameters: 0,
+            parameter_kinds: Vec::new(),
             body: Type::Unit,
             kind: TypeDefinitionKind::Named,
         };
@@ -333,6 +342,7 @@ fn resolve_type_definition(
         if recursive_cycle_allowed(cycle, entries) {
             let definition = TypeDefinition {
                 parameters: entry.parameters.len(),
+                parameter_kinds: vec![Kind::Type; entry.parameters.len()],
                 body: Type::Unit,
                 kind: entry.kind,
             };
@@ -342,6 +352,7 @@ fn resolve_type_definition(
         log_invalid_recursive_cycle(logger, cycle, entries);
         let definition = TypeDefinition {
             parameters: entry.parameters.len(),
+            parameter_kinds: vec![Kind::Type; entry.parameters.len()],
             body: Type::Unit,
             kind: entry.kind,
         };
@@ -360,8 +371,17 @@ fn resolve_type_definition(
         logger,
     );
     let body = body.for_all(entry.parameters.len());
+    let parameter_kinds = infer_definition_parameter_kinds(
+        path,
+        entry.syntax.span(),
+        &body,
+        entry.parameters.len(),
+        type_definitions,
+        logger,
+    );
     let definition = TypeDefinition {
         parameters: entry.parameters.len(),
+        parameter_kinds,
         body,
         kind: entry.kind,
     };
@@ -450,6 +470,95 @@ fn format_recursive_cycle(cycle: &[Path]) -> String {
         names.push(first.to_string());
     }
     names.join(" -> ")
+}
+
+fn infer_definition_parameter_kinds(
+    path: &Path,
+    span: Span,
+    body: &Type,
+    parameter_count: usize,
+    type_definitions: &IndexMap<Path, TypeDefinition>,
+    logger: &mut FileLogger,
+) -> Vec<Kind> {
+    let inferred = infer_scheme_kind(
+        &TypeScheme::new(body.clone()),
+        parameter_count,
+        &|type_path| {
+            type_definitions.get(type_path).map(|definition| {
+                constructor_kind(definition.parameters, &definition.parameter_kinds)
+            })
+        },
+        &|_| None,
+    );
+    match inferred {
+        Ok(inferred) => {
+            if inferred.kind != Kind::Type {
+                logger
+                    .error("Invalid type definition kind")
+                    .primary(
+                        format!(
+                            "`{path}` resolves to kind `{}` but type definitions must resolve to `Type`.",
+                            inferred.kind
+                        ),
+                        span,
+                    )
+                    .done();
+            }
+            normalize_parameter_kinds(inferred.parameter_kinds, parameter_count)
+        }
+        Err(error) => {
+            log_definition_kind_error(logger, path, span, error);
+            vec![Kind::Type; parameter_count]
+        }
+    }
+}
+
+fn normalize_parameter_kinds(
+    mut kinds: Vec<Kind>,
+    parameter_count: usize,
+) -> Vec<Kind> {
+    if kinds.len() < parameter_count {
+        kinds.extend(std::iter::repeat_n(
+            Kind::Type,
+            parameter_count - kinds.len(),
+        ));
+    }
+    kinds.truncate(parameter_count);
+    kinds
+}
+
+fn log_definition_kind_error(
+    logger: &mut FileLogger,
+    path: &Path,
+    span: Span,
+    error: SchemeKindError,
+) {
+    match error {
+        SchemeKindError::Kind(kind_error) => {
+            let message = match kind_error {
+                KindError::Mismatch { left, right } => {
+                    format!("`{path}` has incompatible kinds `{left}` and `{right}` in its definition body.")
+                }
+                KindError::Occurs { in_kind, .. } => {
+                    format!("`{path}` has recursive kind `{in_kind}` in its definition body.")
+                }
+            };
+            logger
+                .error("Invalid type definition kind")
+                .primary(message, span)
+                .done();
+        }
+        SchemeKindError::PredicateArityMismatch { .. }
+        | SchemeKindError::PredicateKindMismatch { .. } => {
+            logger
+                .error("Invalid type definition kind")
+                .primary(
+                    format!("`{path}` has invalid trait-constraint kinds in its definition body."),
+                    span,
+                )
+                .done();
+        }
+    }
 }
 
 fn type_def_kind_to_type(
@@ -702,12 +811,12 @@ mod tests {
         TypeExprConstraint,
         TypeExprKind,
     };
-    use crate::types::TraitRef;
     use crate::types::symbol_table::Symbol;
+    use crate::types::TraitRef;
     use crate::{
-        Logger,
         ir,
         parse,
+        Logger,
     };
 
     fn parse_module_statements(source: &str) -> Vec<Statement<()>> {
@@ -753,31 +862,21 @@ mod tests {
         let term_defs = collect_term_definitions(&statements);
         let constructors = collect_constructor_definitions(&entries, &duplicates);
 
-        assert!(
-            term_defs
-                .iter()
-                .any(|(path, _)| path == &Path::new("demo", "value"))
-        );
-        assert!(
-            term_defs
-                .iter()
-                .any(|(path, _)| path == &Path::new("demo", "eq"))
-        );
-        assert!(
-            constructors
-                .iter()
-                .any(|(path, _)| path == &Path::new("demo", "Some"))
-        );
-        assert!(
-            constructors
-                .iter()
-                .any(|(path, _)| path == &Path::new("demo", "None"))
-        );
-        assert!(
-            constructors
-                .iter()
-                .any(|(path, _)| path == &Path::new("demo", "Int"))
-        );
+        assert!(term_defs
+            .iter()
+            .any(|(path, _)| path == &Path::new("demo", "value")));
+        assert!(term_defs
+            .iter()
+            .any(|(path, _)| path == &Path::new("demo", "eq")));
+        assert!(constructors
+            .iter()
+            .any(|(path, _)| path == &Path::new("demo", "Some")));
+        assert!(constructors
+            .iter()
+            .any(|(path, _)| path == &Path::new("demo", "None")));
+        assert!(constructors
+            .iter()
+            .any(|(path, _)| path == &Path::new("demo", "Int")));
     }
 
     #[test]
@@ -816,6 +915,25 @@ mod tests {
             .expect("sum definition should exist");
         assert_eq!(list_def.kind, TypeDefinitionKind::Named);
         assert!(matches!(list_def.body, Type::Sum { .. }));
+    }
+
+    #[test]
+    fn build_type_definitions_infers_higher_kinded_parameters() {
+        let statements =
+            parse_module_statements("module demo =\n  type Wrapped: m = m core::Integer\nend\n");
+        let entries = collect_type_entries(&statements);
+        let mut logger = Logger::new();
+        let mut file_logger = logger.new_file("test.hc", "");
+        let defs = build_type_definitions(&IndexMap::new(), &entries, &mut file_logger);
+
+        let wrapped = defs
+            .get(&Path::new("demo", "Wrapped"))
+            .expect("Wrapped definition should exist");
+        assert_eq!(
+            wrapped.parameter_kinds,
+            vec![Kind::arrow(Kind::Type, Kind::Type)]
+        );
+        assert!(file_logger.is_ok());
     }
 
     #[test]
@@ -862,11 +980,9 @@ mod tests {
         let mut file_logger = logger.new_file("test.hc", "");
         let defs = build_type_definitions(&IndexMap::new(), &entries, &mut file_logger);
 
-        assert!(
-            file_logger
-                .iter()
-                .any(|diagnostic| diagnostic.message == "Duplicate struct field")
-        );
+        assert!(file_logger
+            .iter()
+            .any(|diagnostic| diagnostic.message == "Duplicate struct field"));
 
         let dup = defs
             .get(&Path::new("demo", "Dup"))
@@ -890,11 +1006,9 @@ mod tests {
         let mut file_logger = logger.new_file("test.hc", "");
         let defs = build_type_definitions(&IndexMap::new(), &entries, &mut file_logger);
 
-        assert!(
-            file_logger
-                .iter()
-                .any(|diagnostic| diagnostic.message == "Duplicate struct field")
-        );
+        assert!(file_logger
+            .iter()
+            .any(|diagnostic| diagnostic.message == "Duplicate struct field"));
 
         let dup = defs
             .get(&Path::new("demo", "Dup"))
@@ -918,11 +1032,9 @@ mod tests {
         let mut file_logger = logger.new_file("test.hc", "");
         let defs = build_type_definitions(&IndexMap::new(), &entries, &mut file_logger);
 
-        assert!(
-            file_logger
-                .iter()
-                .any(|diagnostic| diagnostic.message == "Invalid struct spread")
-        );
+        assert!(file_logger
+            .iter()
+            .any(|diagnostic| diagnostic.message == "Invalid struct spread"));
 
         let bad = defs
             .get(&Path::new("demo", "Bad"))
@@ -950,21 +1062,15 @@ mod tests {
         defs.extend(build_type_definitions(&defs, &entries, &mut file_logger));
 
         let constructors = build_type_constructors(&entries, &defs, &mut file_logger);
-        assert!(
-            constructors
-                .iter()
-                .any(|(path, _)| path == &Path::new("demo", "Some"))
-        );
-        assert!(
-            constructors
-                .iter()
-                .any(|(path, _)| path == &Path::new("demo", "None"))
-        );
-        assert!(
-            constructors
-                .iter()
-                .any(|(path, _)| path == &Path::new("demo", "Int"))
-        );
+        assert!(constructors
+            .iter()
+            .any(|(path, _)| path == &Path::new("demo", "Some")));
+        assert!(constructors
+            .iter()
+            .any(|(path, _)| path == &Path::new("demo", "None")));
+        assert!(constructors
+            .iter()
+            .any(|(path, _)| path == &Path::new("demo", "Int")));
     }
 
     #[test]

@@ -10,7 +10,12 @@ use indexmap::IndexMap;
 
 use crate::ir::Path;
 
-use super::Type;
+use super::kind::{
+    constructor_kind,
+    infer_type_kind,
+    KindError,
+    KindInferenceTable,
+};
 use super::traits::{
     TraitConstraint,
     TraitDef,
@@ -20,6 +25,11 @@ use super::traits::{
     TypeScheme,
 };
 use super::unify::UnificationTable;
+use super::{
+    Kind,
+    Type,
+    TypeTransform,
+};
 
 /// Classification of global symbols stored in the symbol table.
 pub enum SymbolKind {
@@ -264,6 +274,7 @@ impl SymbolTable {
                 found: trait_implementation.head.arguments.len(),
             });
         }
+        validate_impl_head_kinds(self, trait_definition, &trait_implementation)?;
         let has_unknown_method = trait_implementation
             .methods
             .keys()
@@ -542,6 +553,7 @@ pub enum TypeDefinitionKind {
 #[derive(Debug, Clone)]
 pub struct TypeDefinition {
     pub parameters: usize,
+    pub parameter_kinds: Vec<Kind>,
     pub body: Type,
     pub kind: TypeDefinitionKind,
 }
@@ -597,16 +609,47 @@ fn substitute_type_vars_in_predicates(
         .collect()
 }
 
-/// Substitute De Bruijn type variables using `replacements`.
+/// Substitute De Bruijn type variables simultaneously using `replacements`.
+///
+/// All substitutions are performed in one pass so that variables introduced by
+/// one replacement are never captured by a subsequent substitution.
 fn substitute_type_vars(
     type_: &Type,
     replacements: &[Type],
 ) -> Option<Type> {
-    let mut current = type_.clone();
-    for (index, replacement) in replacements.iter().enumerate() {
-        current = current.substitute_type_var(index as u32, replacement)?;
+    struct SimultaneousSubstitution<'a> {
+        replacements: &'a [Type],
+        depth: super::TypeParameterIndex,
     }
-    Some(current)
+
+    impl TypeTransform for SimultaneousSubstitution<'_> {
+        fn type_var(
+            &mut self,
+            index: super::TypeParameterIndex,
+        ) -> Option<Type> {
+            if index >= self.depth
+                && let Some(replacement) = self.replacements.get((index - self.depth) as usize)
+            {
+                replacement.shift_type_vars(self.depth as i32, 0)
+            } else {
+                Some(Type::TypeVar(index))
+            }
+        }
+
+        fn enter_forall(&mut self) {
+            self.depth += 1;
+        }
+
+        fn leave_forall(&mut self) {
+            self.depth -= 1;
+        }
+    }
+
+    SimultaneousSubstitution {
+        replacements,
+        depth: 0,
+    }
+    .transform(type_)
 }
 
 /// Check whether `predicate` matches an instantiated impl head.
@@ -647,6 +690,79 @@ fn instances_overlap(
     ))
 }
 
+fn validate_impl_head_kinds(
+    symbols: &SymbolTable,
+    trait_definition: &TraitDef,
+    trait_implementation: &TraitImpl,
+) -> Result<(), TraitError> {
+    let expected_kinds = normalize_parameter_kinds(
+        trait_definition.parameter_kinds.clone(),
+        trait_definition.parameters,
+    );
+    let mut kind_table = KindInferenceTable::default();
+    let mut bound_kinds = (0..trait_implementation.parameters)
+        .map(|_| kind_table.new_meta())
+        .collect::<Vec<_>>();
+    for (argument, expected_kind) in trait_implementation
+        .head
+        .arguments
+        .iter()
+        .zip(expected_kinds.iter())
+    {
+        let inferred_kind =
+            infer_type_kind(&mut kind_table, argument, &mut bound_kinds, &|type_path| {
+                symbols.types.get(type_path).map(|definition| {
+                    constructor_kind(definition.parameters, &definition.parameter_kinds)
+                })
+            })
+            .map_err(|error| {
+                match error {
+                    KindError::Mismatch { left, right } => {
+                        TraitError::KindMismatch {
+                            trait_name: trait_implementation.head.trait_name.clone(),
+                            expected: right,
+                            found: left,
+                        }
+                    }
+                    KindError::Occurs { in_kind, .. } => {
+                        TraitError::KindMismatch {
+                            trait_name: trait_implementation.head.trait_name.clone(),
+                            expected: expected_kind.clone(),
+                            found: in_kind,
+                        }
+                    }
+                }
+            })?;
+        let expected_kind_inferred = KindInferenceTable::from_kind(expected_kind);
+        if let Err(error) = kind_table.unify(&inferred_kind, &expected_kind_inferred) {
+            let (found, expected) = match error {
+                KindError::Mismatch { left, right } => (left, right),
+                KindError::Occurs { in_kind, .. } => (in_kind, expected_kind.clone()),
+            };
+            return Err(TraitError::KindMismatch {
+                trait_name: trait_implementation.head.trait_name.clone(),
+                expected,
+                found,
+            });
+        }
+    }
+    Ok(())
+}
+
+fn normalize_parameter_kinds(
+    mut kinds: Vec<Kind>,
+    parameter_count: usize,
+) -> Vec<Kind> {
+    if kinds.len() < parameter_count {
+        kinds.extend(std::iter::repeat_n(
+            Kind::Type,
+            parameter_count - kinds.len(),
+        ));
+    }
+    kinds.truncate(parameter_count);
+    kinds
+}
+
 /// Push `predicate` only if it is not already present.
 fn push_unique(
     predicates: &mut Vec<TraitConstraint>,
@@ -679,6 +795,7 @@ mod tests {
         TraitDef {
             name: Path::new("demo", name),
             parameters: 1,
+            parameter_kinds: vec![Kind::Type],
             methods: [(Path::new("demo", "eq"), eq_method_scheme())]
                 .into_iter()
                 .collect(),
@@ -754,11 +871,9 @@ mod tests {
         });
 
         assert!(symbols.terms().contains_key(&Path::new("demo", "id")));
-        assert!(
-            symbols
-                .type_definitions()
-                .contains_key(&Path::new("demo", "Token"))
-        );
+        assert!(symbols
+            .type_definitions()
+            .contains_key(&Path::new("demo", "Token")));
         assert!(symbols.trait_defs().contains_key(&Path::new("demo", "Eq")));
     }
 
@@ -871,6 +986,35 @@ mod tests {
                     .collect(),
             })
             .expect("valid impl should insert");
+    }
+
+    #[test]
+    fn insert_impl_rejects_wrong_kind_trait_arguments() {
+        let mut symbols = SymbolTable::new();
+        symbols
+            .insert_trait(TraitDef {
+                name: Path::new("demo", "Monad"),
+                parameters: 1,
+                parameter_kinds: vec![Kind::arrow(Kind::Type, Kind::Type)],
+                methods: IndexMap::new(),
+            })
+            .expect("trait insertion should succeed");
+
+        assert!(matches!(
+            symbols.insert_impl(TraitImpl {
+                parameters: 0,
+                head: TraitRef::new(Path::new("demo", "Monad"), vec![Type::Integer]),
+                predicates: Vec::new(),
+                methods: IndexMap::new(),
+            }),
+            Err(TraitError::KindMismatch {
+                trait_name,
+                expected,
+                found,
+            }) if trait_name == Path::new("demo", "Monad")
+                && expected == Kind::arrow(Kind::Type, Kind::Type)
+                && found == Kind::Type
+        ));
     }
 
     #[test]
