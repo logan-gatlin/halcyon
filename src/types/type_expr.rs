@@ -5,13 +5,13 @@
 
 use std::collections::HashMap;
 
+use crate::Span;
 use crate::ir::{
     Path,
     TypeExpr,
     TypeExprConstraint,
     TypeExprKind,
 };
-use crate::Span;
 
 use super::instantiation::instantiate_forall_strict;
 use super::{
@@ -35,6 +35,7 @@ pub(crate) enum TypeExprSymbol {
 
 #[derive(Debug, Clone)]
 pub(crate) enum TypeExprLowerError {
+    #[cfg_attr(not(test), allow(dead_code))]
     TypeParameterApplied {
         name: Path,
         found: usize,
@@ -71,6 +72,7 @@ pub(crate) struct LoweredTypeSchemeExpr {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(test), allow(dead_code))]
 enum AliasLowering {
     Expand,
     PreserveConstructors,
@@ -89,6 +91,7 @@ pub(crate) fn lower_type_expr(
     )
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn lower_type_expr_preserving_alias_constructors(
     expr: &TypeExpr,
     lookup_symbol: &mut impl FnMut(&Path) -> TypeExprSymbol,
@@ -115,6 +118,7 @@ pub(crate) fn lower_type_scheme_expr(
     )
 }
 
+#[allow(dead_code)]
 pub(crate) fn lower_type_scheme_expr_preserving_alias_constructors(
     expr: &TypeExpr,
     lookup_symbol: &mut impl FnMut(&Path) -> TypeExprSymbol,
@@ -417,6 +421,7 @@ fn lower_instantiation(
 
 #[cfg(test)]
 mod tests {
+    use crate::Span;
     use crate::hc_core::CoreType;
     use crate::ir::{
         Path,
@@ -424,20 +429,19 @@ mod tests {
         TypeExprConstraint,
         TypeExprKind,
     };
-    use crate::types::symbol_table::Symbol;
     use crate::types::Kind;
-    use crate::Span;
+    use crate::types::symbol_table::Symbol;
 
     use super::{
-        lower_type_expr,
-        lower_type_expr_preserving_alias_constructors,
-        lower_type_scheme_expr,
         TraitRef,
         Type,
         TypeDefinition,
         TypeDefinitionKind,
         TypeExprLowerError,
         TypeExprSymbol,
+        lower_type_expr,
+        lower_type_expr_preserving_alias_constructors,
+        lower_type_scheme_expr,
     };
 
     fn expr(kind: TypeExprKind) -> TypeExpr {

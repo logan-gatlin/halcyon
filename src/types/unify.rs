@@ -403,7 +403,7 @@ impl UnificationTable {
                         }
                         Ok(())
                     }
-                    (left, right) => self.unify_non_meta(left, right),
+                    (left, right) => self.unify(&left, &right),
                 }
             }
             None => self.bind_meta(id, &other_pruned),
@@ -429,6 +429,7 @@ impl UnificationTable {
         if let Some(level) = self.level(id) {
             self.adjust_levels(level, type_)?;
         }
+        tracing::trace!(id, bound_to = %type_.pretty(), "bind_meta");
         if let Some(state) = self.meta_var_states.get_mut(id as usize) {
             *state = MetaVarState::Link(type_.clone());
         }
@@ -815,8 +816,7 @@ mod tests {
         let mut table = UnificationTable::default();
         let constructor_meta = table.new_meta(0);
         let left = constructor_meta.clone().apply(vec![Type::Integer]);
-        let right = named("demo", "Result", Type::Unit)
-            .apply(vec![Type::Integer, Type::Boolean]);
+        let right = named("demo", "Result", Type::Unit).apply(vec![Type::Integer, Type::Boolean]);
 
         table
             .unify(&left, &right)
@@ -832,8 +832,7 @@ mod tests {
     fn unify_apply_can_bind_meta_constructor_from_left_suffix() {
         let mut table = UnificationTable::default();
         let constructor_meta = table.new_meta(0);
-        let left = named("demo", "Result", Type::Unit)
-            .apply(vec![Type::Integer, Type::Boolean]);
+        let left = named("demo", "Result", Type::Unit).apply(vec![Type::Integer, Type::Boolean]);
         let right = constructor_meta.clone().apply(vec![Type::Integer]);
 
         table
@@ -1107,5 +1106,51 @@ mod tests {
         };
 
         assert!(table.unify(&named_struct, &direct_struct).is_err());
+    }
+
+    /// Regression: `unify_meta_with_type` previously delegated to
+    /// `unify_non_meta` when a meta was linked to another unbound meta.
+    /// `unify_non_meta` cannot handle metas, so the unification failed
+    /// with a spurious mismatch error.
+    #[test]
+    fn unify_meta_linked_to_meta_with_concrete_type() {
+        let mut table = UnificationTable::default();
+        let a = table.new_meta(0);
+        let b = table.new_meta(0);
+
+        // Link a → b.
+        table.unify(&a, &b).expect("meta pair should unify");
+
+        // Now unify a with a concrete type. Because a is linked to b
+        // (another unbound meta), the Link branch in `unify_meta_with_type`
+        // must correctly recurse into `unify` rather than `unify_non_meta`.
+        let option_int = named("core", "Option", Type::Unit).apply(vec![Type::Integer]);
+        table
+            .unify(&a, &option_int)
+            .expect("meta linked to meta should unify with concrete type");
+
+        assert_eq!(table.normalize(&a), option_int.clone());
+        assert_eq!(table.normalize(&b), option_int);
+    }
+
+    /// Variant: a meta linked to another meta, then the *second* meta
+    /// is unified with a concrete type through the first.
+    #[test]
+    fn unify_concrete_with_meta_chain() {
+        let mut table = UnificationTable::default();
+        let a = table.new_meta(1);
+        let b = table.new_meta(1);
+        let c = table.new_meta(0);
+
+        table.unify(&a, &b).expect("a-b link should succeed");
+        table.unify(&b, &c).expect("b-c link should succeed");
+
+        let target = Type::func(Type::Integer, Type::Boolean);
+        table
+            .unify(&target, &a)
+            .expect("unifying concrete with meta chain should succeed");
+
+        assert_eq!(table.normalize(&a), target.clone());
+        assert_eq!(table.normalize(&c), target);
     }
 }

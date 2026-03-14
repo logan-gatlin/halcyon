@@ -56,6 +56,7 @@ impl CoreSourceExpansionState {
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub fn compile_core_module(
     symbols: &mut SymbolTable,
     logger: &mut crate::Logger,
@@ -114,7 +115,7 @@ fn decode_import_path_literal(literal: &str) -> Option<String> {
     }
 
     let mut result = String::new();
-    let mut chars = literal[1..literal.len() - 1].chars();
+    let mut chars = literal.strip_prefix('"')?.strip_suffix('"')?.chars();
     while let Some(ch) = chars.next() {
         if ch != '\\' {
             result.push(ch);

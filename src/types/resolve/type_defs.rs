@@ -9,19 +9,19 @@ use crate::ir::StructTypeMember;
 use crate::logging::WithContext;
 use indexmap::IndexMap;
 
+use super::super::StructMatch;
 use super::super::instantiation::instantiate_forall_strict;
 use super::super::kind::{
-    constructor_kind,
-    infer_scheme_kind,
     KindError,
     SchemeKindError,
+    constructor_kind,
+    infer_scheme_kind,
 };
 use super::super::type_expr::{
+    TypeExprSymbol,
     lower_type_expr,
     lower_type_scheme_expr,
-    TypeExprSymbol,
 };
-use super::super::StructMatch;
 use super::diagnostics::log_type_expr_lower_error;
 use super::{
     FileLogger,
@@ -135,6 +135,7 @@ pub(super) fn collect_constructor_definitions(
 }
 
 /// Build resolved type-definition bodies for all pending declarations.
+#[tracing::instrument(level = "debug", skip_all, fields(count = entries.len()))]
 pub(super) fn build_type_definitions(
     base_definitions: &IndexMap<Path, TypeDefinition>,
     entries: &IndexMap<Path, PendingTypeDefinitionEntry>,
@@ -149,6 +150,7 @@ pub(super) fn build_type_definitions(
 }
 
 /// Build constructor schemes for every resolved named type.
+#[tracing::instrument(level = "debug", skip_all)]
 pub(super) fn build_type_constructors(
     entries: &IndexMap<Path, PendingTypeDefinitionEntry>,
     type_definitions: &IndexMap<Path, TypeDefinition>,
@@ -537,7 +539,9 @@ fn log_definition_kind_error(
         SchemeKindError::Kind(kind_error) => {
             let message = match kind_error {
                 KindError::Mismatch { left, right } => {
-                    format!("`{path}` has incompatible kinds `{left}` and `{right}` in its definition body.")
+                    format!(
+                        "`{path}` has incompatible kinds `{left}` and `{right}` in its definition body."
+                    )
                 }
                 KindError::Occurs { in_kind, .. } => {
                     format!("`{path}` has recursive kind `{in_kind}` in its definition body.")
@@ -811,12 +815,12 @@ mod tests {
         TypeExprConstraint,
         TypeExprKind,
     };
-    use crate::types::symbol_table::Symbol;
     use crate::types::TraitRef;
+    use crate::types::symbol_table::Symbol;
     use crate::{
+        Logger,
         ir,
         parse,
-        Logger,
     };
 
     fn parse_module_statements(source: &str) -> Vec<Statement<()>> {
@@ -862,21 +866,31 @@ mod tests {
         let term_defs = collect_term_definitions(&statements);
         let constructors = collect_constructor_definitions(&entries, &duplicates);
 
-        assert!(term_defs
-            .iter()
-            .any(|(path, _)| path == &Path::new("demo", "value")));
-        assert!(term_defs
-            .iter()
-            .any(|(path, _)| path == &Path::new("demo", "eq")));
-        assert!(constructors
-            .iter()
-            .any(|(path, _)| path == &Path::new("demo", "Some")));
-        assert!(constructors
-            .iter()
-            .any(|(path, _)| path == &Path::new("demo", "None")));
-        assert!(constructors
-            .iter()
-            .any(|(path, _)| path == &Path::new("demo", "Int")));
+        assert!(
+            term_defs
+                .iter()
+                .any(|(path, _)| path == &Path::new("demo", "value"))
+        );
+        assert!(
+            term_defs
+                .iter()
+                .any(|(path, _)| path == &Path::new("demo", "eq"))
+        );
+        assert!(
+            constructors
+                .iter()
+                .any(|(path, _)| path == &Path::new("demo", "Some"))
+        );
+        assert!(
+            constructors
+                .iter()
+                .any(|(path, _)| path == &Path::new("demo", "None"))
+        );
+        assert!(
+            constructors
+                .iter()
+                .any(|(path, _)| path == &Path::new("demo", "Int"))
+        );
     }
 
     #[test]
@@ -980,9 +994,11 @@ mod tests {
         let mut file_logger = logger.new_file("test.hc", "");
         let defs = build_type_definitions(&IndexMap::new(), &entries, &mut file_logger);
 
-        assert!(file_logger
-            .iter()
-            .any(|diagnostic| diagnostic.message == "Duplicate struct field"));
+        assert!(
+            file_logger
+                .iter()
+                .any(|diagnostic| diagnostic.message == "Duplicate struct field")
+        );
 
         let dup = defs
             .get(&Path::new("demo", "Dup"))
@@ -1006,9 +1022,11 @@ mod tests {
         let mut file_logger = logger.new_file("test.hc", "");
         let defs = build_type_definitions(&IndexMap::new(), &entries, &mut file_logger);
 
-        assert!(file_logger
-            .iter()
-            .any(|diagnostic| diagnostic.message == "Duplicate struct field"));
+        assert!(
+            file_logger
+                .iter()
+                .any(|diagnostic| diagnostic.message == "Duplicate struct field")
+        );
 
         let dup = defs
             .get(&Path::new("demo", "Dup"))
@@ -1032,9 +1050,11 @@ mod tests {
         let mut file_logger = logger.new_file("test.hc", "");
         let defs = build_type_definitions(&IndexMap::new(), &entries, &mut file_logger);
 
-        assert!(file_logger
-            .iter()
-            .any(|diagnostic| diagnostic.message == "Invalid struct spread"));
+        assert!(
+            file_logger
+                .iter()
+                .any(|diagnostic| diagnostic.message == "Invalid struct spread")
+        );
 
         let bad = defs
             .get(&Path::new("demo", "Bad"))
@@ -1062,15 +1082,21 @@ mod tests {
         defs.extend(build_type_definitions(&defs, &entries, &mut file_logger));
 
         let constructors = build_type_constructors(&entries, &defs, &mut file_logger);
-        assert!(constructors
-            .iter()
-            .any(|(path, _)| path == &Path::new("demo", "Some")));
-        assert!(constructors
-            .iter()
-            .any(|(path, _)| path == &Path::new("demo", "None")));
-        assert!(constructors
-            .iter()
-            .any(|(path, _)| path == &Path::new("demo", "Int")));
+        assert!(
+            constructors
+                .iter()
+                .any(|(path, _)| path == &Path::new("demo", "Some"))
+        );
+        assert!(
+            constructors
+                .iter()
+                .any(|(path, _)| path == &Path::new("demo", "None"))
+        );
+        assert!(
+            constructors
+                .iter()
+                .any(|(path, _)| path == &Path::new("demo", "Int"))
+        );
     }
 
     #[test]

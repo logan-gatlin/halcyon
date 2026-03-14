@@ -8,6 +8,14 @@ use crate::hc_core::compile_core_module;
 use crate::ir::Path;
 use crate::types::SymbolTable;
 
+fn init_tracing() {
+    use tracing_subscriber::EnvFilter;
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_env("HALCYON_LOG"))
+        .with_test_writer()
+        .try_init();
+}
+
 fn assert_logger_is_ok(
     logger: &Logger,
     message: &str,
@@ -17,6 +25,22 @@ fn assert_logger_is_ok(
         logger.print_logs();
     }
     assert!(is_ok, "{message}");
+}
+
+#[test]
+fn compile_source_linked_with_core_returns_binary_on_success() {
+    let source = "module demo =\n\tlet value : core::Integer = core::default\nend\n";
+    let binary = compile_source_linked_with_core(source)
+        .expect("expected successful compilation and linking with core");
+    assert!(binary.starts_with(&WASM_MAGIC_NUMBER));
+}
+
+#[test]
+fn compile_source_linked_with_core_returns_error_messages() {
+    let source = "module demo =\n\tlet broken = missing_symbol\nend\n";
+    let errors = compile_source_linked_with_core(source)
+        .expect_err("expected compile errors for unknown symbol");
+    assert!(!errors.is_empty(), "expected at least one error message");
 }
 
 fn file_logger_has_error_message(
@@ -276,6 +300,7 @@ fn higher_kinded_trait_impl_compiles_and_validates() {
 
 #[test]
 fn higher_kinded_trait_map_and_flatten_impl_compiles_and_validates() {
+    init_tracing();
     let source = "module demo =\n\ttrait Monad : m =\n\t\tlet map : for a b in (a -> b) -> m a -> m b\n\t\tlet flatten : for a in m (m a) -> m a\n\tend\n\timpl Monad core::opt::Option =\n\t\tlet map = core::opt::map\n\t\tlet flatten = fn opt => match opt with\n\t\t\t| core::opt::Some value => value\n\t\t\t| core::opt::None => core::opt::None\n\tend\n\tlet result : core::opt::Option core::Integer = flatten (map (fn x => core::opt::Some (x + 1)) (core::opt::Some 1))\nend\n";
     let mut symbols = SymbolTable::new();
     let mut logger = Logger::new();
@@ -309,6 +334,7 @@ fn higher_kinded_trait_impl_rejects_wrong_kind_argument() {
 
 #[test]
 fn higher_kinded_annotation_rejects_constructor_kind_where_type_is_required() {
+    init_tracing();
     let source = "module demo =\n\tlet value : core::opt::Option = core::opt::Some 1\nend\n";
     let mut symbols = SymbolTable::new();
     let mut logger = Logger::new();
@@ -325,6 +351,7 @@ fn higher_kinded_annotation_rejects_constructor_kind_where_type_is_required() {
 
 #[test]
 fn core_monad_methods_dispatch_for_option_array_and_result() {
+    init_tracing();
     let source = "module demo =\n\tlet opt_map : core::opt::Option core::Integer = core::hkt::map (fn x => x + 1) (core::opt::Some 1)\n\tlet opt_flatten : core::opt::Option core::Integer = core::hkt::flatten (core::opt::Some (core::opt::Some 1))\n\tlet opt_bind : core::opt::Option core::Integer = core::hkt::flatten (core::hkt::map (fn x => core::opt::Some (x + 1)) (core::opt::Some 1))\n\tlet res_bind : core::result::Result core::String core::Integer = core::hkt::flatten (core::hkt::map (fn x => core::result::Ok (x + 1)) (core::result::Ok 1))\nend\n";
     let mut symbols = SymbolTable::new();
     let mut logger = Logger::new();
@@ -1053,8 +1080,7 @@ fn use_bundle_imports_symbols_from_bundle_root_modules() {
 
 #[test]
 fn use_only_applies_to_following_statements() {
-    let source =
-        "module demo =\n\tmodule helper =\n\t\tlet token = 1\n\tend\n\tlet before = token\n\tuse helper\n\tlet after = token\nend\n";
+    let source = "module demo =\n\tmodule helper =\n\t\tlet token = 1\n\tend\n\tlet before = token\n\tuse helper\n\tlet after = token\nend\n";
     let mut symbols = SymbolTable::new();
     let mut logger = Logger::new();
     let _core = compile_core_module(&mut symbols, &mut logger);
@@ -1099,8 +1125,7 @@ fn use_reports_ambiguity_when_multiple_modules_provide_symbol() {
 
 #[test]
 fn use_scope_does_not_leak_into_nested_module() {
-    let source =
-        "module demo =\n\tmodule helper =\n\t\tlet token = 1\n\tend\n\tuse helper\n\tmodule inner =\n\t\tlet value = token\n\tend\nend\n";
+    let source = "module demo =\n\tmodule helper =\n\t\tlet token = 1\n\tend\n\tuse helper\n\tmodule inner =\n\t\tlet value = token\n\tend\nend\n";
     let mut symbols = SymbolTable::new();
     let mut logger = Logger::new();
     let _core = compile_core_module(&mut symbols, &mut logger);
@@ -1159,8 +1184,7 @@ fn use_alias_name_collisions_are_reported() {
 
 #[test]
 fn use_expression_imports_only_inside_in_body() {
-    let source =
-        "module demo =\n\tmodule helper =\n\t\tlet token = 1\n\tend\n\tlet inside = use helper in token\n\tlet outside = token\nend\n";
+    let source = "module demo =\n\tmodule helper =\n\t\tlet token = 1\n\tend\n\tlet inside = use helper in token\n\tlet outside = token\nend\n";
     let mut symbols = SymbolTable::new();
     let mut logger = Logger::new();
     let _core = compile_core_module(&mut symbols, &mut logger);
@@ -1412,9 +1436,11 @@ fn sum_type_does_not_publish_typename_constructor() {
     }
 
     assert_logger_is_ok(&logger, "sum constructors should still compile");
-    assert!(!symbols
-        .constructors()
-        .contains(&Path::new("demo", "Option")));
+    assert!(
+        !symbols
+            .constructors()
+            .contains(&Path::new("demo", "Option"))
+    );
     assert!(symbols.constructors().contains(&Path::new("demo", "Some")));
     assert!(symbols.constructors().contains(&Path::new("demo", "None")));
 }

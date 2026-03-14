@@ -373,6 +373,7 @@ pub type SyntaxNode = rowan::SyntaxNode<HalcyonLanguage>;
 pub type SyntaxToken = rowan::SyntaxToken<HalcyonLanguage>;
 pub type SyntaxElement = rowan::SyntaxElement<HalcyonLanguage>;
 
+#[tracing::instrument(skip_all)]
 pub fn parse(
     source: &str,
     logger: &mut FileLogger,

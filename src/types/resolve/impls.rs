@@ -75,6 +75,7 @@ pub(super) struct ImplProcessingContext<'a> {
 
 impl ImplProcessingContext<'_> {
     /// Type-check and register a single impl declaration.
+    #[tracing::instrument(level = "debug", skip_all, fields(trait_path = %trait_path))]
     pub(super) fn process(
         &mut self,
         comments: String,
@@ -119,15 +120,12 @@ impl ImplProcessingContext<'_> {
                             .symbols
                             .canonical_trait_path(trait_name)
                             .unwrap_or_else(|| trait_name.clone());
-                        self.symbols
-                            .trait_defs()
-                            .get(&canonical)
-                            .map(|definition| {
-                                normalize_parameter_kinds(
-                                    definition.parameter_kinds.clone(),
-                                    definition.parameters,
-                                )
-                            })
+                        self.symbols.trait_defs().get(&canonical).map(|definition| {
+                            normalize_parameter_kinds(
+                                definition.parameter_kinds.clone(),
+                                definition.parameters,
+                            )
+                        })
                     },
                 ) {
                     Ok(inferred) => inferred.kind,
@@ -271,6 +269,11 @@ impl ImplProcessingContext<'_> {
                     } else if let Some(instantiated) =
                         instantiate_method_scheme(method_scheme, &argument_types)
                     {
+                        tracing::debug!(
+                            method = %canonical_trait_method,
+                            instantiated = %instantiated.type_.pretty(),
+                            "instantiated method scheme for impl check",
+                        );
                         let expected_type = normalize_alias_applications(
                             instantiate_forall_for_impl_check(
                                 self.inference_context,
@@ -286,6 +289,11 @@ impl ImplProcessingContext<'_> {
                                 method.span,
                             ),
                             &resolved_type_definitions,
+                        );
+                        tracing::debug!(
+                            expected = %expected_type.pretty(),
+                            inferred = %value_type.pretty(),
+                            "impl method type check",
                         );
                         if let Err(error) = self
                             .inference_context
@@ -378,7 +386,8 @@ impl ImplProcessingContext<'_> {
             predicates: impl_context_predicates,
             methods: method_map,
         };
-        if orphan_rule_satisfied && trait_head_kinds_valid
+        if orphan_rule_satisfied
+            && trait_head_kinds_valid
             && let Err(error) = self.symbols.insert_impl(trait_impl)
         {
             log_trait_error(self.logger, impl_span, error);
@@ -439,7 +448,10 @@ fn normalize_alias_applications(
         | Type::TypeVar(_)
         | Type::MetaVar(_) => type_,
         Type::ForAll(body) => {
-            Type::ForAll(Box::new(normalize_alias_applications(*body, type_definitions)))
+            Type::ForAll(Box::new(normalize_alias_applications(
+                *body,
+                type_definitions,
+            )))
         }
         Type::Named { name, body } => Type::Named { name, body },
         Type::StructConstraint { fields, mode } => {
@@ -470,7 +482,10 @@ fn normalize_alias_applications(
             }
         }
         Type::Array(inner) => {
-            Type::Array(Box::new(normalize_alias_applications(*inner, type_definitions)))
+            Type::Array(Box::new(normalize_alias_applications(
+                *inner,
+                type_definitions,
+            )))
         }
         Type::Tuple(items) => {
             Type::Tuple(
@@ -526,9 +541,7 @@ fn normalize_alias_application_root(
     let Some(definition) = type_definitions.get(&name) else {
         return apply_arguments(Type::Named { name, body }, arguments);
     };
-    if definition.kind != TypeDefinitionKind::Alias
-        || arguments.len() != definition.parameters
-    {
+    if definition.kind != TypeDefinitionKind::Alias || arguments.len() != definition.parameters {
         return apply_arguments(Type::Named { name, body }, arguments);
     }
     instantiate_forall_strict(&body, &arguments)
@@ -653,7 +666,10 @@ fn normalize_parameter_kinds(
     parameter_count: usize,
 ) -> Vec<Kind> {
     if kinds.len() < parameter_count {
-        kinds.extend(std::iter::repeat_n(Kind::Type, parameter_count - kinds.len()));
+        kinds.extend(std::iter::repeat_n(
+            Kind::Type,
+            parameter_count - kinds.len(),
+        ));
     }
     kinds.truncate(parameter_count);
     kinds
@@ -674,9 +690,7 @@ fn log_impl_argument_kind_error(
                     )
                 }
                 KindError::Occurs { in_kind, .. } => {
-                    format!(
-                        "Trait argument for `{trait_name}` has recursive kind `{in_kind}`."
-                    )
+                    format!("Trait argument for `{trait_name}` has recursive kind `{in_kind}`.")
                 }
             };
             logger
@@ -692,9 +706,7 @@ fn log_impl_argument_kind_error(
             logger
                 .error("Invalid trait constraint application")
                 .primary(
-                    format!(
-                        "`{trait_name}` expects {expected} type arguments but got {found}."
-                    ),
+                    format!("`{trait_name}` expects {expected} type arguments but got {found}."),
                     span,
                 )
                 .done();
@@ -805,11 +817,9 @@ mod tests {
             name: Path::new("core", "Option"),
             body: Box::new(Type::Unit),
         };
-        let partially_instantiated = instantiate_method_scheme(
-            &scheme,
-            std::slice::from_ref(&option_constructor),
-        )
-        .expect("impl-head argument should instantiate outer forall");
+        let partially_instantiated =
+            instantiate_method_scheme(&scheme, std::slice::from_ref(&option_constructor))
+                .expect("impl-head argument should instantiate outer forall");
 
         let mut inference_context = InferenceContext::new();
         let fully_instantiated = instantiate_forall_for_impl_check(
@@ -913,7 +923,10 @@ mod tests {
         }
         .apply(vec![Type::Integer]);
 
-        assert_eq!(normalize_alias_applications(partial.clone(), &definitions), partial);
+        assert_eq!(
+            normalize_alias_applications(partial.clone(), &definitions),
+            partial
+        );
     }
 
     #[test]

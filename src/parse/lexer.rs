@@ -470,7 +470,10 @@ fn decode_escaped_literal_body(body: &str) -> Result<String, EscapeDecodeError> 
     let mut decoded = String::with_capacity(body.len());
     let mut cursor = 0;
     while cursor < body.len() {
-        let Some(ch) = body[cursor..].chars().next() else {
+        let Some(ch) = body
+            .get(cursor..)
+            .and_then(|remaining| remaining.chars().next())
+        else {
             break;
         };
 
@@ -482,7 +485,10 @@ fn decode_escaped_literal_body(body: &str) -> Result<String, EscapeDecodeError> 
 
         let escape_start = cursor;
         cursor += ch.len_utf8();
-        let Some(escaped) = body[cursor..].chars().next() else {
+        let Some(escaped) = body
+            .get(cursor..)
+            .and_then(|remaining| remaining.chars().next())
+        else {
             return Err(EscapeDecodeError {
                 offset: escape_start,
                 width: 1,
@@ -503,7 +509,10 @@ fn decode_escaped_literal_body(body: &str) -> Result<String, EscapeDecodeError> 
             'x' => {
                 let mut value = 0u32;
                 for _ in 0..2 {
-                    let Some(digit) = body[cursor..].chars().next() else {
+                    let Some(digit) = body
+                        .get(cursor..)
+                        .and_then(|remaining| remaining.chars().next())
+                    else {
                         return Err(EscapeDecodeError {
                             offset: escape_start,
                             width: cursor - escape_start,
@@ -525,7 +534,10 @@ fn decode_escaped_literal_body(body: &str) -> Result<String, EscapeDecodeError> 
             'w' => {
                 let mut value = 0u32;
                 for _ in 0..4 {
-                    let Some(digit) = body[cursor..].chars().next() else {
+                    let Some(digit) = body
+                        .get(cursor..)
+                        .and_then(|remaining| remaining.chars().next())
+                    else {
                         return Err(EscapeDecodeError {
                             offset: escape_start,
                             width: cursor - escape_start,

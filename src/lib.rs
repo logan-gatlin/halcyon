@@ -3,11 +3,14 @@ pub mod asm;
 pub mod documentation;
 pub mod hc_core;
 pub mod ir;
+pub mod linking;
 pub mod logging;
 pub mod map;
 pub mod operator;
 pub mod parse;
 pub mod types;
+#[cfg(target_arch = "wasm32")]
+pub mod web;
 use parse::ast::{
     AstNode,
     HasName,
@@ -62,6 +65,7 @@ impl Artifact {
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub fn compile_source(
     source: &str,
     logger: &mut FileLogger,
@@ -157,6 +161,7 @@ pub fn compile_source(
     vec![asm::compile_module(elaborated, symbols)].into_boxed_slice()
 }
 
+#[tracing::instrument(skip_all, fields(module = %art.module_name))]
 pub fn validate_artifact(
     art: Artifact,
     logger: &mut Logger,
@@ -222,4 +227,40 @@ pub fn validate_artifact(
     }
     logger.consume_file(file_logger);
     art
+}
+
+pub fn compile_source_linked_with_core(source: &str) -> Result<Vec<u8>, Vec<String>> {
+    let mut symbols = types::SymbolTable::new();
+    let mut logger = Logger::new();
+
+    let core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("input.hc", source);
+    let artifacts = compile_source(source, &mut file_logger, &mut symbols);
+    logger.consume_file(file_logger);
+
+    if !logger.is_ok() {
+        let errors = logger.error_messages();
+        return Err(if errors.is_empty() {
+            vec!["Compilation failed".to_string()]
+        } else {
+            errors
+        });
+    }
+
+    let mut all_artifacts = Vec::with_capacity(artifacts.len() + 1);
+    all_artifacts.push(core);
+    all_artifacts.extend(artifacts.into_vec());
+
+    let linked = linking::link_artifacts(
+        &all_artifacts,
+        linking::LinkOptions {
+            module_name: "app".to_string(),
+            ..Default::default()
+        },
+    )
+    .map_err(|error| vec![error.to_string()])?;
+
+    wasmparser::validate(&linked.binary).map_err(|error| vec![error.message().to_string()])?;
+
+    Ok(linked.binary)
 }

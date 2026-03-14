@@ -3,6 +3,7 @@ use std::collections::{
     HashMap,
 };
 
+use super::module_section::LoweredModuleSection;
 use super::*;
 use crate::ir::ImmediateValue;
 use wasm_encoder::{
@@ -261,7 +262,9 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
             },
             &default_value(&val_type),
         );
-        export_section.export(&name.minor, ExportKind::Global, global_id);
+        if let Some(export_name) = asm_module.export_policy.global_export_name(name) {
+            export_section.export(&export_name, ExportKind::Global, global_id);
+        }
         global_namespace.insert(name, global_id);
         global_names.append(global_id, &name.minor);
         global_id += 1;
@@ -528,6 +531,7 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
     name_section.globals(&global_names);
 
     let mut module = wasm_encoder::Module::new();
+    let lowered_module_section = LoweredModuleSection::new(&asm_module);
     module
         .section(&name_section)
         .section(&type_section)
@@ -543,7 +547,8 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
         .section(&start_section)
         .section(&element_section)
         .section(&code_section)
-        .section(&asm_module.sig);
+        .section(&asm_module.sig)
+        .section(&lowered_module_section);
     module.finish()
 }
 

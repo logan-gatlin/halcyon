@@ -4,6 +4,8 @@ use std::path::{
     PathBuf,
 };
 
+use halcyon_lib::asm::custom_section::TypeSignatureSection;
+use halcyon_lib::asm::module_section::LoweredModuleSection;
 use halcyon_lib::parse::ast::{
     self,
     AstNode,
@@ -12,16 +14,20 @@ use halcyon_lib::parse::ast::{
 use halcyon_lib::types::SymbolTable;
 use halcyon_lib::{
     Artifact,
+    CORE_MODULE_NAME,
     Logger,
     Span,
+    WASM_MAGIC_NUMBER,
     WithContext,
     compile_core_module,
     documentation,
     ir,
+    linking,
     parse,
     types,
     validate_artifact,
 };
+use tracing_subscriber::EnvFilter;
 use wasmtime::{
     Config,
     Engine,
@@ -52,18 +58,14 @@ impl<'a> Command<'a> {
     fn execute(self) -> Result<(), Box<dyn std::error::Error>> {
         match self {
             Self::Build(paths) => {
-                let root_path = single_root_path(paths, "build")?;
-                let artifacts = compile_bundle(root_path)?;
+                let linked = compile_and_link_inputs(paths, "app")?;
                 std::fs::create_dir_all("target")?;
-                for artifact in &artifacts {
-                    artifact.save_wasm_to_file("target")?;
-                }
+                linked.save_wasm_to_file("target")?;
                 Ok(())
             }
             Self::Run(paths) => {
-                let root_path = single_root_path(paths, "run")?;
-                let artifacts = compile_bundle(root_path)?;
-                link_and_run(&artifacts)
+                let linked = compile_and_link_inputs(paths, "app")?;
+                link_and_run(std::slice::from_ref(&linked))
             }
             Self::Doc(paths) => {
                 let root_path = single_root_path(paths, "doc")?;
@@ -78,11 +80,16 @@ impl<'a> Command<'a> {
 }
 
 fn print_usage() {
-    eprintln!("Usage: halcyon <command> <bundle-root>");
+    eprintln!("Usage: halcyon <command> <input>...");
     eprintln!();
     eprintln!("Commands:");
-    eprintln!("  build <bundle-root>  Compile bundle to .wasm files in target/");
-    eprintln!("  run <bundle-root>    Compile and run the program in wasmtime");
+    eprintln!(
+        "  build <input>...    Compile source/binary inputs and emit one linked .wasm in target/"
+    );
+    eprintln!("  run <input>...      Compile source/binary inputs and run the linked program");
+    eprintln!(
+        "                      Inputs are linked and initialized in the exact order provided."
+    );
     eprintln!("  doc <bundle-root>    Generate markdown documentation in docs/");
 }
 
@@ -119,6 +126,16 @@ fn single_root_path<'a>(
         return Err(format!("`{command}` expects exactly one bundle root path").into());
     }
     Ok(paths[0].as_str())
+}
+
+fn ensure_inputs<'a>(
+    paths: &'a [String],
+    command: &str,
+) -> Result<&'a [String], Box<dyn std::error::Error>> {
+    if paths.is_empty() {
+        return Err(format!("`{command}` expects at least one input path").into());
+    }
+    Ok(paths)
 }
 
 fn normalize_path(path: &Path) -> Result<PathBuf, Box<dyn std::error::Error>> {
@@ -233,6 +250,7 @@ fn report_cycle_diagnostic(
         .done();
 }
 
+#[tracing::instrument(skip_all, fields(file = %file_path.display()))]
 fn collect_bundle_fragments_with_imports(
     file_path: &Path,
     is_root: bool,
@@ -381,6 +399,7 @@ fn collect_bundle_fragments_with_imports(
     result
 }
 
+#[tracing::instrument(skip_all, fields(bundle = %bundle_name, fragment_count = fragments.len()))]
 fn lower_and_resolve_fragments(
     fragments: &[BundleSourceFragment],
     bundle_name: &str,
@@ -453,53 +472,234 @@ fn combine_resolved_fragments(
     }
 }
 
-fn compile_bundle(root_path: &str) -> Result<Vec<Artifact>, Box<dyn std::error::Error>> {
-    let mut logger = Logger::new();
-    let mut symbols = SymbolTable::new();
+#[tracing::instrument(skip_all, fields(root = %root_path))]
+fn compile_source_bundle(
+    root_path: &str,
+    logger: &mut Logger,
+    symbols: &mut SymbolTable,
+) -> Result<Artifact, Box<dyn std::error::Error>> {
     let mut state = ImportTraversalState::default();
     let mut fragments = Vec::new();
     let mut bundle_name = None;
-
-    let core = validate_artifact(compile_core_module(&mut symbols, &mut logger), &mut logger);
 
     collect_bundle_fragments_with_imports(
         Path::new(root_path),
         true,
         &mut state,
-        &mut logger,
+        logger,
         &mut bundle_name,
         &mut fragments,
     )?;
 
     if !logger.is_ok() {
-        logger.print_logs();
         return Err("Compilation failed".into());
     }
 
     let bundle_name = bundle_name.unwrap_or_else(|| "_".to_string());
-    let resolved_fragments =
-        lower_and_resolve_fragments(&fragments, &bundle_name, &mut logger, &mut symbols);
+    let resolved_fragments = lower_and_resolve_fragments(&fragments, &bundle_name, logger, symbols);
+
+    if !logger.is_ok() {
+        return Err("Compilation failed".into());
+    }
+
+    let merged_resolved = combine_resolved_fragments(&bundle_name, resolved_fragments);
+    let elaborated = ir::elaborate_module(merged_resolved, symbols);
+    let bundle_artifact = validate_artifact(
+        halcyon_lib::asm::compile_module(elaborated, symbols),
+        logger,
+    );
+
+    if !logger.is_ok() {
+        return Err("Compilation failed".into());
+    }
+
+    Ok(bundle_artifact)
+}
+
+fn is_wasm_binary(binary: &[u8]) -> bool {
+    binary.starts_with(&WASM_MAGIC_NUMBER)
+}
+
+fn type_definition_compatible(
+    left: &halcyon_lib::types::TypeDefinition,
+    right: &halcyon_lib::types::TypeDefinition,
+) -> bool {
+    left.parameters == right.parameters
+        && left.parameter_kinds == right.parameter_kinds
+        && left.body == right.body
+        && left.kind == right.kind
+}
+
+fn register_signature_symbols(
+    symbols: &mut SymbolTable,
+    signature: &TypeSignatureSection,
+) -> Result<(), Box<dyn std::error::Error>> {
+    for (path, definition) in signature.defined_types.iter() {
+        if let Some(existing_definition) = symbols.type_definitions().get(path) {
+            if !type_definition_compatible(existing_definition, definition) {
+                return Err(
+                    format!("Type `{path}` in binary input conflicts with existing type").into(),
+                );
+            }
+        } else {
+            symbols.insert_type(path.clone(), definition.clone());
+            symbols.insert_constructor(path.clone());
+        }
+    }
+
+    for (path, scheme) in signature.defined_terms.iter() {
+        if let Some(existing_scheme) = symbols.terms().get(path) {
+            if existing_scheme != scheme {
+                return Err(
+                    format!("Term `{path}` in binary input conflicts with existing term").into(),
+                );
+            }
+        } else {
+            symbols.insert_term(path.clone(), scheme.clone());
+        }
+    }
+
+    Ok(())
+}
+
+fn load_binary_artifact(
+    input_path: &Path,
+    binary: Vec<u8>,
+    symbols: &mut SymbolTable,
+) -> Result<Artifact, Box<dyn std::error::Error>> {
+    let mut saw_module_section = false;
+    let mut saw_signature_section = false;
+    let mut lowered_module = None;
+    let mut signature = None;
+
+    for payload in wasmparser::Parser::new(0).parse_all(&binary) {
+        let payload = payload.map_err(|error| {
+            format!(
+                "{}: failed to parse wasm payload: {}",
+                input_path.display(),
+                error.message()
+            )
+        })?;
+        if let wasmparser::Payload::CustomSection(reader) = payload {
+            if reader.name() == LoweredModuleSection::NAME {
+                saw_module_section = true;
+                lowered_module = LoweredModuleSection::decode_data_slice(reader.data());
+            } else if reader.name() == TypeSignatureSection::NAME {
+                saw_signature_section = true;
+                signature = TypeSignatureSection::decode_data_slice(reader.data());
+            }
+        }
+    }
+
+    if !saw_module_section {
+        return Err(format!(
+            "{}: missing linker metadata `{}`",
+            input_path.display(),
+            LoweredModuleSection::NAME
+        )
+        .into());
+    }
+    if !saw_signature_section {
+        return Err(format!(
+            "{}: missing linker metadata `{}`",
+            input_path.display(),
+            TypeSignatureSection::NAME
+        )
+        .into());
+    }
+
+    let lowered_module = lowered_module.ok_or_else(|| {
+        format!(
+            "{}: invalid linker metadata `{}`",
+            input_path.display(),
+            LoweredModuleSection::NAME
+        )
+    })?;
+    let signature = signature.ok_or_else(|| {
+        format!(
+            "{}: invalid linker metadata `{}`",
+            input_path.display(),
+            TypeSignatureSection::NAME
+        )
+    })?;
+
+    register_signature_symbols(symbols, &signature)?;
+
+    Ok(Artifact {
+        module_name: lowered_module.name,
+        ir_module: None,
+        binary,
+    })
+}
+
+#[tracing::instrument(skip_all, fields(input_count = input_paths.len()))]
+fn collect_input_artifacts(
+    input_paths: &[String]
+) -> Result<Vec<Artifact>, Box<dyn std::error::Error>> {
+    let mut logger = Logger::new();
+    let mut symbols = SymbolTable::new();
+    let core = validate_artifact(compile_core_module(&mut symbols, &mut logger), &mut logger);
 
     if !logger.is_ok() {
         logger.print_logs();
         return Err("Compilation failed".into());
     }
 
-    let merged_resolved = combine_resolved_fragments(&bundle_name, resolved_fragments);
-    let elaborated = ir::elaborate_module(merged_resolved, &symbols);
-    let bundle_artifact = validate_artifact(
-        halcyon_lib::asm::compile_module(elaborated, &symbols),
-        &mut logger,
-    );
+    let mut artifacts = Vec::new();
+    let mut includes_core = false;
+
+    for input_path in input_paths {
+        let input_path = Path::new(input_path);
+        let normalized_path = normalize_path(input_path)?;
+        let data = std::fs::read(&normalized_path)
+            .map_err(|error| format!("{}: {error}", normalized_path.display()))?;
+
+        let artifact = if is_wasm_binary(&data) {
+            validate_artifact(
+                load_binary_artifact(&normalized_path, data, &mut symbols)?,
+                &mut logger,
+            )
+        } else {
+            let source_path = normalized_path.to_string_lossy().to_string();
+            compile_source_bundle(&source_path, &mut logger, &mut symbols)?
+        };
+
+        if artifact.module_name == CORE_MODULE_NAME {
+            includes_core = true;
+        }
+        artifacts.push(artifact);
+    }
 
     logger.print_logs();
     if !logger.is_ok() {
         return Err("Compilation failed".into());
     }
 
-    Ok(vec![core, bundle_artifact])
+    if !includes_core {
+        artifacts.insert(0, core);
+    }
+
+    Ok(artifacts)
 }
 
+fn compile_and_link_inputs(
+    input_paths: &[String],
+    linked_module_name: &str,
+) -> Result<Artifact, Box<dyn std::error::Error>> {
+    let input_paths = ensure_inputs(input_paths, "build/run")?;
+    let artifacts = collect_input_artifacts(input_paths)?;
+    let linked = linking::link_artifacts(
+        &artifacts,
+        linking::LinkOptions {
+            module_name: linked_module_name.to_string(),
+            ..Default::default()
+        },
+    )?;
+
+    Ok(linked)
+}
+
+#[tracing::instrument(skip_all, fields(artifact_count = artifacts.len()))]
 fn link_and_run(artifacts: &[Artifact]) -> Result<(), Box<dyn std::error::Error>> {
     let mut config = Config::new();
     config.wasm_gc(true);
@@ -566,25 +766,79 @@ fn generate_docs(root_path: &str) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[allow(clippy::print_stdout)]
+fn main() {
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_env("HALCYON_LOG"))
+        .with_writer(std::io::stderr)
+        .init();
+
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if let Err(error) = Command::parse(&args).execute() {
+        eprintln!("{error}");
+        std::process::exit(1);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn write_temp_file(
+        file_name: &str,
+        contents: &[u8],
+    ) -> Result<PathBuf, Box<dyn std::error::Error>> {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("halcyon-cli-tests-{unique}"));
+        std::fs::create_dir_all(&dir)?;
+        let path = dir.join(file_name);
+        std::fs::write(&path, contents)?;
+        Ok(path)
+    }
 
     #[test]
     fn core_bundle_tests_execute_without_failures() {
         let root_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../core/tests.hc");
         let root_path = root_path.to_string_lossy().to_string();
-        let artifacts =
-            compile_bundle(&root_path).expect("core test bundle should compile successfully");
-        link_and_run(&artifacts).expect("core test bundle should execute without failures");
+        let linked = compile_and_link_inputs(&[root_path], "app")
+            .expect("core test bundle should compile successfully");
+        link_and_run(&[linked]).expect("core test bundle should execute without failures");
     }
-}
 
-#[allow(clippy::print_stdout)]
-fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    if let Err(error) = Command::parse(&args).execute() {
-        eprintln!("{error}");
-        std::process::exit(1);
+    #[test]
+    fn accepts_binary_and_source_inputs_in_sequence() {
+        let mut logger = Logger::new();
+        let mut symbols = SymbolTable::new();
+        let _ = validate_artifact(compile_core_module(&mut symbols, &mut logger), &mut logger);
+
+        let alpha_source = b"bundle alpha\nlet value : core::Integer = core::default\n";
+        let alpha_source_path = write_temp_file("alpha.hc", alpha_source)
+            .expect("alpha source should be written to temp dir");
+        let alpha_artifact = compile_source_bundle(
+            &alpha_source_path.to_string_lossy(),
+            &mut logger,
+            &mut symbols,
+        )
+        .expect("alpha source should compile");
+        let alpha_binary_path = write_temp_file("alpha.wasm", &alpha_artifact.binary)
+            .expect("alpha wasm should be written to temp dir");
+
+        let beta_source = b"bundle beta\nlet result : core::Integer = alpha::value\n";
+        let beta_source_path = write_temp_file("beta.hc", beta_source)
+            .expect("beta source should be written to temp dir");
+
+        let linked = compile_and_link_inputs(
+            &[
+                alpha_binary_path.to_string_lossy().to_string(),
+                beta_source_path.to_string_lossy().to_string(),
+            ],
+            "app",
+        )
+        .expect("mixed binary+source inputs should compile and link");
+
+        let _ = validate_artifact(linked, &mut logger);
+        assert!(logger.is_ok(), "linked artifact should validate");
     }
 }

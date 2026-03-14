@@ -5,19 +5,20 @@ use std::collections::HashSet;
 use crate::logging::WithContext;
 use indexmap::IndexMap;
 
+use super::super::Type;
 use super::super::infer::InferenceContext;
+use super::super::instantiation::leading_forall_count;
 use super::super::kind::{
-    constructor_kind,
-    infer_scheme_kind,
     KindError,
     SchemeKindError,
+    constructor_kind,
+    infer_scheme_kind,
 };
 use super::common::format_trait_ref;
 use super::diagnostics::log_trait_error;
 use super::type_defs::{
     param_index_map,
     type_expr_to_scheme_in_def,
-    type_vars_for_params,
 };
 use super::{
     FileLogger,
@@ -36,6 +37,7 @@ use super::{
 };
 
 /// Build trait definitions from syntax-level statements.
+#[tracing::instrument(level = "debug", skip_all)]
 pub(super) fn build_trait_definitions(
     statements: &[Statement<()>],
     pending_type_definitions: &IndexMap<Path, PendingTypeDefinitionEntry>,
@@ -196,12 +198,16 @@ fn log_trait_scheme_kind_error(
     match error {
         SchemeKindError::Kind(kind_error) => {
             let message = match kind_error {
-                KindError::Mismatch { left, right } => format!(
-                    "`{method_path}` in trait `{trait_path}` has incompatible kinds `{left}` and `{right}`."
-                ),
-                KindError::Occurs { in_kind, .. } => format!(
-                    "`{method_path}` in trait `{trait_path}` has recursive kind `{in_kind}`."
-                ),
+                KindError::Mismatch { left, right } => {
+                    format!(
+                        "`{method_path}` in trait `{trait_path}` has incompatible kinds `{left}` and `{right}`."
+                    )
+                }
+                KindError::Occurs { in_kind, .. } => {
+                    format!(
+                        "`{method_path}` in trait `{trait_path}` has recursive kind `{in_kind}`."
+                    )
+                }
             };
             logger
                 .error("Invalid trait method kind")
@@ -240,6 +246,7 @@ fn log_trait_scheme_kind_error(
 }
 
 /// Register trait definitions and publish trait method schemes into term symbols.
+#[tracing::instrument(level = "debug", skip_all, fields(count = entries.len()))]
 pub(super) fn register_trait_definitions(
     symbols: &mut SymbolTable,
     entries: &[PendingTraitDefinitionEntry],
@@ -298,6 +305,7 @@ pub(super) fn register_trait_aliases(
 }
 
 /// Attempt to solve accumulated trait predicates and emit diagnostics on failure.
+#[tracing::instrument(level = "debug", skip_all, fields(predicate_count = predicates.len()))]
 pub(super) fn solve_predicates(
     logger: &mut FileLogger,
     inference_context: &mut InferenceContext,
@@ -309,6 +317,7 @@ pub(super) fn solve_predicates(
 }
 
 /// Attempt to solve predicates under additional assumed constraints.
+#[tracing::instrument(level = "debug", skip_all, fields(predicate_count = predicates.len(), assumption_count = assumptions.len()))]
 pub(super) fn solve_predicates_with_assumptions(
     logger: &mut FileLogger,
     inference_context: &mut InferenceContext,
@@ -320,12 +329,26 @@ pub(super) fn solve_predicates_with_assumptions(
     if predicates.is_empty() {
         return;
     }
+    for predicate in predicates {
+        let normalized = inference_context.table_mut().normalize_trait_ref(predicate);
+        tracing::debug!(
+            raw = %format_trait_ref(predicate),
+            normalized = %format_trait_ref(&normalized),
+            "solving predicate",
+        );
+    }
     match symbols.resolve_predicates_with_assumptions(
         inference_context.table_mut(),
         predicates,
         assumptions,
     ) {
         Ok(unresolved) => {
+            for predicate in unresolved.iter() {
+                tracing::debug!(
+                    predicate = %format_trait_ref(predicate),
+                    "unresolved predicate",
+                );
+            }
             for predicate in unresolved {
                 logger
                     .error("Unresolved trait constraint")
@@ -336,20 +359,33 @@ pub(super) fn solve_predicates_with_assumptions(
                     .done();
             }
         }
-        Err(error) => log_trait_error(logger, span, error),
+        Err(error) => {
+            tracing::debug!("predicate resolution failed with error");
+            log_trait_error(logger, span, error);
+        }
     }
 }
 
 /// Convert a trait-item scheme into a globally callable term scheme.
+///
+/// The method scheme already has both the trait-parameter ForAlls (outermost)
+/// and the method's own ForAlls (inner). In the innermost body, the trait
+/// parameter TypeVars sit above the method parameters: at indices
+/// `method_forall_count .. method_forall_count + trait_params - 1`.
 fn trait_method_term_scheme(
     trait_name: &Path,
     parameters: usize,
     method_scheme: &TypeScheme,
 ) -> TypeScheme {
+    let total_foralls = leading_forall_count(&method_scheme.type_);
+    let method_foralls = total_foralls.saturating_sub(parameters);
     let mut predicates = method_scheme.predicates.clone();
+    let trait_param_type_vars = (0..parameters)
+        .map(|i| Type::v((method_foralls + parameters - 1 - i) as u32))
+        .collect();
     predicates.push(super::TraitRef::new(
         trait_name.clone(),
-        type_vars_for_params(parameters),
+        trait_param_type_vars,
     ));
     TypeScheme {
         predicates,
@@ -367,9 +403,9 @@ mod tests {
         Type,
     };
     use crate::{
+        Logger,
         ir,
         parse,
-        Logger,
     };
 
     fn parse_statements(source: &str) -> Vec<Statement<()>> {
@@ -512,9 +548,11 @@ mod tests {
             .terms()
             .get(&method_path)
             .expect("method term scheme should be published");
-        assert!(term_scheme
-            .predicates
-            .contains(&TraitRef::new(trait_path, vec![Type::v(0)])));
+        assert!(
+            term_scheme
+                .predicates
+                .contains(&TraitRef::new(trait_path, vec![Type::v(0)]))
+        );
     }
 
     #[test]
@@ -540,9 +578,11 @@ mod tests {
         );
 
         assert!(!file_logger.is_ok());
-        assert!(file_logger
-            .iter()
-            .any(|diagnostic| diagnostic.message == "Unresolved trait constraint"));
+        assert!(
+            file_logger
+                .iter()
+                .any(|diagnostic| diagnostic.message == "Unresolved trait constraint")
+        );
     }
 
     #[test]
@@ -578,6 +618,98 @@ mod tests {
         assert_eq!(
             lifted.predicates,
             vec![TraitRef::new(Path::new("demo", "Id"), vec![Type::v(0)])]
+        );
+    }
+
+    /// When a trait method has its own ForAll binders (e.g. `map : for a b in ...`),
+    /// the predicate's TypeVar for the trait parameter must point at the OUTERMOST
+    /// ForAll, not the innermost.
+    ///
+    /// For `trait Monad : m` with `map : for a b in (a -> b) -> m a -> m b`,
+    /// the full scheme is `for m in for a in for b in (...)`. In the innermost
+    /// body, `m = TypeVar(2)`, `a = TypeVar(1)`, `b = TypeVar(0)`.
+    /// The predicate must be `Monad TypeVar(2)`.
+    #[test]
+    fn trait_method_term_scheme_predicate_uses_outermost_type_var_for_hkt() {
+        // Simulate: trait Monad : m, method map : for a b in (a -> b) -> m a -> m b
+        // After build_trait_definitions the scheme type has 3 ForAlls:
+        //   for m in for a in for b in ((a -> b) -> (m a -> m b))
+        // In the body: m = TypeVar(2), a = TypeVar(1), b = TypeVar(0)
+        let body = Type::func(
+            Type::func(Type::v(1), Type::v(0)),
+            Type::func(
+                Type::v(2).apply(vec![Type::v(1)]),
+                Type::v(2).apply(vec![Type::v(0)]),
+            ),
+        );
+        let scheme = body.for_all(3).scheme(); // 3 ForAlls: m, a, b
+
+        let lifted = trait_method_term_scheme(&Path::new("demo", "Monad"), 1, &scheme);
+
+        // The predicate must refer to TypeVar(2) = outermost ForAll = m
+        assert_eq!(
+            lifted.predicates,
+            vec![TraitRef::new(Path::new("demo", "Monad"), vec![Type::v(2)])]
+        );
+    }
+
+    /// Regression: with `instantiate_scheme`'s reversed-metas fix, the
+    /// predicate's TypeVar(2) must map to the same meta as the type body's
+    /// `m` after instantiation.
+    #[test]
+    fn hkt_trait_method_predicate_resolves_to_constructor_after_instantiation() {
+        use crate::types::infer::InferenceContext;
+
+        // Scheme: for m a b in ((a -> b) -> m a -> m b) where Monad m
+        // m = TypeVar(2), a = TypeVar(1), b = TypeVar(0)
+        let option = Type::Named {
+            name: Path::new("core", "Option"),
+            body: Box::new(Type::Unit),
+        };
+        let body = Type::func(
+            Type::func(Type::v(1), Type::v(0)),
+            Type::func(
+                Type::v(2).apply(vec![Type::v(1)]),
+                Type::v(2).apply(vec![Type::v(0)]),
+            ),
+        );
+        let scheme_type = body.for_all(3);
+        let predicates = vec![TraitRef::new(Path::new("demo", "Monad"), vec![Type::v(2)])];
+        let scheme = TypeScheme {
+            type_: scheme_type,
+            predicates,
+        };
+
+        let mut ctx = InferenceContext::new();
+        let instance = ctx
+            .instantiate_scheme(&scheme, Span::Generated)
+            .expect("instantiation should succeed");
+
+        // instance.type_ is (v_a -> v_b) -> (v_m v_a -> v_m v_b)
+        // Extract (v_a -> v_b) from the outer function parameter
+        let Type::Function(param_fn, result_fn) = &instance.type_ else {
+            panic!("expected function type");
+        };
+        // Unify (v_a -> v_b) with (Integer -> Integer)
+        ctx.table_mut()
+            .unify(param_fn, &Type::func(Type::Integer, Type::Integer))
+            .expect("argument unification should succeed");
+
+        // Extract (v_m v_a) from the inner function parameter
+        let Type::Function(m_a, _) = result_fn.as_ref() else {
+            panic!("expected inner function type");
+        };
+        // Unify (v_m v_a) with (Option Integer)
+        ctx.table_mut()
+            .unify(m_a, &option.clone().apply(vec![Type::Integer]))
+            .expect("constructor unification should succeed");
+
+        // The predicate `Monad v_m` should now normalize to `Monad Option`
+        let normalized = ctx.table_mut().normalize_trait_ref(&instance.predicates[0]);
+        assert_eq!(
+            normalized,
+            TraitRef::new(Path::new("demo", "Monad"), vec![option]),
+            "predicate must resolve to the type constructor, not a type argument",
         );
     }
 }

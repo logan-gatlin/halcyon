@@ -235,7 +235,10 @@ fn lower_module_statements(
                     );
                     let term_path = module_scope.define(alias_name.clone(), NameSpace::Term);
                     let constructor_path = module_scope.define(alias_name, NameSpace::Constructor);
-                    assert_eq!(term_path, constructor_path);
+                    assert_eq!(
+                        term_path, constructor_path,
+                        "constructor alias paths must match across term and constructor namespaces"
+                    );
                     let target =
                         resolve_constructor_reference(module_scope, let_statement.alias_target()?)?;
                     Statement::ConstructorAlias {
@@ -476,6 +479,7 @@ pub fn module_with_prelude(
     bundle_statements_with_prelude(name.inner, &module_node.statements(), logger, prelude)
 }
 
+#[tracing::instrument(skip_all, fields(bundle = %bundle_name))]
 pub fn bundle_statements_with_prelude(
     bundle_name: String,
     ast_statements: &[ast::Statement],

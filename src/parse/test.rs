@@ -11,8 +11,8 @@ use super::lexer::{
     tokenize,
 };
 use super::{
-    parse,
     SyntaxKind,
+    parse,
 };
 use crate::logging::Logger;
 

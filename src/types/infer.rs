@@ -27,6 +27,10 @@ use super::instantiation::{
     instantiate_predicates,
     peel_leading_foralls,
 };
+use super::kind::{
+    constructor_kind,
+    infer_scheme_kind,
+};
 use super::type_expr::{
     TypeExprLowerError,
     TypeExprSymbol,
@@ -34,8 +38,8 @@ use super::type_expr::{
     lower_type_scheme_expr,
 };
 use super::{
-    MetaVarId,
     Kind,
+    MetaVarId,
     StructMatch,
     TraitConstraint,
     TraitRef,
@@ -1819,17 +1823,19 @@ impl InferenceContext {
                 predicates: scheme.predicates.clone(),
             });
         }
-        let metas = (0..count)
-            .map(|_| self.table.new_meta(self.level))
+        let metas = std::iter::repeat_with(|| self.table.new_meta(self.level))
+            .take(count)
             .collect::<Vec<_>>();
         let type_ = instantiate_forall_strict(&scheme.type_, &metas)
             .ok_or(TypeError::InvalidScheme { span })?;
-        let predicates = instantiate_predicates(&scheme.predicates, &metas)
+        // `instantiate_forall_strict` peels ForAlls outside-in: metas[0] opens
+        // the outermost binder (= TypeVar(count-1) in the body), while
+        // `instantiate_type_vars` maps TypeVar(0) → args[0].  Reverse the
+        // metas so TypeVar(k) maps to the same concrete meta in both paths.
+        let reversed_metas: Vec<_> = metas.iter().rev().cloned().collect();
+        let predicates = instantiate_predicates(&scheme.predicates, &reversed_metas)
             .ok_or(TypeError::InvalidScheme { span })?;
-        Ok(SchemeInstance {
-            type_,
-            predicates,
-        })
+        Ok(SchemeInstance { type_, predicates })
     }
 
     pub fn generalize_at(
@@ -1875,7 +1881,8 @@ impl InferenceContext {
         .transform(&normalized_type)
         .unwrap_or_else(|| normalized_type.clone())
         .for_all(free_meta_vars.len());
-        let predicates = replace_meta_vars_in_predicates(&normalized_predicates, &meta_var_to_type_var);
+        let predicates =
+            replace_meta_vars_in_predicates(&normalized_predicates, &meta_var_to_type_var);
         type_.scheme_with_predicates(predicates)
     }
 
@@ -2090,6 +2097,13 @@ pub fn infer_term(
             let outer_level = ctx.level;
             ctx.level += 1;
             let typed_value = infer_term(ctx, env, value, schemes)?;
+            tracing::debug!(
+                assignee = ?assignee.kind,
+                value_type = %typed_value.term.type_,
+                ctx_level = ctx.level,
+                outer_level,
+                "let binding",
+            );
             let mut forall_type_hints = Vec::new();
             collect_forall_type_hints(assignee, &mut forall_type_hints);
             if !forall_type_hints.is_empty() {
@@ -2129,20 +2143,29 @@ pub fn infer_term(
             let generalized = bindings
                 .into_iter()
                 .map(|(path, type_)| {
-                    (
-                        path,
-                        ctx.generalize_with_predicates(
-                            &type_,
-                            outer_level,
-                            typed_value.predicates.clone(),
-                        ),
-                    )
+                    let scheme = ctx.generalize_with_predicates(
+                        &type_,
+                        outer_level,
+                        typed_value.predicates.clone(),
+                    );
+                    tracing::trace!(
+                        path = %path,
+                        raw_type = %type_.pretty(),
+                        scheme = %scheme.type_.pretty(),
+                        "let binding generalized",
+                    );
+                    (path, scheme)
                 })
                 .collect::<Vec<_>>();
             schemes.extend(generalized.iter().cloned());
             let mut env_with = env.with_bindings(generalized.clone());
             let typed_then = infer_term(ctx, &mut env_with, then, schemes)?;
             let typed_else = infer_term(ctx, env, else_, schemes)?;
+            tracing::trace!(
+                then_type = %ctx.table.normalize(&typed_then.term.type_).pretty(),
+                else_type = %ctx.table.normalize(&typed_else.term.type_).pretty(),
+                "let branch unification",
+            );
             unify_with_span(
                 &mut ctx.table,
                 &typed_then.term.type_,
@@ -2465,6 +2488,13 @@ fn infer_pattern(
                 }
             })?;
             let type_ = ctx.instantiate(scheme, pattern.span)?;
+            tracing::debug!(
+                path = %path,
+                scheme_type = %scheme.type_,
+                instantiated = %type_,
+                expected = %ctx.table.normalize(expected),
+                "constructor pattern",
+            );
             let (param_type, result_type) = match ctx.table.normalize(&type_) {
                 Type::Function(parameter, result) => (*parameter, *result),
                 other => {
@@ -2494,6 +2524,32 @@ fn infer_pattern(
         }
         PatternKind::TypeHint(inner, type_expr) => {
             let hint_scheme = type_expr_to_scheme(ctx, type_expr)?;
+            tracing::debug!(
+                hint = %hint_scheme.type_.pretty(),
+                expected = %ctx.table.normalize(expected).pretty(),
+                predicates = hint_scheme.predicates.len(),
+                "type hint pattern",
+            );
+            let type_definitions = ctx.type_definitions.clone();
+            let hint_kind = infer_scheme_kind(
+                &hint_scheme,
+                0,
+                &|path| {
+                    type_definitions
+                        .get(path)
+                        .map(|def| constructor_kind(def.parameters, &def.parameter_kinds))
+                },
+                &|trait_name| ctx.trait_parameter_kinds.get(trait_name).cloned(),
+            );
+            if let Ok(inference) = hint_kind
+                && inference.kind != Kind::Type
+            {
+                return Err(TypeError::KindMismatch {
+                    expected: Kind::Type,
+                    found: inference.kind,
+                    span: type_expr.span,
+                });
+            }
             let hint_type = hint_scheme.type_;
             let expected_type = ctx.table.normalize(expected);
             let hint_type = match (hint_type, expected_type) {

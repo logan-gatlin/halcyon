@@ -11,10 +11,10 @@ use indexmap::IndexMap;
 use crate::ir::Path;
 
 use super::kind::{
-    constructor_kind,
-    infer_type_kind,
     KindError,
     KindInferenceTable,
+    constructor_kind,
+    infer_type_kind,
 };
 use super::traits::{
     TraitConstraint,
@@ -700,8 +700,8 @@ fn validate_impl_head_kinds(
         trait_definition.parameters,
     );
     let mut kind_table = KindInferenceTable::default();
-    let mut bound_kinds = (0..trait_implementation.parameters)
-        .map(|_| kind_table.new_meta())
+    let mut bound_kinds = std::iter::repeat_with(|| kind_table.new_meta())
+        .take(trait_implementation.parameters)
         .collect::<Vec<_>>();
     for (argument, expected_kind) in trait_implementation
         .head
@@ -871,9 +871,11 @@ mod tests {
         });
 
         assert!(symbols.terms().contains_key(&Path::new("demo", "id")));
-        assert!(symbols
-            .type_definitions()
-            .contains_key(&Path::new("demo", "Token")));
+        assert!(
+            symbols
+                .type_definitions()
+                .contains_key(&Path::new("demo", "Token"))
+        );
         assert!(symbols.trait_defs().contains_key(&Path::new("demo", "Eq")));
     }
 

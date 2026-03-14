@@ -86,6 +86,18 @@ impl Logger {
             .iter()
             .all(|d| d.severity < Severity::Error)
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = &Diagnostic<FileId>> {
+        self.diagnostics.iter()
+    }
+
+    pub fn error_messages(&self) -> Vec<String> {
+        self.diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.severity >= Severity::Error)
+            .map(|diagnostic| diagnostic.message.clone())
+            .collect()
+    }
 }
 
 #[derive(Debug, Clone)]

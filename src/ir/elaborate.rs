@@ -70,6 +70,7 @@ impl<'a> ElaborationContext<'a> {
     }
 }
 
+#[tracing::instrument(skip_all, fields(module = %resolved.module.name))]
 pub fn elaborate_module(
     resolved: ResolvedModule,
     symbols: &SymbolTable,
@@ -223,25 +224,29 @@ fn elaborate_term(
                 let rewritten = if scope == ScopeKind::Global {
                     rewrite_top_level_grouped_binding_let(
                         context,
-                        comments.clone(),
-                        assignee,
-                        value,
-                        then,
-                        else_,
-                        span,
-                        type_.clone(),
+                        GroupedBindingRewriteInput {
+                            comments: comments.clone(),
+                            assignee,
+                            value,
+                            then,
+                            else_,
+                            span,
+                            type_: type_.clone(),
+                        },
                         &binding_entries,
                     )
                 } else {
                     rewrite_local_grouped_binding_let(
                         context,
-                        comments.clone(),
-                        assignee,
-                        value,
-                        then,
-                        else_,
-                        span,
-                        type_.clone(),
+                        GroupedBindingRewriteInput {
+                            comments: comments.clone(),
+                            assignee,
+                            value,
+                            then,
+                            else_,
+                            span,
+                            type_: type_.clone(),
+                        },
                         &binding_entries,
                     )
                 };
@@ -386,13 +391,7 @@ fn elaborate_identifier(
 ) -> Option<Term<Type>> {
     let is_trait_item = is_trait_item_path(context, &path);
     let scheme = context.scheme_env.get(&path)?;
-    let args = dictionary_args_for_type(
-        scheme,
-        &type_,
-        dict_env,
-        context.symbols,
-        is_trait_item,
-    )?;
+    let args = dictionary_args_for_type(scheme, &type_, dict_env, context.symbols, is_trait_item)?;
     if args.is_empty() {
         return None;
     }
@@ -554,8 +553,7 @@ fn grouped_binding_predicate_overrides(
     overrides
 }
 
-fn rewrite_top_level_grouped_binding_let(
-    context: &mut ElaborationContext<'_>,
+struct GroupedBindingRewriteInput {
     comments: String,
     assignee: Pattern<Type>,
     value: Box<Term<Type>>,
@@ -563,8 +561,22 @@ fn rewrite_top_level_grouped_binding_let(
     else_: Box<Term<Type>>,
     span: Span,
     type_: Type,
+}
+
+fn rewrite_top_level_grouped_binding_let(
+    context: &mut ElaborationContext<'_>,
+    rewrite: GroupedBindingRewriteInput,
     binding_entries: &[(Path, Type)],
 ) -> Term<Type> {
+    let GroupedBindingRewriteInput {
+        comments,
+        assignee,
+        value,
+        then,
+        else_,
+        span,
+        type_,
+    } = rewrite;
     let grouped_else = (*else_).clone();
     let grouped_value = *value;
     let mut chain = *then;
@@ -599,15 +611,18 @@ fn rewrite_top_level_grouped_binding_let(
 
 fn rewrite_local_grouped_binding_let(
     context: &mut ElaborationContext<'_>,
-    comments: String,
-    assignee: Pattern<Type>,
-    value: Box<Term<Type>>,
-    then: Box<Term<Type>>,
-    else_: Box<Term<Type>>,
-    span: Span,
-    type_: Type,
+    rewrite: GroupedBindingRewriteInput,
     binding_entries: &[(Path, Type)],
 ) -> Term<Type> {
+    let GroupedBindingRewriteInput {
+        comments,
+        assignee,
+        value,
+        then,
+        else_,
+        span,
+        type_,
+    } = rewrite;
     let grouped_value = *value;
     let grouped_else = *else_;
     let grouped_then = *then;
@@ -617,13 +632,15 @@ fn rewrite_local_grouped_binding_let(
 
     let chain = grouped_binding_chain(
         context,
-        &assignee,
-        &grouped_scrutinee,
-        &grouped_scrutinee_type,
-        grouped_then,
-        &grouped_else,
-        &type_,
-        binding_entries,
+        GroupedBindingChainInput {
+            assignee: &assignee,
+            grouped_scrutinee: &grouped_scrutinee,
+            grouped_scrutinee_type: &grouped_scrutinee_type,
+            then: grouped_then,
+            else_: &grouped_else,
+            result_type: &type_,
+            binding_entries,
+        },
     );
 
     let guard = generated_term(
@@ -657,16 +674,29 @@ fn rewrite_local_grouped_binding_let(
     }
 }
 
+struct GroupedBindingChainInput<'a> {
+    assignee: &'a Pattern<Type>,
+    grouped_scrutinee: &'a Path,
+    grouped_scrutinee_type: &'a Type,
+    then: Term<Type>,
+    else_: &'a Term<Type>,
+    result_type: &'a Type,
+    binding_entries: &'a [(Path, Type)],
+}
+
 fn grouped_binding_chain(
     context: &mut ElaborationContext<'_>,
-    assignee: &Pattern<Type>,
-    grouped_scrutinee: &Path,
-    grouped_scrutinee_type: &Type,
-    then: Term<Type>,
-    else_: &Term<Type>,
-    result_type: &Type,
-    binding_entries: &[(Path, Type)],
+    chain: GroupedBindingChainInput<'_>,
 ) -> Term<Type> {
+    let GroupedBindingChainInput {
+        assignee,
+        grouped_scrutinee,
+        grouped_scrutinee_type,
+        then,
+        else_,
+        result_type,
+        binding_entries,
+    } = chain;
     let mut chain = then;
     for (binding_path, binding_type) in binding_entries.iter().rev() {
         let binding_value = extraction_value_for_grouped_binding_from_scrutinee(
@@ -1024,15 +1054,17 @@ fn dictionary_args_for_type(
     let (scheme_body, var_count) = peel_forall(&scheme.type_);
     let mut bindings = vec![None; var_count];
     if !match_scheme_to_type_relaxed(&scheme_body, type_, &mut bindings) {
-        println!("match_scheme_to_type_relaxed failed");
+        tracing::debug!("match_scheme_to_type_relaxed failed");
         return None;
     }
-    let predicates = scheme.predicates.iter()
+    let predicates = scheme
+        .predicates
+        .iter()
         .filter(|predicate| include_concrete_predicates || !predicate_is_concrete(predicate))
         .map(|predicate| substitute_type_vars_in_trait_ref(predicate, &bindings))
         .collect::<Option<Vec<_>>>()?;
     let args = dictionary_args_for_predicates(&predicates, dict_env, symbols);
-    println!("dictionary_args_for_type args: {:?}", args.as_ref().map(|v| v.len()));
+    tracing::debug!(arg_count = ?args.as_ref().map(|v| v.len()), "dictionary_args_for_type");
     args
 }
 
@@ -2294,12 +2326,12 @@ mod tests {
     fn inlines_dictionary_at_callsite() {
         let source = "module demo =\n\tlet double = fn x => x + x\n\tlet result = double 3\nend\n";
         let (elaborated, symbols) = elaborate_source(source);
-        let double_scheme = symbols.terms().get(&crate::ir::Path::new("demo", "double")).expect("scheme");
-        println!("double scheme: {:?}", double_scheme);
+        let _double_scheme = symbols
+            .terms()
+            .get(&crate::ir::Path::new("demo", "double"))
+            .expect("scheme");
         let result = find_global_binding(&elaborated.module, "result").expect("result binding");
-        let double = find_global_binding(&elaborated.module, "double").expect("double binding");
-        println!("double type: {}", double.type_.pretty());
-        println!("result term: {:?}", result.kind);
+        let _double = find_global_binding(&elaborated.module, "double").expect("double binding");
         assert!(term_has_inline_dict_for(result, "double"));
         assert_eq!(inline_dict_field_count_for(result, "double"), Some(1));
     }

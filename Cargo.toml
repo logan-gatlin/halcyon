@@ -22,8 +22,10 @@ wasm-bindgen = "0.2"
 multipeek = "0.1"
 toml = {version = "0.9", default-features = false, features = ["parse", "serde"]}
 indexmap = "2.11"
-wasmparser = {version = "0.235"}
-wasmprinter = "0.235"
+wasmparser = {version = "0.233"}
+wasmprinter = "0.233"
+serde = { version = "1", features = ["derive"] }
+postcard = { version = "1", features = ["use-std"] }
 colored = "3"
 codespan-reporting = { version = "0.13", features = ["termcolor"] }
 indoc = "2"
@@ -34,8 +36,13 @@ enum-iterator = "2.3"
 rowan = "0.16"
 itertools = "0.14"
 inflections = "1.1"
+tracing = "0.1"
 
 [dev-dependencies]
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys = "0.3"
 
 [profile.release]
 strip = true

@@ -80,14 +80,8 @@ enum KindMetaVarState {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum KindError {
-    Occurs {
-        var: KindMetaVarId,
-        in_kind: Kind,
-    },
-    Mismatch {
-        left: Kind,
-        right: Kind,
-    },
+    Occurs { var: KindMetaVarId, in_kind: Kind },
+    Mismatch { left: Kind, right: Kind },
 }
 
 #[derive(Debug, Clone, Default)]
@@ -133,7 +127,10 @@ impl KindInferenceTable {
         match kind {
             Kind::Type => InferredKind::Type,
             Kind::Arrow(parameter, result) => {
-                InferredKind::Arrow(Self::from_kind(parameter).into(), Self::from_kind(result).into())
+                InferredKind::Arrow(
+                    Self::from_kind(parameter).into(),
+                    Self::from_kind(result).into(),
+                )
             }
         }
     }
@@ -145,10 +142,12 @@ impl KindInferenceTable {
         let pruned = self.prune(kind);
         match pruned {
             InferredKind::Type | InferredKind::MetaVar(_) => pruned,
-            InferredKind::Arrow(parameter, result) => InferredKind::Arrow(
-                self.normalize(&parameter).into(),
-                self.normalize(&result).into(),
-            ),
+            InferredKind::Arrow(parameter, result) => {
+                InferredKind::Arrow(
+                    self.normalize(&parameter).into(),
+                    self.normalize(&result).into(),
+                )
+            }
         }
     }
 
@@ -180,14 +179,19 @@ impl KindInferenceTable {
             (InferredKind::MetaVar(id), kind) | (kind, InferredKind::MetaVar(id)) => {
                 self.bind_meta(id, &kind)
             }
-            (InferredKind::Arrow(left_parameter, left_result), InferredKind::Arrow(right_parameter, right_result)) => {
+            (
+                InferredKind::Arrow(left_parameter, left_result),
+                InferredKind::Arrow(right_parameter, right_result),
+            ) => {
                 self.unify(&left_parameter, &right_parameter)?;
                 self.unify(&left_result, &right_result)
             }
-            (left, right) => Err(KindError::Mismatch {
-                left: self.resolve(&left),
-                right: self.resolve(&right),
-            }),
+            (left, right) => {
+                Err(KindError::Mismatch {
+                    left: self.resolve(&left),
+                    right: self.resolve(&right),
+                })
+            }
         }
     }
 
@@ -196,16 +200,18 @@ impl KindInferenceTable {
         kind: &InferredKind,
     ) -> InferredKind {
         match kind {
-            InferredKind::MetaVar(id) => match self.meta_var_states.get(*id as usize).cloned() {
-                Some(KindMetaVarState::Link(link)) => {
-                    let pruned = self.prune(&link);
-                    if let Some(state) = self.meta_var_states.get_mut(*id as usize) {
-                        *state = KindMetaVarState::Link(pruned.clone());
+            InferredKind::MetaVar(id) => {
+                match self.meta_var_states.get(*id as usize).cloned() {
+                    Some(KindMetaVarState::Link(link)) => {
+                        let pruned = self.prune(&link);
+                        if let Some(state) = self.meta_var_states.get_mut(*id as usize) {
+                            *state = KindMetaVarState::Link(pruned.clone());
+                        }
+                        pruned
                     }
-                    pruned
+                    _ => kind.clone(),
                 }
-                _ => kind.clone(),
-            },
+            }
             _ => kind.clone(),
         }
     }
@@ -374,7 +380,8 @@ pub(crate) fn infer_type_kind(
             let mut constructor_kind =
                 infer_type_kind(table, constructor, bound_kinds, lookup_type_kind)?;
             for argument in arguments.iter() {
-                let argument_kind = infer_type_kind(table, argument, bound_kinds, lookup_type_kind)?;
+                let argument_kind =
+                    infer_type_kind(table, argument, bound_kinds, lookup_type_kind)?;
                 let result_kind = table.new_meta();
                 let expected =
                     InferredKind::Arrow(argument_kind.into(), result_kind.clone().into());
@@ -461,11 +468,7 @@ mod tests {
         }
         .apply(vec![Type::Integer]);
         let kind = infer_type_kind(&mut table, &list, &mut Vec::new(), &|path| {
-            if path == &Path::new("demo", "List") {
-                Some(Kind::arrow(Kind::Type, Kind::Type))
-            } else {
-                None
-            }
+            (path == &Path::new("demo", "List")).then(|| Kind::arrow(Kind::Type, Kind::Type))
         })
         .expect("kind inference should succeed");
         assert_eq!(table.resolve(&kind), Kind::Type);
@@ -476,7 +479,10 @@ mod tests {
         let scheme = Type::v(0).apply(vec![Type::Integer]).for_all(1).scheme();
         let inferred = infer_scheme_kind(&scheme, 1, &|_| None, &|_| None)
             .expect("kind inference should succeed");
-        assert_eq!(inferred.parameter_kinds, vec![Kind::arrow(Kind::Type, Kind::Type)]);
+        assert_eq!(
+            inferred.parameter_kinds,
+            vec![Kind::arrow(Kind::Type, Kind::Type)]
+        );
         assert_eq!(inferred.kind, Kind::Type);
     }
 
@@ -490,15 +496,10 @@ mod tests {
             }],
         );
         assert!(matches!(
-            infer_scheme_kind(
-                &scheme,
-                0,
-                &|_| None,
-                &|path| {
-                    (path == &Path::new("demo", "Monad"))
-                        .then(|| vec![Kind::arrow(Kind::Type, Kind::Type)])
-                }
-            ),
+            infer_scheme_kind(&scheme, 0, &|_| None, &|path| {
+                (path == &Path::new("demo", "Monad"))
+                    .then(|| vec![Kind::arrow(Kind::Type, Kind::Type)])
+            }),
             Err(SchemeKindError::PredicateKindMismatch { .. })
         ));
     }

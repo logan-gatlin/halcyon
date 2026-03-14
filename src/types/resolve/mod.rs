@@ -35,13 +35,13 @@ use super::infer::{
     TypeEnv,
 };
 use super::{
+    Kind,
     SymbolTable,
     TraitConstraint,
     TraitDef,
     TraitError,
     TraitImpl,
     TraitRef,
-    Kind,
     Type,
     TypeDefinition,
     TypeDefinitionKind,
@@ -114,6 +114,7 @@ pub struct ResolvedModule {
 }
 
 /// Resolve a module with a fresh symbol table.
+#[tracing::instrument(skip_all, fields(module = %module.name))]
 pub fn resolve_module(
     module: Module<()>,
     logger: &mut FileLogger,
@@ -123,6 +124,7 @@ pub fn resolve_module(
 }
 
 /// Resolve a module using an existing symbol table.
+#[tracing::instrument(skip_all, fields(module = %module.name))]
 pub fn resolve_module_with_symbols(
     symbols: &mut SymbolTable,
     module: Module<()>,
@@ -132,6 +134,7 @@ pub fn resolve_module_with_symbols(
 }
 
 /// Resolve a module and return both typed IR and finalized binding schemes.
+#[tracing::instrument(skip_all, fields(module = %module.name))]
 pub fn resolve_module_with_symbols_and_schemes(
     symbols: &mut SymbolTable,
     module: Module<()>,
@@ -166,6 +169,10 @@ pub fn resolve_module_with_symbols_and_schemes(
         &pending_type_definitions,
         logger,
     );
+    tracing::debug!(
+        type_count = type_definitions.len(),
+        "type definitions built",
+    );
     for (path, entry) in pending_type_definitions.iter() {
         if symbols.type_definitions().contains_key(path) {
             continue;
@@ -173,15 +180,15 @@ pub fn resolve_module_with_symbols_and_schemes(
         if let Some(definition) = type_definitions.get(path) {
             symbols.insert_type(path.clone(), definition.clone());
         } else {
-                symbols.insert_type(
-                    path.clone(),
-                    TypeDefinition {
-                        parameters: entry.parameters.len(),
-                        parameter_kinds: vec![Kind::Type; entry.parameters.len()],
-                        body: Type::Unit,
-                        kind: entry.kind,
-                    },
-                );
+            symbols.insert_type(
+                path.clone(),
+                TypeDefinition {
+                    parameters: entry.parameters.len(),
+                    parameter_kinds: vec![Kind::Type; entry.parameters.len()],
+                    body: Type::Unit,
+                    kind: entry.kind,
+                },
+            );
         }
     }
 
@@ -195,6 +202,11 @@ pub fn resolve_module_with_symbols_and_schemes(
     register_trait_definitions(symbols, &pending_trait_definitions, logger);
     let pending_trait_aliases = build_trait_alias_entries(&statements);
     register_trait_aliases(symbols, &pending_trait_aliases, logger);
+    tracing::debug!(
+        trait_count = pending_trait_definitions.len(),
+        alias_count = pending_trait_aliases.len(),
+        "traits registered",
+    );
 
     let mut type_environment = TypeEnv::new();
     type_environment.extend(
@@ -222,15 +234,14 @@ pub fn resolve_module_with_symbols_and_schemes(
         symbols
             .trait_defs()
             .iter()
-            .map(|(path, definition)| {
-                (
-                    path.clone(),
-                    definition.parameter_kinds.clone(),
-                )
-            })
+            .map(|(path, definition)| (path.clone(), definition.parameter_kinds.clone()))
             .collect(),
     );
 
+    tracing::debug!(
+        statement_count = statements.len(),
+        "beginning statement inference",
+    );
     let mut typed_statements = Vec::new();
     for statement in statements.into_iter() {
         match statement {
@@ -269,6 +280,7 @@ pub fn resolve_module_with_symbols_and_schemes(
                     if known_scheme_paths.contains(path) {
                         continue;
                     }
+
                     for predicate in scheme.predicates.iter() {
                         if predicate_is_ground(predicate)
                             && !grounded_predicates.contains(predicate)

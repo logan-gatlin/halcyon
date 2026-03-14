@@ -2,3 +2,4 @@
 /lib/target
 /lib/pkg
 /hcc/target
+.DS_Store

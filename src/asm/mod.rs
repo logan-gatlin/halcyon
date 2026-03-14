@@ -12,6 +12,7 @@
 pub mod custom_section;
 mod encode;
 mod lower;
+pub mod module_section;
 pub mod pretty_print;
 
 #[cfg(test)]
@@ -34,6 +35,28 @@ use crate::types::SymbolTable;
 pub use encode::encode;
 use lower::ConstructorTable;
 pub use lower::lower_type;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ExportPolicy {
+    #[default]
+    MinorOnly,
+    Qualified,
+    None,
+}
+
+impl ExportPolicy {
+    fn global_export_name(
+        self,
+        path: &Path,
+    ) -> Option<String> {
+        match self {
+            Self::MinorOnly => Some(path.minor.clone()),
+            Self::Qualified => Some(format!("{path}")),
+            Self::None => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Type {
     Any,
@@ -463,6 +486,7 @@ pub struct Module {
     pub function_imports: IndexMap<Path, FunctionImport>,
     pub has_memory: bool,
     pub sig: TypeSignatureSection,
+    pub export_policy: ExportPolicy,
     pub start: Path,
     #[doc(hidden)]
     pub closure_counter: usize,
@@ -491,6 +515,7 @@ impl Function {
     }
 }
 
+#[tracing::instrument(skip_all, fields(module = %elaborated.module.name))]
 pub fn lower_module(
     elaborated: ElaborationResult,
     symbols: &SymbolTable,
@@ -604,6 +629,7 @@ fn lower_wasm_declarations(
     }
 }
 
+#[tracing::instrument(skip_all, fields(module = %elaborated.module.name))]
 pub fn compile_module(
     elaborated: ElaborationResult,
     symbols: &SymbolTable,

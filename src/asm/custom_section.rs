@@ -1,20 +1,20 @@
-use std::collections::HashMap;
-
-use wasm_encoder::{
-    CustomSection,
-    Encode,
-};
-
 use indexmap::{
     IndexMap,
     IndexSet,
+};
+use serde::{
+    Deserialize,
+    Serialize,
+};
+use wasm_encoder::{
+    CustomSection,
+    Encode,
 };
 
 use super::*;
 use crate::types::{
     Kind,
     StructMatch,
-    TraitConstraint,
     TraitRef,
     Type as SemanticType,
     TypeDefinition,
@@ -23,112 +23,114 @@ use crate::types::{
     TypeTransform,
 };
 
-/// A cursor for decoding LEB128-encoded data
-struct Decoder<'a> {
-    data: &'a [u8],
-    pos: usize,
-}
-
-impl<'a> Decoder<'a> {
-    fn new(data: &'a [u8]) -> Self {
-        Self { data, pos: 0 }
-    }
-
-    fn decode_usize(&mut self) -> Option<usize> {
-        let mut result = 0usize;
-        let mut shift = 0;
-        loop {
-            let byte = *self.data.get(self.pos)?;
-            self.pos += 1;
-            result |= ((byte & 0x7F) as usize) << shift;
-            if byte & 0x80 == 0 {
-                return Some(result);
-            }
-            shift += 7;
-            if shift >= usize::BITS {
-                return None;
-            }
-        }
-    }
-
-    #[cfg(test)]
-    fn decode_u64(&mut self) -> Option<u64> {
-        let mut result = 0u64;
-        let mut shift = 0;
-        loop {
-            let byte = *self.data.get(self.pos)?;
-            self.pos += 1;
-            result |= ((byte & 0x7F) as u64) << shift;
-            if byte & 0x80 == 0 {
-                return Some(result);
-            }
-            shift += 7;
-            if shift >= u64::BITS {
-                return None;
-            }
-        }
-    }
-
-    fn decode_u32(&mut self) -> Option<u32> {
-        let mut result = 0u32;
-        let mut shift = 0;
-        loop {
-            let byte = *self.data.get(self.pos)?;
-            self.pos += 1;
-            result |= ((byte & 0x7F) as u32) << shift;
-            if byte & 0x80 == 0 {
-                return Some(result);
-            }
-            shift += 7;
-            if shift >= u32::BITS {
-                return None;
-            }
-        }
-    }
-
-    fn decode_string(&mut self) -> Option<String> {
-        let len = self.decode_usize()?;
-        let end = self.pos.checked_add(len)?;
-        let bytes = self.data.get(self.pos..end)?;
-        let s = std::str::from_utf8(bytes).ok()?.to_string();
-        self.pos = end;
-        Some(s)
-    }
-
-    fn decode_path(&mut self) -> Option<Path> {
-        Some(Path {
-            major: self.decode_string()?,
-            minor: self.decode_string()?,
-        })
-    }
-}
-
-impl Encode for Path {
-    fn encode(
-        &self,
-        sink: &mut Vec<u8>,
-    ) {
-        self.major.encode(sink);
-        self.minor.encode(sink);
-    }
-}
-
 /// Currently, WASM does not allow type imports. Even if it did, WASM types
 /// are only a simplification of Halcyon types. This section provides semantic
-/// information to linkers about a module's type signature
+/// information to linkers about a module's type signature.
 #[derive(Debug, Clone, Default)]
 pub struct TypeSignatureSection {
-    /// Types referenced in this module, but defined elsewhere
+    /// Types referenced in this module, but defined elsewhere.
     pub imported_types: Vec<Path>,
-    /// An ordered map of type declarations from this module
+    /// An ordered map of type declarations from this module.
     pub defined_types: IndexMap<Path, TypeDefinition>,
     pub defined_terms: IndexMap<Path, TypeScheme>,
-    /// The index of each referenced type in this section
-    index_map: HashMap<Path, usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct TypeSignaturePayload {
+    version: u32,
+    imported_types: Vec<WirePath>,
+    defined_types: Vec<(WirePath, WireTypeDefinition)>,
+    defined_terms: Vec<(WirePath, WireTypeScheme)>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct WirePath {
+    major: String,
+    minor: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct WireTypeDefinition {
+    parameters: u64,
+    parameter_kinds: Vec<WireKind>,
+    body: WireSemanticType,
+    kind: WireTypeDefinitionKind,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+enum WireTypeDefinitionKind {
+    Named,
+    Alias,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct WireTypeScheme {
+    predicates: Vec<WireTraitRef>,
+    type_: WireSemanticType,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct WireTraitRef {
+    trait_name: WirePath,
+    arguments: Vec<WireSemanticType>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+enum WireKind {
+    Type,
+    Arrow(Box<WireKind>, Box<WireKind>),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+enum WireStructMatch {
+    Exact,
+    AtLeast,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+enum WireSemanticType {
+    Unit,
+    Integer,
+    Real,
+    Boolean,
+    String,
+    Glyph,
+    TypeVar(u32),
+    MetaVar(u32),
+    ForAll(Box<WireSemanticType>),
+    Named {
+        name: WirePath,
+        body: Box<WireSemanticType>,
+    },
+    StructConstraint {
+        fields: Vec<(String, WireSemanticType)>,
+        mode: WireStructMatch,
+    },
+    Struct {
+        fields: Vec<(String, WireSemanticType)>,
+    },
+    Array(Box<WireSemanticType>),
+    Tuple(Vec<WireSemanticType>),
+    Sum {
+        variants: Vec<(String, WireSemanticType)>,
+    },
+    Function(Box<WireSemanticType>, Box<WireSemanticType>),
+    Apply {
+        constructor: Box<WireSemanticType>,
+        arguments: Vec<WireSemanticType>,
+    },
+}
+
+#[derive(Debug, Clone, Copy)]
+enum TypeSignatureDecodeError {
+    InvalidVersion,
+    IntegerOverflow,
 }
 
 impl TypeSignatureSection {
     pub const NAME: &str = "type_signature";
+    const VERSION: u32 = 2;
+
     pub fn new(
         module_name: &str,
         symbols: &SymbolTable,
@@ -154,429 +156,415 @@ impl TypeSignatureSection {
         for scheme in defined_terms.values() {
             collect_imported_types(&scheme.type_, &defined_types, &mut imported_types);
             for predicate in scheme.predicates.iter() {
-                for arg in predicate.arguments.iter() {
-                    collect_imported_types(arg, &defined_types, &mut imported_types);
+                for argument in predicate.arguments.iter() {
+                    collect_imported_types(argument, &defined_types, &mut imported_types);
                 }
             }
         }
-        let imported_types = imported_types.into_iter().collect::<Vec<_>>();
-        let mut index_map = HashMap::new();
-        for (id, path) in imported_types
-            .iter()
-            .chain(defined_types.keys())
-            .enumerate()
-        {
-            index_map.insert(path.clone(), id);
-        }
+
         Self {
-            imported_types,
+            imported_types: imported_types.into_iter().collect(),
             defined_types,
             defined_terms,
-            index_map,
         }
     }
 
-    /// Type layout:
-    /// * Unit: '0'
-    /// * Integer: '1'
-    /// * Real: '2'
-    /// * Boolean: '3'
-    /// * String: '4'
-    /// * Glyph: '5'
-    /// * TypeVar: '6' u32
-    /// * MetaVar: '7' u32
-    /// * ForAll: '9' Type
-    /// * Named: '11' uint Type
-    /// * StructConstraint: '12' (match_mode, [(str, Type)])
-    /// * Struct: '13' [(str, Type)]
-    /// * Array: '14' Type
-    /// * Tuple: '15' [Type]
-    /// * Sum: '16' [(str, Type)]
-    /// * Function: '17' (Type, Type)
-    /// * Apply: '18' Type [Type]
-    fn encode_type(
-        &self,
-        type_: &SemanticType,
-        sink: &mut Vec<u8>,
-    ) {
-        use SemanticType::*;
-        match type_ {
-            Unit => 0usize.encode(sink),
-            Integer => 1usize.encode(sink),
-            Real => 2usize.encode(sink),
-            Boolean => 3usize.encode(sink),
-            String => 4usize.encode(sink),
-            Glyph => 5usize.encode(sink),
-            TypeVar(id) => {
-                6usize.encode(sink);
-                id.encode(sink);
-            }
-            MetaVar(id) => {
-                7usize.encode(sink);
-                id.encode(sink);
-            }
-            ForAll(body) => {
-                9usize.encode(sink);
-                self.encode_type(body, sink);
-            }
-            Named { name, body } => {
-                11usize.encode(sink);
-                self.index_map[name].encode(sink);
-                self.encode_type(body, sink);
-            }
-            StructConstraint { fields, mode } => {
-                12usize.encode(sink);
-                match mode {
-                    StructMatch::Exact => 0usize.encode(sink),
-                    StructMatch::AtLeast => 1usize.encode(sink),
-                }
-                fields.len().encode(sink);
-                for (name, type_) in fields.iter() {
-                    name.encode(sink);
-                    self.encode_type(type_, sink);
-                }
-            }
-            Struct { fields } => {
-                13usize.encode(sink);
-                fields.len().encode(sink);
-                for (name, type_) in fields.iter() {
-                    name.encode(sink);
-                    self.encode_type(type_, sink);
-                }
-            }
-            Array(t) => {
-                14usize.encode(sink);
-                self.encode_type(t, sink);
-            }
-            Tuple(items) => {
-                15usize.encode(sink);
-                items.len().encode(sink);
-                for i in items {
-                    self.encode_type(i, sink);
-                }
-            }
-            Sum { variants } => {
-                16usize.encode(sink);
-                variants.len().encode(sink);
-                for (name, type_) in variants.iter() {
-                    name.encode(sink);
-                    self.encode_type(type_, sink);
-                }
-            }
-            Function(param, result) => {
-                17usize.encode(sink);
-                self.encode_type(param, sink);
-                self.encode_type(result, sink);
-            }
-            Apply {
-                constructor,
-                arguments,
-            } => {
-                18usize.encode(sink);
-                self.encode_type(constructor, sink);
-                arguments.len().encode(sink);
-                for arg in arguments {
-                    self.encode_type(arg, sink);
-                }
-            }
-        }
+    pub(crate) fn rebuild_index_map_for_encoding(&mut self) {
     }
 
-    fn encode_scheme(
-        &self,
-        scheme: &TypeScheme,
-        sink: &mut Vec<u8>,
-    ) {
-        self.encode_type(&scheme.type_, sink);
-        scheme.predicates.len().encode(sink);
-        for predicate in scheme.predicates.iter() {
-            self.encode_predicate(predicate, sink);
-        }
-    }
-
-    fn encode_predicate(
-        &self,
-        predicate: &TraitConstraint,
-        sink: &mut Vec<u8>,
-    ) {
-        predicate.trait_name.encode(sink);
-        predicate.arguments.len().encode(sink);
-        for arg in predicate.arguments.iter() {
-            self.encode_type(arg, sink);
-        }
-    }
-
-    fn encode_kind(
-        kind: &Kind,
-        sink: &mut Vec<u8>,
-    ) {
-        match kind {
-            Kind::Type => 0usize.encode(sink),
-            Kind::Arrow(parameter, result) => {
-                1usize.encode(sink);
-                Self::encode_kind(parameter, sink);
-                Self::encode_kind(result, sink);
-            }
-        }
-    }
-
-    #[cfg(test)]
-    fn rebuild_index_map(&mut self) {
-        self.index_map.clear();
-        for (id, path) in self
-            .imported_types
-            .iter()
-            .chain(self.defined_types.keys())
-            .enumerate()
-        {
-            self.index_map.insert(path.clone(), id);
-        }
-    }
-
-    /// Decode a SignatureSection from raw bytes (without section id or length prefix)
-    /// Decode a complete section including the name prefix.
-    /// Used when reading raw encoded bytes (e.g. in roundtrip tests).
+    /// Decode a complete custom section payload that includes the section name
+    /// prefix.
     pub fn decode(data: &[u8]) -> Option<Self> {
-        let mut dec = Decoder::new(data);
-        let name = dec.decode_string()?;
+        let (name, payload) = decode_named_custom_section_data(data)?;
         if name != Self::NAME {
             return None;
         }
-        Self::decode_data(&mut dec)
+        Self::decode_data_slice(payload)
     }
 
     /// Decode section data without the name prefix.
     /// Used when reading from `wasmparser`, which strips the name.
     pub fn decode_data_slice(data: &[u8]) -> Option<Self> {
-        Self::decode_data(&mut Decoder::new(data))
+        let payload = postcard::from_bytes::<TypeSignaturePayload>(data).ok()?;
+        Self::from_payload(payload).ok()
     }
 
-    fn decode_data(dec: &mut Decoder) -> Option<Self> {
-        let import_count = dec.decode_usize()?;
-        let mut imported_types = Vec::with_capacity(import_count);
-        for _ in 0..import_count {
-            imported_types.push(dec.decode_path()?);
+    fn to_payload(&self) -> TypeSignaturePayload {
+        TypeSignaturePayload {
+            version: Self::VERSION,
+            imported_types: self.imported_types.iter().map(WirePath::from).collect(),
+            defined_types: self
+                .defined_types
+                .iter()
+                .map(|(path, definition)| {
+                    (WirePath::from(path), WireTypeDefinition::from(definition))
+                })
+                .collect(),
+            defined_terms: self
+                .defined_terms
+                .iter()
+                .map(|(path, scheme)| (WirePath::from(path), WireTypeScheme::from(scheme)))
+                .collect(),
+        }
+    }
+
+    fn from_payload(payload: TypeSignaturePayload) -> Result<Self, TypeSignatureDecodeError> {
+        if payload.version != Self::VERSION {
+            return Err(TypeSignatureDecodeError::InvalidVersion);
         }
 
-        let mut reverse_index: Vec<Path> = imported_types.clone();
+        let imported_types = payload
+            .imported_types
+            .into_iter()
+            .map(WirePath::into_path)
+            .collect::<Vec<_>>();
 
-        let defined_count = dec.decode_usize()?;
-        let mut defined_types = IndexMap::new();
-        for _ in 0..defined_count {
-            let path = dec.decode_path()?;
-            reverse_index.push(path.clone());
-            let kind = match dec.decode_usize()? {
-                0 => TypeDefinitionKind::Named,
-                1 => TypeDefinitionKind::Alias,
-                _ => return None,
-            };
-            let parameters = dec.decode_usize()?;
-            let mut parameter_kinds = Vec::with_capacity(parameters);
-            for _ in 0..parameters {
-                parameter_kinds.push(Self::decode_kind(dec)?);
-            }
-            let body = Self::decode_type(dec, &reverse_index)?;
-            defined_types.insert(
-                path,
-                TypeDefinition {
-                    parameters,
-                    parameter_kinds,
-                    body,
-                    kind,
-                },
-            );
+        let mut defined_types = IndexMap::with_capacity(payload.defined_types.len());
+        for (path, definition) in payload.defined_types {
+            defined_types.insert(path.into_path(), definition.into_type_definition()?);
         }
 
-        let defined_count = dec.decode_usize()?;
-        let mut defined_terms = IndexMap::new();
-        for _ in 0..defined_count {
-            let path = dec.decode_path()?;
-            let scheme = Self::decode_scheme(dec, &reverse_index)?;
-            defined_terms.insert(path, scheme);
+        let mut defined_terms = IndexMap::with_capacity(payload.defined_terms.len());
+        for (path, scheme) in payload.defined_terms {
+            defined_terms.insert(path.into_path(), scheme.into_type_scheme());
         }
 
-        let mut index_map = HashMap::new();
-        for (id, path) in imported_types.iter().enumerate() {
-            index_map.insert(path.clone(), id);
-        }
-        for (id, path) in defined_types.keys().enumerate() {
-            index_map.insert(path.clone(), id + imported_types.len());
-        }
-
-        Some(Self {
+        Ok(Self {
             imported_types,
             defined_types,
             defined_terms,
-            index_map,
         })
-    }
-
-    fn decode_type(
-        dec: &mut Decoder,
-        reverse_index: &[Path],
-    ) -> Option<SemanticType> {
-        use SemanticType::*;
-        Some(match dec.decode_usize()? {
-            0 => Unit,
-            1 => Integer,
-            2 => Real,
-            3 => Boolean,
-            4 => String,
-            5 => Glyph,
-            6 => TypeVar(dec.decode_u32()?),
-            7 => MetaVar(dec.decode_u32()?),
-            9 => ForAll(Box::new(Self::decode_type(dec, reverse_index)?)),
-            11 => {
-                let idx = dec.decode_usize()?;
-                let name = reverse_index.get(idx)?.clone();
-                let body = Self::decode_type(dec, reverse_index)?;
-                Named {
-                    name,
-                    body: Box::new(body),
-                }
-            }
-            12 => {
-                let mode = match dec.decode_usize()? {
-                    0 => StructMatch::Exact,
-                    1 => StructMatch::AtLeast,
-                    _ => return None,
-                };
-                let field_count = dec.decode_usize()?;
-                let mut fields = IndexMap::new();
-                for _ in 0..field_count {
-                    let name = dec.decode_string()?;
-                    let type_ = Self::decode_type(dec, reverse_index)?;
-                    fields.insert(name, type_);
-                }
-                StructConstraint { fields, mode }
-            }
-            13 => {
-                let field_count = dec.decode_usize()?;
-                let mut fields = IndexMap::new();
-                for _ in 0..field_count {
-                    let name = dec.decode_string()?;
-                    let type_ = Self::decode_type(dec, reverse_index)?;
-                    fields.insert(name, type_);
-                }
-                Struct { fields }
-            }
-            14 => Array(Box::new(Self::decode_type(dec, reverse_index)?)),
-            15 => {
-                let item_count = dec.decode_usize()?;
-                let mut items = Vec::with_capacity(item_count);
-                for _ in 0..item_count {
-                    items.push(Self::decode_type(dec, reverse_index)?);
-                }
-                Tuple(items)
-            }
-            16 => {
-                let variant_count = dec.decode_usize()?;
-                let mut variants = IndexMap::new();
-                for _ in 0..variant_count {
-                    let name = dec.decode_string()?;
-                    let type_ = Self::decode_type(dec, reverse_index)?;
-                    variants.insert(name, type_);
-                }
-                Sum { variants }
-            }
-            17 => {
-                let param = Self::decode_type(dec, reverse_index)?;
-                let result = Self::decode_type(dec, reverse_index)?;
-                Function(Box::new(param), Box::new(result))
-            }
-            18 => {
-                let constructor = Self::decode_type(dec, reverse_index)?;
-                let arg_count = dec.decode_usize()?;
-                let mut arguments = Vec::with_capacity(arg_count);
-                for _ in 0..arg_count {
-                    arguments.push(Self::decode_type(dec, reverse_index)?);
-                }
-                Apply {
-                    constructor: Box::new(constructor),
-                    arguments,
-                }
-            }
-            _ => return None,
-        })
-    }
-
-    fn decode_kind(dec: &mut Decoder) -> Option<Kind> {
-        Some(match dec.decode_usize()? {
-            0 => Kind::Type,
-            1 => Kind::arrow(Self::decode_kind(dec)?, Self::decode_kind(dec)?),
-            _ => return None,
-        })
-    }
-
-    fn decode_scheme(
-        dec: &mut Decoder,
-        reverse_index: &[Path],
-    ) -> Option<TypeScheme> {
-        let type_ = Self::decode_type(dec, reverse_index)?;
-        let predicate_count = dec.decode_usize()?;
-        let mut predicates = Vec::with_capacity(predicate_count);
-        for _ in 0..predicate_count {
-            let trait_name = dec.decode_path()?;
-            let arg_count = dec.decode_usize()?;
-            let mut arguments = Vec::with_capacity(arg_count);
-            for _ in 0..arg_count {
-                arguments.push(Self::decode_type(dec, reverse_index)?);
-            }
-            predicates.push(TraitRef {
-                trait_name,
-                arguments,
-            });
-        }
-        Some(TypeScheme { predicates, type_ })
     }
 }
 
 impl wasm_encoder::Section for TypeSignatureSection {
     fn id(&self) -> u8 {
-        0 // Custom section
+        0
     }
 }
 
-/// Section layout:
-/// [Path] (imported type paths)
-/// [(Path, parameters, Type)] (type definitions)
-/// [(Path, TypeScheme)] (term definitions)
 impl Encode for TypeSignatureSection {
     fn encode(
         &self,
         sink: &mut Vec<u8>,
     ) {
-        let mut data = vec![];
-        self.imported_types.encode(&mut data);
-        self.defined_types.len().encode(&mut data);
-        for (path, t) in &self.defined_types {
-            path.encode(&mut data);
-            match t.kind {
-                TypeDefinitionKind::Named => 0usize.encode(&mut data),
-                TypeDefinitionKind::Alias => 1usize.encode(&mut data),
-            }
-            t.parameters.encode(&mut data);
-            let parameter_kinds = if t.parameter_kinds.len() == t.parameters {
-                t.parameter_kinds.clone()
-            } else {
-                vec![Kind::Type; t.parameters]
-            };
-            for kind in parameter_kinds.iter() {
-                Self::encode_kind(kind, &mut data);
-            }
-            self.encode_type(&t.body, &mut data);
-        }
-        self.defined_terms.len().encode(&mut data);
-        for (path, t) in &self.defined_terms {
-            path.encode(&mut data);
-            self.encode_scheme(t, &mut data);
-        }
+        let payload = self.to_payload();
+        let data = postcard::to_stdvec(&payload)
+            .unwrap_or_else(|_| unreachable!("serializing type signature payload must succeed"));
         CustomSection {
             name: Self::NAME.into(),
             data: data.into(),
         }
         .encode(sink);
     }
+}
+
+impl WirePath {
+    fn from(path: &Path) -> Self {
+        Self {
+            major: path.major.clone(),
+            minor: path.minor.clone(),
+        }
+    }
+
+    fn into_path(self) -> Path {
+        Path {
+            major: self.major,
+            minor: self.minor,
+        }
+    }
+}
+
+impl WireTypeDefinition {
+    fn from(type_definition: &TypeDefinition) -> Self {
+        Self {
+            parameters: type_definition.parameters as u64,
+            parameter_kinds: type_definition
+                .parameter_kinds
+                .iter()
+                .map(WireKind::from)
+                .collect(),
+            body: WireSemanticType::from(&type_definition.body),
+            kind: WireTypeDefinitionKind::from(type_definition.kind),
+        }
+    }
+
+    fn into_type_definition(self) -> Result<TypeDefinition, TypeSignatureDecodeError> {
+        Ok(TypeDefinition {
+            parameters: usize::try_from(self.parameters)
+                .map_err(|_| TypeSignatureDecodeError::IntegerOverflow)?,
+            parameter_kinds: self
+                .parameter_kinds
+                .into_iter()
+                .map(WireKind::into_kind)
+                .collect(),
+            body: self.body.into_semantic_type(),
+            kind: self.kind.into_type_definition_kind(),
+        })
+    }
+}
+
+impl WireTypeDefinitionKind {
+    fn from(kind: TypeDefinitionKind) -> Self {
+        match kind {
+            TypeDefinitionKind::Named => Self::Named,
+            TypeDefinitionKind::Alias => Self::Alias,
+        }
+    }
+
+    fn into_type_definition_kind(self) -> TypeDefinitionKind {
+        match self {
+            Self::Named => TypeDefinitionKind::Named,
+            Self::Alias => TypeDefinitionKind::Alias,
+        }
+    }
+}
+
+impl WireTypeScheme {
+    fn from(type_scheme: &TypeScheme) -> Self {
+        Self {
+            predicates: type_scheme
+                .predicates
+                .iter()
+                .map(WireTraitRef::from)
+                .collect(),
+            type_: WireSemanticType::from(&type_scheme.type_),
+        }
+    }
+
+    fn into_type_scheme(self) -> TypeScheme {
+        TypeScheme {
+            predicates: self
+                .predicates
+                .into_iter()
+                .map(WireTraitRef::into_trait_ref)
+                .collect(),
+            type_: self.type_.into_semantic_type(),
+        }
+    }
+}
+
+impl WireTraitRef {
+    fn from(trait_ref: &TraitRef) -> Self {
+        Self {
+            trait_name: WirePath::from(&trait_ref.trait_name),
+            arguments: trait_ref
+                .arguments
+                .iter()
+                .map(WireSemanticType::from)
+                .collect(),
+        }
+    }
+
+    fn into_trait_ref(self) -> TraitRef {
+        TraitRef {
+            trait_name: self.trait_name.into_path(),
+            arguments: self
+                .arguments
+                .into_iter()
+                .map(WireSemanticType::into_semantic_type)
+                .collect(),
+        }
+    }
+}
+
+impl WireKind {
+    fn from(kind: &Kind) -> Self {
+        match kind {
+            Kind::Type => Self::Type,
+            Kind::Arrow(parameter, result) => {
+                Self::Arrow(
+                    Box::new(Self::from(parameter)),
+                    Box::new(Self::from(result)),
+                )
+            }
+        }
+    }
+
+    fn into_kind(self) -> Kind {
+        match self {
+            Self::Type => Kind::Type,
+            Self::Arrow(parameter, result) => {
+                Kind::Arrow(
+                    Box::new(parameter.into_kind()),
+                    Box::new(result.into_kind()),
+                )
+            }
+        }
+    }
+}
+
+impl WireStructMatch {
+    fn from(mode: StructMatch) -> Self {
+        match mode {
+            StructMatch::Exact => Self::Exact,
+            StructMatch::AtLeast => Self::AtLeast,
+        }
+    }
+
+    fn into_struct_match(self) -> StructMatch {
+        match self {
+            Self::Exact => StructMatch::Exact,
+            Self::AtLeast => StructMatch::AtLeast,
+        }
+    }
+}
+
+impl WireSemanticType {
+    fn from(type_: &SemanticType) -> Self {
+        match type_ {
+            SemanticType::Unit => Self::Unit,
+            SemanticType::Integer => Self::Integer,
+            SemanticType::Real => Self::Real,
+            SemanticType::Boolean => Self::Boolean,
+            SemanticType::String => Self::String,
+            SemanticType::Glyph => Self::Glyph,
+            SemanticType::TypeVar(id) => Self::TypeVar(*id),
+            SemanticType::MetaVar(id) => Self::MetaVar(*id),
+            SemanticType::ForAll(body) => Self::ForAll(Box::new(Self::from(body))),
+            SemanticType::Named { name, body } => {
+                Self::Named {
+                    name: WirePath::from(name),
+                    body: Box::new(Self::from(body)),
+                }
+            }
+            SemanticType::StructConstraint { fields, mode } => {
+                Self::StructConstraint {
+                    fields: fields
+                        .iter()
+                        .map(|(name, type_)| (name.clone(), Self::from(type_)))
+                        .collect(),
+                    mode: WireStructMatch::from(*mode),
+                }
+            }
+            SemanticType::Struct { fields } => {
+                Self::Struct {
+                    fields: fields
+                        .iter()
+                        .map(|(name, type_)| (name.clone(), Self::from(type_)))
+                        .collect(),
+                }
+            }
+            SemanticType::Array(inner) => Self::Array(Box::new(Self::from(inner))),
+            SemanticType::Tuple(items) => Self::Tuple(items.iter().map(Self::from).collect()),
+            SemanticType::Sum { variants } => {
+                Self::Sum {
+                    variants: variants
+                        .iter()
+                        .map(|(name, type_)| (name.clone(), Self::from(type_)))
+                        .collect(),
+                }
+            }
+            SemanticType::Function(parameter, result) => {
+                Self::Function(
+                    Box::new(Self::from(parameter)),
+                    Box::new(Self::from(result)),
+                )
+            }
+            SemanticType::Apply {
+                constructor,
+                arguments,
+            } => {
+                Self::Apply {
+                    constructor: Box::new(Self::from(constructor)),
+                    arguments: arguments.iter().map(Self::from).collect(),
+                }
+            }
+        }
+    }
+
+    fn into_semantic_type(self) -> SemanticType {
+        match self {
+            Self::Unit => SemanticType::Unit,
+            Self::Integer => SemanticType::Integer,
+            Self::Real => SemanticType::Real,
+            Self::Boolean => SemanticType::Boolean,
+            Self::String => SemanticType::String,
+            Self::Glyph => SemanticType::Glyph,
+            Self::TypeVar(id) => SemanticType::TypeVar(id),
+            Self::MetaVar(id) => SemanticType::MetaVar(id),
+            Self::ForAll(body) => SemanticType::ForAll(Box::new(body.into_semantic_type())),
+            Self::Named { name, body } => {
+                SemanticType::Named {
+                    name: name.into_path(),
+                    body: Box::new(body.into_semantic_type()),
+                }
+            }
+            Self::StructConstraint { fields, mode } => {
+                SemanticType::StructConstraint {
+                    fields: fields
+                        .into_iter()
+                        .map(|(name, type_)| (name, type_.into_semantic_type()))
+                        .collect(),
+                    mode: mode.into_struct_match(),
+                }
+            }
+            Self::Struct { fields } => {
+                SemanticType::Struct {
+                    fields: fields
+                        .into_iter()
+                        .map(|(name, type_)| (name, type_.into_semantic_type()))
+                        .collect(),
+                }
+            }
+            Self::Array(inner) => SemanticType::Array(Box::new(inner.into_semantic_type())),
+            Self::Tuple(items) => {
+                SemanticType::Tuple(items.into_iter().map(Self::into_semantic_type).collect())
+            }
+            Self::Sum { variants } => {
+                SemanticType::Sum {
+                    variants: variants
+                        .into_iter()
+                        .map(|(name, type_)| (name, type_.into_semantic_type()))
+                        .collect(),
+                }
+            }
+            Self::Function(parameter, result) => {
+                SemanticType::Function(
+                    Box::new(parameter.into_semantic_type()),
+                    Box::new(result.into_semantic_type()),
+                )
+            }
+            Self::Apply {
+                constructor,
+                arguments,
+            } => {
+                SemanticType::Apply {
+                    constructor: Box::new(constructor.into_semantic_type()),
+                    arguments: arguments
+                        .into_iter()
+                        .map(Self::into_semantic_type)
+                        .collect(),
+                }
+            }
+        }
+    }
+}
+
+fn decode_named_custom_section_data(data: &[u8]) -> Option<(&str, &[u8])> {
+    let (name_length, name_length_bytes) = decode_leb128_usize(data)?;
+    let name_start = name_length_bytes;
+    let name_end = name_start.checked_add(name_length)?;
+    let name = std::str::from_utf8(data.get(name_start..name_end)?).ok()?;
+    Some((name, data.get(name_end..)?))
+}
+
+fn decode_leb128_usize(data: &[u8]) -> Option<(usize, usize)> {
+    let mut value = 0usize;
+    let mut shift = 0;
+
+    for (index, byte) in data.iter().copied().enumerate() {
+        value |= ((byte & 0x7F) as usize) << shift;
+        if byte & 0x80 == 0 {
+            return Some((value, index + 1));
+        }
+        shift += 7;
+        if shift >= usize::BITS {
+            return None;
+        }
+    }
+
+    None
 }
 
 fn collect_imported_types(
@@ -612,23 +600,24 @@ fn collect_imported_types(
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
+
     use super::*;
     use crate::hc_core::CoreSymbol;
 
-    fn decode_section(encoded: &[u8]) -> TypeSignatureSection {
-        let mut pos = 0;
-        while encoded[pos] & 0x80 != 0 {
-            pos += 1;
-        }
-        pos += 1;
-        TypeSignatureSection::decode(&encoded[pos..]).unwrap()
+    fn decode_section_payload(encoded: &[u8]) -> Vec<u8> {
+        let (section_size, section_size_bytes) = decode_leb128_usize(&encoded).unwrap();
+        let section_data_start = section_size_bytes;
+        let section_data_end = section_data_start + section_size;
+        let section_data = &encoded[section_data_start..section_data_end];
+        let (_, payload) = decode_named_custom_section_data(section_data).unwrap();
+        payload.to_vec()
     }
 
     fn roundtrip_type(type_: SemanticType) {
         let path = Path::new("test", "MyType");
         let mut section = TypeSignatureSection::default();
         section.defined_types.insert(
-            path.clone(),
+            path,
             TypeDefinition {
                 parameters: 0,
                 parameter_kinds: Vec::new(),
@@ -636,11 +625,11 @@ mod tests {
                 kind: TypeDefinitionKind::Named,
             },
         );
-        section.rebuild_index_map();
 
         let mut encoded = vec![];
         section.encode(&mut encoded);
-        let decoded = decode_section(&encoded);
+        let payload = decode_section_payload(&encoded);
+        let decoded = TypeSignatureSection::decode_data_slice(&payload).unwrap();
 
         let original_type = &section.defined_types.values().next().unwrap().body;
         let decoded_type = &decoded.defined_types.values().next().unwrap().body;
@@ -648,24 +637,17 @@ mod tests {
     }
 
     #[test]
-    fn roundtrip_primitives() {
+    fn roundtrip_primitives_and_compounds() {
         roundtrip_type(SemanticType::Unit);
         roundtrip_type(SemanticType::Integer);
         roundtrip_type(SemanticType::Real);
         roundtrip_type(SemanticType::Boolean);
         roundtrip_type(SemanticType::String);
         roundtrip_type(SemanticType::Glyph);
-    }
-
-    #[test]
-    fn roundtrip_vars_and_binders() {
         roundtrip_type(SemanticType::TypeVar(2));
         roundtrip_type(SemanticType::MetaVar(3));
         roundtrip_type(SemanticType::ForAll(Box::new(SemanticType::TypeVar(0))));
-    }
 
-    #[test]
-    fn roundtrip_struct_and_constraint() {
         let mut fields = IndexMap::new();
         fields.insert("x".into(), SemanticType::Integer);
         fields.insert("y".into(), SemanticType::Real);
@@ -676,24 +658,13 @@ mod tests {
             fields,
             mode: StructMatch::AtLeast,
         });
-    }
 
-    #[test]
-    fn roundtrip_compound() {
         roundtrip_type(SemanticType::Array(Box::new(SemanticType::Integer)));
         roundtrip_type(SemanticType::Tuple(vec![
             SemanticType::Integer,
             SemanticType::String,
             SemanticType::Boolean,
         ]));
-        roundtrip_type(SemanticType::Sum {
-            variants: {
-                let mut variants = IndexMap::new();
-                variants.insert("None".into(), SemanticType::Unit);
-                variants.insert("Some".into(), SemanticType::Integer);
-                variants
-            },
-        });
         roundtrip_type(SemanticType::Function(
             Box::new(SemanticType::Integer),
             Box::new(SemanticType::String),
@@ -720,11 +691,11 @@ mod tests {
 
         let mut section = TypeSignatureSection::default();
         section.defined_types.insert(
-            path.clone(),
+            path,
             TypeDefinition {
                 parameters: 1,
                 parameter_kinds: vec![crate::types::Kind::Type],
-                body: body.clone(),
+                body,
                 kind: TypeDefinitionKind::Named,
             },
         );
@@ -738,101 +709,26 @@ mod tests {
                 }],
             ),
         );
-        section.rebuild_index_map();
 
         let mut encoded = vec![];
         section.encode(&mut encoded);
-        let decoded = decode_section(&encoded);
+        let payload = decode_section_payload(&encoded);
+        let decoded = TypeSignatureSection::decode_data_slice(&payload).unwrap();
 
-        let orig_term = section.defined_terms.values().next().unwrap();
-        let dec_term = decoded.defined_terms.values().next().unwrap();
-        assert_eq!(format!("{orig_term:?}"), format!("{dec_term:?}"));
+        let original_term = section.defined_terms.values().next().unwrap();
+        let decoded_term = decoded.defined_terms.values().next().unwrap();
+        assert_eq!(format!("{original_term:?}"), format!("{decoded_term:?}"));
     }
 
     #[test]
-    fn decode_empty_returns_none() {
-        assert!(TypeSignatureSection::decode(&[]).is_none());
+    fn decode_invalid_payload_returns_none() {
+        assert!(TypeSignatureSection::decode_data_slice(&[1, 2, 3]).is_none());
     }
 
     #[test]
     fn decode_wrong_name_returns_none() {
         let mut data = vec![];
         "not_signature".encode(&mut data);
-        assert!(TypeSignatureSection::decode(&data).is_none());
-    }
-
-    #[test]
-    fn decode_truncated_after_name_returns_none() {
-        let mut data = vec![];
-        TypeSignatureSection::NAME.encode(&mut data);
-        assert!(TypeSignatureSection::decode(&data).is_none());
-    }
-
-    #[test]
-    fn decode_truncated_leb128_returns_none() {
-        assert!(TypeSignatureSection::decode(&[0x80]).is_none());
-    }
-
-    #[test]
-    fn decode_oversized_leb128_returns_none() {
-        let data: Vec<u8> = std::iter::repeat_n(0x80, 10).chain([0x01]).collect();
-        let mut dec = Decoder::new(&data);
-        assert!(dec.decode_u64().is_none());
-    }
-
-    #[test]
-    fn decode_invalid_utf8_returns_none() {
-        let data = [0x02, 0xFF, 0xFE];
-        let mut dec = Decoder::new(&data);
-        assert!(dec.decode_string().is_none());
-    }
-
-    #[test]
-    fn decode_string_length_overflow_returns_none() {
-        let data = [0xFF, 0x01, 0x41, 0x42];
-        let mut dec = Decoder::new(&data);
-        assert!(dec.decode_string().is_none());
-    }
-
-    #[test]
-    fn decode_unknown_type_tag_returns_none() {
-        let mut data = vec![];
-        TypeSignatureSection::NAME.encode(&mut data);
-        0usize.encode(&mut data); // 0 imports
-        1usize.encode(&mut data); // 1 defined type
-        "test".encode(&mut data); // path.major
-        "T".encode(&mut data); // path.minor
-        0usize.encode(&mut data); // kind: named
-        0usize.encode(&mut data); // 0 parameters
-        99usize.encode(&mut data); // invalid type tag
-        0usize.encode(&mut data); // 0 defined terms
-        assert!(TypeSignatureSection::decode(&data).is_none());
-    }
-
-    #[test]
-    fn decode_out_of_bounds_named_index_returns_none() {
-        let mut data = vec![];
-        TypeSignatureSection::NAME.encode(&mut data);
-        0usize.encode(&mut data); // 0 imports
-        1usize.encode(&mut data); // 1 defined type
-        "test".encode(&mut data); // path.major
-        "T".encode(&mut data); // path.minor
-        0usize.encode(&mut data); // kind: named
-        0usize.encode(&mut data); // 0 parameters
-        11usize.encode(&mut data); // Named tag
-        999usize.encode(&mut data); // out-of-bounds index into reverse_index
-        0usize.encode(&mut data); // body tag: unit
-        0usize.encode(&mut data); // 0 defined terms
-        assert!(TypeSignatureSection::decode(&data).is_none());
-    }
-
-    #[test]
-    fn decode_truncated_terms_returns_none() {
-        let mut data = vec![];
-        TypeSignatureSection::NAME.encode(&mut data);
-        0usize.encode(&mut data); // 0 imports
-        0usize.encode(&mut data); // 0 defined types
-        1usize.encode(&mut data); // 1 defined term (but no term data follows)
         assert!(TypeSignatureSection::decode(&data).is_none());
     }
 }

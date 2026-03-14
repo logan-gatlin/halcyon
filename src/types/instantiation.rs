@@ -145,4 +145,55 @@ mod tests {
             )]
         );
     }
+
+    /// `instantiate_type_vars` maps TypeVar(k) → args[k] via sequential
+    /// `open_forall` calls. Each call replaces TypeVar(0) and shifts the
+    /// rest down, so TypeVar(k) ends up matching args[k].
+    #[test]
+    fn instantiate_type_vars_maps_index_to_same_position() {
+        let args = [Type::Integer, Type::Boolean, Type::String];
+        assert_eq!(
+            instantiate_type_vars(&Type::v(0), &args).unwrap(),
+            Type::Integer,
+        );
+        assert_eq!(
+            instantiate_type_vars(&Type::v(1), &args).unwrap(),
+            Type::Boolean,
+        );
+        assert_eq!(
+            instantiate_type_vars(&Type::v(2), &args).unwrap(),
+            Type::String,
+        );
+    }
+
+    /// `instantiate_forall_strict` opens ForAlls from the outside in, so
+    /// the *outermost* binder (TypeVar(N-1) in the body) gets args[0],
+    /// while the *innermost* binder (TypeVar(0)) gets args[N-1].
+    ///
+    /// This means `instantiate_forall_strict` and `instantiate_type_vars`
+    /// have REVERSED mappings: TypeVar(k) → args[k] in type_vars, but
+    /// TypeVar(k) → args[N-1-k] in forall_strict.
+    #[test]
+    fn instantiate_forall_strict_reverses_mapping_relative_to_type_vars() {
+        // Scheme: for a in for b in (a -> b)
+        // In body: TypeVar(1) = a (outermost), TypeVar(0) = b (innermost)
+        let scheme_type = Type::func(Type::v(1), Type::v(0)).for_all(2);
+
+        let body = instantiate_forall_strict(&scheme_type, &[Type::Integer, Type::Boolean])
+            .expect("forall instantiation should succeed");
+
+        // forall_strict: TypeVar(1) → args[0] = Integer, TypeVar(0) → args[1] = Boolean
+        assert_eq!(body, Type::func(Type::Integer, Type::Boolean));
+
+        // type_vars gives the opposite mapping:
+        // TypeVar(1) → args[1] = Boolean, TypeVar(0) → args[0] = Integer
+        assert_eq!(
+            instantiate_type_vars(&Type::v(1), &[Type::Integer, Type::Boolean]).unwrap(),
+            Type::Boolean,
+        );
+        assert_eq!(
+            instantiate_type_vars(&Type::v(0), &[Type::Integer, Type::Boolean]).unwrap(),
+            Type::Integer,
+        );
+    }
 }
