@@ -37,6 +37,7 @@ rowan = "0.16"
 itertools = "0.14"
 inflections = "1.1"
 tracing = "0.1"
+include_dir = "0.7"
 
 [dev-dependencies]
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

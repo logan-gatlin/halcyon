@@ -18,6 +18,10 @@ use std::path::{
 };
 
 use enum_iterator::all;
+use include_dir::{
+    Dir,
+    include_dir,
+};
 
 use crate::asm;
 
@@ -37,6 +41,7 @@ pub const CORE_MODULE_NAME: &str = "core";
 
 const CORE_SOURCE_ROOT: &str = "core";
 const CORE_ROOT_FILE_NAME: &str = "bundle.hc";
+static CORE_SOURCES: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/core");
 
 #[derive(Debug, Default)]
 struct CoreSourceExpansionState {
@@ -87,10 +92,6 @@ fn register_core_primitive_types(symbols: &mut SymbolTable) {
     all::<CoreType>().for_each(|symbol| {
         symbols.insert(symbol);
     });
-}
-
-fn core_source_root_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join(CORE_SOURCE_ROOT)
 }
 
 fn display_source_path(relative_path: &Path) -> String {
@@ -184,15 +185,20 @@ fn normalize_import_path(
     Some(normalized)
 }
 
-fn read_core_source_file(
-    source_root: &Path,
-    source_path: &Path,
-) -> Result<String, std::io::Error> {
-    std::fs::read_to_string(source_root.join(source_path))
+fn read_core_source_file(source_path: &Path) -> Result<String, std::io::Error> {
+    let source_path = source_path.to_string_lossy().replace('\\', "/");
+    let file = CORE_SOURCES.get_file(source_path.as_str()).ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("embedded file `{source_path}` does not exist"),
+        )
+    })?;
+    std::str::from_utf8(file.contents())
+        .map(|content| content.to_string())
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string()))
 }
 
 fn expand_core_source_with_imports(
-    source_root: &Path,
     source_path: &Path,
     is_root: bool,
     state: &mut CoreSourceExpansionState,
@@ -218,7 +224,7 @@ fn expand_core_source_with_imports(
         return None;
     }
 
-    let source = match read_core_source_file(source_root, source_path) {
+    let source = match read_core_source_file(source_path) {
         Ok(source) => source,
         Err(error) => {
             let mut file_logger = logger.new_file(display_source_path(source_path), "");
@@ -227,7 +233,7 @@ fn expand_core_source_with_imports(
                 .primary(
                     format!(
                         "Failed to read `{}`: {error}",
-                        source_root.join(source_path).display()
+                        display_source_path(source_path)
                     ),
                     Span::Generated,
                 )
@@ -295,14 +301,18 @@ fn expand_core_source_with_imports(
                             continue;
                         }
 
-                        let imported_source_path = source_root.join(&normalized_path);
-                        if !imported_source_path.is_file() {
+                        let normalized_path_text =
+                            normalized_path.to_string_lossy().replace('\\', "/");
+                        if CORE_SOURCES
+                            .get_file(normalized_path_text.as_str())
+                            .is_none()
+                        {
                             file_logger
                                 .bug("bundled core source import path is unknown")
                                 .primary(
                                     format!(
                                         "No core source file exists at `{}`.",
-                                        imported_source_path.display()
+                                        display_source_path(&normalized_path)
                                     ),
                                     path_literal.span,
                                 )
@@ -311,7 +321,6 @@ fn expand_core_source_with_imports(
                         }
 
                         expand_core_source_with_imports(
-                            source_root,
                             &normalized_path,
                             false,
                             state,
@@ -345,28 +354,9 @@ fn expand_core_source_with_imports(
 }
 
 fn load_expanded_core_source(logger: &mut crate::Logger) -> Option<String> {
-    let source_root = core_source_root_dir();
-    if !source_root.is_dir() {
-        let mut file_logger =
-            logger.new_file(display_source_path(Path::new(CORE_ROOT_FILE_NAME)), "");
-        file_logger
-            .bug("bundled core source directory was not found")
-            .primary(
-                format!(
-                    "Expected core source directory at `{}`.",
-                    source_root.display()
-                ),
-                Span::Generated,
-            )
-            .done();
-        logger.consume_file(file_logger);
-        return None;
-    }
-
     let mut expanded_source = String::new();
     let mut state = CoreSourceExpansionState::default();
     expand_core_source_with_imports(
-        &source_root,
         Path::new(CORE_ROOT_FILE_NAME),
         true,
         &mut state,
