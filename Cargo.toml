@@ -16,14 +16,14 @@ keywords = ["compiler", "functional programming", "wasm"]
 categories = ["wasm", "compiler"]
 
 [dependencies]
-wasm-encoder = "0.233"
+wasm-encoder = "0.244"
 punycode = "0.4"
 wasm-bindgen = "0.2"
 multipeek = "0.1"
 toml = {version = "0.9", default-features = false, features = ["parse", "serde"]}
 indexmap = "2.11"
-wasmparser = {version = "0.233"}
-wasmprinter = "0.233"
+wasmparser = {version = "0.244"}
+wasmprinter = "0.244"
 serde = { version = "1", features = ["derive"] }
 postcard = { version = "1", features = ["use-std"] }
 colored = "3"

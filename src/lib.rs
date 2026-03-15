@@ -39,6 +39,120 @@ pub struct Artifact {
     pub binary: Vec<u8>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompilerLintSeverity {
+    Bug,
+    Error,
+    Warning,
+    Note,
+    Help,
+}
+
+impl CompilerLintSeverity {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Bug => "bug",
+            Self::Error => "error",
+            Self::Warning => "warning",
+            Self::Note => "note",
+            Self::Help => "help",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompilerLintLabelStyle {
+    Primary,
+    Secondary,
+}
+
+impl CompilerLintLabelStyle {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Primary => "primary",
+            Self::Secondary => "secondary",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CompilerLintLabel {
+    pub style: CompilerLintLabelStyle,
+    pub file_id: usize,
+    pub start: usize,
+    pub end: usize,
+    pub message: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct CompilerLint {
+    pub severity: CompilerLintSeverity,
+    pub code: Option<String>,
+    pub message: String,
+    pub notes: Vec<String>,
+    pub labels: Vec<CompilerLintLabel>,
+}
+
+impl CompilerLint {
+    pub fn error(message: impl Into<String>) -> Self {
+        Self {
+            severity: CompilerLintSeverity::Error,
+            code: None,
+            message: message.into(),
+            notes: Vec::new(),
+            labels: Vec::new(),
+        }
+    }
+}
+
+fn lint_severity_from_codespan(
+    severity: codespan_reporting::diagnostic::Severity
+) -> CompilerLintSeverity {
+    match severity {
+        codespan_reporting::diagnostic::Severity::Bug => CompilerLintSeverity::Bug,
+        codespan_reporting::diagnostic::Severity::Error => CompilerLintSeverity::Error,
+        codespan_reporting::diagnostic::Severity::Warning => CompilerLintSeverity::Warning,
+        codespan_reporting::diagnostic::Severity::Note => CompilerLintSeverity::Note,
+        codespan_reporting::diagnostic::Severity::Help => CompilerLintSeverity::Help,
+    }
+}
+
+fn lint_label_style_from_codespan(
+    style: codespan_reporting::diagnostic::LabelStyle
+) -> CompilerLintLabelStyle {
+    match style {
+        codespan_reporting::diagnostic::LabelStyle::Primary => CompilerLintLabelStyle::Primary,
+        codespan_reporting::diagnostic::LabelStyle::Secondary => CompilerLintLabelStyle::Secondary,
+    }
+}
+
+fn collect_lints(logger: &Logger) -> Vec<CompilerLint> {
+    logger
+        .iter()
+        .map(|diagnostic| {
+            CompilerLint {
+                severity: lint_severity_from_codespan(diagnostic.severity),
+                code: diagnostic.code.clone(),
+                message: diagnostic.message.clone(),
+                notes: diagnostic.notes.clone(),
+                labels: diagnostic
+                    .labels
+                    .iter()
+                    .map(|label| {
+                        CompilerLintLabel {
+                            style: lint_label_style_from_codespan(label.style),
+                            file_id: label.file_id,
+                            start: label.range.start,
+                            end: label.range.end,
+                            message: label.message.clone(),
+                        }
+                    })
+                    .collect(),
+            }
+        })
+        .collect()
+}
+
 impl Artifact {
     pub fn decompile_to_wat(&self) -> Option<String> {
         wasmprinter::print_bytes(&self.binary).ok()
@@ -229,7 +343,7 @@ pub fn validate_artifact(
     art
 }
 
-pub fn compile_source_linked_with_core(source: &str) -> Result<Vec<u8>, Vec<String>> {
+pub fn compile_source_linked_with_core(source: &str) -> Result<Vec<u8>, Vec<CompilerLint>> {
     let mut symbols = types::SymbolTable::new();
     let mut logger = Logger::new();
 
@@ -239,11 +353,11 @@ pub fn compile_source_linked_with_core(source: &str) -> Result<Vec<u8>, Vec<Stri
     logger.consume_file(file_logger);
 
     if !logger.is_ok() {
-        let errors = logger.error_messages();
-        return Err(if errors.is_empty() {
-            vec!["Compilation failed".to_string()]
+        let lints = collect_lints(&logger);
+        return Err(if lints.is_empty() {
+            vec![CompilerLint::error("Compilation failed")]
         } else {
-            errors
+            lints
         });
     }
 
@@ -258,9 +372,10 @@ pub fn compile_source_linked_with_core(source: &str) -> Result<Vec<u8>, Vec<Stri
             ..Default::default()
         },
     )
-    .map_err(|error| vec![error.to_string()])?;
+    .map_err(|error| vec![CompilerLint::error(error.to_string())])?;
 
-    wasmparser::validate(&linked.binary).map_err(|error| vec![error.message().to_string()])?;
+    wasmparser::validate(&linked.binary)
+        .map_err(|error| vec![CompilerLint::error(error.message().to_string())])?;
 
     Ok(linked.binary)
 }

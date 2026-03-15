@@ -605,7 +605,7 @@ mod tests {
     use crate::hc_core::CoreSymbol;
 
     fn decode_section_payload(encoded: &[u8]) -> Vec<u8> {
-        let (section_size, section_size_bytes) = decode_leb128_usize(&encoded).unwrap();
+        let (section_size, section_size_bytes) = decode_leb128_usize(encoded).unwrap();
         let section_data_start = section_size_bytes;
         let section_data_end = section_data_start + section_size;
         let section_data = &encoded[section_data_start..section_data_end];
