@@ -52,6 +52,15 @@ fn file_logger_has_error_message(
         .any(|diagnostic| diagnostic.message.contains(message))
 }
 
+fn logger_has_error_message(
+    logger: &Logger,
+    message: &str,
+) -> bool {
+    logger
+        .iter()
+        .any(|diagnostic| diagnostic.message.contains(message))
+}
+
 fn file_logger_count_message(
     logger: &FileLogger,
     message: &str,
@@ -60,6 +69,143 @@ fn file_logger_count_message(
         .iter()
         .filter(|diagnostic| diagnostic.message.contains(message))
         .count()
+}
+
+#[test]
+fn compile_source_with_options_resolves_imports_during_ir_generation() {
+    let source = "bundle demo\nimport \"dep\"\nlet value : core::Integer = core::default\n";
+    let dep_source = "let imported_value : core::Integer = core::default\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+
+    let artifacts = compile_source_with_options(
+        "demo.hc",
+        source,
+        &mut logger,
+        &mut symbols,
+        CompileOptions {
+            demo_mode: false,
+            use_core: true,
+            resolve_import: |path| path.ends_with("dep").then(|| dep_source.to_string()),
+        },
+    );
+
+    assert_logger_is_ok(&logger, "compilation with imported source should succeed");
+    assert!(
+        artifacts.len() >= 2,
+        "use_core=true should include core and bundle artifacts"
+    );
+}
+
+#[test]
+fn compile_source_with_options_reports_duplicate_imports() {
+    let source =
+        "bundle demo\nimport \"dep\", \"dep\"\nlet value : core::Integer = core::default\n";
+    let dep_source = "let imported_value : core::Integer = core::default\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+
+    let _ = compile_source_with_options(
+        "demo.hc",
+        source,
+        &mut logger,
+        &mut symbols,
+        CompileOptions {
+            demo_mode: false,
+            use_core: true,
+            resolve_import: |path| path.ends_with("dep").then(|| dep_source.to_string()),
+        },
+    );
+
+    assert!(
+        logger_has_error_message(&logger, "Duplicate import"),
+        "expected duplicate import diagnostic"
+    );
+}
+
+#[test]
+fn compile_source_with_options_resolves_imports_inside_modules() {
+    let source = "bundle demo
+module foo =
+    import \"dep\"
+end
+module app =
+    let value : core::Integer = bundle::foo::imported_value
+end
+";
+    let dep_source = "let imported_value : core::Integer = core::default\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+
+    let artifacts = compile_source_with_options(
+        "demo.hc",
+        source,
+        &mut logger,
+        &mut symbols,
+        CompileOptions {
+            demo_mode: false,
+            use_core: true,
+            resolve_import: |path| path.ends_with("dep").then(|| dep_source.to_string()),
+        },
+    );
+
+    assert_logger_is_ok(
+        &logger,
+        "module-scoped import should resolve into module scope",
+    );
+    assert!(
+        artifacts.len() >= 2,
+        "use_core=true should include core and bundle artifacts"
+    );
+}
+
+#[test]
+fn compile_source_with_options_reports_bundle_not_first_in_root() {
+    let source = "let value = 1\nbundle demo\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+
+    let _ = compile_source_with_options(
+        "demo.hc",
+        source,
+        &mut logger,
+        &mut symbols,
+        CompileOptions {
+            demo_mode: false,
+            use_core: false,
+            resolve_import: |_| None,
+        },
+    );
+
+    assert!(
+        logger_has_error_message(&logger, "Missing bundle declaration"),
+        "expected root bundle ordering diagnostic"
+    );
+}
+
+#[test]
+fn compile_source_with_options_reports_duplicate_bundle_declarations_globally() {
+    let source = "bundle demo\nimport \"dep\"\nlet value : core::Integer = core::default\n";
+    let dep_source = "bundle dep\nlet imported_value : core::Integer = core::default\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+
+    let _ = compile_source_with_options(
+        "demo.hc",
+        source,
+        &mut logger,
+        &mut symbols,
+        CompileOptions {
+            demo_mode: false,
+            use_core: true,
+            resolve_import: |path| path.ends_with("dep").then(|| dep_source.to_string()),
+        },
+    );
+
+    assert!(
+        logger_has_error_message(&logger, "Duplicate bundle declaration"),
+        "expected duplicate bundle diagnostic across imported files"
+    );
 }
 
 #[test]

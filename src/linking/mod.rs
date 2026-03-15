@@ -35,7 +35,6 @@ use indexmap::{
     IndexSet,
 };
 
-use crate::Artifact;
 use crate::asm::custom_section::TypeSignatureSection;
 use crate::asm::module_section::LoweredModuleSection;
 use crate::asm::{
@@ -49,6 +48,11 @@ use crate::asm::{
 };
 use crate::ir::Path;
 use crate::types::TypeDefinition;
+use crate::{
+    Artifact,
+    FileLogger,
+    WithContext,
+};
 
 #[derive(Debug, Clone)]
 /// Controls how input modules are linked into one final module.
@@ -132,86 +136,115 @@ pub enum LinkError {
     SignatureTermConflict { path: Path },
 }
 
-impl std::fmt::Display for LinkError {
-    fn fmt(
-        &self,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
+impl LinkError {
+    pub fn report(
+        self,
+        logger: &mut FileLogger,
+    ) {
         match self {
-            Self::EmptyInput => write!(f, "cannot link an empty set of binaries"),
+            Self::EmptyInput => {
+                logger.error("Cannot link an empty set of binaries").done();
+            }
             Self::WasmParse { index, message } => {
-                write!(f, "failed to parse binary #{index}: {message}")
+                logger
+                    .error(format!("Failed to parse binary #{index}"))
+                    .note(message)
+                    .done();
             }
             Self::MissingLoweredModuleSection { index } => {
-                write!(
-                    f,
-                    "binary #{index} is missing `{}` metadata",
-                    LoweredModuleSection::NAME
-                )
+                logger
+                    .error(format!(
+                        "Binary #{index} is missing `{}` metadata",
+                        LoweredModuleSection::NAME
+                    ))
+                    .done();
             }
             Self::InvalidLoweredModuleSection { index } => {
-                write!(
-                    f,
-                    "binary #{index} contains invalid `{}` metadata",
-                    LoweredModuleSection::NAME
-                )
+                logger
+                    .error(format!(
+                        "Binary #{index} contains invalid `{}` metadata",
+                        LoweredModuleSection::NAME
+                    ))
+                    .done();
             }
             Self::MissingTypeSignatureSection { index } => {
-                write!(
-                    f,
-                    "binary #{index} is missing `{}` metadata",
-                    TypeSignatureSection::NAME
-                )
+                logger
+                    .error(format!(
+                        "Binary #{index} is missing `{}` metadata",
+                        TypeSignatureSection::NAME
+                    ))
+                    .done();
             }
             Self::InvalidTypeSignatureSection { index } => {
-                write!(
-                    f,
-                    "binary #{index} contains invalid `{}` metadata",
-                    TypeSignatureSection::NAME
-                )
+                logger
+                    .error(format!(
+                        "Binary #{index} contains invalid `{}` metadata",
+                        TypeSignatureSection::NAME
+                    ))
+                    .done();
             }
             Self::DuplicateModuleName { name } => {
-                write!(f, "multiple binaries define module `{name}`")
+                logger
+                    .error(format!("Multiple binaries define module `{name}`"))
+                    .done();
             }
             Self::DuplicateGlobal { path } => {
-                write!(f, "multiple binaries define global `{path}`")
+                logger
+                    .error(format!("Multiple binaries define global `{path}`"))
+                    .done();
             }
             Self::DuplicateFunction { path } => {
-                write!(f, "multiple binaries define function `{path}`")
+                logger
+                    .error(format!("Multiple binaries define function `{path}`"))
+                    .done();
             }
             Self::DuplicateFunctionImport { path } => {
-                write!(f, "conflicting function imports for `{path}`")
+                logger
+                    .error(format!("Conflicting function imports for `{path}`"))
+                    .done();
             }
             Self::FunctionImportConflict { path } => {
-                write!(f, "`{path}` is both an imported and defined function")
+                logger
+                    .error(format!("`{path}` is both an imported and defined function"))
+                    .done();
             }
             Self::GlobalTypeMismatch {
                 path,
                 expected,
                 found,
             } => {
-                write!(
-                    f,
-                    "global import `{path}` has type `{found}` but provider exposes `{expected}`"
-                )
+                logger
+                    .error(format!("Global import `{path}` has conflicting types"))
+                    .note(format!("Imported as `{found}`"))
+                    .note(format!("Provided as `{expected}`"))
+                    .done();
             }
             Self::UnresolvedGlobalImport { path } => {
-                write!(f, "unresolved global import `{path}`")
+                logger
+                    .error(format!("Unresolved global import `{path}`"))
+                    .done();
             }
             Self::ConflictingMemoryDefinitions => {
-                write!(f, "linked binaries define more than one memory")
+                logger
+                    .error("Linked binaries define more than one memory")
+                    .done();
             }
             Self::SignatureTypeConflict { path } => {
-                write!(f, "conflicting type signature definitions for `{path}`")
+                logger
+                    .error(format!(
+                        "Conflicting type signature definitions for `{path}`"
+                    ))
+                    .done();
             }
             Self::SignatureTermConflict { path } => {
-                write!(f, "conflicting term signature definitions for `{path}`")
+                logger
+                    .error(format!(
+                        "Conflicting term signature definitions for `{path}`"
+                    ))
+                    .done();
             }
         }
     }
-}
-
-impl std::error::Error for LinkError {
 }
 
 #[derive(Debug, Clone)]
@@ -223,15 +256,25 @@ struct LinkInput {
 /// Link in-memory artifacts into one new linked artifact.
 ///
 /// Input order is preserved and determines initialization order.
+///
+/// Returns `None` after reporting an error diagnostic to `logger` when linking
+/// fails.
 pub fn link_artifacts(
     artifacts: &[Artifact],
     options: LinkOptions,
-) -> Result<Artifact, LinkError> {
+    logger: &mut FileLogger,
+) -> Option<Artifact> {
     let binaries = artifacts
         .iter()
         .map(|artifact| artifact.binary.as_slice())
         .collect::<Vec<_>>();
-    link_binaries(&binaries, options)
+    match link_binaries(&binaries, options) {
+        Ok(artifact) => Some(artifact),
+        Err(error) => {
+            error.report(logger);
+            None
+        }
+    }
 }
 
 /// Link compiled wasm binaries into one new linked artifact.

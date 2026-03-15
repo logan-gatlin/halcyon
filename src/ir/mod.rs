@@ -224,6 +224,7 @@ fn lower_module_statements(
     for statement in ast_statements {
         let comments = statement.leading_comment_text();
         let statement = match statement {
+            ast::Statement::Bundle(_) | ast::Statement::Import(_) => continue,
             ast::Statement::Let(let_statement) => {
                 if let_statement.is_pattern_alias() {
                     let alias_name = let_statement.alias_name_spanned()?;
@@ -502,6 +503,272 @@ pub fn bundle_statements_with_prelude(
         ast_statements,
     )?;
     module_scope.report_name_resolution_errors(logger);
+    Some(Module {
+        name: bundle_name,
+        statements: lowered_statements.into_boxed_slice(),
+    })
+}
+
+fn decode_hex_nibble(ch: char) -> Option<u32> {
+    match ch {
+        '0'..='9' => Some((ch as u32) - ('0' as u32)),
+        'a'..='f' => Some((ch as u32) - ('a' as u32) + 10),
+        'A'..='F' => Some((ch as u32) - ('A' as u32) + 10),
+        _ => None,
+    }
+}
+
+fn decode_import_path_literal(literal: &str) -> Option<String> {
+    if literal.len() < 2 || !literal.starts_with('"') || !literal.ends_with('"') {
+        return None;
+    }
+
+    let mut result = String::new();
+    let mut chars = literal.strip_prefix('"')?.strip_suffix('"')?.chars();
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            result.push(ch);
+            continue;
+        }
+
+        let escaped = chars.next()?;
+        match escaped {
+            'n' => result.push('\n'),
+            'r' => result.push('\r'),
+            't' => result.push('\t'),
+            'b' => result.push('\x08'),
+            '\\' => result.push('\\'),
+            '0' => result.push('\0'),
+            '"' => result.push('"'),
+            '\'' => result.push('\''),
+            'x' => {
+                let b1 = decode_hex_nibble(chars.next()?)?;
+                let b2 = decode_hex_nibble(chars.next()?)?;
+                result.push(char::from_u32((b1 << 4) | b2)?);
+            }
+            'w' => {
+                let b1 = decode_hex_nibble(chars.next()?)?;
+                let b2 = decode_hex_nibble(chars.next()?)?;
+                let b3 = decode_hex_nibble(chars.next()?)?;
+                let b4 = decode_hex_nibble(chars.next()?)?;
+                result.push(char::from_u32((b1 << 12) | (b2 << 8) | (b3 << 4) | b4)?);
+            }
+            _ => return None,
+        }
+    }
+
+    Some(result)
+}
+
+#[tracing::instrument(skip_all, fields(bundle = %bundle_name))]
+pub fn bundle_source_file_with_imports_and_prelude<R>(
+    bundle_name: String,
+    source_file: ast::SourceFile,
+    root_file_logger: FileLogger,
+    logger: &mut crate::Logger,
+    prelude: &[(Path, NameSpace)],
+    resolve_import_source: &mut R,
+) -> Option<Module<()>>
+where
+    R: FnMut(String) -> Option<String>,
+{
+    fn resolve_import_lookup_path(
+        import_path: &str,
+        current_file_name: &str,
+    ) -> String {
+        let import_path = std::path::Path::new(import_path);
+        let resolved_path = if import_path.is_absolute() {
+            import_path.to_path_buf()
+        } else {
+            std::path::Path::new(current_file_name)
+                .parent()
+                .unwrap_or_else(|| std::path::Path::new("."))
+                .join(import_path)
+        };
+        resolved_path.to_string_lossy().replace('\\', "/")
+    }
+
+    struct ImportLoweringContext<'a, R>
+    where
+        R: FnMut(String, FileLogger) -> Option<(ast::SourceFile, FileLogger)>,
+    {
+        deferred_loggers: &'a std::cell::RefCell<Vec<FileLogger>>,
+        module_scope: &'a mut ModuleScope,
+        module_name: &'a str,
+        wasm_type_defs: &'a mut IndexMap<String, WasmType>,
+        lowered_statements: &'a mut Vec<Statement<()>>,
+        resolve_import: &'a mut R,
+        first_bundle_declaration_file: &'a mut Option<String>,
+    }
+
+    impl<R> ImportLoweringContext<'_, R>
+    where
+        R: FnMut(String, FileLogger) -> Option<(ast::SourceFile, FileLogger)>,
+    {
+        fn lower_source_file(
+            &mut self,
+            source_file: ast::SourceFile,
+            mut file_logger: FileLogger,
+        ) -> Option<()> {
+            let result = self.lower_statements(&source_file.statements(), &mut file_logger);
+            self.deferred_loggers.borrow_mut().push(file_logger);
+            result
+        }
+
+        fn lower_statements(
+            &mut self,
+            ast_statements: &[ast::Statement],
+            file_logger: &mut FileLogger,
+        ) -> Option<()> {
+            for statement in ast_statements {
+                match statement {
+                    ast::Statement::Bundle(bundle_declaration) => {
+                        if let Some(first_file) = self.first_bundle_declaration_file {
+                            file_logger
+                                .error("Duplicate bundle declaration")
+                                .primary(
+                                    "A bundle may only be declared once across all imported files.",
+                                    bundle_declaration.span(),
+                                )
+                                .note(format!(
+                                    "First bundle declaration appears in `{first_file}`."
+                                ))
+                                .done();
+                        } else {
+                            *self.first_bundle_declaration_file =
+                                Some(file_logger.file_name().to_string());
+                        }
+                    }
+                    ast::Statement::Import(import_statement) => {
+                        for path_literal in import_statement.path_literals() {
+                            let Some(import_path) = decode_import_path_literal(&path_literal.inner)
+                            else {
+                                file_logger
+                                    .error("Invalid import path")
+                                    .primary(
+                                        "Expected a valid string literal path.",
+                                        path_literal.span,
+                                    )
+                                    .done();
+                                continue;
+                            };
+
+                            let request_logger = file_logger.spawn_new();
+                            let Some((import_source_file, import_file_logger)) =
+                                (self.resolve_import)(import_path, request_logger)
+                            else {
+                                continue;
+                            };
+
+                            self.lower_source_file(import_source_file, import_file_logger)?;
+                        }
+                    }
+                    ast::Statement::Module(nested_module) => {
+                        let nested_module_name = nested_module.name_text_spanned()?;
+                        lint_kebab_case_name(
+                            file_logger,
+                            "Module",
+                            &nested_module_name.inner,
+                            nested_module_name.span,
+                        );
+                        self.module_scope.enter_module(nested_module_name);
+                        self.module_scope
+                            .register_implicit_open_use(&[crate::CORE_MODULE_NAME, "prelude"]);
+                        let lowered =
+                            self.lower_statements(&nested_module.statements(), file_logger);
+                        self.module_scope.leave_module();
+                        lowered?;
+                    }
+                    _ => {
+                        lower_module_statements(
+                            self.module_scope,
+                            self.module_name,
+                            self.wasm_type_defs,
+                            self.lowered_statements,
+                            file_logger,
+                            std::slice::from_ref(statement),
+                        )?;
+                    }
+                }
+            }
+
+            Some(())
+        }
+    }
+
+    let deferred_loggers = std::cell::RefCell::new(Vec::new());
+    let mut imported_paths = std::collections::HashSet::new();
+    let mut first_bundle_declaration_file = None;
+    let mut module_scope = ModuleScope::new(bundle_name.clone());
+    for (path, namespace) in prelude {
+        module_scope.predefine(path.clone(), *namespace);
+    }
+    module_scope.register_implicit_open_use(&[crate::CORE_MODULE_NAME, "prelude"]);
+
+    let mut name_resolution_logger = root_file_logger.spawn_new();
+    let mut wasm_type_defs: IndexMap<String, WasmType> = IndexMap::new();
+    let mut lowered_statements = Vec::new();
+
+    {
+        let mut resolve_import = |path: String,
+                                  mut current_logger: FileLogger|
+         -> Option<(ast::SourceFile, FileLogger)> {
+            let lookup_path = resolve_import_lookup_path(&path, current_logger.file_name());
+
+            if !imported_paths.insert(lookup_path.clone()) {
+                current_logger
+                    .error("Duplicate import")
+                    .primary(
+                        format!("Import `{lookup_path}` has already been loaded."),
+                        Span::Generated,
+                    )
+                    .done();
+                deferred_loggers.borrow_mut().push(current_logger);
+                return None;
+            }
+
+            let Some(source) = resolve_import_source(lookup_path.clone()) else {
+                current_logger
+                    .error("Unable to resolve import")
+                    .primary(
+                        format!("Could not load import `{lookup_path}`."),
+                        Span::Generated,
+                    )
+                    .done();
+                deferred_loggers.borrow_mut().push(current_logger);
+                return None;
+            };
+
+            let mut import_file_logger = logger.new_file(lookup_path, source.clone());
+            let Some(import_source_file) = crate::parse::parse(&source, &mut import_file_logger)
+            else {
+                deferred_loggers.borrow_mut().push(import_file_logger);
+                return None;
+            };
+
+            Some((import_source_file, import_file_logger))
+        };
+
+        let mut lowering_context = ImportLoweringContext {
+            deferred_loggers: &deferred_loggers,
+            module_scope: &mut module_scope,
+            module_name: &bundle_name,
+            wasm_type_defs: &mut wasm_type_defs,
+            lowered_statements: &mut lowered_statements,
+            resolve_import: &mut resolve_import,
+            first_bundle_declaration_file: &mut first_bundle_declaration_file,
+        };
+
+        lowering_context.lower_source_file(source_file, root_file_logger)?;
+    }
+
+    module_scope.report_name_resolution_errors(&mut name_resolution_logger);
+    deferred_loggers.borrow_mut().push(name_resolution_logger);
+
+    for file_logger in deferred_loggers.into_inner() {
+        logger.consume_file(file_logger);
+    }
+
     Some(Module {
         name: bundle_name,
         statements: lowered_statements.into_boxed_slice(),

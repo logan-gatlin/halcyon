@@ -14,6 +14,8 @@ use crate::parse::parser::Parser;
 /// Recovery set at the module-body level: we can resume parsing at any
 /// statement-starting keyword or at `end`.
 const STATEMENT_RECOVERY: &[SyntaxKind] = &[
+    SyntaxKind::BUNDLE_KW,
+    SyntaxKind::IMPORT_KW,
     SyntaxKind::USE_KW,
     SyntaxKind::LET_KW,
     SyntaxKind::TYPE_KW,
@@ -29,6 +31,8 @@ pub fn can_start_statement(p: &Parser<'_, '_>) -> bool {
         p.current(),
         Some(
             SyntaxKind::USE_KW
+                | SyntaxKind::BUNDLE_KW
+                | SyntaxKind::IMPORT_KW
                 | SyntaxKind::LET_KW
                 | SyntaxKind::TYPE_KW
                 | SyntaxKind::TRAIT_KW
@@ -41,6 +45,8 @@ pub fn can_start_statement(p: &Parser<'_, '_>) -> bool {
 
 pub fn statement(p: &mut Parser<'_, '_>) {
     match p.current() {
+        Some(SyntaxKind::BUNDLE_KW) => super::bundle_declaration(p),
+        Some(SyntaxKind::IMPORT_KW) => super::import_statement(p),
         Some(SyntaxKind::USE_KW) => use_statement(p),
         Some(SyntaxKind::LET_KW) => let_statement(p),
         Some(SyntaxKind::TYPE_KW) => type_statement(p),
@@ -48,15 +54,9 @@ pub fn statement(p: &mut Parser<'_, '_>) {
         Some(SyntaxKind::IMPL_KW) => impl_statement(p),
         Some(SyntaxKind::WASM_KW) => inline_wasm(p),
         Some(SyntaxKind::MODULE_KW) => module(p),
-        Some(SyntaxKind::IMPORT_KW) => {
-            p.error_recover(
-                "`import` statements are only allowed at source-file top level",
-                STATEMENT_RECOVERY,
-            )
-        }
         _ => {
             p.error_recover(
-                "expected `use`, `let`, `type`, `trait`, `impl`, `module`, `wasm`, or `end`",
+                "expected `bundle`, `import`, `use`, `let`, `type`, `trait`, `impl`, `module`, `wasm`, or `end`",
                 STATEMENT_RECOVERY,
             );
         }

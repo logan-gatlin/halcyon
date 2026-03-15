@@ -15,11 +15,13 @@ use halcyon_lib::types::SymbolTable;
 use halcyon_lib::{
     Artifact,
     CORE_MODULE_NAME,
+    CompileOptions,
     Logger,
     Span,
     WASM_MAGIC_NUMBER,
     WithContext,
     compile_core_module,
+    compile_source_with_options,
     documentation,
     ir,
     linking,
@@ -274,7 +276,7 @@ fn collect_bundle_fragments_with_imports(
     let result = (|| -> Result<(), Box<dyn std::error::Error>> {
         if let Some(source_file) = parse::parse(&source, &mut file_logger) {
             let items = source_file.items();
-            if is_root && !matches!(items.first(), Some(ast::TopLevelItem::Bundle(_))) {
+            if is_root && !matches!(items.first(), Some(ast::Statement::Bundle(_))) {
                 let span = items.first().map_or_else(
                     || {
                         source
@@ -303,7 +305,7 @@ fn collect_bundle_fragments_with_imports(
 
             for item in items {
                 match item {
-                    ast::TopLevelItem::Bundle(bundle_declaration) => {
+                    ast::Statement::Bundle(bundle_declaration) => {
                         if local_bundle_name.is_some() {
                             file_logger
                                 .error("Duplicate bundle declaration")
@@ -317,10 +319,10 @@ fn collect_bundle_fragments_with_imports(
                         local_bundle_name = bundle_declaration.name_text();
                         local_bundle_span = bundle_declaration.span();
                     }
-                    ast::TopLevelItem::Import(import_statement) => {
+                    ast::Statement::Import(import_statement) => {
                         import_literals.extend(import_statement.path_literals());
                     }
-                    ast::TopLevelItem::Statement(statement) => statements.push(statement),
+                    statement => statements.push(statement),
                 }
             }
 
@@ -478,40 +480,31 @@ fn compile_source_bundle(
     logger: &mut Logger,
     symbols: &mut SymbolTable,
 ) -> Result<Artifact, Box<dyn std::error::Error>> {
-    let mut state = ImportTraversalState::default();
-    let mut fragments = Vec::new();
-    let mut bundle_name = None;
+    let root_path = normalize_path(Path::new(root_path))?;
+    let source = std::fs::read_to_string(&root_path)
+        .map_err(|error| format!("{}: {error}", root_path.display()))?;
+    let source_name = root_path.to_string_lossy().to_string();
 
-    collect_bundle_fragments_with_imports(
-        Path::new(root_path),
-        true,
-        &mut state,
+    let mut artifacts = compile_source_with_options(
+        &source_name,
+        &source,
         logger,
-        &mut bundle_name,
-        &mut fragments,
-    )?;
+        symbols,
+        CompileOptions {
+            demo_mode: false,
+            use_core: false,
+            resolve_import: |path| std::fs::read_to_string(Path::new(&path)).ok(),
+        },
+    )
+    .into_vec();
 
     if !logger.is_ok() {
         return Err("Compilation failed".into());
     }
 
-    let bundle_name = bundle_name.unwrap_or_else(|| "_".to_string());
-    let resolved_fragments = lower_and_resolve_fragments(&fragments, &bundle_name, logger, symbols);
-
-    if !logger.is_ok() {
-        return Err("Compilation failed".into());
-    }
-
-    let merged_resolved = combine_resolved_fragments(&bundle_name, resolved_fragments);
-    let elaborated = ir::elaborate_module(merged_resolved, symbols);
-    let bundle_artifact = validate_artifact(
-        halcyon_lib::asm::compile_module(elaborated, symbols),
-        logger,
-    );
-
-    if !logger.is_ok() {
-        return Err("Compilation failed".into());
-    }
+    let Some(bundle_artifact) = artifacts.pop() else {
+        return Err("Compilation produced no artifacts".into());
+    };
 
     Ok(bundle_artifact)
 }
@@ -688,13 +681,21 @@ fn compile_and_link_inputs(
 ) -> Result<Artifact, Box<dyn std::error::Error>> {
     let input_paths = ensure_inputs(input_paths, "build/run")?;
     let artifacts = collect_input_artifacts(input_paths)?;
-    let linked = linking::link_artifacts(
+    let mut logger = Logger::new();
+    let mut link_logger = logger.linking_logger();
+    let Some(linked) = linking::link_artifacts(
         &artifacts,
         linking::LinkOptions {
             module_name: linked_module_name.to_string(),
             ..Default::default()
         },
-    )?;
+        &mut link_logger,
+    ) else {
+        logger.consume_file(link_logger);
+        logger.print_logs();
+        return Err("Compilation failed".into());
+    };
+    logger.consume_file(link_logger);
 
     Ok(linked)
 }

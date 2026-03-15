@@ -367,7 +367,7 @@ fn parse_top_level_import_multiple_paths() {
 
 #[test]
 fn parse_import_inside_module_is_error() {
-    assert_has_errors("module Main =\n  import \"./dep.hc\"\nend");
+    assert_no_errors("module Main =\n  import \"./dep.hc\"\nend");
 }
 
 #[test]
@@ -705,10 +705,10 @@ fn ast_source_file_items_preserve_order() {
         parse_source_file("import \"./a.hc\"\nmodule A = end\nimport \"./b.hc\"\nmodule B = end");
     let items = sf.items();
     assert_eq!(items.len(), 4, "Should have 4 top-level items");
-    assert!(matches!(items[0], ast::TopLevelItem::Import(_)));
-    assert!(matches!(items[1], ast::TopLevelItem::Statement(_)));
-    assert!(matches!(items[2], ast::TopLevelItem::Import(_)));
-    assert!(matches!(items[3], ast::TopLevelItem::Statement(_)));
+    assert!(matches!(items[0], ast::Statement::Import(_)));
+    assert!(matches!(items[1], ast::Statement::Module(_)));
+    assert!(matches!(items[2], ast::Statement::Import(_)));
+    assert!(matches!(items[3], ast::Statement::Module(_)));
 }
 
 #[test]

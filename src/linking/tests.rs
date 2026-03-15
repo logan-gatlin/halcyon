@@ -60,14 +60,17 @@ fn preserves_explicit_input_start_order() {
         &mut logger,
     );
 
+    let mut link_logger = logger.linking_logger();
     let linked = link_artifacts(
         &[core, beta, alpha],
         LinkOptions {
             module_name: "app".to_string(),
             ..Default::default()
         },
+        &mut link_logger,
     )
     .expect("link should succeed");
+    logger.consume_file(link_logger);
 
     let _ = validate_artifact(linked.clone(), &mut logger);
     assert!(logger.is_ok(), "linked artifact should validate");
@@ -120,11 +123,49 @@ fn strict_mode_rejects_unresolved_global_imports() {
         &mut logger,
     );
 
-    let error = link_artifacts(&[core, beta], LinkOptions::default()).expect_err("must fail");
+    let error = link_binaries(
+        &[core.binary.as_slice(), beta.binary.as_slice()],
+        LinkOptions::default(),
+    )
+    .expect_err("must fail");
     assert!(matches!(
         error,
         LinkError::UnresolvedGlobalImport { path } if path.major == "alpha"
     ));
+}
+
+#[test]
+fn link_artifacts_reports_errors_to_logger() {
+    let mut logger = Logger::new();
+    let mut symbols = SymbolTable::new();
+
+    let core = compile_core_module(&mut symbols, &mut logger);
+    let _alpha = compile_bundle_artifact(
+        "bundle alpha\nlet base : core::Integer = core::default\n",
+        "alpha.hc",
+        &mut symbols,
+        &mut logger,
+    );
+    let beta = compile_bundle_artifact(
+        "bundle beta\nlet result : core::Integer = alpha::base\n",
+        "beta.hc",
+        &mut symbols,
+        &mut logger,
+    );
+
+    let mut link_logger = logger.linking_logger();
+    let linked = link_artifacts(&[core, beta], LinkOptions::default(), &mut link_logger);
+    assert!(linked.is_none(), "link should fail and return no artifact");
+    assert!(
+        !link_logger.is_ok(),
+        "linker should emit an error diagnostic"
+    );
+
+    logger.consume_file(link_logger);
+    assert!(
+        !logger.is_ok(),
+        "consumed linker diagnostics should be errors"
+    );
 }
 
 #[test]
@@ -134,8 +175,11 @@ fn rejects_duplicate_module_names() {
 
     let core = compile_core_module(&mut symbols, &mut logger);
 
-    let error =
-        link_artifacts(&[core.clone(), core], LinkOptions::default()).expect_err("must fail");
+    let error = link_binaries(
+        &[core.binary.as_slice(), core.binary.as_slice()],
+        LinkOptions::default(),
+    )
+    .expect_err("must fail");
     assert!(matches!(
         error,
         LinkError::DuplicateModuleName { name } if name == "core"
@@ -161,14 +205,17 @@ fn linked_output_can_be_relinked() {
         &mut logger,
     );
 
+    let mut link_logger = logger.linking_logger();
     let linked = link_artifacts(
         &[core, alpha, beta],
         LinkOptions {
             module_name: "bundle_one".to_string(),
             ..Default::default()
         },
+        &mut link_logger,
     )
     .expect("first link should succeed");
+    logger.consume_file(link_logger);
 
     let gamma = compile_bundle_artifact(
         "bundle gamma\nlet value : core::Integer = beta::result\n",

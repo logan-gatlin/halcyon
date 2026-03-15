@@ -22,16 +22,10 @@ pub fn source_file(p: &mut Parser<'_, '_>) {
         SyntaxKind::MODULE_KW,
     ];
     while !p.at_end() {
-        match p.current() {
-            Some(SyntaxKind::BUNDLE_KW) => bundle_declaration(p),
-            Some(SyntaxKind::IMPORT_KW) => import_statement(p),
-            _ if module::can_start_statement(p) => module::statement(p),
-            _ => {
-                p.error_recover(
-                    "expected `bundle`, `import`, or a top-level statement",
-                    TOP_LEVEL_RECOVERY,
-                )
-            }
+        if module::can_start_statement(p) {
+            module::statement(p);
+        } else {
+            p.error_recover("expected a statement", TOP_LEVEL_RECOVERY)
         }
     }
     // Attach any trailing trivia to the root node.
@@ -39,14 +33,14 @@ pub fn source_file(p: &mut Parser<'_, '_>) {
     p.finish_node(m);
 }
 
-fn bundle_declaration(p: &mut Parser<'_, '_>) {
+pub(super) fn bundle_declaration(p: &mut Parser<'_, '_>) {
     let m = p.start_node_with_leading_comments(SyntaxKind::BUNDLE_DECLARATION);
     p.expect(SyntaxKind::BUNDLE_KW);
     expect_identifier(p);
     p.finish_node(m);
 }
 
-fn import_statement(p: &mut Parser<'_, '_>) {
+pub(super) fn import_statement(p: &mut Parser<'_, '_>) {
     let m = p.start_node_with_leading_comments(SyntaxKind::IMPORT_STATEMENT);
     p.expect(SyntaxKind::IMPORT_KW);
 
