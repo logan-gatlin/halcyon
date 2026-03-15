@@ -15,6 +15,7 @@ pub fn source_file(p: &mut Parser<'_, '_>) {
         SyntaxKind::IMPORT_KW,
         SyntaxKind::USE_KW,
         SyntaxKind::LET_KW,
+        SyntaxKind::DO_KW,
         SyntaxKind::TYPE_KW,
         SyntaxKind::TRAIT_KW,
         SyntaxKind::IMPL_KW,

@@ -8,8 +8,8 @@ use super::{
     sexpr,
     type_expr,
 };
-use crate::parse::SyntaxKind;
 use crate::parse::parser::Parser;
+use crate::parse::SyntaxKind;
 
 /// Recovery set at the module-body level: we can resume parsing at any
 /// statement-starting keyword or at `end`.
@@ -18,6 +18,7 @@ const STATEMENT_RECOVERY: &[SyntaxKind] = &[
     SyntaxKind::IMPORT_KW,
     SyntaxKind::USE_KW,
     SyntaxKind::LET_KW,
+    SyntaxKind::DO_KW,
     SyntaxKind::TYPE_KW,
     SyntaxKind::TRAIT_KW,
     SyntaxKind::IMPL_KW,
@@ -34,6 +35,7 @@ pub fn can_start_statement(p: &Parser<'_, '_>) -> bool {
                 | SyntaxKind::BUNDLE_KW
                 | SyntaxKind::IMPORT_KW
                 | SyntaxKind::LET_KW
+                | SyntaxKind::DO_KW
                 | SyntaxKind::TYPE_KW
                 | SyntaxKind::TRAIT_KW
                 | SyntaxKind::IMPL_KW
@@ -49,6 +51,7 @@ pub fn statement(p: &mut Parser<'_, '_>) {
         Some(SyntaxKind::IMPORT_KW) => super::import_statement(p),
         Some(SyntaxKind::USE_KW) => use_statement(p),
         Some(SyntaxKind::LET_KW) => let_statement(p),
+        Some(SyntaxKind::DO_KW) => do_statement(p),
         Some(SyntaxKind::TYPE_KW) => type_statement(p),
         Some(SyntaxKind::TRAIT_KW) => trait_statement(p),
         Some(SyntaxKind::IMPL_KW) => impl_statement(p),
@@ -56,7 +59,7 @@ pub fn statement(p: &mut Parser<'_, '_>) {
         Some(SyntaxKind::MODULE_KW) => module(p),
         _ => {
             p.error_recover(
-                "expected `bundle`, `import`, `use`, `let`, `type`, `trait`, `impl`, `module`, `wasm`, or `end`",
+                "expected `bundle`, `import`, `use`, `let`, `do`, `type`, `trait`, `impl`, `module`, `wasm`, or `end`",
                 STATEMENT_RECOVERY,
             );
         }
@@ -95,6 +98,16 @@ fn let_statement(p: &mut Parser<'_, '_>) {
     }
     pattern::pattern(p);
     p.expect(SyntaxKind::EQUAL);
+    expression::expr(p);
+    p.finish_node(m);
+}
+
+/// ```bnf
+/// <do_statement> ::= "do" <expr>
+/// ```
+fn do_statement(p: &mut Parser<'_, '_>) {
+    let m = p.start_node_with_leading_comments(SyntaxKind::DO_STATEMENT);
+    p.expect(SyntaxKind::DO_KW);
     expression::expr(p);
     p.finish_node(m);
 }

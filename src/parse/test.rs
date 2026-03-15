@@ -11,8 +11,8 @@ use super::lexer::{
     tokenize,
 };
 use super::{
-    SyntaxKind,
     parse,
+    SyntaxKind,
 };
 use crate::logging::Logger;
 
@@ -413,6 +413,16 @@ fn parse_let_statement() {
         "Should contain LET_STATEMENT"
     );
     assert!(tree_str.contains("LITERAL"), "Should contain LITERAL node");
+}
+
+#[test]
+fn parse_do_statement() {
+    let tree_str = parse_to_string("module M =\n  do print \"hello\"\nend");
+    assert!(
+        tree_str.contains("DO_STATEMENT"),
+        "Should contain DO_STATEMENT"
+    );
+    assert!(tree_str.contains("CALL_EXPR"), "Should contain CALL_EXPR");
 }
 
 #[test]
@@ -1377,6 +1387,15 @@ fn ast_simple_ident() {
         panic!("expected ident");
     };
     assert_eq!(ident.name_text().as_deref(), Some("foo"));
+}
+
+#[test]
+fn ast_do_statement() {
+    let sf = parse_source_file("module M =\n  do print \"hello\"\nend");
+    let ast::Statement::Do(ref do_stmt) = sf.modules()[0].statements()[0] else {
+        panic!("expected do statement");
+    };
+    assert!(matches!(do_stmt.value().unwrap(), ast::Expr::Call(_)));
 }
 
 #[test]

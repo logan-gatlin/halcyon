@@ -269,6 +269,23 @@ fn lower_module_statements(
                     })
                 }
             }
+            ast::Statement::Do(do_statement) => Statement::Term(Term {
+                comments,
+                kind: TermKind::Let {
+                    assignee: Pattern {
+                        comments: String::new(),
+                        kind: PatternKind::Hole,
+                        span: do_statement.span(),
+                        type_: (),
+                    },
+                    value: term(module_scope, wasm_type_defs, logger, do_statement.value()?)?.into(),
+                    scope: ScopeKind::Global,
+                    then: Term::unit().into(),
+                    else_: Term::unreachable().into(),
+                },
+                span: do_statement.span(),
+                type_: (),
+            }),
             ast::Statement::Type(type_statement) => {
                 let type_name = type_statement.name_text_spanned()?;
                 lint_pascal_case_name(logger, "Type", &type_name.inner, type_name.span);

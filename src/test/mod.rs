@@ -948,6 +948,32 @@ fn prelude_print_compiles() {
 }
 
 #[test]
+fn do_statement_lowers_like_let_underscore() {
+    let source = "module demo =\n\tdo 1\nend\n";
+    let mut logger = Logger::new();
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let module = parse::parse(source, &mut file_logger)
+        .and_then(|source_file| source_file.modules().into_iter().next())
+        .and_then(|module| ir::module(module, &mut file_logger))
+        .expect("expected module");
+    logger.consume_file(file_logger);
+    assert_logger_is_ok(&logger, "IR construction should succeed");
+
+    let Some(ir::Statement::Term(term)) = module.statements.first() else {
+        panic!("expected first statement to be a term");
+    };
+    let ir::TermKind::Let {
+        assignee,
+        scope: ir::ScopeKind::Global,
+        ..
+    } = &term.kind
+    else {
+        panic!("expected global let statement");
+    };
+    assert!(matches!(assignee.kind, ir::PatternKind::Hole));
+}
+
+#[test]
 fn recursive_sum_type_definition_compiles() {
     let source = "module demo =\n\ttype List: a = | Cons (a, List a) | Nil\nend\n";
     let mut symbols = SymbolTable::new();
@@ -1582,11 +1608,9 @@ fn sum_type_does_not_publish_typename_constructor() {
     }
 
     assert_logger_is_ok(&logger, "sum constructors should still compile");
-    assert!(
-        !symbols
-            .constructors()
-            .contains(&Path::new("demo", "Option"))
-    );
+    assert!(!symbols
+        .constructors()
+        .contains(&Path::new("demo", "Option")));
     assert!(symbols.constructors().contains(&Path::new("demo", "Some")));
     assert!(symbols.constructors().contains(&Path::new("demo", "None")));
 }

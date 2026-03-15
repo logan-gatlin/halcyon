@@ -287,10 +287,9 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
         func_namespace.insert(path, idx as u32 + num_func_imports);
     }
 
-    // Resolve start function
-    let start_section = wasm_encoder::StartSection {
-        function_index: func_namespace[&asm_module.start],
-    };
+    // Resolve and export the WASI Preview 1 entrypoint.
+    let start_function_index = func_namespace[&asm_module.start];
+    export_section.export("_start", ExportKind::Func, start_function_index);
 
     for (_, f) in &asm_module.functions {
         let parameter_types = f.parameters.values().cloned().collect::<Vec<_>>();
@@ -544,7 +543,6 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
     module
         .section(&global_section)
         .section(&export_section)
-        .section(&start_section)
         .section(&element_section)
         .section(&code_section)
         .section(&asm_module.sig)

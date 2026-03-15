@@ -9,6 +9,7 @@
 <module>     ::= "module" <ident> "=" <statement>* "end"
 
 <statement>  ::= <let_statement>
+               | <do_statement>
                | <bundle_declaration>
                | <import_statement>
                | <use_statement>
@@ -20,6 +21,7 @@
 
 <let_statement>  ::= "let" <pattern> "=" <expr>
                    | "let" "|" <ident> "=" (<ident> | <path>)
+<do_statement> ::= "do" <expr>
 <use_statement> ::= "use" (<ident> | <path>) ("as" <ident>)?
 <type_statement> ::= "type" "~"? <ident> (":" <ident>+)? "=" (<type_def> | <type_expr>)
 <trait_statement> ::= "trait" "~"? <ident> (":" <ident>+)? "=" (<trait_method_decl>* "end" | (<ident> | <path>))

@@ -431,6 +431,16 @@ impl LetStatement {
     }
 }
 
+ast_node!(DoStatement, DO_STATEMENT);
+impl HasLeadingComments for DoStatement {
+}
+
+impl DoStatement {
+    pub fn value(&self) -> Option<Expr> {
+        child_node_after_token(&self.syntax, SyntaxKind::DO_KW)
+    }
+}
+
 ast_node!(TypeStatement, TYPE_STATEMENT);
 impl HasName for TypeStatement {
 }
@@ -1333,6 +1343,7 @@ pub enum Statement {
     Import(ImportStatement),
     Use(UseStatement),
     Let(LetStatement),
+    Do(DoStatement),
     Type(TypeStatement),
     Trait(TraitStatement),
     Impl(ImplStatement),
@@ -1347,6 +1358,7 @@ impl AstNode for Statement {
             SyntaxKind::IMPORT_STATEMENT => ImportStatement::cast(node).map(Self::Import),
             SyntaxKind::USE_STATEMENT => UseStatement::cast(node).map(Self::Use),
             SyntaxKind::LET_STATEMENT => LetStatement::cast(node).map(Self::Let),
+            SyntaxKind::DO_STATEMENT => DoStatement::cast(node).map(Self::Do),
             SyntaxKind::TYPE_STATEMENT => TypeStatement::cast(node).map(Self::Type),
             SyntaxKind::TRAIT_STATEMENT => TraitStatement::cast(node).map(Self::Trait),
             SyntaxKind::IMPL_STATEMENT => ImplStatement::cast(node).map(Self::Impl),
@@ -1361,6 +1373,7 @@ impl AstNode for Statement {
             Self::Import(n) => n.syntax(),
             Self::Use(n) => n.syntax(),
             Self::Let(n) => n.syntax(),
+            Self::Do(n) => n.syntax(),
             Self::Type(n) => n.syntax(),
             Self::Trait(n) => n.syntax(),
             Self::Impl(n) => n.syntax(),
