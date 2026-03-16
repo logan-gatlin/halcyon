@@ -98,7 +98,27 @@ pub enum TypeError {
         span: Span,
     },
     /// Unification failure with source span context.
-    Unification { error: UnifyError, span: Span },
+    Unification {
+        error: UnifyError,
+        span: Span,
+        context: Option<&'static str>,
+    },
+}
+
+fn unify_with_context(
+    unification_table: &mut UnificationTable,
+    left: &Type,
+    right: &Type,
+    span: Span,
+    context: &'static str,
+) -> Result<(), TypeError> {
+    unification_table.unify(left, right).map_err(|error| {
+        TypeError::Unification {
+            error,
+            span,
+            context: Some(context),
+        }
+    })
 }
 
 #[cfg(test)]
@@ -1227,17 +1247,6 @@ mod tests {
     }
 }
 
-fn unify_with_span(
-    unification_table: &mut UnificationTable,
-    left: &Type,
-    right: &Type,
-    span: Span,
-) -> Result<(), TypeError> {
-    unification_table
-        .unify(left, right)
-        .map_err(|error| TypeError::Unification { error, span })
-}
-
 fn type_contains_forall(type_: &Type) -> bool {
     matches!(type_, Type::ForAll(_)) || {
         let mut contains_forall = false;
@@ -1482,7 +1491,13 @@ fn ensure_forall_annotation_is_compatible_with_inferred(
                 }
                 other => other,
             };
-            TypeError::Unification { error, span }
+            TypeError::Unification {
+                error,
+                span,
+                context: Some(
+                    "checking whether the explicit annotation matches the inferred value type",
+                ),
+            }
         })
 }
 
@@ -2000,7 +2015,7 @@ pub fn infer_term(
                     let scheme = env.get(path).ok_or_else(|| {
                         TypeError::UnknownIdentifier {
                             path: path.clone(),
-                            span: Span::Generated,
+                            span: term.span,
                         }
                     })?;
                     Ok((path.clone(), scheme.type_.clone()))
@@ -2046,17 +2061,22 @@ pub fn infer_term(
             let parameter_type = ctx.fresh_meta();
             let result_type = ctx.fresh_meta();
             let function_type = Type::func(parameter_type.clone(), result_type.clone());
-            unify_with_span(
+            unify_with_context(
                 &mut ctx.table,
                 &typed_callee.term.type_,
                 &function_type,
-                term.span,
+                callee.span,
+                "checking the type of the called expression",
             )?;
             let expected_argument_type = ctx.table.normalize(&parameter_type);
             let typed_argument =
                 match check_term(ctx, env, argument, &expected_argument_type, schemes) {
                     Ok(typed_argument) => typed_argument,
-                    Err(error @ TypeError::Unification { .. }) => {
+                    Err(TypeError::Unification {
+                        error,
+                        span,
+                        context,
+                    }) => {
                         if let TermKind::Identifier(path) = &typed_callee.term.kind
                             && ctx.has_unannotated_parameter(path)
                         {
@@ -2065,7 +2085,13 @@ pub fn infer_term(
                                 span: argument.span,
                             });
                         }
-                        return Err(error);
+                        return Err(TypeError::Unification {
+                            error,
+                            span,
+                            context: context.or(Some(
+                                "checking this call argument against the parameter type",
+                            )),
+                        });
                     }
                     Err(other) => return Err(other),
                 };
@@ -2166,11 +2192,12 @@ pub fn infer_term(
                 else_type = %ctx.table.normalize(&typed_else.term.type_).pretty(),
                 "let branch unification",
             );
-            unify_with_span(
+            unify_with_context(
                 &mut ctx.table,
                 &typed_then.term.type_,
                 &typed_else.term.type_,
                 term.span,
+                "checking that both branches of this let expression return the same type",
             )?;
             let result_type = ctx.table.normalize(&typed_then.term.type_);
             let mut predicates = typed_then.predicates;
@@ -2193,11 +2220,12 @@ pub fn infer_term(
         TermKind::Semicolon(left, right) => {
             let typed_left = infer_term(ctx, env, left, schemes)?;
             let typed_right = infer_term(ctx, env, right, schemes)?;
-            unify_with_span(
+            unify_with_context(
                 &mut ctx.table,
                 &typed_left.term.type_,
                 &Type::Unit,
                 typed_left.term.span,
+                "checking that the left side of `;` is unit",
             )?;
             let result_type = typed_right.term.type_.clone();
             let mut predicates = typed_left.predicates;
@@ -2262,11 +2290,12 @@ fn check_term(
     }
 
     let mut inferred = infer_term(inference_context, type_environment, term, schemes)?;
-    unify_with_span(
+    unify_with_context(
         &mut inference_context.table,
         &inferred.term.type_,
         &expected,
         term.span,
+        "checking this expression against the expected type",
     )?;
     inferred.term.type_ = inference_context.table.normalize(&expected);
     inferred.predicates = inference_context
@@ -2292,11 +2321,12 @@ fn check_function_term(
     let parameter_type = match parameter_type_expr {
         Some(type_expr) => {
             let annotated = type_expr_to_type(inference_context, type_expr)?;
-            unify_with_span(
+            unify_with_context(
                 &mut inference_context.table,
                 &annotated,
                 expected_parameter,
                 type_expr.span,
+                "checking the annotated function parameter type against the expected parameter type",
             )?;
             inference_context.table.normalize(&annotated)
         }
@@ -2327,7 +2357,7 @@ fn check_function_term(
             let scheme = type_environment.get(path).ok_or_else(|| {
                 TypeError::UnknownIdentifier {
                     path: path.clone(),
-                    span: Span::Generated,
+                    span: term.span,
                 }
             })?;
             Ok((path.clone(), scheme.type_.clone()))
@@ -2335,11 +2365,12 @@ fn check_function_term(
         .collect::<Result<Vec<_>, TypeError>>()?;
     let expected_type = Type::func(expected_parameter.clone(), expected_result.clone());
     let value_type = Type::func(parameter_type, typed_body.term.type_.clone());
-    unify_with_span(
+    unify_with_context(
         &mut inference_context.table,
         &value_type,
         &expected_type,
         term.span,
+        "checking this function body against the expected function type",
     )?;
     let normalized_type = inference_context.table.normalize(&expected_type);
     let predicates = inference_context
@@ -2389,7 +2420,13 @@ fn infer_pattern(
         }
         PatternKind::Immediate(value) => {
             let type_ = value.type_of();
-            unify_with_span(&mut ctx.table, expected, &type_, pattern.span)?;
+            unify_with_context(
+                &mut ctx.table,
+                expected,
+                &type_,
+                pattern.span,
+                "checking this literal pattern against the expected type",
+            )?;
             Ok(Pattern {
                 comments: pattern.comments.clone(),
                 kind: PatternKind::Immediate(value.clone()),
@@ -2403,7 +2440,13 @@ fn infer_pattern(
                 types: item_types,
             } = infer_pattern_items(ctx, env, items, bindings)?;
             let tuple_type = Type::Tuple(item_types);
-            unify_with_span(&mut ctx.table, expected, &tuple_type, pattern.span)?;
+            unify_with_context(
+                &mut ctx.table,
+                expected,
+                &tuple_type,
+                pattern.span,
+                "checking this tuple pattern against the expected type",
+            )?;
             Ok(Pattern {
                 comments: pattern.comments.clone(),
                 kind: PatternKind::Tuple(typed_items),
@@ -2418,7 +2461,13 @@ fn infer_pattern(
         } => {
             let element_type = ctx.fresh_meta();
             let array_type = Type::Array(Box::new(element_type.clone()));
-            unify_with_span(&mut ctx.table, expected, &array_type, pattern.span)?;
+            unify_with_context(
+                &mut ctx.table,
+                expected,
+                &array_type,
+                pattern.span,
+                "checking this array pattern against the expected type",
+            )?;
             let mut typed_start = Vec::with_capacity(starting.len());
             let mut typed_end = Vec::with_capacity(ending.len());
             for item in starting.iter() {
@@ -2456,7 +2505,13 @@ fn infer_pattern(
                 fields: field_types,
                 mode: StructMatch::Exact,
             };
-            unify_with_span(&mut ctx.table, expected, &struct_type, pattern.span)?;
+            unify_with_context(
+                &mut ctx.table,
+                expected,
+                &struct_type,
+                pattern.span,
+                "checking this struct pattern against the expected type",
+            )?;
             Ok(Pattern {
                 comments: pattern.comments.clone(),
                 kind: PatternKind::Struct(typed_fields),
@@ -2472,7 +2527,13 @@ fn infer_pattern(
                 }
             })?;
             let type_ = ctx.instantiate(scheme, pattern.span)?;
-            unify_with_span(&mut ctx.table, expected, &type_, pattern.span)?;
+            unify_with_context(
+                &mut ctx.table,
+                expected,
+                &type_,
+                pattern.span,
+                "checking this constructor pattern against the expected type",
+            )?;
             Ok(Pattern {
                 comments: pattern.comments.clone(),
                 kind: PatternKind::ConstConstructor(path.clone()),
@@ -2504,7 +2565,13 @@ fn infer_pattern(
                     });
                 }
             };
-            unify_with_span(&mut ctx.table, expected, &result_type, pattern.span)?;
+            unify_with_context(
+                &mut ctx.table,
+                expected,
+                &result_type,
+                pattern.span,
+                "checking this constructor pattern result type against the expected type",
+            )?;
             let payload_expected = match (&payload.kind, ctx.table.normalize(&param_type)) {
                 (PatternKind::Struct(_), Type::Struct { fields }) => {
                     Type::StructConstraint {
@@ -2560,7 +2627,13 @@ fn infer_pattern(
                 }
                 (other, _) => other,
             };
-            unify_with_span(&mut ctx.table, expected, &hint_type, type_expr.span)?;
+            unify_with_context(
+                &mut ctx.table,
+                expected,
+                &hint_type,
+                type_expr.span,
+                "checking this pattern type annotation against the expected type",
+            )?;
             let typed_inner = infer_pattern(ctx, env, inner, &hint_type, bindings)?;
             Ok(Pattern {
                 comments: pattern.comments.clone(),
@@ -2586,7 +2659,13 @@ fn field_access_type(
         fields,
         mode: StructMatch::AtLeast,
     };
-    unify_with_span(&mut ctx.table, type_, &constraint, span)?;
+    unify_with_context(
+        &mut ctx.table,
+        type_,
+        &constraint,
+        span,
+        "checking whether this value has the requested field",
+    )?;
     Ok(field_type)
 }
 

@@ -305,6 +305,9 @@ impl ImplProcessingContext<'_> {
                                 TypeError::Unification {
                                     error,
                                     span: method.span,
+                                    context: Some(
+                                        "checking this impl method body against the trait method type",
+                                    ),
                                 },
                             );
                         }

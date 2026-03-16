@@ -30,7 +30,6 @@ pub use crate::hc_core::compile_core_module;
 pub const COMPILER_VERSION_STRING: &str = env!("CARGO_PKG_VERSION");
 pub const WASM_MAGIC_NUMBER: [u8; 4] = [0, b'a', b's', b'm'];
 pub const CORE_BUNDLE_NAME: &str = "core";
-pub const CORE_MODULE_NAME: &str = CORE_BUNDLE_NAME;
 
 #[derive(Debug, Clone)]
 pub struct Artifact {

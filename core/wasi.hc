@@ -138,17 +138,13 @@ module wasi =
     struct.new $word
   )
 
-  let exit_success : Unit -> Unit = fn _ => (wasm : ()) => (
-    i32.const 0
+  let exit : Integer -> (for a in a) = fn i => (wasm : ()) => (
+    get i
+    struct.get $integer 0
+    i32.wrap_i64
     call $proc_exit
     struct.new $unit
-  )
-
-  let exit_failure : Unit -> Unit = fn _ => (wasm : ()) => (
-    i32.const 1
-    call $proc_exit
-    struct.new $unit
-  )
+  ); bundle::intrinsics::unreachable ()
 
   let args_count : Unit -> Integer = fn _ =>
     let error_code = (wasm : Integer) => (

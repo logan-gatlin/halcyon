@@ -155,6 +155,16 @@ enum WireInstruction {
     I32Store,
     I64Load,
     I64ExtendI32U,
+    I32WrapI64,
+    I32TruncF32S,
+    I32TruncF32U,
+    I32TruncF64S,
+    I32TruncF64U,
+    I64TruncF32S,
+    I64TruncF32U,
+    I64TruncF64S,
+    I64TruncF64U,
+    F32DemoteF64,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -598,6 +608,16 @@ impl WireInstruction {
             Instruction::I32Store => Self::I32Store,
             Instruction::I64Load => Self::I64Load,
             Instruction::I64ExtendI32U => Self::I64ExtendI32U,
+            Instruction::I32WrapI64 => Self::I32WrapI64,
+            Instruction::I32TruncF32S => Self::I32TruncF32S,
+            Instruction::I32TruncF32U => Self::I32TruncF32U,
+            Instruction::I32TruncF64S => Self::I32TruncF64S,
+            Instruction::I32TruncF64U => Self::I32TruncF64U,
+            Instruction::I64TruncF32S => Self::I64TruncF32S,
+            Instruction::I64TruncF32U => Self::I64TruncF32U,
+            Instruction::I64TruncF64S => Self::I64TruncF64S,
+            Instruction::I64TruncF64U => Self::I64TruncF64U,
+            Instruction::F32DemoteF64 => Self::F32DemoteF64,
         }
     }
 
@@ -718,6 +738,16 @@ impl WireInstruction {
             Self::I32Store => Instruction::I32Store,
             Self::I64Load => Instruction::I64Load,
             Self::I64ExtendI32U => Instruction::I64ExtendI32U,
+            Self::I32WrapI64 => Instruction::I32WrapI64,
+            Self::I32TruncF32S => Instruction::I32TruncF32S,
+            Self::I32TruncF32U => Instruction::I32TruncF32U,
+            Self::I32TruncF64S => Instruction::I32TruncF64S,
+            Self::I32TruncF64U => Instruction::I32TruncF64U,
+            Self::I64TruncF32S => Instruction::I64TruncF32S,
+            Self::I64TruncF32U => Instruction::I64TruncF32U,
+            Self::I64TruncF64S => Instruction::I64TruncF64S,
+            Self::I64TruncF64U => Instruction::I64TruncF64U,
+            Self::F32DemoteF64 => Instruction::F32DemoteF64,
         })
     }
 }

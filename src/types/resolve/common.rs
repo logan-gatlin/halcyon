@@ -15,10 +15,17 @@ pub(super) fn format_trait_ref(trait_ref: &TraitRef) -> String {
         let args = trait_ref
             .arguments
             .iter()
-            .map(Type::pretty)
+            .map(format_trait_argument)
             .collect::<Vec<_>>()
             .join(" ");
         format!("{} {args}", trait_ref.trait_name)
+    }
+}
+
+fn format_trait_argument(type_: &Type) -> String {
+    match type_ {
+        Type::Apply { .. } => format!("({})", type_.pretty()),
+        _ => type_.pretty(),
     }
 }
 
@@ -55,6 +62,19 @@ mod tests {
 
         assert_eq!(format_trait_ref(&no_args), "demo::Eq");
         assert_eq!(format_trait_ref(&with_args), "demo::Eq integer [] boolean");
+    }
+
+    #[test]
+    fn format_trait_ref_wraps_complex_arguments() {
+        let with_function_arg = TraitRef::new(
+            Path::new("demo", "Show"),
+            vec![Type::func(Type::Integer, Type::Boolean)],
+        );
+
+        assert_eq!(
+            format_trait_ref(&with_function_arg),
+            "demo::Show (integer -> boolean)"
+        );
     }
 
     #[test]

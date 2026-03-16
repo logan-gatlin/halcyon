@@ -581,6 +581,23 @@ fn inline_wasm_expression_can_use_toplevel_wasm_type_alias() {
 }
 
 #[test]
+fn inline_wasm_truncate_instructions_compile_and_validate() {
+    let source = "module demo =\n\twasm => (\n\t\t(type $integer (struct i64))\n\t)\n\tlet trunc_demo = (wasm : core::Integer) => (\n\t\tf64.const 9.75\n\t\ti32.trunc_f64_s\n\t\tdrop\n\t\tf64.const 9.75\n\t\ti32.trunc_f64_u\n\t\tdrop\n\t\tf32.const 9.75\n\t\ti32.trunc_f32_s\n\t\tdrop\n\t\tf32.const 9.75\n\t\ti32.trunc_f32_u\n\t\tdrop\n\t\tf64.const 9.75\n\t\ti64.trunc_f64_s\n\t\tdrop\n\t\tf64.const 9.75\n\t\ti64.trunc_f64_u\n\t\tdrop\n\t\tf32.const 9.75\n\t\ti64.trunc_f32_s\n\t\tdrop\n\t\tf32.const 9.75\n\t\ti64.trunc_f32_u\n\t\tdrop\n\t\ti64.const 42\n\t\ti32.wrap_i64\n\t\tdrop\n\t\tf64.const 9.75\n\t\tf32.demote_f64\n\t\tdrop\n\t\ti64.const 0\n\t\tstruct.new $integer\n\t)\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let artifacts = compile_source(source, &mut file_logger, &mut symbols);
+    logger.consume_file(file_logger);
+
+    for artifact in artifacts.into_vec() {
+        let _ = validate_artifact(artifact, &mut logger);
+    }
+
+    assert_logger_is_ok(&logger, "Compilation failed");
+}
+
+#[test]
 fn bracketed_operator_name_is_canonicalized_in_ir() {
     let source = "module demo =\n\tlet [ + ] = fn a b => a + b\nend\n";
     let mut logger = Logger::new();

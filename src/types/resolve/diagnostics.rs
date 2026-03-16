@@ -2,6 +2,8 @@
 
 use std::collections::HashSet;
 
+use indexmap::IndexMap;
+
 use crate::logging::WithContext;
 use crate::{
     FileLogger,
@@ -266,26 +268,127 @@ pub(super) fn log_type_error(
                 )
                 .done();
         }
-        TypeError::Unification { error, span } => {
+        TypeError::Unification {
+            error,
+            span,
+            context,
+        } => {
             match error {
                 super::super::unify::UnifyError::Occurs { var, in_type } => {
-                    logger
+                    let mut builder = logger
                         .error("Occurs check failed")
                         .primary(
-                            format!("Type variable ?t{var} occurs in `{in_type}`."),
+                            format!(
+                                "Cannot make `?t{var}` equal to `{in_type}` because that would require `?t{var}` to contain itself."
+                            ),
                             span,
-                        )
-                        .done();
+                        );
+                    if let Some(context) = context {
+                        builder = builder.note(format!("While {context}."));
+                    }
+                    builder.done();
                 }
                 super::super::unify::UnifyError::Mismatch { left, right } => {
-                    logger
+                    let mut builder = logger
                         .error("Type mismatch")
-                        .primary(format!("`{left}` does not match `{right}`."), span)
-                        .done();
+                        .primary(
+                            format!("Found `{left}`, but this site requires `{right}`."),
+                            span,
+                        )
+                        .note(format!("found: `{left}`"))
+                        .note(format!("required: `{right}`"));
+                    if let Some(context) = context {
+                        builder = builder.note(format!("While {context}."));
+                    }
+                    if let Some(note) = mismatch_detail_note(&left, &right) {
+                        builder = builder.note(note);
+                    }
+                    builder.done();
                 }
             }
         }
     }
+}
+
+fn mismatch_detail_note(
+    left: &super::super::Type,
+    right: &super::super::Type,
+) -> Option<String> {
+    match (left, right) {
+        (super::super::Type::Tuple(left_items), super::super::Type::Tuple(right_items))
+            if left_items.len() != right_items.len() =>
+        {
+            Some(format!(
+                "Tuple lengths differ: found {} item(s) but required {} item(s).",
+                left_items.len(),
+                right_items.len()
+            ))
+        }
+        (
+            super::super::Type::Struct {
+                fields: left_fields,
+            },
+            super::super::Type::Struct {
+                fields: right_fields,
+            },
+        ) => struct_field_difference_note(left_fields, right_fields),
+        (
+            super::super::Type::StructConstraint {
+                fields: left_fields,
+                ..
+            },
+            super::super::Type::StructConstraint {
+                fields: right_fields,
+                ..
+            },
+        ) => struct_field_difference_note(left_fields, right_fields),
+        (
+            super::super::Type::Named {
+                name: left_name, ..
+            },
+            super::super::Type::Named {
+                name: right_name, ..
+            },
+        ) if left_name != right_name => {
+            Some(format!(
+                "These are different named types (`{left_name}` vs `{right_name}`). Named types match by name, not by field shape."
+            ))
+        }
+        _ => None,
+    }
+}
+
+fn struct_field_difference_note(
+    left_fields: &IndexMap<String, super::super::Type>,
+    right_fields: &IndexMap<String, super::super::Type>,
+) -> Option<String> {
+    let missing = right_fields
+        .keys()
+        .filter(|name| !left_fields.contains_key(*name))
+        .cloned()
+        .collect::<Vec<_>>();
+    let extra = left_fields
+        .keys()
+        .filter(|name| !right_fields.contains_key(*name))
+        .cloned()
+        .collect::<Vec<_>>();
+
+    if missing.is_empty() && extra.is_empty() {
+        return None;
+    }
+
+    Some(match (missing.is_empty(), extra.is_empty()) {
+        (false, true) => format!("Missing field(s): {}.", missing.join(", ")),
+        (true, false) => format!("Unexpected field(s): {}.", extra.join(", ")),
+        (false, false) => {
+            format!(
+                "Missing field(s): {}. Unexpected field(s): {}.",
+                missing.join(", "),
+                extra.join(", ")
+            )
+        }
+        (true, true) => String::new(),
+    })
 }
 
 /// Emit diagnostics for shared type-expression lowering errors.

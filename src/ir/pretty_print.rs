@@ -507,6 +507,16 @@ impl Printer {
             WasmInstruction::I32Store => "i32.store".to_string(),
             WasmInstruction::I64Load => "i64.load".to_string(),
             WasmInstruction::I64ExtendI32U => "i64.extend_i32_u".to_string(),
+            WasmInstruction::I32WrapI64 => "i32.wrap_i64".to_string(),
+            WasmInstruction::I32TruncF32S => "i32.trunc_f32_s".to_string(),
+            WasmInstruction::I32TruncF32U => "i32.trunc_f32_u".to_string(),
+            WasmInstruction::I32TruncF64S => "i32.trunc_f64_s".to_string(),
+            WasmInstruction::I32TruncF64U => "i32.trunc_f64_u".to_string(),
+            WasmInstruction::I64TruncF32S => "i64.trunc_f32_s".to_string(),
+            WasmInstruction::I64TruncF32U => "i64.trunc_f32_u".to_string(),
+            WasmInstruction::I64TruncF64S => "i64.trunc_f64_s".to_string(),
+            WasmInstruction::I64TruncF64U => "i64.trunc_f64_u".to_string(),
+            WasmInstruction::F32DemoteF64 => "f32.demote_f64".to_string(),
         }
     }
 

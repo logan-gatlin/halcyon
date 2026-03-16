@@ -19,18 +19,17 @@ use std::path::{
 
 use enum_iterator::all;
 
-use crate::asm;
-
 use crate::logging::WithContext;
 use crate::parse::ast::{
+    self,
     AstNode,
     HasName,
 };
 use crate::types::SymbolTable;
-use crate::types::symbol_table::Symbol;
 use crate::{
     Artifact,
     Span,
+    asm,
 };
 
 pub const CORE_MODULE_NAME: &str = "core";
@@ -39,12 +38,12 @@ const CORE_SOURCE_ROOT: &str = "core";
 const CORE_ROOT_FILE_NAME: &str = "bundle.hc";
 
 #[derive(Debug, Default)]
-struct CoreSourceExpansionState {
+struct CoreSourceTraversalState {
     visited: HashSet<PathBuf>,
     visiting: Vec<PathBuf>,
 }
 
-impl CoreSourceExpansionState {
+impl CoreSourceTraversalState {
     fn cycle_chain(
         &self,
         candidate: &Path,
@@ -54,6 +53,13 @@ impl CoreSourceExpansionState {
         chain.push(candidate.to_path_buf());
         Some(chain)
     }
+}
+
+#[derive(Debug, Clone)]
+struct CoreSourceFragment {
+    source_path: PathBuf,
+    source: String,
+    statements: Vec<ast::Statement>,
 }
 
 #[tracing::instrument(skip_all)]
@@ -98,6 +104,46 @@ fn display_source_path(relative_path: &Path) -> String {
         .join(relative_path)
         .to_string_lossy()
         .replace('\\', "/")
+}
+
+fn name_resolution_prelude(symbols: &SymbolTable) -> Vec<(crate::ir::Path, crate::ir::NameSpace)> {
+    let mut prelude = Vec::new();
+    prelude.extend(
+        symbols
+            .terms()
+            .keys()
+            .cloned()
+            .map(|path| (path, crate::ir::NameSpace::Term)),
+    );
+    prelude.extend(
+        symbols
+            .constructors()
+            .iter()
+            .cloned()
+            .map(|path| (path, crate::ir::NameSpace::Constructor)),
+    );
+    prelude.extend(
+        symbols
+            .type_definitions()
+            .keys()
+            .cloned()
+            .map(|path| (path, crate::ir::NameSpace::Type)),
+    );
+    prelude.extend(
+        symbols
+            .trait_defs()
+            .keys()
+            .cloned()
+            .map(|path| (path, crate::ir::NameSpace::Trait)),
+    );
+    prelude.extend(
+        symbols
+            .trait_aliases()
+            .keys()
+            .cloned()
+            .map(|path| (path, crate::ir::NameSpace::Trait)),
+    );
+    prelude
 }
 
 fn decode_hex_nibble(ch: char) -> Option<u32> {
@@ -191,13 +237,14 @@ fn read_core_source_file(
     std::fs::read_to_string(source_root.join(source_path))
 }
 
-fn expand_core_source_with_imports(
+fn collect_core_source_fragments_with_imports(
     source_root: &Path,
     source_path: &Path,
     is_root: bool,
-    state: &mut CoreSourceExpansionState,
+    state: &mut CoreSourceTraversalState,
     logger: &mut crate::Logger,
-    expanded_source: &mut String,
+    bundle_name: &mut Option<String>,
+    fragments: &mut Vec<CoreSourceFragment>,
 ) -> Option<()> {
     if state.visited.contains(source_path) {
         return Some(());
@@ -242,23 +289,36 @@ fn expand_core_source_with_imports(
     let mut file_logger = logger.new_file(display_source_path(source_path), source.clone());
     let result = (|| -> Option<()> {
         let source_file = crate::parse::parse(&source, &mut file_logger)?;
+
+        let mut local_bundle_name: Option<String> = None;
+        let mut local_bundle_span = Span::Generated;
+        let mut statements = Vec::new();
+
         for item in source_file.items() {
             match item {
-                crate::parse::ast::TopLevelItem::Bundle(bundle_declaration) => {
-                    if !is_root {
+                ast::TopLevelItem::Bundle(bundle_declaration) => {
+                    if local_bundle_name.is_some() {
                         file_logger
-                            .bug("imported core source file declared a bundle")
+                            .bug("bundled core source declared duplicate bundles")
                             .primary(
-                                "Imported core source files are part of the root core bundle and must not declare `bundle`.",
+                                "Core source may only declare one bundle.",
                                 bundle_declaration.span(),
                             )
                             .done();
                         continue;
                     }
-                    expanded_source.push_str(&bundle_declaration.syntax().text().to_string());
-                    expanded_source.push('\n');
+                    local_bundle_name = bundle_declaration.name_text();
+                    local_bundle_span = bundle_declaration.span();
                 }
-                crate::parse::ast::TopLevelItem::Import(import_statement) => {
+                ast::TopLevelItem::Import(import_statement) => {
+                    if !statements.is_empty() {
+                        fragments.push(CoreSourceFragment {
+                            source_path: source_path.to_path_buf(),
+                            source: source.clone(),
+                            statements: std::mem::take(&mut statements),
+                        });
+                    }
+
                     for path_literal in import_statement.path_literals() {
                         let Some(decoded_path) = decode_import_path_literal(&path_literal.inner)
                         else {
@@ -310,22 +370,49 @@ fn expand_core_source_with_imports(
                             continue;
                         }
 
-                        expand_core_source_with_imports(
+                        collect_core_source_fragments_with_imports(
                             source_root,
                             &normalized_path,
                             false,
                             state,
                             logger,
-                            expanded_source,
+                            bundle_name,
+                            fragments,
                         )?;
                     }
                 }
-                crate::parse::ast::TopLevelItem::Statement(statement) => {
-                    expanded_source.push_str(&statement.syntax().text().to_string());
-                    expanded_source.push('\n');
-                }
+                ast::TopLevelItem::Statement(statement) => statements.push(statement),
             }
         }
+
+        if is_root {
+            if let Some(local_bundle_name) = local_bundle_name {
+                *bundle_name = Some(local_bundle_name);
+            }
+        } else if let Some(local_bundle_name) = local_bundle_name {
+            let active_bundle_name = bundle_name
+                .as_deref()
+                .unwrap_or(CORE_MODULE_NAME)
+                .to_string();
+            file_logger
+                .bug("imported core source file declared a bundle")
+                .primary(
+                    format!(
+                        "Imported core source files are part of bundle `{active_bundle_name}` and must not declare `bundle {local_bundle_name}`."
+                    ),
+                    local_bundle_span,
+                )
+                .done();
+        }
+
+        if !statements.is_empty() {
+            fragments.push(CoreSourceFragment {
+                source_path: source_path.to_path_buf(),
+                source: source.clone(),
+                statements,
+            });
+        }
+
         Some(())
     })();
 
@@ -344,7 +431,43 @@ fn expand_core_source_with_imports(
     Some(())
 }
 
-fn load_expanded_core_source(logger: &mut crate::Logger) -> Option<String> {
+fn combine_resolved_fragments(
+    bundle_name: &str,
+    resolved_fragments: Vec<crate::types::ResolvedModule>,
+) -> crate::types::ResolvedModule {
+    let mut statements = Vec::new();
+    let mut resolved_fragments = resolved_fragments.into_iter();
+    let mut combined_schemes = if let Some(first) = resolved_fragments.next() {
+        statements.extend(first.module.statements.into_vec());
+        first.schemes
+    } else {
+        return crate::types::ResolvedModule {
+            module: crate::ir::Module {
+                name: bundle_name.to_string(),
+                statements: statements.into_boxed_slice(),
+            },
+            schemes: Default::default(),
+        };
+    };
+
+    for resolved in resolved_fragments {
+        statements.extend(resolved.module.statements.into_vec());
+        combined_schemes.extend(resolved.schemes);
+    }
+
+    crate::types::ResolvedModule {
+        module: crate::ir::Module {
+            name: bundle_name.to_string(),
+            statements: statements.into_boxed_slice(),
+        },
+        schemes: combined_schemes,
+    }
+}
+
+fn resolve_core_source_bundle(
+    symbols: &mut SymbolTable,
+    logger: &mut crate::Logger,
+) -> Option<crate::types::ResolvedModule> {
     let source_root = core_source_root_dir();
     if !source_root.is_dir() {
         let mut file_logger =
@@ -363,114 +486,96 @@ fn load_expanded_core_source(logger: &mut crate::Logger) -> Option<String> {
         return None;
     }
 
-    let mut expanded_source = String::new();
-    let mut state = CoreSourceExpansionState::default();
-    expand_core_source_with_imports(
+    let mut state = CoreSourceTraversalState::default();
+    let mut fragments = Vec::new();
+    let mut bundle_name = None;
+    collect_core_source_fragments_with_imports(
         &source_root,
         Path::new(CORE_ROOT_FILE_NAME),
         true,
         &mut state,
         logger,
-        &mut expanded_source,
+        &mut bundle_name,
+        &mut fragments,
     )?;
-    Some(expanded_source)
-}
 
-fn resolve_core_source_bundle(
-    symbols: &mut SymbolTable,
-    logger: &mut crate::Logger,
-) -> Option<crate::types::ResolvedModule> {
-    let source = load_expanded_core_source(logger)?;
-    let mut file_logger = logger.new_file(
+    let root_source = fragments
+        .iter()
+        .find(|fragment| fragment.source_path == Path::new(CORE_ROOT_FILE_NAME))
+        .map(|fragment| fragment.source.clone())
+        .unwrap_or_default();
+
+    let mut root_file_logger = logger.new_file(
         display_source_path(Path::new(CORE_ROOT_FILE_NAME)),
-        source.clone(),
+        root_source,
     );
-
-    let Some(source_file) = crate::parse::parse(&source, &mut file_logger) else {
-        file_logger.escalate_to_bug();
-        logger.consume_file(file_logger);
-        return None;
-    };
-
-    let mut bundle_name = None;
-    let mut statements = Vec::new();
-    for item in source_file.items() {
-        match item {
-            crate::parse::ast::TopLevelItem::Bundle(bundle_declaration) => {
-                if bundle_name.is_some() {
-                    file_logger
-                        .bug("bundled core source declared duplicate bundles")
-                        .primary(
-                            "Core source may only declare one bundle.",
-                            bundle_declaration.span(),
-                        )
-                        .done();
-                    logger.consume_file(file_logger);
-                    return None;
-                }
-                bundle_name = bundle_declaration.name_text();
-            }
-            crate::parse::ast::TopLevelItem::Import(import_statement) => {
-                file_logger
-                    .bug("expanded bundled core source may not contain import statements")
-                    .primary(
-                        "Imports should be expanded before lowering core source.",
-                        import_statement.span(),
-                    )
-                    .done();
-                logger.consume_file(file_logger);
-                return None;
-            }
-            crate::parse::ast::TopLevelItem::Statement(statement) => statements.push(statement),
-        }
-    }
-
     let bundle_name = bundle_name.unwrap_or_else(|| {
-        file_logger
+        root_file_logger
             .bug("bundled core source did not contain a bundle declaration")
             .done();
         CORE_MODULE_NAME.to_string()
     });
-    if !file_logger.is_ok() {
-        logger.consume_file(file_logger);
-        return None;
-    }
 
     if bundle_name != CORE_MODULE_NAME {
-        file_logger
+        root_file_logger
             .bug("bundled core source declared an unexpected bundle name")
             .primary(
                 format!("Expected `bundle {CORE_MODULE_NAME}`, found `bundle {bundle_name}`."),
                 Span::Generated,
             )
             .done();
-        logger.consume_file(file_logger);
+    }
+
+    if !root_file_logger.is_ok() {
+        root_file_logger.escalate_to_bug();
+    }
+    logger.consume_file(root_file_logger);
+    if !logger.is_ok() {
         return None;
     }
 
-    let prelude = all::<CoreType>()
-        .map(|symbol| (symbol.path(), crate::ir::NameSpace::Type))
-        .collect::<Vec<_>>();
+    let mut resolved_fragments = Vec::new();
+    let mut wasm_type_defs = indexmap::IndexMap::new();
+    let mut lowering_salt = 0;
+    for fragment in &fragments {
+        let mut file_logger = logger.new_file(
+            display_source_path(&fragment.source_path),
+            fragment.source.clone(),
+        );
+        let prelude = name_resolution_prelude(symbols);
+        if let Some(ir_module) = crate::ir::bundle_statements_with_prelude_and_wasm_types_and_salt(
+            bundle_name.clone(),
+            &fragment.statements,
+            &mut file_logger,
+            &prelude,
+            &mut wasm_type_defs,
+            &mut lowering_salt,
+        ) {
+            let resolved = crate::types::resolve_module_with_symbols_and_schemes(
+                symbols,
+                ir_module,
+                &mut file_logger,
+            );
+            resolved_fragments.push(resolved);
+        } else if file_logger.is_ok() {
+            file_logger
+                .bug("bundled core source lowering failed")
+                .primary(
+                    "Core source lowering failed without a specific diagnostic.",
+                    Span::Generated,
+                )
+                .done();
+        }
 
-    let Some(ir_bundle) = crate::ir::bundle_statements_with_prelude(
-        bundle_name,
-        &statements,
-        &mut file_logger,
-        &prelude,
-    ) else {
-        file_logger.escalate_to_bug();
+        if !file_logger.is_ok() {
+            file_logger.escalate_to_bug();
+        }
         logger.consume_file(file_logger);
-        return None;
-    };
+    }
 
-    let resolved =
-        crate::types::resolve_module_with_symbols_and_schemes(symbols, ir_bundle, &mut file_logger);
-
-    if !file_logger.is_ok() {
-        file_logger.escalate_to_bug();
-        logger.consume_file(file_logger);
+    if !logger.is_ok() {
         return None;
     }
-    logger.consume_file(file_logger);
-    Some(resolved)
+
+    Some(combine_resolved_fragments(&bundle_name, resolved_fragments))
 }

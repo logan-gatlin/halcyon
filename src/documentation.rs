@@ -21,6 +21,17 @@ pub enum StatementKind {
     Impl,
 }
 
+impl StatementKind {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Term => "term",
+            Self::Type => "type",
+            Self::Trait => "trait",
+            Self::Impl => "impl",
+        }
+    }
+}
+
 /// A single documented definition extracted from a type-checked module.
 #[derive(Debug, Clone)]
 pub struct Documentation {
@@ -291,6 +302,49 @@ pub fn render_markdown(
     out
 }
 
+pub fn render_json(
+    module_name: &str,
+    docs: &[Documentation],
+) -> Result<String, serde_json::Error> {
+    serde_json::to_string_pretty(&serde_json::json!({
+        "module": module_name,
+        "entries": docs
+            .iter()
+            .map(|doc| {
+                serde_json::json!({
+                    "kind": doc.kind.as_str(),
+                    "name": {
+                        "major": doc.name.major.as_str(),
+                        "minor": doc.name.minor.as_str(),
+                    },
+                    "signature": format_type_signature(&doc.type_),
+                    "comments": doc.comments.trim(),
+                })
+            })
+            .collect::<Vec<_>>(),
+    }))
+}
+
+fn format_type_signature(type_scheme: &TypeScheme) -> String {
+    use std::fmt::Write;
+
+    let mut out = String::new();
+    if !type_scheme.predicates.is_empty() {
+        for (i, predicate) in type_scheme.predicates.iter().enumerate() {
+            if i > 0 {
+                let _ = write!(out, ", ");
+            }
+            let _ = write!(out, "{}", predicate.trait_name.minor);
+            for arg in &predicate.arguments {
+                let _ = write!(out, " {arg}");
+            }
+        }
+        let _ = write!(out, " => ");
+    }
+    let _ = write!(out, "{}", type_scheme.type_);
+    out
+}
+
 fn render_entry(
     out: &mut String,
     doc: &Documentation,
@@ -299,19 +353,7 @@ fn render_entry(
 
     let _ = writeln!(out, "### `{}`\n", doc.name.minor);
     let _ = writeln!(out, "```");
-    if !doc.type_.predicates.is_empty() {
-        for (i, p) in doc.type_.predicates.iter().enumerate() {
-            if i > 0 {
-                let _ = write!(out, ", ");
-            }
-            let _ = write!(out, "{}", p.trait_name.minor);
-            for arg in &p.arguments {
-                let _ = write!(out, " {arg}");
-            }
-        }
-        let _ = write!(out, " => ");
-    }
-    let _ = writeln!(out, "{}", doc.type_.type_);
+    let _ = writeln!(out, "{}", format_type_signature(&doc.type_));
     let _ = writeln!(out, "```\n");
 
     let comments = doc.comments.trim();

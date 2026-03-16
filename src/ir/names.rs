@@ -8,7 +8,7 @@ use crate::parse::ast::{
     HasName,
 };
 use crate::{
-    CORE_MODULE_NAME,
+    CORE_BUNDLE_NAME,
     FileLogger,
     Span,
     Spanned,
@@ -43,7 +43,7 @@ impl Path {
         }
     }
     pub fn core(minor: impl Into<String>) -> Self {
-        Self::new(CORE_MODULE_NAME, minor)
+        Self::new(CORE_BUNDLE_NAME, minor)
     }
 
     pub fn from_segments(segments: &[String]) -> Option<Self> {
@@ -270,6 +270,19 @@ impl ModuleScope {
             ambiguous_usages: Default::default(),
             alias_collisions: Default::default(),
         }
+    }
+
+    pub fn with_salt(
+        module_name: String,
+        salt: usize,
+    ) -> Self {
+        let mut scope = Self::new(module_name);
+        scope.salt = salt;
+        scope
+    }
+
+    pub fn salt(&self) -> usize {
+        self.salt
     }
 
     pub fn report_name_resolution_errors(

@@ -486,21 +486,59 @@ pub fn bundle_statements_with_prelude(
     logger: &mut FileLogger,
     prelude: &[(Path, NameSpace)],
 ) -> Option<Module<()>> {
-    let mut module_scope = ModuleScope::new(bundle_name.clone());
+    let mut wasm_type_defs: IndexMap<String, WasmType> = IndexMap::new();
+    bundle_statements_with_prelude_and_wasm_types(
+        bundle_name,
+        ast_statements,
+        logger,
+        prelude,
+        &mut wasm_type_defs,
+    )
+}
+
+#[tracing::instrument(skip_all, fields(bundle = %bundle_name))]
+pub fn bundle_statements_with_prelude_and_wasm_types(
+    bundle_name: String,
+    ast_statements: &[ast::Statement],
+    logger: &mut FileLogger,
+    prelude: &[(Path, NameSpace)],
+    wasm_type_defs: &mut IndexMap<String, WasmType>,
+) -> Option<Module<()>> {
+    let mut salt = 0;
+    bundle_statements_with_prelude_and_wasm_types_and_salt(
+        bundle_name,
+        ast_statements,
+        logger,
+        prelude,
+        wasm_type_defs,
+        &mut salt,
+    )
+}
+
+#[tracing::instrument(skip_all, fields(bundle = %bundle_name))]
+pub fn bundle_statements_with_prelude_and_wasm_types_and_salt(
+    bundle_name: String,
+    ast_statements: &[ast::Statement],
+    logger: &mut FileLogger,
+    prelude: &[(Path, NameSpace)],
+    wasm_type_defs: &mut IndexMap<String, WasmType>,
+    salt: &mut usize,
+) -> Option<Module<()>> {
+    let mut module_scope = ModuleScope::with_salt(bundle_name.clone(), *salt);
     for (path, namespace) in prelude {
         module_scope.predefine(path.clone(), *namespace);
     }
-    module_scope.register_implicit_open_use(&[crate::CORE_MODULE_NAME, "prelude"]);
-    let mut wasm_type_defs: IndexMap<String, WasmType> = IndexMap::new();
+    module_scope.register_implicit_open_use(&[crate::CORE_BUNDLE_NAME, "prelude"]);
     let mut lowered_statements = Vec::new();
     lower_module_statements(
         &mut module_scope,
         &bundle_name,
-        &mut wasm_type_defs,
+        wasm_type_defs,
         &mut lowered_statements,
         logger,
         ast_statements,
     )?;
+    *salt = module_scope.salt();
     module_scope.report_name_resolution_errors(logger);
     Some(Module {
         name: bundle_name,

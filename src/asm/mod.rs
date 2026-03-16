@@ -459,6 +459,56 @@ pub enum Instruction {
     ///
     /// Stack: `[value: i32] -> [value: i64]`
     I64ExtendI32U,
+
+    /// Truncate i64 to i32.
+    ///
+    /// Stack: `[value: i64] -> [value: i32]`
+    I32WrapI64,
+
+    /// Truncate f32 to signed i32.
+    ///
+    /// Stack: `[value: f32] -> [value: i32]`
+    I32TruncF32S,
+
+    /// Truncate f32 to unsigned i32.
+    ///
+    /// Stack: `[value: f32] -> [value: i32]`
+    I32TruncF32U,
+
+    /// Truncate f64 to signed i32.
+    ///
+    /// Stack: `[value: f64] -> [value: i32]`
+    I32TruncF64S,
+
+    /// Truncate f64 to unsigned i32.
+    ///
+    /// Stack: `[value: f64] -> [value: i32]`
+    I32TruncF64U,
+
+    /// Truncate f32 to signed i64.
+    ///
+    /// Stack: `[value: f32] -> [value: i64]`
+    I64TruncF32S,
+
+    /// Truncate f32 to unsigned i64.
+    ///
+    /// Stack: `[value: f32] -> [value: i64]`
+    I64TruncF32U,
+
+    /// Truncate f64 to signed i64.
+    ///
+    /// Stack: `[value: f64] -> [value: i64]`
+    I64TruncF64S,
+
+    /// Truncate f64 to unsigned i64.
+    ///
+    /// Stack: `[value: f64] -> [value: i64]`
+    I64TruncF64U,
+
+    /// Demote f64 to f32.
+    ///
+    /// Stack: `[value: f64] -> [value: f32]`
+    F32DemoteF64,
 }
 
 #[derive(Debug, Clone, Default)]

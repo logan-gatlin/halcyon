@@ -499,6 +499,36 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
                 i::I64ExtendI32U => {
                     function_body.instruction(&winstr::I64ExtendI32U);
                 }
+                i::I32WrapI64 => {
+                    function_body.instruction(&winstr::I32WrapI64);
+                }
+                i::I32TruncF32S => {
+                    function_body.instruction(&winstr::I32TruncF32S);
+                }
+                i::I32TruncF32U => {
+                    function_body.instruction(&winstr::I32TruncF32U);
+                }
+                i::I32TruncF64S => {
+                    function_body.instruction(&winstr::I32TruncF64S);
+                }
+                i::I32TruncF64U => {
+                    function_body.instruction(&winstr::I32TruncF64U);
+                }
+                i::I64TruncF32S => {
+                    function_body.instruction(&winstr::I64TruncF32S);
+                }
+                i::I64TruncF32U => {
+                    function_body.instruction(&winstr::I64TruncF32U);
+                }
+                i::I64TruncF64S => {
+                    function_body.instruction(&winstr::I64TruncF64S);
+                }
+                i::I64TruncF64U => {
+                    function_body.instruction(&winstr::I64TruncF64U);
+                }
+                i::F32DemoteF64 => {
+                    function_body.instruction(&winstr::F32DemoteF64);
+                }
                 i::Call(path) => {
                     if let Some(&idx) = func_namespace.get(path) {
                         function_body.instruction(&winstr::Call(idx));

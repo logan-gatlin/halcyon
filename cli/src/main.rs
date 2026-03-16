@@ -14,7 +14,7 @@ use halcyon_lib::parse::ast::{
 use halcyon_lib::types::SymbolTable;
 use halcyon_lib::{
     Artifact,
-    CORE_MODULE_NAME,
+    CORE_BUNDLE_NAME,
     Logger,
     Span,
     WASM_MAGIC_NUMBER,
@@ -90,7 +90,7 @@ fn print_usage() {
     eprintln!(
         "                      Inputs are linked and initialized in the exact order provided."
     );
-    eprintln!("  doc <bundle-root>    Generate markdown documentation in docs/");
+    eprintln!("  doc <bundle-root>    Generate JSON documentation in docs/");
 }
 
 #[derive(Default)]
@@ -664,7 +664,7 @@ fn collect_input_artifacts(
             compile_source_bundle(&source_path, &mut logger, &mut symbols)?
         };
 
-        if artifact.module_name == CORE_MODULE_NAME {
+        if artifact.module_name == CORE_BUNDLE_NAME {
             includes_core = true;
         }
         artifacts.push(artifact);
@@ -759,9 +759,9 @@ fn generate_docs(root_path: &str) -> Result<(), Box<dyn std::error::Error>> {
     let docs = documentation::generate(&merged_resolved, &symbols);
 
     std::fs::create_dir_all("docs")?;
-    let markdown = documentation::render_markdown(&bundle_name, &docs);
-    let path = std::path::Path::new("docs").join(format!("{bundle_name}.md"));
-    std::fs::write(path, markdown)?;
+    let json = documentation::render_json(&bundle_name, &docs)?;
+    let path = std::path::Path::new("docs").join(format!("{bundle_name}.json"));
+    std::fs::write(path, json)?;
 
     Ok(())
 }

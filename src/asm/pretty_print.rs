@@ -239,6 +239,16 @@ impl PrettyPrint for Instruction {
             I32Store => "i32.store".into(),
             I64Load => "i64.load".into(),
             I64ExtendI32U => "i64.extend_i32_u".into(),
+            I32WrapI64 => "i32.wrap_i64".into(),
+            I32TruncF32S => "i32.trunc_f32_s".into(),
+            I32TruncF32U => "i32.trunc_f32_u".into(),
+            I32TruncF64S => "i32.trunc_f64_s".into(),
+            I32TruncF64U => "i32.trunc_f64_u".into(),
+            I64TruncF32S => "i64.trunc_f32_s".into(),
+            I64TruncF32U => "i64.trunc_f32_u".into(),
+            I64TruncF64S => "i64.trunc_f64_s".into(),
+            I64TruncF64U => "i64.trunc_f64_u".into(),
+            F32DemoteF64 => "f32.demote_f64".into(),
             Call(path) => format!("call {}", path.pretty()),
         }
     }
