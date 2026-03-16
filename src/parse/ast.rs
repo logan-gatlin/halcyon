@@ -306,15 +306,18 @@ macro_rules! ast_node {
 ast_node!(SourceFile, SOURCE_FILE);
 
 impl SourceFile {
-    pub fn items(&self) -> Vec<TopLevelItem> {
-        self.syntax
-            .children()
-            .filter_map(TopLevelItem::cast)
-            .collect()
+    pub fn items(&self) -> Vec<Statement> {
+        child_nodes(&self.syntax)
     }
 
     pub fn bundle_declaration(&self) -> Option<BundleDeclaration> {
-        child_node(&self.syntax)
+        self.items().into_iter().find_map(|statement| {
+            if let Statement::Bundle(bundle_declaration) = statement {
+                Some(bundle_declaration)
+            } else {
+                None
+            }
+        })
     }
 
     pub fn modules(&self) -> Vec<Module> {
@@ -322,11 +325,20 @@ impl SourceFile {
     }
 
     pub fn statements(&self) -> Vec<Statement> {
-        child_nodes(&self.syntax)
+        self.items()
     }
 
     pub fn imports(&self) -> Vec<ImportStatement> {
-        child_nodes(&self.syntax)
+        self.items()
+            .into_iter()
+            .filter_map(|statement| {
+                if let Statement::Import(import_statement) = statement {
+                    Some(import_statement)
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 }
 
@@ -416,6 +428,16 @@ impl LetStatement {
     }
     pub fn value(&self) -> Option<Expr> {
         child_node_after_token(&self.syntax, SyntaxKind::EQUAL)
+    }
+}
+
+ast_node!(DoStatement, DO_STATEMENT);
+impl HasLeadingComments for DoStatement {
+}
+
+impl DoStatement {
+    pub fn value(&self) -> Option<Expr> {
+        child_node_after_token(&self.syntax, SyntaxKind::DO_KW)
     }
 }
 
@@ -1314,36 +1336,14 @@ impl PathOrIdent {
 // Enum groupings
 // ═══════════════════════════════════════════════════════════════════════
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum TopLevelItem {
-    Bundle(BundleDeclaration),
-    Import(ImportStatement),
-    Statement(Statement),
-}
-
-impl TopLevelItem {
-    fn cast(node: SyntaxNode) -> Option<Self> {
-        match node.kind() {
-            SyntaxKind::BUNDLE_DECLARATION => BundleDeclaration::cast(node).map(Self::Bundle),
-            SyntaxKind::IMPORT_STATEMENT => ImportStatement::cast(node).map(Self::Import),
-            _ => Statement::cast(node).map(Self::Statement),
-        }
-    }
-
-    pub fn span(&self) -> Span {
-        match self {
-            Self::Bundle(bundle) => bundle.span(),
-            Self::Import(import) => import.span(),
-            Self::Statement(statement) => statement.span(),
-        }
-    }
-}
-
 /// A top-level statement inside a module body.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Statement {
+    Bundle(BundleDeclaration),
+    Import(ImportStatement),
     Use(UseStatement),
     Let(LetStatement),
+    Do(DoStatement),
     Type(TypeStatement),
     Trait(TraitStatement),
     Impl(ImplStatement),
@@ -1354,8 +1354,11 @@ pub enum Statement {
 impl AstNode for Statement {
     fn cast(node: SyntaxNode) -> Option<Self> {
         match node.kind() {
+            SyntaxKind::BUNDLE_DECLARATION => BundleDeclaration::cast(node).map(Self::Bundle),
+            SyntaxKind::IMPORT_STATEMENT => ImportStatement::cast(node).map(Self::Import),
             SyntaxKind::USE_STATEMENT => UseStatement::cast(node).map(Self::Use),
             SyntaxKind::LET_STATEMENT => LetStatement::cast(node).map(Self::Let),
+            SyntaxKind::DO_STATEMENT => DoStatement::cast(node).map(Self::Do),
             SyntaxKind::TYPE_STATEMENT => TypeStatement::cast(node).map(Self::Type),
             SyntaxKind::TRAIT_STATEMENT => TraitStatement::cast(node).map(Self::Trait),
             SyntaxKind::IMPL_STATEMENT => ImplStatement::cast(node).map(Self::Impl),
@@ -1366,8 +1369,11 @@ impl AstNode for Statement {
     }
     fn syntax(&self) -> &SyntaxNode {
         match self {
+            Self::Bundle(n) => n.syntax(),
+            Self::Import(n) => n.syntax(),
             Self::Use(n) => n.syntax(),
             Self::Let(n) => n.syntax(),
+            Self::Do(n) => n.syntax(),
             Self::Type(n) => n.syntax(),
             Self::Trait(n) => n.syntax(),
             Self::Impl(n) => n.syntax(),

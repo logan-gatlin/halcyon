@@ -4,12 +4,12 @@ use super::*;
 
 use crate::hc_core::compile_core_module;
 use crate::types::{
-    SymbolTable,
     resolve_module_with_symbols_and_schemes,
+    SymbolTable,
 };
 use crate::{
-    Logger,
     parse,
+    Logger,
 };
 use wasmparser::Payload;
 
@@ -92,4 +92,43 @@ fn type_signature_preserves_definition_order() {
         .map(|path| path.minor.clone())
         .collect::<Vec<_>>();
     assert_eq!(order, vec!["First", "Second"]);
+}
+
+#[test]
+fn exports_wasi_start_symbol_without_start_section() {
+    let source = "module demo =\n\tlet value : core::Integer = core::default\nend\n";
+    let (mut modules, symbols) = compile_modules(source);
+    let module = modules.pop().unwrap();
+    let wasm = encode(lower_module(module, &symbols));
+
+    let mut has_wasi_start_export = false;
+    let mut has_start_section = false;
+
+    for payload in wasmparser::Parser::new(0).parse_all(&wasm) {
+        match payload.unwrap() {
+            Payload::ExportSection(reader) => {
+                for export in reader {
+                    let export = export.unwrap();
+                    if export.name == "_start"
+                        && matches!(export.kind, wasmparser::ExternalKind::Func)
+                    {
+                        has_wasi_start_export = true;
+                    }
+                }
+            }
+            Payload::StartSection { .. } => {
+                has_start_section = true;
+            }
+            _ => {}
+        }
+    }
+
+    assert!(
+        has_wasi_start_export,
+        "module should export a function named _start"
+    );
+    assert!(
+        !has_start_section,
+        "module should not emit a wasm start section"
+    );
 }

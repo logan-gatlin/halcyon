@@ -3,14 +3,15 @@
 ## Program Structure
 ```bnf
 <file>       ::= <file_item>*
-<file_item>  ::= <bundle_declaration>
-               | <import_statement>
-               | <statement>
+<file_item>  ::= <statement>
 <bundle_declaration> ::= "bundle" <ident>
 <import_statement> ::= "import" <string> ("," <string>)*
 <module>     ::= "module" <ident> "=" <statement>* "end"
 
 <statement>  ::= <let_statement>
+               | <do_statement>
+               | <bundle_declaration>
+               | <import_statement>
                | <use_statement>
                | <type_statement>
                | <trait_statement>
@@ -20,6 +21,7 @@
 
 <let_statement>  ::= "let" <pattern> "=" <expr>
                    | "let" "|" <ident> "=" (<ident> | <path>)
+<do_statement> ::= "do" <expr>
 <use_statement> ::= "use" (<ident> | <path>) ("as" <ident>)?
 <type_statement> ::= "type" "~"? <ident> (":" <ident>+)? "=" (<type_def> | <type_expr>)
 <trait_statement> ::= "trait" "~"? <ident> (":" <ident>+)? "=" (<trait_method_decl>* "end" | (<ident> | <path>))
@@ -29,10 +31,10 @@
 <wasm_statement> ::= "wasm" "=>" <sexpr>
 ```
 
-- `bundle` declarations are source-file level and may appear at most once per file.
+- `bundle` and `import` are regular statements and can appear anywhere statements are allowed.
 - Top-level statements are part of the bundle scope; a `module ... end` wrapper is optional.
-- `import` is only valid at source-file top level.
-- CLI bundle compilation requires the root file to start with `bundle <name>`; imported files belong to that bundle and must not redeclare `bundle`.
+- CLI bundle compilation requires the root file to start with `bundle <name>`.
+- A bundle may only be declared once across the entire import graph.
 - `compile_source` accepts files without a `bundle` declaration and uses implicit bundle name `_`.
 
 ## Type Definitions

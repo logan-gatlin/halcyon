@@ -14,6 +14,7 @@ pub mod web;
 use parse::ast::{
     AstNode,
     HasName,
+    Statement,
 };
 pub use parse::tokenize;
 
@@ -25,11 +26,13 @@ pub use logging::*;
 pub use map::*;
 
 pub use crate::hc_core::compile_core_module;
+use crate::parse::ast::SourceFile;
 
 /// Grabs the version number from Cargo.toml at compile time
 pub const COMPILER_VERSION_STRING: &str = env!("CARGO_PKG_VERSION");
 pub const WASM_MAGIC_NUMBER: [u8; 4] = [0, b'a', b's', b'm'];
 pub const CORE_BUNDLE_NAME: &str = "core";
+pub const CORE_MODULE_NAME: &str = CORE_BUNDLE_NAME;
 
 #[derive(Debug, Clone)]
 pub struct Artifact {
@@ -64,52 +67,235 @@ impl Artifact {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct CompileOptions<F>
+where
+    F: FnMut(String) -> Option<String>,
+{
+    /// Implicitly declare the bundle name `_`
+    pub demo_mode: bool,
+    /// Link with the core bundle
+    pub use_core: bool,
+    /// Attempt to get the source text for a given path
+    pub resolve_import: F,
+}
+
+fn name_resolution_prelude(symbols: &types::SymbolTable) -> Vec<(ir::Path, ir::NameSpace)> {
+    let mut prelude = Vec::new();
+    prelude.extend(
+        symbols
+            .terms()
+            .keys()
+            .cloned()
+            .map(|path| (path, ir::NameSpace::Term)),
+    );
+    prelude.extend(
+        symbols
+            .constructors()
+            .iter()
+            .cloned()
+            .map(|path| (path, ir::NameSpace::Constructor)),
+    );
+    prelude.extend(
+        symbols
+            .type_definitions()
+            .keys()
+            .cloned()
+            .map(|path| (path, ir::NameSpace::Type)),
+    );
+    prelude.extend(
+        symbols
+            .trait_defs()
+            .keys()
+            .cloned()
+            .map(|path| (path, ir::NameSpace::Trait)),
+    );
+    prelude.extend(
+        symbols
+            .trait_aliases()
+            .keys()
+            .cloned()
+            .map(|path| (path, ir::NameSpace::Trait)),
+    );
+    prelude
+}
+
+fn bundle_name_for_source_file(
+    source_file: &SourceFile,
+    logger: &mut FileLogger,
+    demo_mode: bool,
+) -> String {
+    let statements = source_file.statements();
+    if !demo_mode && !matches!(statements.first(), Some(Statement::Bundle(_))) {
+        let span = statements.first().map_or(Span::Generated, |statement| {
+            match statement.span() {
+                Span::Source { start, .. } => Span::new(start, 1),
+                Span::Generated => Span::Generated,
+            }
+        });
+        logger
+            .error("Missing bundle declaration")
+            .primary("Root file must start with `bundle <name>`.", span)
+            .done();
+    }
+
+    statements
+        .into_iter()
+        .find_map(|statement| {
+            if let Statement::Bundle(bundle_declaration) = statement {
+                bundle_declaration.name_text()
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| "_".to_string())
+}
+
+fn compile_ir_bundle(
+    ir_bundle: ir::Module<()>,
+    symbols: &mut types::SymbolTable,
+    logger: &mut FileLogger,
+) -> Option<Artifact> {
+    let resolved = types::resolve_module_with_symbols_and_schemes(symbols, ir_bundle, logger);
+    if !logger.is_ok() {
+        return None;
+    }
+
+    let elaborated = ir::elaborate_module(resolved, symbols);
+    Some(asm::compile_module(elaborated, symbols))
+}
+
+fn link_artifacts_with_module_name(
+    artifacts: &[Artifact],
+    module_name: &str,
+    logger: &mut Logger,
+) -> Option<Vec<u8>> {
+    let mut linking_logger = logger.linking_logger();
+    let linked = linking::link_artifacts(
+        artifacts,
+        linking::LinkOptions {
+            module_name: module_name.to_string(),
+            ..Default::default()
+        },
+        &mut linking_logger,
+    );
+    logger.consume_file(linking_logger);
+    linked.map(|artifact| artifact.binary)
+}
+
+fn validate_generated_wasm(
+    binary: &[u8],
+    logger: &mut Logger,
+) -> bool {
+    if let Err(error) = wasmparser::validate(binary) {
+        let mut validation_logger = logger.new_file("<wasm-validation>", "");
+        validation_logger
+            .error("Invalid generated WebAssembly")
+            .primary(error.message(), Span::Generated)
+            .done();
+        logger.consume_file(validation_logger);
+        return false;
+    }
+
+    true
+}
+
+fn compile_source_linked_with_core_logger(source: &str) -> Result<Vec<u8>, Logger> {
+    let mut symbols = types::SymbolTable::new();
+    let mut logger = Logger::new();
+
+    let artifacts = compile_source_with_options(
+        "input.hc",
+        source,
+        &mut logger,
+        &mut symbols,
+        CompileOptions {
+            demo_mode: true,
+            use_core: true,
+            resolve_import: |_| None,
+        },
+    );
+    if !logger.is_ok() {
+        return Err(logger);
+    }
+
+    let Some(binary) = link_artifacts_with_module_name(&artifacts, "app", &mut logger) else {
+        return Err(logger);
+    };
+
+    if !validate_generated_wasm(&binary, &mut logger) {
+        return Err(logger);
+    }
+
+    Ok(binary)
+}
+
+#[tracing::instrument(skip_all)]
+pub fn compile_source_with_options<F>(
+    source_name: &str,
+    source: &str,
+    logger: &mut Logger,
+    symbols: &mut types::SymbolTable,
+    mut options: CompileOptions<F>,
+) -> Box<[Artifact]>
+where
+    F: FnMut(String) -> Option<String>,
+{
+    let mut artifacts = Vec::new();
+
+    if options.use_core {
+        artifacts.push(compile_core_module(symbols, logger));
+        if !logger.is_ok() {
+            return artifacts.into_boxed_slice();
+        }
+    }
+
+    let mut source_file_logger = logger.new_file(source_name, source);
+    let Some(source_file) = parse::parse(source, &mut source_file_logger) else {
+        logger.consume_file(source_file_logger);
+        return artifacts.into_boxed_slice();
+    };
+
+    let bundle_name =
+        bundle_name_for_source_file(&source_file, &mut source_file_logger, options.demo_mode);
+    if !source_file_logger.is_ok() {
+        logger.consume_file(source_file_logger);
+        return artifacts.into_boxed_slice();
+    }
+
+    let prelude = name_resolution_prelude(symbols);
+    let Some(ir_bundle) = ir::bundle_source_file_with_imports_and_prelude(
+        bundle_name,
+        source_file,
+        source_file_logger,
+        logger,
+        &prelude,
+        &mut options.resolve_import,
+    ) else {
+        return artifacts.into_boxed_slice();
+    };
+
+    if !logger.is_ok() {
+        return artifacts.into_boxed_slice();
+    }
+
+    let mut typing_file_logger = logger.new_file(source_name, source);
+    let compiled = compile_ir_bundle(ir_bundle, symbols, &mut typing_file_logger);
+    logger.consume_file(typing_file_logger);
+    let Some(compiled) = compiled else {
+        return artifacts.into_boxed_slice();
+    };
+
+    artifacts.push(compiled);
+    artifacts.into_boxed_slice()
+}
+
 #[tracing::instrument(skip_all)]
 pub fn compile_source(
     source: &str,
     logger: &mut FileLogger,
     symbols: &mut types::SymbolTable,
 ) -> Box<[Artifact]> {
-    fn name_resolution_prelude(symbols: &types::SymbolTable) -> Vec<(ir::Path, ir::NameSpace)> {
-        let mut prelude = Vec::new();
-        prelude.extend(
-            symbols
-                .terms()
-                .keys()
-                .cloned()
-                .map(|path| (path, ir::NameSpace::Term)),
-        );
-        prelude.extend(
-            symbols
-                .constructors()
-                .iter()
-                .cloned()
-                .map(|path| (path, ir::NameSpace::Constructor)),
-        );
-        prelude.extend(
-            symbols
-                .type_definitions()
-                .keys()
-                .cloned()
-                .map(|path| (path, ir::NameSpace::Type)),
-        );
-        prelude.extend(
-            symbols
-                .trait_defs()
-                .keys()
-                .cloned()
-                .map(|path| (path, ir::NameSpace::Trait)),
-        );
-        prelude.extend(
-            symbols
-                .trait_aliases()
-                .keys()
-                .cloned()
-                .map(|path| (path, ir::NameSpace::Trait)),
-        );
-        prelude
-    }
-
     let Some(source_file) = parse::parse(source, logger) else {
         return Vec::new().into_boxed_slice();
     };
@@ -117,9 +303,9 @@ pub fn compile_source(
     let mut bundle_name = "_".to_string();
     let mut saw_bundle_declaration = false;
     let mut statements = Vec::new();
-    for item in source_file.items() {
-        match item {
-            parse::ast::TopLevelItem::Bundle(bundle_declaration) => {
+    for statement in source_file.statements() {
+        match statement {
+            parse::ast::Statement::Bundle(bundle_declaration) => {
                 if saw_bundle_declaration {
                     logger
                         .error("Duplicate bundle declaration")
@@ -135,8 +321,8 @@ pub fn compile_source(
                     .name_text()
                     .unwrap_or_else(|| "_".to_string());
             }
-            parse::ast::TopLevelItem::Import(_) => {}
-            parse::ast::TopLevelItem::Statement(statement) => statements.push(statement),
+            parse::ast::Statement::Import(_) => {}
+            other => statements.push(other),
         }
     }
 
@@ -151,13 +337,11 @@ pub fn compile_source(
         return Vec::new().into_boxed_slice();
     };
 
-    let resolved = types::resolve_module_with_symbols_and_schemes(symbols, ir_bundle, logger);
-    if !logger.is_ok() {
+    let Some(compiled) = compile_ir_bundle(ir_bundle, symbols, logger) else {
         return Vec::new().into_boxed_slice();
-    }
+    };
 
-    let elaborated = ir::elaborate_module(resolved, symbols);
-    vec![asm::compile_module(elaborated, symbols)].into_boxed_slice()
+    vec![compiled].into_boxed_slice()
 }
 
 #[tracing::instrument(skip_all, fields(module = %art.module_name))]
@@ -228,38 +412,6 @@ pub fn validate_artifact(
     art
 }
 
-pub fn compile_source_linked_with_core(source: &str) -> Result<Vec<u8>, Vec<String>> {
-    let mut symbols = types::SymbolTable::new();
-    let mut logger = Logger::new();
-
-    let core = compile_core_module(&mut symbols, &mut logger);
-    let mut file_logger = logger.new_file("input.hc", source);
-    let artifacts = compile_source(source, &mut file_logger, &mut symbols);
-    logger.consume_file(file_logger);
-
-    if !logger.is_ok() {
-        let errors = logger.error_messages();
-        return Err(if errors.is_empty() {
-            vec!["Compilation failed".to_string()]
-        } else {
-            errors
-        });
-    }
-
-    let mut all_artifacts = Vec::with_capacity(artifacts.len() + 1);
-    all_artifacts.push(core);
-    all_artifacts.extend(artifacts.into_vec());
-
-    let linked = linking::link_artifacts(
-        &all_artifacts,
-        linking::LinkOptions {
-            module_name: "app".to_string(),
-            ..Default::default()
-        },
-    )
-    .map_err(|error| vec![error.to_string()])?;
-
-    wasmparser::validate(&linked.binary).map_err(|error| vec![error.message().to_string()])?;
-
-    Ok(linked.binary)
+pub fn compile_source_linked_with_core(source: &str) -> Result<Vec<u8>, Vec<Diagnostic>> {
+    compile_source_linked_with_core_logger(source).map_err(|logger| logger.into_diagnostics())
 }

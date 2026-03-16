@@ -787,6 +787,7 @@ dependencies = [
  "colored",
  "derive-new",
  "enum-iterator",
+ "include_dir",
  "indexmap",
  "indoc",
  "inflections",
@@ -804,9 +805,9 @@ dependencies = [
  "tracing-subscriber",
  "unicode_names2",
  "wasm-bindgen",
- "wasm-encoder 0.233.0",
- "wasmparser 0.233.0",
- "wasmprinter",
+ "wasm-encoder 0.244.0",
+ "wasmparser 0.244.0",
+ "wasmprinter 0.244.0",
 ]
 
 [[package]]
@@ -990,6 +991,25 @@ checksum = "3acae9609540aa318d1bc588455225fb2085b9ed0c4f6bd0d9d5bcd86f1a0344"
 dependencies = [
  "icu_normalizer",
  "icu_properties",
+]
+
+[[package]]
+name = "include_dir"
+version = "0.7.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "923d117408f1e49d914f1a379a309cffe4f18c05cf4e3d12e613a15fc81bd0dd"
+dependencies = [
+ "include_dir_macros",
+]
+
+[[package]]
+name = "include_dir_macros"
+version = "0.7.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7cab85a7ed0bd5f0e76d93846e0147172bed2e2d3f859bcc33a8d9699cad1a75"
+dependencies = [
+ "proc-macro2",
+ "quote",
 ]
 
 [[package]]
@@ -2210,8 +2230,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47b807c72e1bac69382b3a6fb3dbe8ea4c0ed87ff5629b8685ae6b9a611028fe"
 dependencies = [
  "bitflags",
+ "hashbrown 0.15.5",
  "indexmap",
  "semver",
+ "serde",
 ]
 
 [[package]]
@@ -2223,6 +2245,17 @@ dependencies = [
  "anyhow",
  "termcolor",
  "wasmparser 0.233.0",
+]
+
+[[package]]
+name = "wasmprinter"
+version = "0.244.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09390d7b2bd7b938e563e4bff10aa345ef2e27a3bc99135697514ef54495e68f"
+dependencies = [
+ "anyhow",
+ "termcolor",
+ "wasmparser 0.244.0",
 ]
 
 [[package]]
@@ -2381,7 +2414,7 @@ dependencies = [
  "target-lexicon",
  "wasm-encoder 0.233.0",
  "wasmparser 0.233.0",
- "wasmprinter",
+ "wasmprinter 0.233.0",
  "wasmtime-component-util",
 ]
 

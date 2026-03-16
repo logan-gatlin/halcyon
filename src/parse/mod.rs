@@ -105,6 +105,7 @@ pub enum SyntaxKind {
     USE_STATEMENT,
 
     LET_STATEMENT,
+    DO_STATEMENT,
     TYPE_STATEMENT,
     TRAIT_STATEMENT,
     IMPL_STATEMENT,
@@ -288,6 +289,7 @@ impl std::fmt::Display for SyntaxKind {
                 IMPORT_STATEMENT => "import statement",
                 USE_STATEMENT => "use statement",
                 LET_STATEMENT => "let statement",
+                DO_STATEMENT => "do statement",
                 TYPE_STATEMENT => "type statement",
                 TRAIT_STATEMENT => "trait statement",
                 IMPL_STATEMENT => "impl statement",
