@@ -12,6 +12,7 @@ use super::{
 
 use Instruction as i;
 
+/// Handles emit array concat.
 pub(crate) fn emit_array_concat(
     encoder: &mut Encoder<'_>,
     left: &Path,

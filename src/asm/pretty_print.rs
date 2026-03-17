@@ -5,9 +5,11 @@ use crate::ir::ImmediateValue;
 use colored::Colorize;
 
 trait PrettyPrint {
+    /// Handles pretty.
     fn pretty(&self) -> String;
 }
 
+/// Handles left pad.
 fn left_pad(text: impl AsRef<str>) -> String {
     text.as_ref()
         .lines()
@@ -17,18 +19,21 @@ fn left_pad(text: impl AsRef<str>) -> String {
 }
 
 impl PrettyPrint for Path {
+    /// Handles pretty.
     fn pretty(&self) -> String {
         self.to_string()
     }
 }
 
 impl PrettyPrint for ImmediateValue {
+    /// Handles pretty.
     fn pretty(&self) -> String {
         self.to_string()
     }
 }
 
 impl PrettyPrint for Module {
+    /// Handles pretty.
     fn pretty(&self) -> String {
         self.functions
             .iter()
@@ -84,6 +89,7 @@ impl PrettyPrint for Module {
 }
 
 impl PrettyPrint for Type {
+    /// Handles pretty.
     fn pretty(&self) -> String {
         use Type::*;
         match self {
@@ -114,12 +120,14 @@ impl PrettyPrint for Type {
 }
 
 impl PrettyPrint for NumberOperation {
+    /// Handles pretty.
     fn pretty(&self) -> String {
         format!("{self:?}").to_lowercase()
     }
 }
 
 impl PrettyPrint for Instruction {
+    /// Handles pretty.
     fn pretty(&self) -> String {
         use Instruction::*;
         match self {

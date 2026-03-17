@@ -15,6 +15,7 @@ use crate::types::{
 
 use super::*;
 
+/// Handles lower type.
 pub fn lower_type(
     type_: &SemanticType,
     symbols: &SymbolTable,
@@ -109,6 +110,7 @@ impl<'a> Encoder<'a> {
     // Preconditions:
     // * Predicate to be pattern-matched on is top of stack
     // * A br 0 instruction indicates pattern matching has failed
+    /// Handles lower pattern.
     pub(crate) fn lower_pattern(
         &mut self,
         pat: Pattern<SemanticType>,
@@ -452,6 +454,7 @@ impl<'a> Encoder<'a> {
         }
         self.current_origin = previous_origin;
     }
+    /// Handles lower ir.
     pub(crate) fn lower_ir(
         &mut self,
         term: Term<SemanticType>,
@@ -648,6 +651,7 @@ impl<'a> Encoder<'a> {
         self.current_origin = previous_origin;
     }
 
+    /// Handles lower constructor.
     pub(crate) fn lower_constructor(
         &mut self,
         path: Path,
@@ -718,6 +722,7 @@ impl<'a> Encoder<'a> {
         }
     }
 
+    /// Handles lower constructor alias.
     pub(crate) fn lower_constructor_alias(
         &mut self,
         path: Path,
@@ -733,6 +738,7 @@ impl<'a> Encoder<'a> {
         self.extend([i::Get(target), i::Set(path)]);
     }
 
+    /// Handles lower trait method dispatch.
     pub(crate) fn lower_trait_method_dispatch(
         &mut self,
         method_path: Path,
@@ -830,6 +836,7 @@ impl<'a> Encoder<'a> {
         // Stack: [result: anyref]
     }
 
+    /// Handles ref cast if needed.
     fn ref_cast_if_needed(
         &mut self,
         type_: &Type,
@@ -843,6 +850,7 @@ impl<'a> Encoder<'a> {
     }
 }
 
+/// Handles lowered struct fields.
 fn lowered_struct_fields(
     type_: &SemanticType,
     symbols: &SymbolTable,
@@ -853,6 +861,7 @@ fn lowered_struct_fields(
     }
 }
 
+/// Handles bool fields.
 fn bool_fields(symbols: &SymbolTable) -> Box<[Type]> {
     match lower_type(&SemanticType::Boolean, symbols) {
         Type::Struct(fields) => fields,
@@ -860,6 +869,7 @@ fn bool_fields(symbols: &SymbolTable) -> Box<[Type]> {
     }
 }
 
+/// Handles emit string compare.
 pub(crate) fn emit_string_compare(
     encoder: &mut Encoder<'_>,
     left: &Path,
@@ -996,6 +1006,7 @@ pub(crate) struct ConstructorTable {
 }
 
 impl ConstructorTable {
+    /// Handles from symbols.
     pub(crate) fn from_symbols(symbols: &SymbolTable) -> Self {
         let mut constructors = IndexMap::new();
         for (path, definition) in symbols.type_definitions().iter() {
@@ -1051,6 +1062,7 @@ impl ConstructorTable {
         Self { constructors }
     }
 
+    /// Handles get.
     pub(crate) fn get(
         &self,
         path: &Path,
@@ -1058,6 +1070,7 @@ impl ConstructorTable {
         self.constructors.get(path)
     }
 
+    /// Handles constructors for module.
     pub(crate) fn constructors_for_module(
         &self,
         module_name: &str,
@@ -1070,6 +1083,7 @@ impl ConstructorTable {
     }
 }
 
+/// Handles sum variants.
 fn sum_variants(definition: &TypeDefinition) -> Option<IndexMap<String, SemanticType>> {
     let mut current = &definition.body;
     loop {
@@ -1081,6 +1095,7 @@ fn sum_variants(definition: &TypeDefinition) -> Option<IndexMap<String, Semantic
     }
 }
 
+/// Handles is unit type.
 fn is_unit_type(
     type_: &SemanticType,
     symbols: &SymbolTable,
@@ -1102,6 +1117,7 @@ fn is_unit_type(
     }
 }
 
+/// Handles resolve named body.
 fn resolve_named_body(
     name: &Path,
     body: &SemanticType,
@@ -1116,6 +1132,7 @@ fn resolve_named_body(
     }
 }
 
+/// Handles apply type.
 fn apply_type(
     constructor: &SemanticType,
     arguments: &[SemanticType],
@@ -1139,6 +1156,7 @@ fn apply_type(
     Some(current)
 }
 
+/// Handles instantiate named body.
 fn instantiate_named_body(
     body: &SemanticType,
     arguments: &[SemanticType],
@@ -1154,6 +1172,7 @@ fn instantiate_named_body(
     Some(current)
 }
 
+/// Handles struct fields for type.
 fn struct_fields_for_type(
     type_: &SemanticType,
     symbols: &SymbolTable,
@@ -1182,6 +1201,7 @@ fn struct_fields_for_type(
     }
 }
 
+/// Handles ordered trait methods for path.
 fn ordered_trait_methods_for_path(
     symbols: &SymbolTable,
     method_path: &Path,
@@ -1195,6 +1215,7 @@ fn ordered_trait_methods_for_path(
     })
 }
 
+/// Handles collect pattern bindings.
 fn collect_pattern_bindings(pattern: &Pattern<SemanticType>) -> Vec<(Path, SemanticType)> {
     match &pattern.kind {
         PatternKind::Hole | PatternKind::Immediate(_) | PatternKind::ConstConstructor(_) => {
@@ -1221,10 +1242,12 @@ fn collect_pattern_bindings(pattern: &Pattern<SemanticType>) -> Vec<(Path, Seman
     }
 }
 
+/// Handles pattern introduced names.
 fn pattern_introduced_names(pattern: &Pattern<SemanticType>) -> usize {
     collect_pattern_bindings(pattern).len()
 }
 
+/// Handles pattern is refutable.
 fn pattern_is_refutable(pattern: &Pattern<SemanticType>) -> bool {
     match &pattern.kind {
         PatternKind::Hole | PatternKind::Identifier(_) => false,

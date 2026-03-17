@@ -38,6 +38,7 @@ itertools = "0.14"
 inflections = "1.1"
 tracing = "0.1"
 include_dir = "0.7"
+gimli = { version = "0.32", features = ["write"] }
 
 [dev-dependencies]
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

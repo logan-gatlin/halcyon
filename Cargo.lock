@@ -8,7 +8,7 @@ version = "0.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dfbe277e56a376000877090da837660b4427aad530e3028d44e0bffe4f89a1c1"
 dependencies = [
- "gimli",
+ "gimli 0.31.1",
 ]
 
 [[package]]
@@ -331,7 +331,7 @@ dependencies = [
  "cranelift-control",
  "cranelift-entity",
  "cranelift-isle",
- "gimli",
+ "gimli 0.31.1",
  "hashbrown 0.15.5",
  "log",
  "pulley-interpreter",
@@ -768,10 +768,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "gimli"
+version = "0.32.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e629b9b98ef3dd8afe6ca2bd0f89306cec16d43d907889945bc5d6687f2f13c7"
+dependencies = [
+ "fallible-iterator",
+ "indexmap",
+ "stable_deref_trait",
+]
+
+[[package]]
 name = "halcyon"
 version = "2026.2.11"
 dependencies = [
  "halcyon-lib",
+ "serde_json",
  "tracing",
  "tracing-subscriber",
  "wasmparser 0.233.0",
@@ -787,6 +799,7 @@ dependencies = [
  "colored",
  "derive-new",
  "enum-iterator",
+ "gimli 0.32.3",
  "include_dir",
  "indexmap",
  "indoc",
@@ -2273,7 +2286,7 @@ dependencies = [
  "cfg-if",
  "encoding_rs",
  "fxprof-processed-profile",
- "gimli",
+ "gimli 0.31.1",
  "hashbrown 0.15.5",
  "indexmap",
  "ittapi",
@@ -2377,7 +2390,7 @@ dependencies = [
  "cranelift-entity",
  "cranelift-frontend",
  "cranelift-native",
- "gimli",
+ "gimli 0.31.1",
  "itertools",
  "log",
  "object 0.36.7",
@@ -2401,7 +2414,7 @@ dependencies = [
  "cpp_demangle",
  "cranelift-bitset",
  "cranelift-entity",
- "gimli",
+ "gimli 0.31.1",
  "indexmap",
  "log",
  "object 0.36.7",
@@ -2536,7 +2549,7 @@ checksum = "595f51430606a7b5578f34e0d7c73dca52a22ed24756f2ba9d4d0c1bde8631af"
 dependencies = [
  "anyhow",
  "cranelift-codegen",
- "gimli",
+ "gimli 0.31.1",
  "object 0.36.7",
  "target-lexicon",
  "wasmparser 0.233.0",
@@ -2669,7 +2682,7 @@ dependencies = [
  "anyhow",
  "cranelift-assembler-x64",
  "cranelift-codegen",
- "gimli",
+ "gimli 0.31.1",
  "regalloc2",
  "smallvec",
  "target-lexicon",

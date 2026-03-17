@@ -44,6 +44,7 @@ use crate::asm::{
     FunctionImport,
     Instruction,
     Module,
+    SourceOrigin,
     Type,
 };
 use crate::ir::Path;
@@ -134,6 +135,7 @@ pub enum LinkError {
 
     /// Type schemes disagree for the same named term.
     SignatureTermConflict { path: Path },
+
 }
 
 impl LinkError {
@@ -482,6 +484,10 @@ fn merge_inputs(
         .iter()
         .map(|module| Instruction::Call(module.start.clone()))
         .collect::<Vec<_>>();
+    let start_op_origins = normalized_modules
+        .iter()
+        .map(start_origin)
+        .collect::<Vec<_>>();
 
     merged.functions.insert(
         start_path.clone(),
@@ -490,12 +496,20 @@ fn merge_inputs(
             returns: Vec::new(),
             variables: IndexMap::new(),
             ops: start_ops,
-            op_origins: Vec::new(),
+            op_origins: start_op_origins,
         },
     );
     merged.start = start_path;
 
     Ok(merged)
+}
+
+fn start_origin(module: &Module) -> Option<SourceOrigin> {
+    module
+        .functions
+        .get(&module.start)
+        .and_then(|function| function.op_origins.iter().flatten().next())
+        .cloned()
 }
 
 fn function_import_eq(

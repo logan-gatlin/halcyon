@@ -131,6 +131,7 @@ impl TypeSignatureSection {
     pub const NAME: &str = "type_signature";
     const VERSION: u32 = 2;
 
+    /// Creates a new instance.
     pub fn new(
         module_name: &str,
         symbols: &SymbolTable,
@@ -169,6 +170,7 @@ impl TypeSignatureSection {
         }
     }
 
+    /// Handles rebuild index map for encoding.
     pub(crate) fn rebuild_index_map_for_encoding(&mut self) {
     }
 
@@ -189,6 +191,7 @@ impl TypeSignatureSection {
         Self::from_payload(payload).ok()
     }
 
+    /// Handles to payload.
     fn to_payload(&self) -> TypeSignaturePayload {
         TypeSignaturePayload {
             version: Self::VERSION,
@@ -208,6 +211,7 @@ impl TypeSignatureSection {
         }
     }
 
+    /// Handles from payload.
     fn from_payload(payload: TypeSignaturePayload) -> Result<Self, TypeSignatureDecodeError> {
         if payload.version != Self::VERSION {
             return Err(TypeSignatureDecodeError::InvalidVersion);
@@ -238,12 +242,14 @@ impl TypeSignatureSection {
 }
 
 impl wasm_encoder::Section for TypeSignatureSection {
+    /// Returns the identifier for this value.
     fn id(&self) -> u8 {
         0
     }
 }
 
 impl Encode for TypeSignatureSection {
+    /// Handles encode.
     fn encode(
         &self,
         sink: &mut Vec<u8>,
@@ -260,6 +266,7 @@ impl Encode for TypeSignatureSection {
 }
 
 impl WirePath {
+    /// Converts from one representation to another.
     fn from(path: &Path) -> Self {
         Self {
             major: path.major.clone(),
@@ -267,6 +274,7 @@ impl WirePath {
         }
     }
 
+    /// Handles into path.
     fn into_path(self) -> Path {
         Path {
             major: self.major,
@@ -276,6 +284,7 @@ impl WirePath {
 }
 
 impl WireTypeDefinition {
+    /// Converts from one representation to another.
     fn from(type_definition: &TypeDefinition) -> Self {
         Self {
             parameters: type_definition.parameters as u64,
@@ -289,6 +298,7 @@ impl WireTypeDefinition {
         }
     }
 
+    /// Handles into type definition.
     fn into_type_definition(self) -> Result<TypeDefinition, TypeSignatureDecodeError> {
         Ok(TypeDefinition {
             parameters: usize::try_from(self.parameters)
@@ -305,6 +315,7 @@ impl WireTypeDefinition {
 }
 
 impl WireTypeDefinitionKind {
+    /// Converts from one representation to another.
     fn from(kind: TypeDefinitionKind) -> Self {
         match kind {
             TypeDefinitionKind::Named => Self::Named,
@@ -312,6 +323,7 @@ impl WireTypeDefinitionKind {
         }
     }
 
+    /// Handles into type definition kind.
     fn into_type_definition_kind(self) -> TypeDefinitionKind {
         match self {
             Self::Named => TypeDefinitionKind::Named,
@@ -321,6 +333,7 @@ impl WireTypeDefinitionKind {
 }
 
 impl WireTypeScheme {
+    /// Converts from one representation to another.
     fn from(type_scheme: &TypeScheme) -> Self {
         Self {
             predicates: type_scheme
@@ -332,6 +345,7 @@ impl WireTypeScheme {
         }
     }
 
+    /// Handles into type scheme.
     fn into_type_scheme(self) -> TypeScheme {
         TypeScheme {
             predicates: self
@@ -345,6 +359,7 @@ impl WireTypeScheme {
 }
 
 impl WireTraitRef {
+    /// Converts from one representation to another.
     fn from(trait_ref: &TraitRef) -> Self {
         Self {
             trait_name: WirePath::from(&trait_ref.trait_name),
@@ -356,6 +371,7 @@ impl WireTraitRef {
         }
     }
 
+    /// Handles into trait ref.
     fn into_trait_ref(self) -> TraitRef {
         TraitRef {
             trait_name: self.trait_name.into_path(),
@@ -369,6 +385,7 @@ impl WireTraitRef {
 }
 
 impl WireKind {
+    /// Converts from one representation to another.
     fn from(kind: &Kind) -> Self {
         match kind {
             Kind::Type => Self::Type,
@@ -381,6 +398,7 @@ impl WireKind {
         }
     }
 
+    /// Handles into kind.
     fn into_kind(self) -> Kind {
         match self {
             Self::Type => Kind::Type,
@@ -395,6 +413,7 @@ impl WireKind {
 }
 
 impl WireStructMatch {
+    /// Converts from one representation to another.
     fn from(mode: StructMatch) -> Self {
         match mode {
             StructMatch::Exact => Self::Exact,
@@ -402,6 +421,7 @@ impl WireStructMatch {
         }
     }
 
+    /// Handles into struct match.
     fn into_struct_match(self) -> StructMatch {
         match self {
             Self::Exact => StructMatch::Exact,
@@ -411,6 +431,7 @@ impl WireStructMatch {
 }
 
 impl WireSemanticType {
+    /// Converts from one representation to another.
     fn from(type_: &SemanticType) -> Self {
         match type_ {
             SemanticType::Unit => Self::Unit,
@@ -473,6 +494,7 @@ impl WireSemanticType {
         }
     }
 
+    /// Handles into semantic type.
     fn into_semantic_type(self) -> SemanticType {
         match self {
             Self::Unit => SemanticType::Unit,
@@ -541,6 +563,7 @@ impl WireSemanticType {
     }
 }
 
+/// Handles decode named custom section data.
 fn decode_named_custom_section_data(data: &[u8]) -> Option<(&str, &[u8])> {
     let (name_length, name_length_bytes) = decode_leb128_usize(data)?;
     let name_start = name_length_bytes;
@@ -549,6 +572,7 @@ fn decode_named_custom_section_data(data: &[u8]) -> Option<(&str, &[u8])> {
     Some((name, data.get(name_end..)?))
 }
 
+/// Handles decode leb128 usize.
 fn decode_leb128_usize(data: &[u8]) -> Option<(usize, usize)> {
     let mut value = 0usize;
     let mut shift = 0;
@@ -567,6 +591,7 @@ fn decode_leb128_usize(data: &[u8]) -> Option<(usize, usize)> {
     None
 }
 
+/// Handles collect imported types.
 fn collect_imported_types(
     type_: &SemanticType,
     defined_types: &IndexMap<Path, TypeDefinition>,
@@ -578,6 +603,7 @@ fn collect_imported_types(
     }
 
     impl TypeTransform for ImportedTypeCollector<'_> {
+        /// Handles visit.
         fn visit(
             &mut self,
             type_: &SemanticType,
@@ -604,6 +630,7 @@ mod tests {
     use super::*;
     use crate::hc_core::CoreSymbol;
 
+    /// Handles decode section payload.
     fn decode_section_payload(encoded: &[u8]) -> Vec<u8> {
         let (section_size, section_size_bytes) = decode_leb128_usize(encoded).unwrap();
         let section_data_start = section_size_bytes;
@@ -613,6 +640,7 @@ mod tests {
         payload.to_vec()
     }
 
+    /// Handles roundtrip type.
     fn roundtrip_type(type_: SemanticType) {
         let path = Path::new("test", "MyType");
         let mut section = TypeSignatureSection::default();
@@ -637,6 +665,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles roundtrip primitives and compounds.
     fn roundtrip_primitives_and_compounds() {
         roundtrip_type(SemanticType::Unit);
         roundtrip_type(SemanticType::Integer);
@@ -672,6 +701,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles roundtrip named apply and scheme.
     fn roundtrip_named_apply_and_scheme() {
         let path = Path::new("test", "Box");
         let body = SemanticType::ForAll(Box::new(SemanticType::Struct {
@@ -721,11 +751,13 @@ mod tests {
     }
 
     #[test]
+    /// Handles decode invalid payload returns none.
     fn decode_invalid_payload_returns_none() {
         assert!(TypeSignatureSection::decode_data_slice(&[1, 2, 3]).is_none());
     }
 
     #[test]
+    /// Handles decode wrong name returns none.
     fn decode_wrong_name_returns_none() {
         let mut data = vec![];
         "not_signature".encode(&mut data);

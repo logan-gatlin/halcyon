@@ -53,6 +53,7 @@ use super::{
 #[derive(Debug, Clone)]
 pub struct Function {
     pub name: String,
+    pub span: Span,
     pub parameters: IndexMap<Path, Type>,
     pub results: Box<[Type]>,
     pub locals: IndexMap<Path, Type>,
@@ -389,12 +390,13 @@ fn parse_function(
     let mut cursor = Cursor::new(&items);
     cursor.next();
     let name = parse_function_name(&mut cursor, list.span(), logger)?;
-    scope.define(name.clone(), NameSpace::Wasm);
+    let name = scope.define(name, NameSpace::Wasm);
     let mut function_scope = scope.nest_function_scope();
     let sections = parse_function_sections(&mut cursor, env, logger, &mut function_scope);
     let body = parse_function_body(&sections.body_items, env, logger, &mut function_scope);
     Some(Function {
-        name: name.inner,
+        name: name.minor,
+        span: list.span(),
         parameters: sections.parameters,
         results: sections.results.into_boxed_slice(),
         locals: sections.locals,

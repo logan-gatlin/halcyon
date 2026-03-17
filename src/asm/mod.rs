@@ -12,6 +12,8 @@
 pub mod custom_section;
 mod encode;
 mod lower;
+mod resolve;
+mod verify;
 pub mod module_section;
 pub mod pretty_print;
 
@@ -36,8 +38,70 @@ use crate::Span;
 use crate::types::SymbolTable;
 
 pub use encode::encode;
-use lower::ConstructorTable;
+pub(crate) use resolve::resolve_module;
+pub(crate) use verify::verify_module;
+pub(crate) use lower::ConstructorTable;
 pub use lower::lower_type;
+
+#[derive(Debug, Clone)]
+pub struct BackendError {
+    pub function: Option<Path>,
+    pub op_index: Option<usize>,
+    pub origin: Option<SourceOrigin>,
+    pub message: String,
+}
+
+impl BackendError {
+    /// Handles module.
+    pub fn module(message: impl Into<String>) -> Self {
+        Self {
+            function: None,
+            op_index: None,
+            origin: None,
+            message: message.into(),
+        }
+    }
+
+    /// Handles in function.
+    pub fn in_function(
+        function: Path,
+        op_index: Option<usize>,
+        origin: Option<SourceOrigin>,
+        message: impl Into<String>,
+    ) -> Self {
+        Self {
+            function: Some(function),
+            op_index,
+            origin,
+            message: message.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for BackendError {
+    /// Formats the value for display.
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        write!(f, "backend error: {}", self.message)?;
+        if let Some(function) = &self.function {
+            write!(f, " (function: {function}")?;
+            if let Some(op_index) = self.op_index {
+                write!(f, ", op: {op_index}")?;
+            }
+            write!(f, ")")?;
+        }
+        if let Some(origin) = &self.origin {
+            write!(
+                f,
+                " [{}:{}+{}]",
+                origin.file_name, origin.start, origin.width
+            )?;
+        }
+        Ok(())
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ExportPolicy {
@@ -48,6 +112,7 @@ pub enum ExportPolicy {
 }
 
 impl ExportPolicy {
+    /// Handles global export name.
     fn global_export_name(
         self,
         path: &Path,
@@ -99,6 +164,7 @@ pub enum Type {
 }
 
 impl std::fmt::Display for Type {
+    /// Formats the value for display.
     fn fmt(
         &self,
         f: &mut std::fmt::Formatter<'_>,
@@ -147,16 +213,20 @@ impl std::fmt::Display for Type {
 }
 
 impl Type {
+    /// Handles is reftype.
     pub fn is_reftype(&self) -> bool {
         matches!(
             self,
             Type::Struct(_) | Type::Array(_) | Type::Function { .. } | Type::Any
         )
     }
+    /// Handles is packed.
     pub fn is_packed(&self) -> bool {
         matches!(self, Type::I8 | Type::I16)
     }
+    /// Handles unpack.
     pub fn unpack(self) -> Self {
+        /// Handles unpack.
         fn unpack(
             this: Type,
             in_ref: bool,
@@ -179,6 +249,7 @@ impl Type {
         }
         unpack(self, false)
     }
+    /// Handles structural eq.
     pub fn structural_eq(
         &self,
         other: &Self,
@@ -571,10 +642,12 @@ pub struct Module {
 }
 
 impl Type {
+    /// Handles function capture.
     pub fn function_capture() -> Self {
         Self::Array(Self::Any.into())
     }
 
+    /// Handles closure function type.
     pub fn closure_function_type() -> Self {
         Self::Function {
             parameters: [Self::function_capture(), Self::Any].into(),
@@ -582,18 +655,21 @@ impl Type {
         }
     }
 
+    /// Handles closure type.
     pub fn closure_type() -> Self {
         Self::Struct([Self::function_capture(), Self::closure_function_type()].into())
     }
 }
 
 impl Function {
+    /// Creates a new instance.
     pub fn new() -> Self {
         Default::default()
     }
 }
 
 #[tracing::instrument(skip_all, fields(module = %elaborated.module.name))]
+/// Handles lower module.
 pub fn lower_module(
     elaborated: ElaborationResult,
     symbols: &SymbolTable,
@@ -655,6 +731,7 @@ pub fn lower_module(
     module
 }
 
+/// Handles lower wasm declarations.
 fn lower_wasm_declarations(
     module: &mut Module,
     module_name: &str,
@@ -675,6 +752,7 @@ fn lower_wasm_declarations(
             }
             wasm::Declaration::Function(function) => {
                 let function_path = Path::new(module_name, function.name);
+                let op_origin = module.source_origin_for_span(function.span);
                 assert!(
                     module
                         .functions
@@ -685,7 +763,7 @@ fn lower_wasm_declarations(
                                 returns: function.results.into_vec(),
                                 variables: function.locals,
                                 ops: function.body.to_vec(),
-                                op_origins: vec![None; function.body.len()],
+                                op_origins: vec![op_origin; function.body.len()],
                             },
                         )
                         .is_none(),
@@ -711,6 +789,7 @@ fn lower_wasm_declarations(
 }
 
 #[tracing::instrument(skip_all, fields(module = %elaborated.module.name))]
+/// Handles compile module.
 pub fn compile_module(
     elaborated: ElaborationResult,
     symbols: &SymbolTable,
@@ -729,12 +808,14 @@ pub fn compile_module(
 }
 
 impl Module {
+    /// Creates a new instance.
     pub fn new(name: String) -> Self {
         Self {
             name,
             ..Default::default()
         }
     }
+    /// Handles new function.
     pub fn new_function<'a>(
         &'a mut self,
         name: Path,
@@ -748,6 +829,7 @@ impl Module {
         }
     }
 
+    /// Handles ingest source catalog.
     fn ingest_source_catalog(
         &mut self,
         source_catalog: &SourceCatalog,
@@ -763,6 +845,7 @@ impl Module {
         }
     }
 
+    /// Handles source origin for span.
     fn source_origin_for_span(
         &self,
         span: Span,
@@ -792,12 +875,14 @@ pub struct Encoder<'a> {
 }
 
 impl<'a> Encoder<'a> {
+    /// Handles current func.
     fn current_func(&mut self) -> &mut Function {
         self.module
             .functions
             .get_mut(&self.func_name)
             .unwrap_or_else(|| unreachable!("Function {} not found", self.func_name))
     }
+    /// Handles push.
     pub fn push(
         &mut self,
         instr: Instruction,
@@ -807,6 +892,7 @@ impl<'a> Encoder<'a> {
         function.ops.push(instr);
         function.op_origins.push(origin);
     }
+    /// Handles extend.
     pub fn extend(
         &mut self,
         instrs: impl IntoIterator<Item = Instruction>,
@@ -814,6 +900,7 @@ impl<'a> Encoder<'a> {
         instrs.into_iter().for_each(|instruction| self.push(instruction));
     }
 
+    /// Handles with origin.
     pub fn with_origin(
         &mut self,
         origin: Option<SourceOrigin>,
@@ -824,6 +911,7 @@ impl<'a> Encoder<'a> {
         f(self);
         self.current_origin = previous;
     }
+    /// Handles temporary name.
     pub fn temporary_name(
         &mut self,
         name: &str,
@@ -832,6 +920,7 @@ impl<'a> Encoder<'a> {
         self.temporary_salt += 1;
         temp
     }
+    /// Handles new parameter.
     pub fn new_parameter(
         &mut self,
         name: Path,
@@ -839,6 +928,7 @@ impl<'a> Encoder<'a> {
     ) {
         self.current_func().parameters.insert(name, type_);
     }
+    /// Handles new register.
     pub fn new_register(
         &mut self,
         name: Path,
@@ -860,6 +950,7 @@ impl<'a> Encoder<'a> {
             );
         }
     }
+    /// Handles new return.
     pub fn new_return(
         &mut self,
         type_: Type,

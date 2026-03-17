@@ -13,6 +13,7 @@ use crate::{
 };
 use wasmparser::Payload;
 
+/// Handles compile modules.
 fn compile_modules(source: &str) -> (Vec<crate::ir::ElaborationResult>, SymbolTable, SourceCatalog) {
     let mut logger = Logger::new();
     let mut file_logger = logger.new_file("test.hc", source);
@@ -43,6 +44,7 @@ fn compile_modules(source: &str) -> (Vec<crate::ir::ElaborationResult>, SymbolTa
 }
 
 #[test]
+/// Handles emits type signature section.
 fn emits_type_signature_section() {
     let source = "module demo =\n\tlet f = fn a => a\nend\n";
     let (mut modules, symbols, _) = compile_modules(source);
@@ -68,6 +70,7 @@ fn emits_type_signature_section() {
 }
 
 #[test]
+/// Handles type signature preserves definition order.
 fn type_signature_preserves_definition_order() {
     let source = "module demo =\n\ttype First = { x: core::Integer }\n\ttype Second = { y: core::Integer }\n\tlet f = fn a => a\nend\n";
     let (mut modules, symbols, _) = compile_modules(source);
@@ -98,6 +101,7 @@ fn type_signature_preserves_definition_order() {
 }
 
 #[test]
+/// Handles exports wasi start symbol without start section.
 fn exports_wasi_start_symbol_without_start_section() {
     let source = "module demo =\n\tlet value : core::Integer = core::default\nend\n";
     let (mut modules, symbols, _) = compile_modules(source);
@@ -138,6 +142,7 @@ fn exports_wasi_start_symbol_without_start_section() {
 }
 
 #[test]
+/// Handles emits standard source map metadata.
 fn emits_standard_source_map_metadata() {
     let source = "module demo =\n\tlet value : core::Integer = core::default\nend\n";
     let (mut modules, symbols, source_catalog) = compile_modules(source);
@@ -167,5 +172,34 @@ fn emits_standard_source_map_metadata() {
             .as_array()
             .is_some_and(|sources| sources.iter().any(|source| source == "test.hc")),
         "source map should include the original halcyon source file"
+    );
+}
+
+#[test]
+/// Handles emits dwarf debug sections.
+fn emits_dwarf_debug_sections() {
+    let source = "module demo =\n\tlet value : core::Integer = core::default\nend\n";
+    let (mut modules, symbols, source_catalog) = compile_modules(source);
+    let module = modules.pop().unwrap();
+    let encoded = encode(lower_module(module, &symbols, &source_catalog));
+
+    let mut seen = std::collections::BTreeSet::new();
+    for payload in wasmparser::Parser::new(0).parse_all(&encoded.binary) {
+        let payload = payload.unwrap();
+        if let Payload::CustomSection(reader) = payload {
+            let name = reader.name();
+            if name.starts_with(".debug_") {
+                seen.insert(name.to_string());
+            }
+        }
+    }
+
+    assert!(
+        seen.contains(".debug_info"),
+        "expected .debug_info custom section"
+    );
+    assert!(
+        seen.contains(".debug_line"),
+        "expected .debug_line custom section"
     );
 }

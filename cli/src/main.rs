@@ -13,6 +13,13 @@ use halcyon_lib::parse::ast::{
 };
 use halcyon_lib::types::SymbolTable;
 use halcyon_lib::{
+    Artifact,
+    CORE_BUNDLE_NAME,
+    CompileOptions,
+    Logger,
+    Span,
+    WASM_MAGIC_NUMBER,
+    WithContext,
     compile_core_module,
     compile_source_with_options,
     documentation,
@@ -21,13 +28,6 @@ use halcyon_lib::{
     parse,
     types,
     validate_artifact,
-    Artifact,
-    CompileOptions,
-    Logger,
-    Span,
-    WithContext,
-    CORE_BUNDLE_NAME,
-    WASM_MAGIC_NUMBER,
 };
 use tracing_subscriber::EnvFilter;
 use wasmtime::{
@@ -36,6 +36,8 @@ use wasmtime::{
     Linker,
     Module,
     Store,
+    WasmBacktrace,
+    WasmBacktraceDetails,
 };
 use wasmtime_wasi::p2::WasiCtxBuilder;
 use wasmtime_wasi::preview1;
@@ -713,6 +715,8 @@ fn link_and_run(artifacts: &[Artifact]) -> Result<(), Box<dyn std::error::Error>
     config.wasm_gc(true);
     config.wasm_reference_types(true);
     config.wasm_function_references(true);
+    config.debug_info(true);
+    config.wasm_backtrace_details(WasmBacktraceDetails::Enable);
 
     let engine = Engine::new(&config)?;
     let mut linker: Linker<preview1::WasiP1Ctx> = Linker::new(&engine);
@@ -733,9 +737,128 @@ fn link_and_run(artifacts: &[Artifact]) -> Result<(), Box<dyn std::error::Error>
     let entry_module = Module::new(&engine, &entry_artifact.binary)?;
     let entry_instance = linker.instantiate(&mut store, &entry_module)?;
     let start = entry_instance.get_typed_func::<(), ()>(&mut store, "_start")?;
-    start.call(&mut store, ())?;
+    if let Err(error) = start.call(&mut store, ()) {
+        return Err(format_runtime_trap(&error, entry_artifact).into());
+    }
 
     Ok(())
+}
+
+fn format_runtime_trap(
+    error: &wasmtime::Error,
+    artifact: &Artifact,
+) -> String {
+    let mut output = error.to_string();
+    let Some(source_map) = artifact.source_map.as_ref() else {
+        return output;
+    };
+    let Some(backtrace) = error.downcast_ref::<WasmBacktrace>() else {
+        return output;
+    };
+    let Some(entries) = decode_source_map_entries(source_map) else {
+        return output;
+    };
+
+    let mut rendered = Vec::new();
+    for frame in backtrace.frames() {
+        let Some(offset) = frame.module_offset() else {
+            continue;
+        };
+        let Some((file, line, column)) = source_map_lookup(&entries, offset as usize) else {
+            continue;
+        };
+        rendered.push(format!("> {file}:{}:{}", line + 1, column + 1));
+    }
+
+    if rendered.is_empty() {
+        return output;
+    }
+
+    output.push_str("\nresolved source spans:\n");
+    output.push_str(&rendered.join("\n"));
+    output
+}
+
+fn decode_source_map_entries(source_map: &str) -> Option<Vec<(usize, String, usize, usize)>> {
+    let value = serde_json::from_str::<serde_json::Value>(source_map).ok()?;
+    let sources = value["sources"].as_array()?;
+    let mappings = value["mappings"].as_str()?;
+
+    let mut current_generated = 0i64;
+    let mut current_source = 0i64;
+    let mut current_line = 0i64;
+    let mut current_column = 0i64;
+    let mut entries = Vec::new();
+
+    for segment in mappings.split(',') {
+        if segment.is_empty() {
+            continue;
+        }
+        let mut index = 0usize;
+        current_generated += decode_vlq(segment, &mut index)?;
+        current_source += decode_vlq(segment, &mut index)?;
+        current_line += decode_vlq(segment, &mut index)?;
+        current_column += decode_vlq(segment, &mut index)?;
+
+        if current_generated < 0 || current_source < 0 || current_line < 0 || current_column < 0 {
+            continue;
+        }
+
+        let source = sources
+            .get(current_source as usize)
+            .and_then(|source| source.as_str())
+            .unwrap_or("<unknown>")
+            .to_string();
+
+        entries.push((
+            current_generated as usize,
+            source,
+            current_line as usize,
+            current_column as usize,
+        ));
+    }
+
+    Some(entries)
+}
+
+fn source_map_lookup(
+    entries: &[(usize, String, usize, usize)],
+    offset: usize,
+) -> Option<(String, usize, usize)> {
+    let mut best = None;
+    for (generated, file, line, column) in entries {
+        if *generated <= offset {
+            best = Some((file.clone(), *line, *column));
+        } else {
+            break;
+        }
+    }
+    best
+}
+
+fn decode_vlq(
+    segment: &str,
+    index: &mut usize,
+) -> Option<i64> {
+    const BASE64: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut shift = 0u32;
+    let mut result = 0u64;
+
+    loop {
+        let ch = segment.chars().nth(*index)?;
+        *index += 1;
+        let digit = BASE64.find(ch)? as u64;
+        let has_next = (digit & 0x20) != 0;
+        result |= (digit & 0x1F) << shift;
+        shift += 5;
+        if !has_next {
+            break;
+        }
+    }
+
+    let negative = (result & 1) == 1;
+    let value = (result >> 1) as i64;
+    Some(if negative { -value } else { value })
 }
 
 fn generate_docs(root_path: &str) -> Result<(), Box<dyn std::error::Error>> {

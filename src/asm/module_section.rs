@@ -20,7 +20,6 @@ pub struct LoweredModuleSection {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ModulePayload {
-    version: u32,
     name: String,
     imports: Vec<(WirePath, WireType)>,
     globals: Vec<(WirePath, WireType)>,
@@ -34,34 +33,12 @@ struct ModulePayload {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct ModulePayloadV2 {
-    version: u32,
-    name: String,
-    imports: Vec<(WirePath, WireType)>,
-    globals: Vec<(WirePath, WireType)>,
-    functions: Vec<(WirePath, WireFunctionV2)>,
-    function_imports: Vec<(WirePath, WireFunctionImport)>,
-    has_memory: bool,
-    start: WirePath,
-    closure_counter: u64,
-    export_policy: WireExportPolicy,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 struct WireFunction {
     parameters: Vec<(WirePath, WireType)>,
     returns: Vec<WireType>,
     variables: Vec<(WirePath, WireType)>,
     ops: Vec<WireInstruction>,
     op_origins: Vec<Option<WireSourceOrigin>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct WireFunctionV2 {
-    parameters: Vec<(WirePath, WireType)>,
-    returns: Vec<WireType>,
-    variables: Vec<(WirePath, WireType)>,
-    ops: Vec<WireInstruction>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -201,20 +178,20 @@ enum WireInstruction {
 
 #[derive(Debug, Clone, Copy)]
 enum ModulePayloadDecodeError {
-    InvalidVersion,
     IntegerOverflow,
 }
 
 impl LoweredModuleSection {
-    pub const NAME: &str = "halcyon.asm.v1";
-    const VERSION: u32 = 3;
+    pub const NAME: &str = "halcyon.asm";
 
+    /// Creates a new instance.
     pub fn new(module: &Module) -> Self {
         Self {
             module: module.clone(),
         }
     }
 
+    /// Handles decode.
     pub fn decode(data: &[u8]) -> Option<Module> {
         let (name, payload) = decode_named_custom_section_data(data)?;
         if name != Self::NAME {
@@ -223,22 +200,22 @@ impl LoweredModuleSection {
         Self::decode_data_slice(payload)
     }
 
+    /// Handles decode data slice.
     pub fn decode_data_slice(data: &[u8]) -> Option<Module> {
-        if let Ok(payload) = postcard::from_bytes::<ModulePayload>(data) {
-            return payload.try_into_module().ok();
-        }
-        let payload = postcard::from_bytes::<ModulePayloadV2>(data).ok()?;
+        let payload = postcard::from_bytes::<ModulePayload>(data).ok()?;
         payload.try_into_module().ok()
     }
 }
 
 impl wasm_encoder::Section for LoweredModuleSection {
+    /// Returns the identifier for this value.
     fn id(&self) -> u8 {
         0
     }
 }
 
 impl Encode for LoweredModuleSection {
+    /// Handles encode.
     fn encode(
         &self,
         sink: &mut Vec<u8>,
@@ -255,9 +232,9 @@ impl Encode for LoweredModuleSection {
 }
 
 impl ModulePayload {
+    /// Handles from module.
     fn from_module(module: &Module) -> Self {
         Self {
-            version: LoweredModuleSection::VERSION,
             name: module.name.clone(),
             imports: module
                 .imports
@@ -291,11 +268,8 @@ impl ModulePayload {
         }
     }
 
+    /// Handles try into module.
     fn try_into_module(self) -> Result<Module, ModulePayloadDecodeError> {
-        if self.version != LoweredModuleSection::VERSION {
-            return Err(ModulePayloadDecodeError::InvalidVersion);
-        }
-
         let mut imports = IndexMap::with_capacity(self.imports.len());
         for (path, type_) in self.imports {
             imports.insert(path.into_path(), type_.into_type()?);
@@ -341,53 +315,8 @@ impl ModulePayload {
     }
 }
 
-impl ModulePayloadV2 {
-    fn try_into_module(self) -> Result<Module, ModulePayloadDecodeError> {
-        if self.version != 2 {
-            return Err(ModulePayloadDecodeError::InvalidVersion);
-        }
-
-        let mut imports = IndexMap::with_capacity(self.imports.len());
-        for (path, type_) in self.imports {
-            imports.insert(path.into_path(), type_.into_type()?);
-        }
-
-        let mut globals = IndexMap::with_capacity(self.globals.len());
-        for (path, type_) in self.globals {
-            globals.insert(path.into_path(), type_.into_type()?);
-        }
-
-        let mut functions = IndexMap::with_capacity(self.functions.len());
-        for (path, function) in self.functions {
-            functions.insert(path.into_path(), function.try_into_function()?);
-        }
-
-        let mut function_imports = IndexMap::with_capacity(self.function_imports.len());
-        for (path, function_import) in self.function_imports {
-            function_imports.insert(path.into_path(), function_import.into_function_import()?);
-        }
-
-        let closure_counter = usize::try_from(self.closure_counter)
-            .map_err(|_| ModulePayloadDecodeError::IntegerOverflow)?;
-
-        Ok(Module {
-            name: self.name,
-            imports,
-            globals,
-            functions,
-            function_imports,
-            has_memory: self.has_memory,
-            sig: TypeSignatureSection::default(),
-            export_policy: self.export_policy.into_export_policy(),
-            start: self.start.into_path(),
-            source_files: IndexMap::new(),
-            closure_counter,
-            source_file_lookup: HashMap::new(),
-        })
-    }
-}
-
 impl WireFunction {
+    /// Converts from one representation to another.
     fn from(function: &Function) -> Self {
         Self {
             parameters: function
@@ -410,6 +339,7 @@ impl WireFunction {
         }
     }
 
+    /// Handles try into function.
     fn try_into_function(self) -> Result<Function, ModulePayloadDecodeError> {
         let mut parameters = IndexMap::with_capacity(self.parameters.len());
         for (path, type_) in self.parameters {
@@ -452,40 +382,8 @@ impl WireFunction {
     }
 }
 
-impl WireFunctionV2 {
-    fn try_into_function(self) -> Result<Function, ModulePayloadDecodeError> {
-        let mut parameters = IndexMap::with_capacity(self.parameters.len());
-        for (path, type_) in self.parameters {
-            parameters.insert(path.into_path(), type_.into_type()?);
-        }
-
-        let mut variables = IndexMap::with_capacity(self.variables.len());
-        for (path, type_) in self.variables {
-            variables.insert(path.into_path(), type_.into_type()?);
-        }
-
-        let returns = self
-            .returns
-            .into_iter()
-            .map(WireType::into_type)
-            .collect::<Result<Vec<_>, _>>()?;
-        let ops = self
-            .ops
-            .into_iter()
-            .map(WireInstruction::into_instruction)
-            .collect::<Result<Vec<_>, _>>()?;
-
-        Ok(Function {
-            parameters,
-            returns,
-            variables,
-            op_origins: vec![None; ops.len()],
-            ops,
-        })
-    }
-}
-
 impl WireSourceOrigin {
+    /// Converts from one representation to another.
     fn from(origin: &SourceOrigin) -> Self {
         Self {
             file_name: origin.file_name.clone(),
@@ -494,6 +392,7 @@ impl WireSourceOrigin {
         }
     }
 
+    /// Handles into source origin.
     fn into_source_origin(self) -> Result<SourceOrigin, ModulePayloadDecodeError> {
         Ok(SourceOrigin {
             file_name: self.file_name,
@@ -506,6 +405,7 @@ impl WireSourceOrigin {
 }
 
 impl WireFunctionImport {
+    /// Converts from one representation to another.
     fn from(function_import: &FunctionImport) -> Self {
         Self {
             module: function_import.module.clone(),
@@ -515,6 +415,7 @@ impl WireFunctionImport {
         }
     }
 
+    /// Handles into function import.
     fn into_function_import(self) -> Result<FunctionImport, ModulePayloadDecodeError> {
         let params = self
             .params
@@ -538,6 +439,7 @@ impl WireFunctionImport {
 }
 
 impl WirePath {
+    /// Converts from one representation to another.
     fn from(path: &Path) -> Self {
         Self {
             major: path.major.clone(),
@@ -545,6 +447,7 @@ impl WirePath {
         }
     }
 
+    /// Handles into path.
     fn into_path(self) -> Path {
         Path {
             major: self.major,
@@ -554,6 +457,7 @@ impl WirePath {
 }
 
 impl WireType {
+    /// Converts from one representation to another.
     fn from(type_: &Type) -> Self {
         match type_ {
             Type::Any => Self::Any,
@@ -577,6 +481,7 @@ impl WireType {
         }
     }
 
+    /// Handles into type.
     fn into_type(self) -> Result<Type, ModulePayloadDecodeError> {
         Ok(match self {
             Self::Any => Type::Any,
@@ -618,6 +523,7 @@ impl WireType {
 }
 
 impl WireExportPolicy {
+    /// Converts from one representation to another.
     fn from(export_policy: ExportPolicy) -> Self {
         match export_policy {
             ExportPolicy::MinorOnly => Self::MinorOnly,
@@ -626,6 +532,7 @@ impl WireExportPolicy {
         }
     }
 
+    /// Handles into export policy.
     fn into_export_policy(self) -> ExportPolicy {
         match self {
             Self::MinorOnly => ExportPolicy::MinorOnly,
@@ -636,6 +543,7 @@ impl WireExportPolicy {
 }
 
 impl WireNumberOperation {
+    /// Converts from one representation to another.
     fn from(number_operation: NumberOperation) -> Self {
         match number_operation {
             NumberOperation::Eq => Self::Eq,
@@ -655,6 +563,7 @@ impl WireNumberOperation {
         }
     }
 
+    /// Handles into number operation.
     fn into_number_operation(self) -> NumberOperation {
         match self {
             Self::Eq => NumberOperation::Eq,
@@ -676,6 +585,7 @@ impl WireNumberOperation {
 }
 
 impl WireImmediateValue {
+    /// Converts from one representation to another.
     fn from(immediate_value: &ImmediateValue) -> Self {
         match immediate_value {
             ImmediateValue::Unit => Self::Unit,
@@ -687,6 +597,7 @@ impl WireImmediateValue {
         }
     }
 
+    /// Handles into immediate value.
     fn into_immediate_value(self) -> ImmediateValue {
         match self {
             Self::Unit => ImmediateValue::Unit,
@@ -700,6 +611,7 @@ impl WireImmediateValue {
 }
 
 impl WireInstruction {
+    /// Converts from one representation to another.
     fn from(instruction: &Instruction) -> Self {
         match instruction {
             Instruction::Set(path) => Self::Set(WirePath::from(path)),
@@ -783,6 +695,7 @@ impl WireInstruction {
         }
     }
 
+    /// Handles into instruction.
     fn into_instruction(self) -> Result<Instruction, ModulePayloadDecodeError> {
         Ok(match self {
             Self::Set(path) => Instruction::Set(path.into_path()),
@@ -914,6 +827,7 @@ impl WireInstruction {
     }
 }
 
+/// Handles decode named custom section data.
 fn decode_named_custom_section_data(data: &[u8]) -> Option<(&str, &[u8])> {
     let (name_length, name_length_bytes) = decode_leb128_usize(data)?;
     let name_start = name_length_bytes;
@@ -922,6 +836,7 @@ fn decode_named_custom_section_data(data: &[u8]) -> Option<(&str, &[u8])> {
     Some((name, data.get(name_end..)?))
 }
 
+/// Handles decode leb128 usize.
 fn decode_leb128_usize(data: &[u8]) -> Option<(usize, usize)> {
     let mut value = 0usize;
     let mut shift = 0;
@@ -947,6 +862,7 @@ mod tests {
     use super::*;
 
     #[test]
+    /// Handles roundtrip module section.
     fn roundtrip_module_section() {
         let mut module = Module::new("demo".to_string());
         module.export_policy = ExportPolicy::Qualified;
@@ -992,6 +908,7 @@ mod tests {
     }
 
     #[test]
+    /// Handles decode invalid data returns none.
     fn decode_invalid_data_returns_none() {
         assert!(LoweredModuleSection::decode_data_slice(&[1, 2, 3]).is_none());
     }
