@@ -32,7 +32,7 @@ git fetch origin main stable
 switch_to_branch main
 git pull --ff-only origin main
 
-mapfile -t cargo_files < <(git ls-files -- "**/Cargo.toml")
+mapfile -t cargo_files < <(git ls-files -- "Cargo.toml" "**/Cargo.toml")
 if [[ "${#cargo_files[@]}" -eq 0 ]]; then
   echo "error: no Cargo.toml files found" >&2
   exit 1

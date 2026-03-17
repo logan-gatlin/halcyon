@@ -780,7 +780,7 @@ dependencies = [
 
 [[package]]
 name = "halcyon"
-version = "2026.2.11"
+version = "2026.3.1"
 dependencies = [
  "halcyon-lib",
  "tracing",
