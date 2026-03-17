@@ -1,6 +1,6 @@
 [package]
 name = "halcyon"
-version = "2026.2.11"
+version = "2026.3.1"
 authors = ["Logan Gatlin <logan@gatlintc.com>"]
 edition = "2024"
 description = "CLI for the Halcyon programming language compiler"
