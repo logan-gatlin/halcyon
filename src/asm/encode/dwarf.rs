@@ -26,18 +26,23 @@ struct DwarfSequence {
     rows: Vec<(u64, String, u64, u64)>,
 }
 
+struct ParsedFunctionOffsets {
+    functions: Vec<Vec<usize>>,
+}
+
 /// Builds DWARF custom sections for wasm backtraces.
 pub(crate) fn build_dwarf_sections(
     module: &Module,
     binary: &[u8],
     function_operator_origins: &[Vec<Option<SourceOrigin>>],
 ) -> Vec<(String, Vec<u8>)> {
-    let Some(function_offsets) = read_function_operator_offsets(binary) else {
+    let Some(parsed_offsets) = read_function_operator_offsets(binary) else {
         return Vec::new();
     };
 
     let mut sequences = Vec::new();
-    for (offsets, origins) in function_offsets
+    for (offsets, origins) in parsed_offsets
+        .functions
         .iter()
         .zip(function_operator_origins.iter())
     {
@@ -138,7 +143,7 @@ fn emit_dwarf(
             line_program.generate_row();
         }
 
-        line_program.end_sequence(sequence.end_address);
+        line_program.end_sequence(sequence.end_address.saturating_sub(sequence.start_address));
     }
 
     dwarf.unit.line_program = line_program;
@@ -209,26 +214,34 @@ fn primary_source_name(module: &Module) -> String {
         .unwrap_or_else(|| format!("{}.hc", module.name))
 }
 
-fn read_function_operator_offsets(binary: &[u8]) -> Option<Vec<Vec<usize>>> {
+fn read_function_operator_offsets(binary: &[u8]) -> Option<ParsedFunctionOffsets> {
     let mut functions = Vec::new();
+    let mut code_section_start = None;
     for payload in wasmparser::Parser::new(0).parse_all(binary) {
         let Ok(payload) = payload else {
             return None;
         };
+        if let wasmparser::Payload::CodeSectionStart { range, .. } = payload {
+            code_section_start = Some(range.start);
+            continue;
+        }
         if let wasmparser::Payload::CodeSectionEntry(body) = payload {
+            let Some(code_section_start) = code_section_start else {
+                return None;
+            };
             let mut offsets = Vec::new();
             let mut reader = body.get_operators_reader().ok()?;
             while !reader.eof() {
                 let offset = reader.original_position();
                 let operator = reader.read().ok()?;
                 if !matches!(operator, wasmparser::Operator::End) {
-                    offsets.push(offset);
+                    offsets.push(offset.saturating_sub(code_section_start));
                 }
             }
             functions.push(offsets);
         }
     }
-    Some(functions)
+    Some(ParsedFunctionOffsets { functions })
 }
 
 fn original_line_column(
