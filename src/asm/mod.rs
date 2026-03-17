@@ -20,6 +20,7 @@ mod tests;
 
 use custom_section::*;
 use indexmap::IndexMap;
+use std::collections::HashMap;
 
 use crate::Artifact;
 use crate::ir::{
@@ -30,6 +31,8 @@ use crate::ir::{
     Statement,
     wasm,
 };
+use crate::logging::FileId;
+use crate::Span;
 use crate::types::SymbolTable;
 
 pub use encode::encode;
@@ -55,6 +58,27 @@ impl ExportPolicy {
             Self::None => None,
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceOrigin {
+    pub file_name: String,
+    pub start: usize,
+    pub width: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceFileRecord {
+    pub file_name: String,
+    pub source: String,
+}
+
+pub type SourceCatalog = Vec<(FileId, String, String)>;
+
+#[derive(Debug, Clone, Default)]
+pub struct EncodedModule {
+    pub binary: Vec<u8>,
+    pub source_map: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -517,6 +541,7 @@ pub struct Function {
     pub returns: Vec<Type>,
     pub variables: IndexMap<Path, Type>,
     pub ops: Vec<Instruction>,
+    pub op_origins: Vec<Option<SourceOrigin>>,
 }
 
 #[derive(Debug, Clone)]
@@ -538,8 +563,11 @@ pub struct Module {
     pub sig: TypeSignatureSection,
     pub export_policy: ExportPolicy,
     pub start: Path,
+    pub source_files: IndexMap<String, SourceFileRecord>,
     #[doc(hidden)]
     pub closure_counter: usize,
+    #[doc(hidden)]
+    pub source_file_lookup: HashMap<FileId, String>,
 }
 
 impl Type {
@@ -569,9 +597,11 @@ impl Function {
 pub fn lower_module(
     elaborated: ElaborationResult,
     symbols: &SymbolTable,
+    source_catalog: &SourceCatalog,
 ) -> Module {
     let ir_module = elaborated.module;
     let mut module = Module::new(ir_module.name.clone());
+    module.ingest_source_catalog(source_catalog);
     let constructor_table = ConstructorTable::from_symbols(symbols);
 
     let init_name = Path::new(&ir_module.name, "[init]");
@@ -654,7 +684,8 @@ fn lower_wasm_declarations(
                                 parameters: function.parameters,
                                 returns: function.results.into_vec(),
                                 variables: function.locals,
-                                ops: function.body.into_vec(),
+                                ops: function.body.to_vec(),
+                                op_origins: vec![None; function.body.len()],
                             },
                         )
                         .is_none(),
@@ -683,15 +714,17 @@ fn lower_wasm_declarations(
 pub fn compile_module(
     elaborated: ElaborationResult,
     symbols: &SymbolTable,
+    source_catalog: &SourceCatalog,
 ) -> Artifact {
     let ir_module = elaborated.module.clone();
     let module_name = ir_module.name.clone();
-    let module = lower_module(elaborated, symbols);
-    let binary = encode(module);
+    let module = lower_module(elaborated, symbols, source_catalog);
+    let encoded = encode(module);
     Artifact {
         module_name,
         ir_module: Some(ir_module),
-        binary,
+        binary: encoded.binary,
+        source_map: encoded.source_map,
     }
 }
 
@@ -711,7 +744,43 @@ impl Module {
             func_name: name,
             module: self,
             temporary_salt: 0,
+            current_origin: None,
         }
+    }
+
+    fn ingest_source_catalog(
+        &mut self,
+        source_catalog: &SourceCatalog,
+    ) {
+        for (file_id, file_name, source) in source_catalog {
+            self.source_file_lookup.insert(*file_id, file_name.clone());
+            self.source_files
+                .entry(file_name.clone())
+                .or_insert_with(|| SourceFileRecord {
+                    file_name: file_name.clone(),
+                    source: source.clone(),
+                });
+        }
+    }
+
+    fn source_origin_for_span(
+        &self,
+        span: Span,
+    ) -> Option<SourceOrigin> {
+        let Span::Source {
+            start,
+            width,
+            file_id,
+        } = span
+        else {
+            return None;
+        };
+        let file_name = self.source_file_lookup.get(&file_id?)?.clone();
+        Some(SourceOrigin {
+            file_name,
+            start,
+            width,
+        })
     }
 }
 
@@ -719,6 +788,7 @@ pub struct Encoder<'a> {
     pub module: &'a mut Module,
     pub func_name: Path,
     pub temporary_salt: usize,
+    pub current_origin: Option<SourceOrigin>,
 }
 
 impl<'a> Encoder<'a> {
@@ -732,13 +802,27 @@ impl<'a> Encoder<'a> {
         &mut self,
         instr: Instruction,
     ) {
-        self.current_func().ops.push(instr);
+        let origin = self.current_origin.clone();
+        let function = self.current_func();
+        function.ops.push(instr);
+        function.op_origins.push(origin);
     }
     pub fn extend(
         &mut self,
         instrs: impl IntoIterator<Item = Instruction>,
     ) {
-        self.current_func().ops.extend(instrs);
+        instrs.into_iter().for_each(|instruction| self.push(instruction));
+    }
+
+    pub fn with_origin(
+        &mut self,
+        origin: Option<SourceOrigin>,
+        f: impl FnOnce(&mut Self),
+    ) {
+        let previous = self.current_origin.clone();
+        self.current_origin = origin;
+        f(self);
+        self.current_origin = previous;
     }
     pub fn temporary_name(
         &mut self,

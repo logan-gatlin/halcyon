@@ -1,4 +1,5 @@
 bundle demo
-let () = println "hi"
 
-let a = [1, 2, 3]
+do readln "Your name is: "
+	|> [+] "Hello, " -- Prepend "Hello, "
+	|> println       -- Print "Hello, <name>"

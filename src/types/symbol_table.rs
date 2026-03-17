@@ -29,6 +29,7 @@ use super::{
     Kind,
     Type,
     TypeTransform,
+    normalize_parameter_kinds,
 };
 
 /// Classification of global symbols stored in the symbol table.
@@ -747,20 +748,6 @@ fn validate_impl_head_kinds(
         }
     }
     Ok(())
-}
-
-fn normalize_parameter_kinds(
-    mut kinds: Vec<Kind>,
-    parameter_count: usize,
-) -> Vec<Kind> {
-    if kinds.len() < parameter_count {
-        kinds.extend(std::iter::repeat_n(
-            Kind::Type,
-            parameter_count - kinds.len(),
-        ));
-    }
-    kinds.truncate(parameter_count);
-    kinds
 }
 
 /// Push `predicate` only if it is not already present.

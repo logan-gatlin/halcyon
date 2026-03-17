@@ -145,6 +145,7 @@ impl MockLogger {
 #[derive(Debug, Clone, Default)]
 pub struct Logger {
     files: SimpleFiles<String, String>,
+    file_records: Vec<(FileId, String, String)>,
     diagnostics: Vec<Diagnostic>,
     /// Special "file id" used to emit linking errors which do not originate
     /// from any particular file
@@ -157,6 +158,7 @@ impl Logger {
         let linking_id = files.add("Linking phase".to_string(), "".to_string());
         Self {
             files,
+            file_records: vec![(linking_id, "Linking phase".to_string(), "".to_string())],
             diagnostics: vec![],
             linking_id,
         }
@@ -173,7 +175,10 @@ impl Logger {
         file_contents: impl Into<String>,
     ) -> FileLogger {
         let file_name = file_name.into();
-        let file_id = self.files.add(file_name.clone(), file_contents.into());
+        let file_contents = file_contents.into();
+        let file_id = self.files.add(file_name.clone(), file_contents.clone());
+        self.file_records
+            .push((file_id, file_name.clone(), file_contents));
         FileLogger {
             id: file_id,
             file_name,
@@ -218,6 +223,10 @@ impl Logger {
 
     pub fn into_diagnostics(self) -> Vec<Diagnostic> {
         self.diagnostics
+    }
+
+    pub fn source_files(&self) -> Vec<(FileId, String, String)> {
+        self.file_records.clone()
     }
 }
 
@@ -317,6 +326,10 @@ impl FileLogger {
 
     pub fn file_name(&self) -> &str {
         &self.file_name
+    }
+
+    pub fn id(&self) -> FileId {
+        self.id
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &Diagnostic> {

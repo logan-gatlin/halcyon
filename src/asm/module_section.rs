@@ -3,6 +3,7 @@ use serde::{
     Deserialize,
     Serialize,
 };
+use std::collections::HashMap;
 use wasm_encoder::{
     CustomSection,
     Encode,
@@ -29,6 +30,21 @@ struct ModulePayload {
     start: WirePath,
     closure_counter: u64,
     export_policy: WireExportPolicy,
+    source_files: Vec<(String, String)>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ModulePayloadV2 {
+    version: u32,
+    name: String,
+    imports: Vec<(WirePath, WireType)>,
+    globals: Vec<(WirePath, WireType)>,
+    functions: Vec<(WirePath, WireFunctionV2)>,
+    function_imports: Vec<(WirePath, WireFunctionImport)>,
+    has_memory: bool,
+    start: WirePath,
+    closure_counter: u64,
+    export_policy: WireExportPolicy,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -37,6 +53,22 @@ struct WireFunction {
     returns: Vec<WireType>,
     variables: Vec<(WirePath, WireType)>,
     ops: Vec<WireInstruction>,
+    op_origins: Vec<Option<WireSourceOrigin>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct WireFunctionV2 {
+    parameters: Vec<(WirePath, WireType)>,
+    returns: Vec<WireType>,
+    variables: Vec<(WirePath, WireType)>,
+    ops: Vec<WireInstruction>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct WireSourceOrigin {
+    file_name: String,
+    start: u64,
+    width: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -175,7 +207,7 @@ enum ModulePayloadDecodeError {
 
 impl LoweredModuleSection {
     pub const NAME: &str = "halcyon.asm.v1";
-    const VERSION: u32 = 2;
+    const VERSION: u32 = 3;
 
     pub fn new(module: &Module) -> Self {
         Self {
@@ -192,7 +224,10 @@ impl LoweredModuleSection {
     }
 
     pub fn decode_data_slice(data: &[u8]) -> Option<Module> {
-        let payload = postcard::from_bytes::<ModulePayload>(data).ok()?;
+        if let Ok(payload) = postcard::from_bytes::<ModulePayload>(data) {
+            return payload.try_into_module().ok();
+        }
+        let payload = postcard::from_bytes::<ModulePayloadV2>(data).ok()?;
         payload.try_into_module().ok()
     }
 }
@@ -248,11 +283,67 @@ impl ModulePayload {
             start: WirePath::from(&module.start),
             closure_counter: module.closure_counter as u64,
             export_policy: WireExportPolicy::from(module.export_policy),
+            source_files: module
+                .source_files
+                .values()
+                .map(|record| (record.file_name.clone(), record.source.clone()))
+                .collect(),
         }
     }
 
     fn try_into_module(self) -> Result<Module, ModulePayloadDecodeError> {
         if self.version != LoweredModuleSection::VERSION {
+            return Err(ModulePayloadDecodeError::InvalidVersion);
+        }
+
+        let mut imports = IndexMap::with_capacity(self.imports.len());
+        for (path, type_) in self.imports {
+            imports.insert(path.into_path(), type_.into_type()?);
+        }
+
+        let mut globals = IndexMap::with_capacity(self.globals.len());
+        for (path, type_) in self.globals {
+            globals.insert(path.into_path(), type_.into_type()?);
+        }
+
+        let mut functions = IndexMap::with_capacity(self.functions.len());
+        for (path, function) in self.functions {
+            functions.insert(path.into_path(), function.try_into_function()?);
+        }
+
+        let mut function_imports = IndexMap::with_capacity(self.function_imports.len());
+        for (path, function_import) in self.function_imports {
+            function_imports.insert(path.into_path(), function_import.into_function_import()?);
+        }
+
+        let closure_counter = usize::try_from(self.closure_counter)
+            .map_err(|_| ModulePayloadDecodeError::IntegerOverflow)?;
+        let source_files = self
+            .source_files
+            .into_iter()
+            .map(|(file_name, source)| (file_name.clone(), SourceFileRecord { file_name, source }))
+            .collect::<IndexMap<_, _>>();
+
+        Ok(Module {
+            name: self.name,
+            imports,
+            globals,
+            functions,
+            function_imports,
+            has_memory: self.has_memory,
+            sig: TypeSignatureSection::default(),
+            export_policy: self.export_policy.into_export_policy(),
+            start: self.start.into_path(),
+            source_files,
+            closure_counter,
+            source_file_lookup: HashMap::new(),
+        })
+    }
+}
+
+impl ModulePayloadV2 {
+    fn try_into_module(self) -> Result<Module, ModulePayloadDecodeError> {
+        if self.version != 2 {
             return Err(ModulePayloadDecodeError::InvalidVersion);
         }
 
@@ -289,7 +380,9 @@ impl ModulePayload {
             sig: TypeSignatureSection::default(),
             export_policy: self.export_policy.into_export_policy(),
             start: self.start.into_path(),
+            source_files: IndexMap::new(),
             closure_counter,
+            source_file_lookup: HashMap::new(),
         })
     }
 }
@@ -309,9 +402,57 @@ impl WireFunction {
                 .map(|(path, type_)| (WirePath::from(path), WireType::from(type_)))
                 .collect(),
             ops: function.ops.iter().map(WireInstruction::from).collect(),
+            op_origins: function
+                .op_origins
+                .iter()
+                .map(|origin| origin.as_ref().map(WireSourceOrigin::from))
+                .collect(),
         }
     }
 
+    fn try_into_function(self) -> Result<Function, ModulePayloadDecodeError> {
+        let mut parameters = IndexMap::with_capacity(self.parameters.len());
+        for (path, type_) in self.parameters {
+            parameters.insert(path.into_path(), type_.into_type()?);
+        }
+
+        let mut variables = IndexMap::with_capacity(self.variables.len());
+        for (path, type_) in self.variables {
+            variables.insert(path.into_path(), type_.into_type()?);
+        }
+
+        let returns = self
+            .returns
+            .into_iter()
+            .map(WireType::into_type)
+            .collect::<Result<Vec<_>, _>>()?;
+        let ops = self
+            .ops
+            .into_iter()
+            .map(WireInstruction::into_instruction)
+            .collect::<Result<Vec<_>, _>>()?;
+        let op_origins = self
+            .op_origins
+            .into_iter()
+            .map(|origin| origin.map(WireSourceOrigin::into_source_origin).transpose())
+            .collect::<Result<Vec<_>, _>>()?;
+        let op_origins = if op_origins.len() == ops.len() {
+            op_origins
+        } else {
+            vec![None; ops.len()]
+        };
+
+        Ok(Function {
+            parameters,
+            returns,
+            variables,
+            ops,
+            op_origins,
+        })
+    }
+}
+
+impl WireFunctionV2 {
     fn try_into_function(self) -> Result<Function, ModulePayloadDecodeError> {
         let mut parameters = IndexMap::with_capacity(self.parameters.len());
         for (path, type_) in self.parameters {
@@ -338,7 +479,28 @@ impl WireFunction {
             parameters,
             returns,
             variables,
+            op_origins: vec![None; ops.len()],
             ops,
+        })
+    }
+}
+
+impl WireSourceOrigin {
+    fn from(origin: &SourceOrigin) -> Self {
+        Self {
+            file_name: origin.file_name.clone(),
+            start: origin.start as u64,
+            width: origin.width as u64,
+        }
+    }
+
+    fn into_source_origin(self) -> Result<SourceOrigin, ModulePayloadDecodeError> {
+        Ok(SourceOrigin {
+            file_name: self.file_name,
+            start: usize::try_from(self.start)
+                .map_err(|_| ModulePayloadDecodeError::IntegerOverflow)?,
+            width: usize::try_from(self.width)
+                .map_err(|_| ModulePayloadDecodeError::IntegerOverflow)?,
         })
     }
 }
@@ -806,6 +968,7 @@ mod tests {
                     Instruction::Get(Path::new("demo", "value")),
                     Instruction::Drop,
                 ],
+                op_origins: vec![None, None],
             },
         );
 

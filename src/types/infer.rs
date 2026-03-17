@@ -5,7 +5,10 @@
 //! - trait-predicate accumulation,
 //! - explicit higher-rank checks via skolemization in checking mode.
 
-use std::collections::HashMap;
+use std::collections::{
+    HashMap,
+    HashSet,
+};
 
 use indexmap::IndexMap;
 
@@ -48,6 +51,7 @@ use super::{
     TypeScheme,
     TypeTransform,
     for_each_child_type,
+    for_each_pattern_binding,
 };
 
 use super::unify::{
@@ -245,6 +249,21 @@ mod tests {
             bindings.get(&p4).expect("binding must exist").type_,
             Type::Glyph
         );
+    }
+
+    #[test]
+    fn canonical_trait_name_returns_none_for_alias_cycles() {
+        let mut ctx = InferenceContext::new();
+        let eq = Path::new("demo", "Eq");
+        let equal = Path::new("demo", "Equal");
+        ctx.set_trait_aliases(
+            [(eq.clone(), equal.clone()), (equal.clone(), eq.clone())]
+                .into_iter()
+                .collect(),
+        );
+
+        assert_eq!(ctx.canonical_trait_name(&eq), None);
+        assert_eq!(ctx.canonical_trait_name(&equal), None);
     }
 
     #[test]
@@ -526,6 +545,38 @@ mod tests {
         ctx.infer_term(&mut global_env, &global, &mut schemes)
             .expect("global let should infer");
         assert!(global_env.get(&binding).is_some());
+    }
+
+    #[test]
+    fn let_binding_is_recursive_while_inferring_value() {
+        let mut ctx = InferenceContext::new();
+        let mut env = TypeEnv::new();
+        let mut schemes = IndexMap::new();
+        let binding = Path::new("demo", "loop");
+        let parameter = Path::new("demo", "x");
+
+        let recursive_value = term(TermKind::Function {
+            parameter_name: parameter.clone().with_span(Span::Generated),
+            parameter_type: None,
+            captures: [].into(),
+            body: term(TermKind::Call {
+                callee: term(TermKind::Identifier(binding.clone())).into(),
+                argument: term(TermKind::Identifier(parameter.clone())).into(),
+            })
+            .into(),
+        });
+        let let_term = term(TermKind::Let {
+            assignee: pattern(PatternKind::Identifier(binding.clone())),
+            scope: ScopeKind::Local,
+            value: recursive_value.into(),
+            then: term(TermKind::Identifier(binding)).into(),
+            else_: term(TermKind::Unreachable).into(),
+        });
+
+        let typed = ctx
+            .infer_term(&mut env, &let_term, &mut schemes)
+            .expect("recursive let should infer");
+        assert!(matches!(typed.term.type_, Type::Function(_, _)));
     }
 
     #[test]
@@ -1310,119 +1361,44 @@ fn rigidify_meta_vars_for_annotation_check(
     type_: &Type,
     replacements: &mut HashMap<MetaVarId, Type>,
 ) -> Type {
-    match type_ {
-        Type::Unit
-        | Type::Integer
-        | Type::Real
-        | Type::Boolean
-        | Type::String
-        | Type::Glyph
-        | Type::TypeVar(_) => type_.clone(),
-        Type::MetaVar(id) => {
-            replacements
-                .entry(*id)
-                .or_insert_with(|| {
-                    Type::Named {
-                        name: Path::new("[annotation-meta]", format!("#{id}")),
-                        body: Box::new(Type::Unit),
-                    }
-                })
-                .clone()
+    struct AnnotationMetaRigidifier<'a> {
+        replacements: &'a mut HashMap<MetaVarId, Type>,
+    }
+
+    impl TypeTransform for AnnotationMetaRigidifier<'_> {
+        fn meta_var(
+            &mut self,
+            id: MetaVarId,
+        ) -> Option<Type> {
+            Some(
+                self.replacements
+                    .entry(id)
+                    .or_insert_with(|| {
+                        Type::Named {
+                            name: Path::new("[annotation-meta]", format!("#{id}")),
+                            body: Box::new(Type::Unit),
+                        }
+                    })
+                    .clone(),
+            )
         }
-        Type::ForAll(body) => {
-            Type::ForAll(Box::new(rigidify_meta_vars_for_annotation_check(
-                body,
-                replacements,
-            )))
-        }
-        Type::Named { name, body } => {
-            Type::Named {
+
+        fn named(
+            &mut self,
+            name: &Path,
+            body: &Type,
+        ) -> Option<Type> {
+            let body = self.transform(body)?;
+            Some(Type::Named {
                 name: name.clone(),
-                body: Box::new(rigidify_meta_vars_for_annotation_check(body, replacements)),
-            }
-        }
-        Type::StructConstraint { fields, mode } => {
-            Type::StructConstraint {
-                fields: fields
-                    .iter()
-                    .map(|(name, type_)| {
-                        (
-                            name.clone(),
-                            rigidify_meta_vars_for_annotation_check(type_, replacements),
-                        )
-                    })
-                    .collect(),
-                mode: *mode,
-            }
-        }
-        Type::Struct { fields } => {
-            Type::Struct {
-                fields: fields
-                    .iter()
-                    .map(|(name, type_)| {
-                        (
-                            name.clone(),
-                            rigidify_meta_vars_for_annotation_check(type_, replacements),
-                        )
-                    })
-                    .collect(),
-            }
-        }
-        Type::Array(inner) => {
-            Type::Array(Box::new(rigidify_meta_vars_for_annotation_check(
-                inner,
-                replacements,
-            )))
-        }
-        Type::Tuple(items) => {
-            Type::Tuple(
-                items
-                    .iter()
-                    .map(|item| rigidify_meta_vars_for_annotation_check(item, replacements))
-                    .collect(),
-            )
-        }
-        Type::Sum { variants } => {
-            Type::Sum {
-                variants: variants
-                    .iter()
-                    .map(|(name, type_)| {
-                        (
-                            name.clone(),
-                            rigidify_meta_vars_for_annotation_check(type_, replacements),
-                        )
-                    })
-                    .collect(),
-            }
-        }
-        Type::Function(parameter, result) => {
-            Type::Function(
-                Box::new(rigidify_meta_vars_for_annotation_check(
-                    parameter,
-                    replacements,
-                )),
-                Box::new(rigidify_meta_vars_for_annotation_check(
-                    result,
-                    replacements,
-                )),
-            )
-        }
-        Type::Apply {
-            constructor,
-            arguments,
-        } => {
-            Type::Apply {
-                constructor: Box::new(rigidify_meta_vars_for_annotation_check(
-                    constructor,
-                    replacements,
-                )),
-                arguments: arguments
-                    .iter()
-                    .map(|argument| rigidify_meta_vars_for_annotation_check(argument, replacements))
-                    .collect(),
-            }
+                body: Box::new(body),
+            })
         }
     }
+
+    AnnotationMetaRigidifier { replacements }
+        .transform(type_)
+        .unwrap_or_else(|| type_.clone())
 }
 
 fn instantiate_leading_foralls_with_metas(
@@ -1503,9 +1479,10 @@ fn ensure_forall_annotation_is_compatible_with_inferred(
 
 fn predicate_key(
     predicate: &TraitConstraint,
-    canonical_trait_name: impl Fn(&Path) -> Path,
+    canonical_trait_name: impl Fn(&Path) -> Option<Path>,
 ) -> String {
-    let trait_name = canonical_trait_name(&predicate.trait_name);
+    let trait_name =
+        canonical_trait_name(&predicate.trait_name).unwrap_or_else(|| predicate.trait_name.clone());
     let args = predicate
         .arguments
         .iter()
@@ -1700,17 +1677,16 @@ impl InferenceContext {
     pub fn canonical_trait_name(
         &self,
         trait_name: &Path,
-    ) -> Path {
+    ) -> Option<Path> {
         let mut current = trait_name.clone();
-        let mut seen = Vec::new();
+        let mut seen = HashSet::new();
         while let Some(next) = self.trait_aliases.get(&current) {
-            if seen.contains(&current) {
-                break;
+            if !seen.insert(current.clone()) {
+                return None;
             }
-            seen.push(current.clone());
             current = next.clone();
         }
-        current
+        Some(current)
     }
 
     /// Borrow the unification table.
@@ -1890,7 +1866,7 @@ impl InferenceContext {
             .enumerate()
             .map(|(index, id)| (*id, index as u32))
             .collect::<HashMap<_, _>>();
-        let type_ = MetaVarToTypeVarSubstitution {
+        let mut type_ = MetaVarToTypeVarSubstitution {
             meta_var_to_type_var: &meta_var_to_type_var,
         }
         .transform(&normalized_type)
@@ -1898,6 +1874,10 @@ impl InferenceContext {
         .for_all(free_meta_vars.len());
         let predicates =
             replace_meta_vars_in_predicates(&normalized_predicates, &meta_var_to_type_var);
+        let extra_foralls = required_outer_type_var_binders(&type_, &predicates);
+        if extra_foralls > 0 {
+            type_ = type_.for_all(extra_foralls);
+        }
         type_.scheme_with_predicates(predicates)
     }
 
@@ -2122,7 +2102,18 @@ pub fn infer_term(
         } => {
             let outer_level = ctx.level;
             ctx.level += 1;
-            let typed_value = infer_term(ctx, env, value, schemes)?;
+            let mut recursive_bindings = IndexMap::<Path, Type>::new();
+            for_each_pattern_binding(assignee, |path, _| {
+                recursive_bindings
+                    .entry(path.clone())
+                    .or_insert_with(|| ctx.fresh_meta());
+            });
+            let mut env_for_value = env.with_bindings(
+                recursive_bindings
+                    .iter()
+                    .map(|(path, type_)| (path.clone(), type_.clone())),
+            );
+            let typed_value = infer_term(ctx, &mut env_for_value, value, schemes)?;
             tracing::debug!(
                 assignee = ?assignee.kind,
                 value_type = %typed_value.term.type_,
@@ -2162,8 +2153,24 @@ pub fn infer_term(
                 }
             }
             let mut bindings = Vec::new();
-            let typed_pattern =
-                infer_pattern(ctx, env, assignee, &typed_value.term.type_, &mut bindings)?;
+            let typed_pattern = infer_pattern(
+                ctx,
+                &env_for_value,
+                assignee,
+                &typed_value.term.type_,
+                &mut bindings,
+            )?;
+            for (path, binding_type) in bindings.iter() {
+                if let Some(recursive_type) = recursive_bindings.get(path) {
+                    unify_with_context(
+                        &mut ctx.table,
+                        recursive_type,
+                        binding_type,
+                        assignee.span,
+                        "checking recursive let references against the bound value type",
+                    )?;
+                }
+            }
             ctx.level = outer_level;
 
             let generalized = bindings
@@ -2852,4 +2859,81 @@ fn replace_meta_vars_in_predicates(
             }
         })
         .collect()
+}
+
+fn required_outer_type_var_binders(
+    type_: &Type,
+    predicates: &[TraitConstraint],
+) -> usize {
+    let type_max = max_free_type_var_index(type_, 0);
+    let predicate_depth = leading_forall_count(type_);
+    let predicate_max = predicates
+        .iter()
+        .flat_map(|predicate| predicate.arguments.iter())
+        .filter_map(|argument| max_free_type_var_index(argument, predicate_depth))
+        .max();
+    type_max
+        .into_iter()
+        .chain(predicate_max)
+        .max()
+        .map(|index| index as usize + 1)
+        .unwrap_or(0)
+}
+
+fn leading_forall_count(type_: &Type) -> u32 {
+    let mut current = type_;
+    let mut count = 0;
+    while let Type::ForAll(body) = current {
+        count += 1;
+        current = body;
+    }
+    count
+}
+
+fn max_free_type_var_index(
+    type_: &Type,
+    depth: u32,
+) -> Option<u32> {
+    match type_ {
+        Type::TypeVar(index) => (*index >= depth).then(|| index - depth),
+        Type::ForAll(body) => max_free_type_var_index(body, depth + 1),
+        Type::Array(inner) => max_free_type_var_index(inner, depth),
+        Type::Tuple(items) => items
+            .iter()
+            .filter_map(|item| max_free_type_var_index(item, depth))
+            .max(),
+        Type::Struct { fields } | Type::StructConstraint { fields, .. } => fields
+            .values()
+            .filter_map(|field| max_free_type_var_index(field, depth))
+            .max(),
+        Type::Sum { variants } => variants
+            .values()
+            .filter_map(|variant| max_free_type_var_index(variant, depth))
+            .max(),
+        Type::Function(parameter, result) => {
+            max_free_type_var_index(parameter, depth)
+                .into_iter()
+                .chain(max_free_type_var_index(result, depth))
+                .max()
+        }
+        Type::Named { body, .. } => max_free_type_var_index(body, depth),
+        Type::Apply {
+            constructor,
+            arguments,
+        } => max_free_type_var_index(constructor, depth)
+            .into_iter()
+            .chain(
+                arguments
+                    .iter()
+                    .filter_map(|argument| max_free_type_var_index(argument, depth)),
+            )
+            .max(),
+        Type::Unit
+        | Type::Integer
+        | Type::Real
+        | Type::Boolean
+        | Type::String
+        | Type::Glyph
+        | Type::MetaVar(_) => None,
+    }
 }

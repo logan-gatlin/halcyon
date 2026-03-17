@@ -39,6 +39,7 @@ pub struct Artifact {
     pub module_name: String,
     pub ir_module: Option<ir::Module<types::Type>>,
     pub binary: Vec<u8>,
+    pub source_map: Option<String>,
 }
 
 impl Artifact {
@@ -65,6 +66,19 @@ impl Artifact {
         let path = location.as_ref().join(format!("{}.wat", self.module_name));
         std::fs::write(path, wat)
     }
+
+    pub fn save_source_map_to_file(
+        &self,
+        location: impl AsRef<std::path::Path>,
+    ) -> std::io::Result<()> {
+        let Some(source_map) = &self.source_map else {
+            return Ok(());
+        };
+        let path = location
+            .as_ref()
+            .join(format!("{}.wasm.map", self.module_name));
+        std::fs::write(path, source_map)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -80,7 +94,9 @@ where
     pub resolve_import: F,
 }
 
-fn name_resolution_prelude(symbols: &types::SymbolTable) -> Vec<(ir::Path, ir::NameSpace)> {
+pub(crate) fn name_resolution_prelude(
+    symbols: &types::SymbolTable
+) -> Vec<(ir::Path, ir::NameSpace)> {
     let mut prelude = Vec::new();
     prelude.extend(
         symbols
@@ -155,6 +171,7 @@ fn compile_ir_bundle(
     ir_bundle: ir::Module<()>,
     symbols: &mut types::SymbolTable,
     logger: &mut FileLogger,
+    source_catalog: &asm::SourceCatalog,
 ) -> Option<Artifact> {
     let resolved = types::resolve_module_with_symbols_and_schemes(symbols, ir_bundle, logger);
     if !logger.is_ok() {
@@ -162,7 +179,22 @@ fn compile_ir_bundle(
     }
 
     let elaborated = ir::elaborate_module(resolved, symbols);
-    Some(asm::compile_module(elaborated, symbols))
+    Some(asm::compile_module(elaborated, symbols, source_catalog))
+}
+
+fn compile_ir_bundle_artifacts(
+    ir_bundle: ir::Module<()>,
+    symbols: &mut types::SymbolTable,
+    logger: &mut FileLogger,
+    source_catalog: &asm::SourceCatalog,
+) -> Box<[Artifact]> {
+    compile_ir_bundle(ir_bundle, symbols, logger, source_catalog)
+        .map(|compiled| vec![compiled].into_boxed_slice())
+        .unwrap_or_else(no_artifacts)
+}
+
+fn no_artifacts() -> Box<[Artifact]> {
+    Vec::new().into_boxed_slice()
 }
 
 fn link_artifacts_with_module_name(
@@ -280,13 +312,15 @@ where
     }
 
     let mut typing_file_logger = logger.new_file(source_name, source);
-    let compiled = compile_ir_bundle(ir_bundle, symbols, &mut typing_file_logger);
+    let source_catalog = logger.source_files();
+    let compiled_artifacts =
+        compile_ir_bundle_artifacts(ir_bundle, symbols, &mut typing_file_logger, &source_catalog);
     logger.consume_file(typing_file_logger);
-    let Some(compiled) = compiled else {
+    if compiled_artifacts.is_empty() {
         return artifacts.into_boxed_slice();
-    };
+    }
 
-    artifacts.push(compiled);
+    artifacts.extend(compiled_artifacts.into_vec());
     artifacts.into_boxed_slice()
 }
 
@@ -297,10 +331,10 @@ pub fn compile_source(
     symbols: &mut types::SymbolTable,
 ) -> Box<[Artifact]> {
     let Some(source_file) = parse::parse(source, logger) else {
-        return Vec::new().into_boxed_slice();
+        return no_artifacts();
     };
 
-    let mut bundle_name = "_".to_string();
+    let bundle_name = bundle_name_for_source_file(&source_file, logger, true);
     let mut saw_bundle_declaration = false;
     let mut statements = Vec::new();
     for statement in source_file.statements() {
@@ -317,9 +351,6 @@ pub fn compile_source(
                     continue;
                 }
                 saw_bundle_declaration = true;
-                bundle_name = bundle_declaration
-                    .name_text()
-                    .unwrap_or_else(|| "_".to_string());
             }
             parse::ast::Statement::Import(_) => {}
             other => statements.push(other),
@@ -327,21 +358,17 @@ pub fn compile_source(
     }
 
     if !logger.is_ok() {
-        return Vec::new().into_boxed_slice();
+        return no_artifacts();
     }
 
     let prelude = name_resolution_prelude(symbols);
     let Some(ir_bundle) =
         ir::bundle_statements_with_prelude(bundle_name, &statements, logger, &prelude)
     else {
-        return Vec::new().into_boxed_slice();
+        return no_artifacts();
     };
 
-    let Some(compiled) = compile_ir_bundle(ir_bundle, symbols, logger) else {
-        return Vec::new().into_boxed_slice();
-    };
-
-    vec![compiled].into_boxed_slice()
+    compile_ir_bundle_artifacts(ir_bundle, symbols, logger, &Vec::new())
 }
 
 #[tracing::instrument(skip_all, fields(module = %art.module_name))]

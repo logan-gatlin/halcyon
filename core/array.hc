@@ -117,10 +117,58 @@ module array =
     | [] => backup_fn ()
     | [value, ..] => value
 
+  let map = fn f arr =>
+    match arr with
+      | [] => []
+      | [head, ..tail] => [f head] + (array::map f tail)
+
+  let flatten = fn arr =>
+    match arr with
+      | [] => []
+      | [head, ..tail] => array::concat head (array::flatten tail)
+
   let flat_map = fn f arr =>
     match arr with
       | [] => []
-      | [value, ..] => f value
+      | [value, ..tail] => array::concat (f value) (array::flat_map f tail)
+
+  let traverse = fn f arr => match arr with
+    | [] => bundle::hkt::new []
+    | [value, ..tail] =>
+      bundle::hkt::lift2
+        (fn mapped_value mapped_tail => [mapped_value] + mapped_tail)
+        (f value)
+        (array::traverse f tail)
+
+  let fold = fn step initial arr => match arr with
+    | [] => initial
+    | [value, ..tail] => array::fold step (step initial value) tail
+
+  let zip_with = fn f left right => match left with
+    | [] => []
+    | [left_value, ..left_tail] =>
+      match right with
+        | [] => []
+        | [right_value, ..right_tail] =>
+          [f left_value right_value] + (array::zip_with f left_tail right_tail)
+
+  let filter = fn predicate arr => match arr with
+    | [] => []
+    | [value, ..tail] =>
+      if predicate value
+        then [value] + (array::filter predicate tail)
+        else array::filter predicate tail
+
+  let equal_with = fn compare left right =>
+    match left with
+      | [] => array::is_empty right
+      | [left_value, ..left_tail] =>
+        match right with
+          | [] => false
+          | [right_value, ..right_tail] =>
+            if compare left_value right_value
+              then array::equal_with compare left_tail right_tail
+              else false
 
   impl Default for a in Array a =
     let default = []
@@ -130,52 +178,47 @@ module array =
     let [+] = fn left right => array::concat left right
   end
 
+  impl ops::Equal for a in Array a where ops::Equal a =
+    let [==] = fn left right =>
+      let compare = bundle::ops::[==] in
+      array::equal_with compare left right
+  end
+
   impl bundle::hkt::Applicative Array =
     let apply = fn wrapped_fn wrapped_value =>
       array::flat_map
-        (fn f => array::flat_map (fn value => [f value]) wrapped_value)
+        (fn f => array::map f wrapped_value)
         wrapped_fn
   end
 
   impl bundle::hkt::Traversable Array =
-    let traverse = fn f arr => match arr with
-      | [] => bundle::hkt::new []
-      | [value, ..] => bundle::hkt::map (fn mapped => [mapped]) (f value)
+    let traverse = fn f arr => array::traverse f arr
   end
 
   impl bundle::hkt::Foldable Array =
-    let fold = fn step initial arr => match arr with
-      | [] => initial
-      | [value, ..] => step initial value
+    let fold = fn step initial arr => array::fold step initial arr
   end
 
   impl bundle::hkt::Alternative Array =
     let empty = []
-    let or_else = array::concat
+    let or_else = fn left right => array::concat left right
   end
 
   impl bundle::hkt::Functor Array =
-    let fmap = fn f arr => array::flat_map (fn value => [f value]) arr
+    let fmap = fn f arr => array::map f arr
   end
 
   impl bundle::hkt::Zip Array =
-    let zip_with = fn f left right => match left with
-      | [] => []
-      | [left_value, ..] =>
-        match right with
-          | [] => []
-          | [right_value, ..] => [f left_value right_value]
+    let zip_with = fn f left right => array::zip_with f left right
   end
 
   impl bundle::hkt::Filterable Array =
-    let filter = fn predicate arr => match arr with
-      | [] => []
-      | [value, ..] => if predicate value then [value] else []
+    let filter = fn predicate arr => array::filter predicate arr
   end
 
   impl bundle::hkt::Monad Array =
-    let new = array::singleton
-    let flatmap = array::flat_map
+    let new = fn value => singleton value
+    let flatmap = fn f arr => flat_map f arr
   end
 
 end

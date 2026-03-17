@@ -128,23 +128,23 @@ module opt =
 
   impl bundle::hkt::Alternative Option =
     let empty = None
-    let or_else = opt::or_with
+    let or_else = fn left right => opt::or_with right left
   end
 
   impl bundle::hkt::Functor Option =
-    let fmap = opt::map
+    let fmap = fn f value => opt::map f value
   end
 
   impl bundle::hkt::Zip Option =
-    let zip_with = opt::zip_with
+    let zip_with = fn f left right => opt::zip_with f left right
   end
 
   impl bundle::hkt::Filterable Option =
-    let filter = opt::filter
+    let filter = fn predicate value => opt::filter predicate value
   end
 
   impl bundle::hkt::Monad Option =
-    let new = Some
-    let flatmap = opt::and_then
+    let new = fn value => Some value
+    let flatmap = fn f value => opt::and_then f value
   end
 end

@@ -26,3 +26,4 @@ if [[ "${starting_ref}" != "stable" ]]; then
 fi
 
 echo "Merged origin/main into stable and published origin/stable@${stable_sha}"
+git checkout main

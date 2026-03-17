@@ -13,7 +13,7 @@ use crate::{
 };
 use wasmparser::Payload;
 
-fn compile_modules(source: &str) -> (Vec<crate::ir::ElaborationResult>, SymbolTable) {
+fn compile_modules(source: &str) -> (Vec<crate::ir::ElaborationResult>, SymbolTable, SourceCatalog) {
     let mut logger = Logger::new();
     let mut file_logger = logger.new_file("test.hc", source);
     let mut symbols = SymbolTable::new();
@@ -36,17 +36,19 @@ fn compile_modules(source: &str) -> (Vec<crate::ir::ElaborationResult>, SymbolTa
         .collect::<Vec<_>>();
 
     logger.consume_file(file_logger);
+    let source_catalog = logger.source_files();
     logger.print_logs();
     assert!(logger.is_ok());
-    (elaborated_modules, symbols)
+    (elaborated_modules, symbols, source_catalog)
 }
 
 #[test]
 fn emits_type_signature_section() {
     let source = "module demo =\n\tlet f = fn a => a\nend\n";
-    let (mut modules, symbols) = compile_modules(source);
+    let (mut modules, symbols, _) = compile_modules(source);
     let module = modules.pop().unwrap();
-    let wasm = encode(lower_module(module, &symbols));
+    let encoded = encode(lower_module(module, &symbols, &Vec::new()));
+    let wasm = encoded.binary;
 
     let mut found = None;
     for payload in wasmparser::Parser::new(0).parse_all(&wasm) {
@@ -68,9 +70,10 @@ fn emits_type_signature_section() {
 #[test]
 fn type_signature_preserves_definition_order() {
     let source = "module demo =\n\ttype First = { x: core::Integer }\n\ttype Second = { y: core::Integer }\n\tlet f = fn a => a\nend\n";
-    let (mut modules, symbols) = compile_modules(source);
+    let (mut modules, symbols, _) = compile_modules(source);
     let module = modules.pop().unwrap();
-    let wasm = encode(lower_module(module, &symbols));
+    let encoded = encode(lower_module(module, &symbols, &Vec::new()));
+    let wasm = encoded.binary;
 
     let mut found = None;
     for payload in wasmparser::Parser::new(0).parse_all(&wasm) {
@@ -97,9 +100,10 @@ fn type_signature_preserves_definition_order() {
 #[test]
 fn exports_wasi_start_symbol_without_start_section() {
     let source = "module demo =\n\tlet value : core::Integer = core::default\nend\n";
-    let (mut modules, symbols) = compile_modules(source);
+    let (mut modules, symbols, _) = compile_modules(source);
     let module = modules.pop().unwrap();
-    let wasm = encode(lower_module(module, &symbols));
+    let encoded = encode(lower_module(module, &symbols, &Vec::new()));
+    let wasm = encoded.binary;
 
     let mut has_wasi_start_export = false;
     let mut has_start_section = false;
@@ -130,5 +134,38 @@ fn exports_wasi_start_symbol_without_start_section() {
     assert!(
         !has_start_section,
         "module should not emit a wasm start section"
+    );
+}
+
+#[test]
+fn emits_standard_source_map_metadata() {
+    let source = "module demo =\n\tlet value : core::Integer = core::default\nend\n";
+    let (mut modules, symbols, source_catalog) = compile_modules(source);
+    let module = modules.pop().unwrap();
+    let encoded = encode(lower_module(module, &symbols, &source_catalog));
+
+    let mut source_mapping_url = None;
+    for payload in wasmparser::Parser::new(0).parse_all(&encoded.binary) {
+        let payload = payload.unwrap();
+        if let Payload::CustomSection(reader) = payload
+            && reader.name() == "sourceMappingURL"
+        {
+            source_mapping_url = Some(std::str::from_utf8(reader.data()).unwrap().to_string());
+        }
+    }
+
+    assert_eq!(source_mapping_url.as_deref(), Some("demo.wasm.map"));
+
+    let source_map = encoded
+        .source_map
+        .expect("encoder should emit a source map json blob");
+    let parsed = serde_json::from_str::<serde_json::Value>(&source_map)
+        .expect("source map should be valid JSON");
+    assert_eq!(parsed["version"], serde_json::Value::from(3));
+    assert!(
+        parsed["sources"]
+            .as_array()
+            .is_some_and(|sources| sources.iter().any(|source| source == "test.hc")),
+        "source map should include the original halcyon source file"
     );
 }

@@ -8,6 +8,7 @@ pub enum Span {
     Source {
         start: usize,
         width: usize,
+        file_id: Option<usize>,
     },
     #[default]
     Generated,
@@ -18,7 +19,41 @@ impl Span {
         start: usize,
         width: usize,
     ) -> Self {
-        Self::Source { start, width }
+        Self::Source {
+            start,
+            width,
+            file_id: None,
+        }
+    }
+
+    pub fn with_file_id(
+        self,
+        file_id: usize,
+    ) -> Self {
+        match self {
+            Self::Source { start, width, .. } => {
+                Self::Source {
+                    start,
+                    width,
+                    file_id: Some(file_id),
+                }
+            }
+            Self::Generated => Self::Generated,
+        }
+    }
+
+    pub fn file_id(self) -> Option<usize> {
+        match self {
+            Self::Source { file_id, .. } => file_id,
+            Self::Generated => None,
+        }
+    }
+
+    pub fn range(self) -> std::ops::Range<usize> {
+        match self {
+            Self::Source { start, width, .. } => start..(start + width),
+            Self::Generated => 0..0,
+        }
     }
 
     pub fn then<T, F>(
@@ -58,10 +93,12 @@ impl Add<Span> for Span {
                 Self::Source {
                     start: start1,
                     width: width1,
+                    file_id: file_id1,
                 },
                 Self::Source {
                     start: start2,
                     width: width2,
+                    file_id: file_id2,
                 },
             ) => {
                 let (min, max) = if start1 < start2 {
@@ -69,9 +106,11 @@ impl Add<Span> for Span {
                 } else {
                     ((start2, width2), (start1, width1))
                 };
+                let file_id = if file_id1 == file_id2 { file_id1 } else { None };
                 Self::Source {
                     start: min.0,
                     width: max.1 + (max.0 - min.0),
+                    file_id,
                 }
             }
         }

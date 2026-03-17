@@ -383,7 +383,7 @@ pub fn parse(
     let tokens = lexer::tokenize(source.chars(), logger);
     let mut p = parser::Parser::new(&tokens, source, logger);
     grammar::source_file(&mut p);
-    SourceFile::cast(p.finish())
+    SourceFile::cast(p.finish()).map(|source_file| source_file.with_file_id(logger.id()))
 }
 
 #[cfg(test)]

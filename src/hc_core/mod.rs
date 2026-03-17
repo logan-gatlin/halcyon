@@ -14,8 +14,8 @@ use std::path::Path;
 
 use enum_iterator::all;
 use include_dir::{
-    Dir,
     include_dir,
+    Dir,
 };
 
 use crate::logging::WithContext;
@@ -41,6 +41,7 @@ pub fn compile_core_module(
             module_name: CORE_MODULE_NAME.to_string(),
             ir_module: None,
             binary: Vec::new(),
+            source_map: None,
         }
     }
 

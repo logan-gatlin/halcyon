@@ -25,8 +25,13 @@ use super::{
 pub trait AstNode: Sized {
     /// Try to interpret an untyped `SyntaxNode` as this type.
     fn cast(node: SyntaxNode) -> Option<Self>;
+    fn with_file_id(
+        self,
+        file_id: usize,
+    ) -> Self;
     /// Access the underlying untyped node.
     fn syntax(&self) -> &SyntaxNode;
+    fn file_id(&self) -> usize;
 
     fn span(&self) -> Span {
         let mut tokens = self
@@ -37,15 +42,15 @@ pub trait AstNode: Sized {
         let Some(first) = tokens.next() else {
             return Span::Generated;
         };
-        rowan::TextRange::new(
+        Span::from(rowan::TextRange::new(
             first.text_range().start(),
             tokens
                 .last()
                 .unwrap_or_else(|| first.clone())
                 .text_range()
                 .end(),
-        )
-        .into()
+        ))
+        .with_file_id(self.file_id())
     }
 }
 
@@ -60,7 +65,7 @@ pub trait HasName: AstNode {
         self.name_text_spanned().map(|n| n.inner)
     }
     fn name_text_spanned(&self) -> Option<Spanned<String>> {
-        first_identifier_text_spanned(self.syntax())
+        first_identifier_text_spanned(self.syntax(), self.file_id())
     }
 }
 
@@ -97,26 +102,42 @@ pub trait HasLeadingComments: AstNode {
 // ── Private helpers ──────────────────────────────────────────────────
 
 /// Find the first child node that can be cast to `N`.
-fn child_node<N: AstNode>(parent: &SyntaxNode) -> Option<N> {
-    parent.children().find_map(N::cast)
+fn child_node<N: AstNode>(
+    parent: &SyntaxNode,
+    file_id: usize,
+) -> Option<N> {
+    parent
+        .children()
+        .find_map(|child| N::cast(child).map(|node| node.with_file_id(file_id)))
 }
 
 /// Find all child nodes that can be cast to `N`.
-fn child_nodes<N: AstNode>(parent: &SyntaxNode) -> Vec<N> {
-    parent.children().filter_map(N::cast).collect()
+fn child_nodes<N: AstNode>(
+    parent: &SyntaxNode,
+    file_id: usize,
+) -> Vec<N> {
+    parent
+        .children()
+        .filter_map(|child| N::cast(child).map(|node| node.with_file_id(file_id)))
+        .collect()
 }
 
 /// Find the nth child node that can be cast to `N` (0-indexed).
 fn nth_child_node<N: AstNode>(
     parent: &SyntaxNode,
+    file_id: usize,
     n: usize,
 ) -> Option<N> {
-    parent.children().filter_map(N::cast).nth(n)
+    parent
+        .children()
+        .filter_map(|child| N::cast(child).map(|node| node.with_file_id(file_id)))
+        .nth(n)
 }
 
 /// Find the first child node that can be cast to `N` after a marker token.
 fn child_node_after_token<N: AstNode>(
     parent: &SyntaxNode,
+    file_id: usize,
     marker: SyntaxKind,
 ) -> Option<N> {
     let mut seen_marker = false;
@@ -128,7 +149,9 @@ fn child_node_after_token<N: AstNode>(
                 }
             }
             rowan::NodeOrToken::Node(node) => {
-                if seen_marker && let Some(cast) = N::cast(node) {
+                if seen_marker
+                    && let Some(cast) = N::cast(node).map(|node| node.with_file_id(file_id))
+                {
                     return Some(cast);
                 }
             }
@@ -169,7 +192,17 @@ fn non_trivia_tokens(parent: &SyntaxNode) -> Vec<SyntaxToken> {
         .collect()
 }
 
-fn first_identifier_text_spanned(parent: &SyntaxNode) -> Option<Spanned<String>> {
+fn span_from_text_range(
+    file_id: usize,
+    range: rowan::TextRange,
+) -> Span {
+    Span::from(range).with_file_id(file_id)
+}
+
+fn first_identifier_text_spanned(
+    parent: &SyntaxNode,
+    file_id: usize,
+) -> Option<Spanned<String>> {
     let tokens = non_trivia_tokens(parent);
     let mut index = 0;
     while index < tokens.len() {
@@ -179,7 +212,7 @@ fn first_identifier_text_spanned(parent: &SyntaxNode) -> Option<Spanned<String>>
                 token
                     .text()
                     .to_string()
-                    .with_span(token.text_range().into()),
+                    .with_span(span_from_text_range(file_id, token.text_range())),
             );
         }
         if token.kind() == SyntaxKind::L_SQUARE
@@ -187,9 +220,10 @@ fn first_identifier_text_spanned(parent: &SyntaxNode) -> Option<Spanned<String>>
             && op.kind().is_operator_token()
             && end.kind() == SyntaxKind::R_SQUARE
         {
-            return Some(format!("[{}]", op.text()).with_span(
-                rowan::TextRange::new(token.text_range().start(), end.text_range().end()).into(),
-            ));
+            return Some(format!("[{}]", op.text()).with_span(span_from_text_range(
+                file_id,
+                rowan::TextRange::new(token.text_range().start(), end.text_range().end()),
+            )));
         }
         index += 1;
     }
@@ -221,7 +255,10 @@ fn all_identifier_texts(parent: &SyntaxNode) -> Vec<String> {
     names
 }
 
-fn alias_name_after_as(parent: &SyntaxNode) -> Option<Spanned<String>> {
+fn alias_name_after_as(
+    parent: &SyntaxNode,
+    file_id: usize,
+) -> Option<Spanned<String>> {
     let tokens = non_trivia_tokens(parent);
     let as_index = tokens
         .iter()
@@ -233,7 +270,7 @@ fn alias_name_after_as(parent: &SyntaxNode) -> Option<Spanned<String>> {
             token
                 .text()
                 .to_string()
-                .with_span(token.text_range().into()),
+                .with_span(span_from_text_range(file_id, token.text_range())),
         );
     }
     if token.kind() == SyntaxKind::L_SQUARE
@@ -241,14 +278,18 @@ fn alias_name_after_as(parent: &SyntaxNode) -> Option<Spanned<String>> {
         && op.kind().is_operator_token()
         && end.kind() == SyntaxKind::R_SQUARE
     {
-        return Some(format!("[{}]", op.text()).with_span(
-            rowan::TextRange::new(token.text_range().start(), end.text_range().end()).into(),
-        ));
+        return Some(format!("[{}]", op.text()).with_span(span_from_text_range(
+            file_id,
+            rowan::TextRange::new(token.text_range().start(), end.text_range().end()),
+        )));
     }
     None
 }
 
-fn alias_name_after_pipe(parent: &SyntaxNode) -> Option<Spanned<String>> {
+fn alias_name_after_pipe(
+    parent: &SyntaxNode,
+    file_id: usize,
+) -> Option<Spanned<String>> {
     let tokens = non_trivia_tokens(parent);
     let pipe_index = tokens
         .iter()
@@ -260,7 +301,7 @@ fn alias_name_after_pipe(parent: &SyntaxNode) -> Option<Spanned<String>> {
             token
                 .text()
                 .to_string()
-                .with_span(token.text_range().into()),
+                .with_span(span_from_text_range(file_id, token.text_range())),
         );
     }
     if token.kind() == SyntaxKind::L_SQUARE
@@ -268,9 +309,10 @@ fn alias_name_after_pipe(parent: &SyntaxNode) -> Option<Spanned<String>> {
         && op.kind().is_operator_token()
         && end.kind() == SyntaxKind::R_SQUARE
     {
-        return Some(format!("[{}]", op.text()).with_span(
-            rowan::TextRange::new(token.text_range().start(), end.text_range().end()).into(),
-        ));
+        return Some(format!("[{}]", op.text()).with_span(span_from_text_range(
+            file_id,
+            rowan::TextRange::new(token.text_range().start(), end.text_range().end()),
+        )));
     }
     None
 }
@@ -282,18 +324,32 @@ macro_rules! ast_node {
         #[derive(Debug, Clone, PartialEq, Eq, Hash)]
         pub struct $name {
             syntax: SyntaxNode,
+            file_id: usize,
         }
 
         impl AstNode for $name {
             fn cast(node: SyntaxNode) -> Option<Self> {
                 if node.kind() == SyntaxKind::$kind {
-                    Some(Self { syntax: node })
+                    Some(Self {
+                        syntax: node,
+                        file_id: 0,
+                    })
                 } else {
                     None
                 }
             }
+            fn with_file_id(
+                mut self,
+                file_id: usize,
+            ) -> Self {
+                self.file_id = file_id;
+                self
+            }
             fn syntax(&self) -> &SyntaxNode {
                 &self.syntax
+            }
+            fn file_id(&self) -> usize {
+                self.file_id
             }
         }
     };
@@ -307,7 +363,7 @@ ast_node!(SourceFile, SOURCE_FILE);
 
 impl SourceFile {
     pub fn items(&self) -> Vec<Statement> {
-        child_nodes(&self.syntax)
+        child_nodes(&self.syntax, self.file_id())
     }
 
     pub fn bundle_declaration(&self) -> Option<BundleDeclaration> {
@@ -321,7 +377,7 @@ impl SourceFile {
     }
 
     pub fn modules(&self) -> Vec<Module> {
-        child_nodes(&self.syntax)
+        child_nodes(&self.syntax, self.file_id())
     }
 
     pub fn statements(&self) -> Vec<Statement> {
@@ -352,7 +408,10 @@ impl HasName for Module {
 
 impl Module {
     pub fn statements(&self) -> Vec<Statement> {
-        self.syntax.children().filter_map(Statement::cast).collect()
+        self.syntax
+            .children()
+            .filter_map(|node| Statement::cast(node).map(|node| node.with_file_id(self.file_id())))
+            .collect()
     }
 }
 
@@ -369,7 +428,7 @@ impl ImportStatement {
                 token
                     .text()
                     .to_string()
-                    .with_span(token.text_range().into())
+                    .with_span(span_from_text_range(self.file_id(), token.text_range()))
             })
             .collect()
     }
@@ -385,7 +444,7 @@ impl UseStatement {
     }
 
     pub fn alias_name_spanned(&self) -> Option<Spanned<String>> {
-        alias_name_after_as(&self.syntax)
+        alias_name_after_as(&self.syntax, self.file_id())
     }
 }
 
@@ -409,7 +468,7 @@ impl LetStatement {
         if !self.is_pattern_alias() {
             return None;
         }
-        alias_name_after_pipe(&self.syntax)
+        alias_name_after_pipe(&self.syntax, self.file_id())
     }
 
     pub fn alias_target(&self) -> Option<PathOrIdent> {
@@ -424,10 +483,10 @@ impl LetStatement {
     }
 
     pub fn pattern(&self) -> Option<Pattern> {
-        child_node(&self.syntax)
+        child_node(&self.syntax, self.file_id())
     }
     pub fn value(&self) -> Option<Expr> {
-        child_node_after_token(&self.syntax, SyntaxKind::EQUAL)
+        child_node_after_token(&self.syntax, self.file_id(), SyntaxKind::EQUAL)
     }
 }
 
@@ -437,7 +496,7 @@ impl HasLeadingComments for DoStatement {
 
 impl DoStatement {
     pub fn value(&self) -> Option<Expr> {
-        child_node_after_token(&self.syntax, SyntaxKind::DO_KW)
+        child_node_after_token(&self.syntax, self.file_id(), SyntaxKind::DO_KW)
     }
 }
 
@@ -479,7 +538,7 @@ impl TypeStatement {
                     token
                         .text()
                         .to_string()
-                        .with_span(token.text_range().into()),
+                        .with_span(span_from_text_range(self.file_id(), token.text_range())),
                 );
                 index += 1;
                 continue;
@@ -490,12 +549,10 @@ impl TypeStatement {
                 && op.kind().is_operator_token()
                 && end.kind() == SyntaxKind::R_SQUARE
             {
-                params.push(
-                    format!("[{}]", op.text()).with_span(
-                        rowan::TextRange::new(token.text_range().start(), end.text_range().end())
-                            .into(),
-                    ),
-                );
+                params.push(format!("[{}]", op.text()).with_span(span_from_text_range(
+                    self.file_id(),
+                    rowan::TextRange::new(token.text_range().start(), end.text_range().end()),
+                )));
                 index += 3;
                 continue;
             }
@@ -507,7 +564,9 @@ impl TypeStatement {
     }
 
     pub fn type_def(&self) -> Option<TypeDef> {
-        self.syntax.children().find_map(TypeDef::cast)
+        self.syntax
+            .children()
+            .find_map(|node| TypeDef::cast(node).map(|node| node.with_file_id(self.file_id())))
     }
 }
 
@@ -555,7 +614,7 @@ impl TraitStatement {
                     token
                         .text()
                         .to_string()
-                        .with_span(token.text_range().into()),
+                        .with_span(span_from_text_range(self.file_id(), token.text_range())),
                 );
                 index += 1;
                 continue;
@@ -566,12 +625,10 @@ impl TraitStatement {
                 && op.kind().is_operator_token()
                 && end.kind() == SyntaxKind::R_SQUARE
             {
-                params.push(
-                    format!("[{}]", op.text()).with_span(
-                        rowan::TextRange::new(token.text_range().start(), end.text_range().end())
-                            .into(),
-                    ),
-                );
+                params.push(format!("[{}]", op.text()).with_span(span_from_text_range(
+                    self.file_id(),
+                    rowan::TextRange::new(token.text_range().start(), end.text_range().end()),
+                )));
                 index += 3;
                 continue;
             }
@@ -583,7 +640,7 @@ impl TraitStatement {
     }
 
     pub fn methods(&self) -> Vec<TraitMethodDecl> {
-        child_nodes(&self.syntax)
+        child_nodes(&self.syntax, self.file_id())
     }
 }
 
@@ -607,7 +664,7 @@ impl ImplStatement {
         let end = equal.text_range().start();
         self.syntax
             .children()
-            .filter_map(TypeExpr::cast)
+            .filter_map(|node| TypeExpr::cast(node).map(|node| node.with_file_id(self.file_id())))
             .filter(|type_expr| {
                 let range = type_expr.syntax().text_range();
                 range.start() >= start && range.end() <= end
@@ -616,7 +673,7 @@ impl ImplStatement {
     }
 
     pub fn methods(&self) -> Vec<ImplMethodDef> {
-        child_nodes(&self.syntax)
+        child_nodes(&self.syntax, self.file_id())
     }
 }
 
@@ -626,7 +683,9 @@ impl HasLeadingComments for WasmStatement {
 
 impl WasmStatement {
     pub fn sexpr(&self) -> Option<Sexpr> {
-        self.syntax.children().find_map(Sexpr::cast)
+        self.syntax
+            .children()
+            .find_map(|node| Sexpr::cast(node).map(|node| node.with_file_id(self.file_id())))
     }
 }
 
@@ -636,7 +695,9 @@ impl HasName for TraitMethodDecl {
 
 impl TraitMethodDecl {
     pub fn ty(&self) -> Option<TypeExpr> {
-        self.syntax.children().find_map(TypeExpr::cast)
+        self.syntax
+            .children()
+            .find_map(|node| TypeExpr::cast(node).map(|node| node.with_file_id(self.file_id())))
     }
 }
 
@@ -646,7 +707,7 @@ impl HasName for ImplMethodDef {
 
 impl ImplMethodDef {
     pub fn value(&self) -> Option<Expr> {
-        child_node_after_token(&self.syntax, SyntaxKind::EQUAL)
+        child_node_after_token(&self.syntax, self.file_id(), SyntaxKind::EQUAL)
     }
 }
 
@@ -658,17 +719,22 @@ ast_node!(StructDef, STRUCT_DEF);
 
 impl StructDef {
     pub fn members(&self) -> Vec<StructTypeMemberDecl> {
-        child_nodes(&self.syntax)
+        child_nodes(&self.syntax, self.file_id())
     }
 
     pub fn fields(&self) -> Vec<FieldDecl> {
-        self.syntax.children().filter_map(FieldDecl::cast).collect()
+        self.syntax
+            .children()
+            .filter_map(|node| FieldDecl::cast(node).map(|node| node.with_file_id(self.file_id())))
+            .collect()
     }
 
     pub fn spreads(&self) -> Vec<StructSpreadDecl> {
         self.syntax
             .children()
-            .filter_map(StructSpreadDecl::cast)
+            .filter_map(|node| {
+                StructSpreadDecl::cast(node).map(|node| node.with_file_id(self.file_id()))
+            })
             .collect()
     }
 }
@@ -688,10 +754,27 @@ impl AstNode for StructTypeMemberDecl {
         }
     }
 
+    fn with_file_id(
+        self,
+        file_id: usize,
+    ) -> Self {
+        match self {
+            Self::Field(field) => Self::Field(field.with_file_id(file_id)),
+            Self::Spread(spread) => Self::Spread(spread.with_file_id(file_id)),
+        }
+    }
+
     fn syntax(&self) -> &SyntaxNode {
         match self {
             Self::Field(field) => field.syntax(),
             Self::Spread(spread) => spread.syntax(),
+        }
+    }
+
+    fn file_id(&self) -> usize {
+        match self {
+            Self::Field(field) => field.file_id(),
+            Self::Spread(spread) => spread.file_id(),
         }
     }
 }
@@ -700,7 +783,7 @@ ast_node!(SumDef, SUM_DEF);
 
 impl SumDef {
     pub fn variants(&self) -> Vec<Variant> {
-        child_nodes(&self.syntax)
+        child_nodes(&self.syntax, self.file_id())
     }
 }
 
@@ -711,7 +794,9 @@ impl HasName for Variant {
 impl Variant {
     /// The optional payload type expression after the variant name.
     pub fn payload_type(&self) -> Option<TypeExpr> {
-        self.syntax.children().find_map(TypeExpr::cast)
+        self.syntax
+            .children()
+            .find_map(|node| TypeExpr::cast(node).map(|node| node.with_file_id(self.file_id())))
     }
 }
 
@@ -721,7 +806,9 @@ impl HasName for FieldDecl {
 
 impl FieldDecl {
     pub fn ty(&self) -> Option<TypeExpr> {
-        self.syntax.children().find_map(TypeExpr::cast)
+        self.syntax
+            .children()
+            .find_map(|node| TypeExpr::cast(node).map(|node| node.with_file_id(self.file_id())))
     }
 }
 
@@ -729,7 +816,9 @@ ast_node!(StructSpreadDecl, STRUCT_SPREAD_DECL);
 
 impl StructSpreadDecl {
     pub fn ty(&self) -> Option<TypeExpr> {
-        self.syntax.children().find_map(TypeExpr::cast)
+        self.syntax
+            .children()
+            .find_map(|node| TypeExpr::cast(node).map(|node| node.with_file_id(self.file_id())))
     }
 }
 
@@ -737,7 +826,9 @@ ast_node!(TypeAliasDef, TYPE_ALIAS_DEF);
 
 impl TypeAliasDef {
     pub fn type_expr(&self) -> Option<TypeExpr> {
-        self.syntax.children().find_map(TypeExpr::cast)
+        self.syntax
+            .children()
+            .find_map(|node| TypeExpr::cast(node).map(|node| node.with_file_id(self.file_id())))
     }
 }
 
@@ -749,10 +840,10 @@ ast_node!(FunctionType, FUNCTION_TYPE);
 
 impl FunctionType {
     pub fn param_type(&self) -> Option<TypeExpr> {
-        nth_type_expr(&self.syntax, 0)
+        nth_type_expr(&self.syntax, self.file_id(), 0)
     }
     pub fn return_type(&self) -> Option<TypeExpr> {
-        nth_type_expr(&self.syntax, 1)
+        nth_type_expr(&self.syntax, self.file_id(), 1)
     }
 }
 
@@ -760,12 +851,12 @@ ast_node!(TypeApplication, TYPE_APPLICATION);
 
 impl TypeApplication {
     pub fn base(&self) -> Option<TypeExpr> {
-        nth_type_expr(&self.syntax, 0)
+        nth_type_expr(&self.syntax, self.file_id(), 0)
     }
     pub fn args(&self) -> Vec<TypeExpr> {
         self.syntax
             .children()
-            .filter_map(TypeExpr::cast)
+            .filter_map(|node| TypeExpr::cast(node).map(|node| node.with_file_id(self.file_id())))
             .skip(1)
             .collect()
     }
@@ -775,7 +866,10 @@ ast_node!(TupleType, TUPLE_TYPE);
 
 impl TupleType {
     pub fn fields(&self) -> Vec<TypeExpr> {
-        self.syntax.children().filter_map(TypeExpr::cast).collect()
+        self.syntax
+            .children()
+            .filter_map(|node| TypeExpr::cast(node).map(|node| node.with_file_id(self.file_id())))
+            .collect()
     }
 
     pub fn is_tuple(&self) -> bool {
@@ -802,7 +896,7 @@ impl TypeConstraint {
         };
         self.syntax
             .children()
-            .filter_map(TypeExpr::cast)
+            .filter_map(|node| TypeExpr::cast(node).map(|node| node.with_file_id(self.file_id())))
             .filter(|type_expr| type_expr.syntax().text_range().start() >= args_start)
             .collect()
     }
@@ -821,7 +915,7 @@ impl ForAllType {
         let param_end = in_kw.text_range().start();
         self.syntax
             .children()
-            .filter_map(Ident::cast)
+            .filter_map(|node| Ident::cast(node).map(|node| node.with_file_id(self.file_id())))
             .filter(|ident| {
                 let range = ident.syntax().text_range();
                 range.start() >= for_end && range.end() <= param_end
@@ -836,7 +930,9 @@ impl ForAllType {
         let constraints_start = where_kw.text_range().end();
         self.syntax
             .children()
-            .filter_map(TypeConstraint::cast)
+            .filter_map(|node| {
+                TypeConstraint::cast(node).map(|node| node.with_file_id(self.file_id()))
+            })
             .filter(|constraint| {
                 let range = constraint.syntax().text_range();
                 range.start() >= constraints_start
@@ -850,7 +946,7 @@ impl ForAllType {
         let in_end = in_kw.text_range().end();
         self.syntax
             .children()
-            .filter_map(TypeExpr::cast)
+            .filter_map(|node| TypeExpr::cast(node).map(|node| node.with_file_id(self.file_id())))
             .find(|type_expr| type_expr.syntax().text_range().start() >= in_end)
     }
 }
@@ -860,9 +956,13 @@ ast_node!(Unit, UNIT);
 /// Helper: get the nth TypeExpr child of a node.
 fn nth_type_expr(
     parent: &SyntaxNode,
+    file_id: usize,
     n: usize,
 ) -> Option<TypeExpr> {
-    parent.children().filter_map(TypeExpr::cast).nth(n)
+    parent
+        .children()
+        .filter_map(|node| TypeExpr::cast(node).map(|node| node.with_file_id(file_id)))
+        .nth(n)
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -873,15 +973,15 @@ ast_node!(LetExpr, LET_EXPR);
 
 impl LetExpr {
     pub fn pattern(&self) -> Option<Pattern> {
-        child_node(&self.syntax)
+        child_node(&self.syntax, self.file_id())
     }
     /// The value being bound (first Expr child).
     pub fn value(&self) -> Option<Expr> {
-        child_node_after_token(&self.syntax, SyntaxKind::EQUAL)
+        child_node_after_token(&self.syntax, self.file_id(), SyntaxKind::EQUAL)
     }
     /// The body after `in` (second Expr child).
     pub fn body(&self) -> Option<Expr> {
-        child_node_after_token(&self.syntax, SyntaxKind::IN_KW)
+        child_node_after_token(&self.syntax, self.file_id(), SyntaxKind::IN_KW)
     }
 }
 
@@ -893,11 +993,11 @@ impl UseExpr {
     }
 
     pub fn alias_name_spanned(&self) -> Option<Spanned<String>> {
-        alias_name_after_as(&self.syntax)
+        alias_name_after_as(&self.syntax, self.file_id())
     }
 
     pub fn body(&self) -> Option<Expr> {
-        child_node_after_token(&self.syntax, SyntaxKind::IN_KW)
+        child_node_after_token(&self.syntax, self.file_id(), SyntaxKind::IN_KW)
     }
 }
 
@@ -905,10 +1005,10 @@ ast_node!(FnExpr, FN_EXPR);
 
 impl FnExpr {
     pub fn params(&self) -> Vec<Param> {
-        child_nodes(&self.syntax)
+        child_nodes(&self.syntax, self.file_id())
     }
     pub fn body(&self) -> Option<Expr> {
-        child_node(&self.syntax)
+        child_node(&self.syntax, self.file_id())
     }
 }
 
@@ -916,7 +1016,7 @@ ast_node!(FnShorthandExpr, FN_SHORTHAND_EXPR);
 
 impl FnShorthandExpr {
     pub fn arms(&self) -> Vec<MatchArm> {
-        child_nodes(&self.syntax)
+        child_nodes(&self.syntax, self.file_id())
     }
 }
 
@@ -924,13 +1024,13 @@ ast_node!(IfExpr, IF_EXPR);
 
 impl IfExpr {
     pub fn condition(&self) -> Option<Expr> {
-        nth_child_node(&self.syntax, 0)
+        nth_child_node(&self.syntax, self.file_id(), 0)
     }
     pub fn then_branch(&self) -> Option<Expr> {
-        nth_child_node(&self.syntax, 1)
+        nth_child_node(&self.syntax, self.file_id(), 1)
     }
     pub fn else_branch(&self) -> Option<Expr> {
-        nth_child_node(&self.syntax, 2)
+        nth_child_node(&self.syntax, self.file_id(), 2)
     }
 }
 
@@ -938,10 +1038,10 @@ ast_node!(MatchExpr, MATCH_EXPR);
 
 impl MatchExpr {
     pub fn scrutinee(&self) -> Option<Expr> {
-        child_node(&self.syntax)
+        child_node(&self.syntax, self.file_id())
     }
     pub fn arms(&self) -> Vec<MatchArm> {
-        child_nodes(&self.syntax)
+        child_nodes(&self.syntax, self.file_id())
     }
 }
 
@@ -949,7 +1049,7 @@ ast_node!(InlineWasmExpr, INLINE_WASM_EXPR);
 
 impl InlineWasmExpr {
     pub fn asserted_type(&self) -> Option<TypeExpr> {
-        child_node_after_token(&self.syntax, SyntaxKind::COLON)
+        child_node_after_token(&self.syntax, self.file_id(), SyntaxKind::COLON)
     }
 
     pub fn instructions(&self) -> Option<Sexpr> {
@@ -961,10 +1061,10 @@ ast_node!(MatchArm, MATCH_ARM);
 
 impl MatchArm {
     pub fn pattern(&self) -> Option<Pattern> {
-        child_node(&self.syntax)
+        child_node(&self.syntax, self.file_id())
     }
     pub fn body(&self) -> Option<Expr> {
-        child_node_after_token(&self.syntax, SyntaxKind::DOUBLE_ARROW)
+        child_node_after_token(&self.syntax, self.file_id(), SyntaxKind::DOUBLE_ARROW)
     }
 }
 
@@ -975,7 +1075,9 @@ impl HasName for Param {
 impl Param {
     /// Optional type annotation (present when `(name: type)`).
     pub fn ty(&self) -> Option<TypeExpr> {
-        self.syntax.children().find_map(TypeExpr::cast)
+        self.syntax
+            .children()
+            .find_map(|node| TypeExpr::cast(node).map(|node| node.with_file_id(self.file_id())))
     }
 }
 
@@ -983,10 +1085,10 @@ ast_node!(BinaryExpr, BINARY_EXPR);
 
 impl BinaryExpr {
     pub fn lhs(&self) -> Option<Expr> {
-        nth_child_node(&self.syntax, 0)
+        nth_child_node(&self.syntax, self.file_id(), 0)
     }
     pub fn rhs(&self) -> Option<Expr> {
-        nth_child_node(&self.syntax, 1)
+        nth_child_node(&self.syntax, self.file_id(), 1)
     }
     /// The operator token (e.g. `+`, `*`, `==`).
     pub fn op_token(&self) -> Option<SyntaxToken> {
@@ -1030,7 +1132,7 @@ impl UnaryExpr {
             .find(|t| !t.kind().is_trivia())
     }
     pub fn operand(&self) -> Option<Expr> {
-        child_node(&self.syntax)
+        child_node(&self.syntax, self.file_id())
     }
 }
 
@@ -1038,10 +1140,10 @@ ast_node!(CallExpr, CALL_EXPR);
 
 impl CallExpr {
     pub fn callee(&self) -> Option<Expr> {
-        nth_child_node(&self.syntax, 0)
+        nth_child_node(&self.syntax, self.file_id(), 0)
     }
     pub fn arg(&self) -> Option<Expr> {
-        nth_child_node(&self.syntax, 1)
+        nth_child_node(&self.syntax, self.file_id(), 1)
     }
 }
 
@@ -1049,7 +1151,7 @@ ast_node!(FieldExpr, FIELD_EXPR);
 
 impl FieldExpr {
     pub fn base(&self) -> Option<Expr> {
-        child_node(&self.syntax)
+        child_node(&self.syntax, self.file_id())
     }
 
     pub fn field_name_spanned(&self) -> Option<Spanned<String>> {
@@ -1062,16 +1164,21 @@ impl FieldExpr {
             }
             let next = tokens.get(index + 1)?;
             if next.kind() == SyntaxKind::IDENT {
-                return Some(next.text().to_string().with_span(next.text_range().into()));
+                return Some(
+                    next.text()
+                        .to_string()
+                        .with_span(span_from_text_range(self.file_id(), next.text_range())),
+                );
             }
             if next.kind() == SyntaxKind::L_SQUARE
                 && let (Some(op), Some(end)) = (tokens.get(index + 2), tokens.get(index + 3))
                 && op.kind().is_operator_token()
                 && end.kind() == SyntaxKind::R_SQUARE
             {
-                return Some(format!("[{}]", op.text()).with_span(
-                    rowan::TextRange::new(next.text_range().start(), end.text_range().end()).into(),
-                ));
+                return Some(format!("[{}]", op.text()).with_span(span_from_text_range(
+                    self.file_id(),
+                    rowan::TextRange::new(next.text_range().start(), end.text_range().end()),
+                )));
             }
             return None;
         }
@@ -1103,7 +1210,10 @@ impl ParenExpr {
     /// - 1 element with comma: singleton tuple
     /// - 2+ elements: tuple
     pub fn inner_exprs(&self) -> Vec<Expr> {
-        self.syntax.children().filter_map(Expr::cast).collect()
+        self.syntax
+            .children()
+            .filter_map(|node| Expr::cast(node).map(|node| node.with_file_id(self.file_id())))
+            .collect()
     }
     /// True if this contains commas (i.e. is a tuple).
     pub fn is_tuple(&self) -> bool {
@@ -1116,11 +1226,14 @@ ast_node!(ArrayExpr, ARRAY_EXPR);
 impl ArrayExpr {
     /// Non-splat element expressions.
     pub fn exprs(&self) -> Vec<Expr> {
-        self.syntax.children().filter_map(Expr::cast).collect()
+        self.syntax
+            .children()
+            .filter_map(|node| Expr::cast(node).map(|node| node.with_file_id(self.file_id())))
+            .collect()
     }
     /// Splat (`..expr`) elements.
     pub fn splats(&self) -> Vec<ArraySplat> {
-        child_nodes(&self.syntax)
+        child_nodes(&self.syntax, self.file_id())
     }
 }
 
@@ -1128,7 +1241,7 @@ ast_node!(StructExpr, STRUCT_EXPR);
 
 impl StructExpr {
     pub fn fields(&self) -> Vec<StructField> {
-        child_nodes(&self.syntax)
+        child_nodes(&self.syntax, self.file_id())
     }
 }
 
@@ -1138,7 +1251,7 @@ impl HasName for StructField {
 
 impl StructField {
     pub fn value(&self) -> Option<Expr> {
-        child_node(&self.syntax)
+        child_node(&self.syntax, self.file_id())
     }
 }
 
@@ -1201,7 +1314,7 @@ ast_node!(ArraySplat, ARRAY_SPLAT);
 
 impl ArraySplat {
     pub fn expr(&self) -> Option<Expr> {
-        child_node(&self.syntax)
+        child_node(&self.syntax, self.file_id())
     }
 }
 
@@ -1213,7 +1326,10 @@ ast_node!(PatTuple, PAT_TUPLE);
 
 impl PatTuple {
     pub fn patterns(&self) -> Vec<Pattern> {
-        self.syntax.children().filter_map(Pattern::cast).collect()
+        self.syntax
+            .children()
+            .filter_map(|node| Pattern::cast(node).map(|node| node.with_file_id(self.file_id())))
+            .collect()
     }
 
     pub fn is_tuple(&self) -> bool {
@@ -1225,10 +1341,13 @@ ast_node!(PatArray, PAT_ARRAY);
 
 impl PatArray {
     pub fn patterns(&self) -> Vec<Pattern> {
-        self.syntax.children().filter_map(Pattern::cast).collect()
+        self.syntax
+            .children()
+            .filter_map(|node| Pattern::cast(node).map(|node| node.with_file_id(self.file_id())))
+            .collect()
     }
     pub fn rest_patterns(&self) -> Vec<PatRest> {
-        child_nodes(&self.syntax)
+        child_nodes(&self.syntax, self.file_id())
     }
 }
 
@@ -1236,7 +1355,7 @@ ast_node!(PatStruct, PAT_STRUCT);
 
 impl PatStruct {
     pub fn fields(&self) -> Vec<PatField> {
-        child_nodes(&self.syntax)
+        child_nodes(&self.syntax, self.file_id())
     }
 }
 
@@ -1246,11 +1365,13 @@ impl PatConstructor {
     /// The name of the constructor — either a bare identifier or a
     /// qualified path (`Module::Ctor`).
     pub fn head(&self) -> Option<PathOrIdent> {
-        self.syntax.children().find_map(PathOrIdent::cast)
+        self.syntax
+            .children()
+            .find_map(|node| PathOrIdent::cast(node).map(|node| node.with_file_id(self.file_id())))
     }
     /// The payload pattern after the constructor head (second Pattern child).
     pub fn payload(&self) -> Option<Pattern> {
-        nth_child_node(&self.syntax, 1)
+        nth_child_node(&self.syntax, self.file_id(), 1)
     }
 }
 
@@ -1258,10 +1379,10 @@ ast_node!(PatTypeHint, PAT_TYPE_HINT);
 
 impl PatTypeHint {
     pub fn pattern(&self) -> Option<Pattern> {
-        child_node(&self.syntax)
+        child_node(&self.syntax, self.file_id())
     }
     pub fn ty(&self) -> Option<TypeExpr> {
-        child_node_after_token(&self.syntax, SyntaxKind::COLON)
+        child_node_after_token(&self.syntax, self.file_id(), SyntaxKind::COLON)
     }
 }
 
@@ -1274,7 +1395,7 @@ impl PatRest {
     }
 
     pub fn binding_name_spanned(&self) -> Option<Spanned<String>> {
-        first_identifier_text_spanned(&self.syntax)
+        first_identifier_text_spanned(&self.syntax, self.file_id())
     }
 }
 
@@ -1285,7 +1406,7 @@ impl HasName for PatField {
 impl PatField {
     /// The bound pattern, if present (e.g. `field = pattern`).
     pub fn pattern(&self) -> Option<Pattern> {
-        child_node(&self.syntax)
+        child_node(&self.syntax, self.file_id())
     }
 }
 
@@ -1307,6 +1428,16 @@ impl PathOrIdent {
             SyntaxKind::IDENT_NODE => Ident::cast(node).map(Self::Ident),
             SyntaxKind::PATH => Path::cast(node).map(Self::Path),
             _ => None,
+        }
+    }
+
+    fn with_file_id(
+        self,
+        file_id: usize,
+    ) -> Self {
+        match self {
+            Self::Ident(ident) => Self::Ident(ident.with_file_id(file_id)),
+            Self::Path(path) => Self::Path(path.with_file_id(file_id)),
         }
     }
 
@@ -1367,6 +1498,25 @@ impl AstNode for Statement {
             _ => None,
         }
     }
+
+    fn with_file_id(
+        self,
+        file_id: usize,
+    ) -> Self {
+        match self {
+            Self::Bundle(node) => Self::Bundle(node.with_file_id(file_id)),
+            Self::Import(node) => Self::Import(node.with_file_id(file_id)),
+            Self::Use(node) => Self::Use(node.with_file_id(file_id)),
+            Self::Let(node) => Self::Let(node.with_file_id(file_id)),
+            Self::Do(node) => Self::Do(node.with_file_id(file_id)),
+            Self::Type(node) => Self::Type(node.with_file_id(file_id)),
+            Self::Trait(node) => Self::Trait(node.with_file_id(file_id)),
+            Self::Impl(node) => Self::Impl(node.with_file_id(file_id)),
+            Self::Module(node) => Self::Module(node.with_file_id(file_id)),
+            Self::Wasm(node) => Self::Wasm(node.with_file_id(file_id)),
+        }
+    }
+
     fn syntax(&self) -> &SyntaxNode {
         match self {
             Self::Bundle(n) => n.syntax(),
@@ -1379,6 +1529,21 @@ impl AstNode for Statement {
             Self::Impl(n) => n.syntax(),
             Self::Module(n) => n.syntax(),
             Self::Wasm(n) => n.syntax(),
+        }
+    }
+
+    fn file_id(&self) -> usize {
+        match self {
+            Self::Bundle(node) => node.file_id(),
+            Self::Import(node) => node.file_id(),
+            Self::Use(node) => node.file_id(),
+            Self::Let(node) => node.file_id(),
+            Self::Do(node) => node.file_id(),
+            Self::Type(node) => node.file_id(),
+            Self::Trait(node) => node.file_id(),
+            Self::Impl(node) => node.file_id(),
+            Self::Module(node) => node.file_id(),
+            Self::Wasm(node) => node.file_id(),
         }
     }
 }
@@ -1403,11 +1568,31 @@ impl AstNode for TypeDef {
             _ => None,
         }
     }
+
+    fn with_file_id(
+        self,
+        file_id: usize,
+    ) -> Self {
+        match self {
+            Self::Struct(node) => Self::Struct(node.with_file_id(file_id)),
+            Self::Sum(node) => Self::Sum(node.with_file_id(file_id)),
+            Self::Alias(node) => Self::Alias(node.with_file_id(file_id)),
+        }
+    }
+
     fn syntax(&self) -> &SyntaxNode {
         match self {
             Self::Struct(n) => n.syntax(),
             Self::Sum(n) => n.syntax(),
             Self::Alias(n) => n.syntax(),
+        }
+    }
+
+    fn file_id(&self) -> usize {
+        match self {
+            Self::Struct(node) => node.file_id(),
+            Self::Sum(node) => node.file_id(),
+            Self::Alias(node) => node.file_id(),
         }
     }
 }
@@ -1439,6 +1624,23 @@ impl AstNode for TypeExpr {
             _ => None,
         }
     }
+
+    fn with_file_id(
+        self,
+        file_id: usize,
+    ) -> Self {
+        match self {
+            Self::Function(node) => Self::Function(node.with_file_id(file_id)),
+            Self::Application(node) => Self::Application(node.with_file_id(file_id)),
+            Self::Tuple(node) => Self::Tuple(node.with_file_id(file_id)),
+            Self::Array(node) => Self::Array(node.with_file_id(file_id)),
+            Self::ForAll(node) => Self::ForAll(node.with_file_id(file_id)),
+            Self::Unit(node) => Self::Unit(node.with_file_id(file_id)),
+            Self::Path(node) => Self::Path(node.with_file_id(file_id)),
+            Self::Ident(node) => Self::Ident(node.with_file_id(file_id)),
+        }
+    }
+
     fn syntax(&self) -> &SyntaxNode {
         match self {
             Self::Function(n) => n.syntax(),
@@ -1449,6 +1651,19 @@ impl AstNode for TypeExpr {
             Self::Unit(n) => n.syntax(),
             Self::Path(n) => n.syntax(),
             Self::Ident(n) => n.syntax(),
+        }
+    }
+
+    fn file_id(&self) -> usize {
+        match self {
+            Self::Function(node) => node.file_id(),
+            Self::Application(node) => node.file_id(),
+            Self::Tuple(node) => node.file_id(),
+            Self::Array(node) => node.file_id(),
+            Self::ForAll(node) => node.file_id(),
+            Self::Unit(node) => node.file_id(),
+            Self::Path(node) => node.file_id(),
+            Self::Ident(node) => node.file_id(),
         }
     }
 }
@@ -1500,6 +1715,33 @@ impl AstNode for Expr {
             _ => None,
         }
     }
+
+    fn with_file_id(
+        self,
+        file_id: usize,
+    ) -> Self {
+        match self {
+            Self::Let(node) => Self::Let(node.with_file_id(file_id)),
+            Self::Use(node) => Self::Use(node.with_file_id(file_id)),
+            Self::Fn(node) => Self::Fn(node.with_file_id(file_id)),
+            Self::FnShorthand(node) => Self::FnShorthand(node.with_file_id(file_id)),
+            Self::If(node) => Self::If(node.with_file_id(file_id)),
+            Self::Match(node) => Self::Match(node.with_file_id(file_id)),
+            Self::InlineWasm(node) => Self::InlineWasm(node.with_file_id(file_id)),
+            Self::Binary(node) => Self::Binary(node.with_file_id(file_id)),
+            Self::Unary(node) => Self::Unary(node.with_file_id(file_id)),
+            Self::Call(node) => Self::Call(node.with_file_id(file_id)),
+            Self::Field(node) => Self::Field(node.with_file_id(file_id)),
+            Self::Paren(node) => Self::Paren(node.with_file_id(file_id)),
+            Self::Array(node) => Self::Array(node.with_file_id(file_id)),
+            Self::Struct(node) => Self::Struct(node.with_file_id(file_id)),
+            Self::Literal(node) => Self::Literal(node.with_file_id(file_id)),
+            Self::Unit(node) => Self::Unit(node.with_file_id(file_id)),
+            Self::Ident(node) => Self::Ident(node.with_file_id(file_id)),
+            Self::Path(node) => Self::Path(node.with_file_id(file_id)),
+        }
+    }
+
     fn syntax(&self) -> &SyntaxNode {
         match self {
             Self::Let(n) => n.syntax(),
@@ -1520,6 +1762,29 @@ impl AstNode for Expr {
             Self::Unit(n) => n.syntax(),
             Self::Ident(n) => n.syntax(),
             Self::Path(n) => n.syntax(),
+        }
+    }
+
+    fn file_id(&self) -> usize {
+        match self {
+            Self::Let(node) => node.file_id(),
+            Self::Use(node) => node.file_id(),
+            Self::Fn(node) => node.file_id(),
+            Self::FnShorthand(node) => node.file_id(),
+            Self::If(node) => node.file_id(),
+            Self::Match(node) => node.file_id(),
+            Self::InlineWasm(node) => node.file_id(),
+            Self::Binary(node) => node.file_id(),
+            Self::Unary(node) => node.file_id(),
+            Self::Call(node) => node.file_id(),
+            Self::Field(node) => node.file_id(),
+            Self::Paren(node) => node.file_id(),
+            Self::Array(node) => node.file_id(),
+            Self::Struct(node) => node.file_id(),
+            Self::Literal(node) => node.file_id(),
+            Self::Unit(node) => node.file_id(),
+            Self::Ident(node) => node.file_id(),
+            Self::Path(node) => node.file_id(),
         }
     }
 }
@@ -1553,6 +1818,24 @@ impl AstNode for Pattern {
             _ => None,
         }
     }
+
+    fn with_file_id(
+        self,
+        file_id: usize,
+    ) -> Self {
+        match self {
+            Self::Ident(node) => Self::Ident(node.with_file_id(file_id)),
+            Self::Literal(node) => Self::Literal(node.with_file_id(file_id)),
+            Self::Unit(node) => Self::Unit(node.with_file_id(file_id)),
+            Self::Tuple(node) => Self::Tuple(node.with_file_id(file_id)),
+            Self::Array(node) => Self::Array(node.with_file_id(file_id)),
+            Self::Struct(node) => Self::Struct(node.with_file_id(file_id)),
+            Self::Constructor(node) => Self::Constructor(node.with_file_id(file_id)),
+            Self::TypeHint(node) => Self::TypeHint(node.with_file_id(file_id)),
+            Self::Path(node) => Self::Path(node.with_file_id(file_id)),
+        }
+    }
+
     fn syntax(&self) -> &SyntaxNode {
         match self {
             Self::Ident(n) => n.syntax(),
@@ -1566,6 +1849,20 @@ impl AstNode for Pattern {
             Self::Path(n) => n.syntax(),
         }
     }
+
+    fn file_id(&self) -> usize {
+        match self {
+            Self::Ident(node) => node.file_id(),
+            Self::Literal(node) => node.file_id(),
+            Self::Unit(node) => node.file_id(),
+            Self::Tuple(node) => node.file_id(),
+            Self::Array(node) => node.file_id(),
+            Self::Struct(node) => node.file_id(),
+            Self::Constructor(node) => node.file_id(),
+            Self::TypeHint(node) => node.file_id(),
+            Self::Path(node) => node.file_id(),
+        }
+    }
 }
 
 ast_node!(Sexpr, SEXPR);
@@ -1575,7 +1872,7 @@ impl Sexpr {
     pub fn items(&self) -> Vec<SexprItem> {
         self.syntax
             .children()
-            .filter_map(sexpr_item_from_node)
+            .filter_map(|node| sexpr_item_from_node(node, self.file_id()))
             .collect()
     }
 }
@@ -1611,7 +1908,7 @@ impl SexprItem {
             SexprItem::List(sexpr) => sexpr.span(),
             SexprItem::Path(path) => path.span(),
             SexprItem::Field(field) => field.span(),
-            SexprItem::Atom(atom) => atom.token().text_range().into(),
+            SexprItem::Atom(atom) => Span::from(atom.token().text_range()),
         }
     }
 }
@@ -1645,11 +1942,20 @@ impl SexprAtom {
     }
 }
 
-fn sexpr_item_from_node(node: SyntaxNode) -> Option<SexprItem> {
+fn sexpr_item_from_node(
+    node: SyntaxNode,
+    file_id: usize,
+) -> Option<SexprItem> {
     match node.kind() {
-        SyntaxKind::SEXPR => Sexpr::cast(node).map(SexprItem::List),
-        SyntaxKind::PATH => Path::cast(node).map(SexprItem::Path),
-        SyntaxKind::SEXPR_FIELD => SexprField::cast(node).map(SexprItem::Field),
+        SyntaxKind::SEXPR => {
+            Sexpr::cast(node).map(|node| SexprItem::List(node.with_file_id(file_id)))
+        }
+        SyntaxKind::PATH => {
+            Path::cast(node).map(|node| SexprItem::Path(node.with_file_id(file_id)))
+        }
+        SyntaxKind::SEXPR_FIELD => {
+            SexprField::cast(node).map(|node| SexprItem::Field(node.with_file_id(file_id)))
+        }
         _ => sexpr_atom_from_node(node).map(SexprItem::Atom),
     }
 }

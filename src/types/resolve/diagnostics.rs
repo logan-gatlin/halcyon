@@ -1,6 +1,9 @@
 //! Diagnostic rendering helpers for resolve/typechecking errors.
 
-use std::collections::HashSet;
+use std::collections::{
+    HashMap,
+    HashSet,
+};
 
 use indexmap::IndexMap;
 
@@ -12,6 +15,12 @@ use crate::{
 
 use super::super::infer::TypeError;
 use super::super::type_expr::TypeExprLowerError;
+use super::super::{
+    MetaVarId,
+    TraitRef,
+    Type,
+    TypeTransform,
+};
 use super::common::format_trait_ref;
 use super::{
     Path,
@@ -157,6 +166,7 @@ pub(super) fn log_type_error(
     logger: &mut FileLogger,
     error: TypeError,
 ) {
+    let mut formatter = TypeErrorFormatter::default();
     match error {
         TypeError::UnknownIdentifier { path, span } => {
             logger
@@ -230,6 +240,7 @@ pub(super) fn log_type_error(
                 .done();
         }
         TypeError::NotAFunction { type_, span } => {
+            let type_ = formatter.format_type(&type_);
             logger
                 .error("Not a function")
                 .primary(format!("`{type_}` is not callable."), span)
@@ -255,7 +266,7 @@ pub(super) fn log_type_error(
         TypeError::PolymorphicAnnotationMissingConstraints { predicates, span } => {
             let constraints = predicates
                 .iter()
-                .map(format_trait_ref)
+                .map(|predicate| formatter.format_trait_ref(predicate))
                 .collect::<Vec<_>>()
                 .join(", ");
             logger
@@ -275,11 +286,13 @@ pub(super) fn log_type_error(
         } => {
             match error {
                 super::super::unify::UnifyError::Occurs { var, in_type } => {
+                    let var = formatter.format_meta_var(var);
+                    let in_type = formatter.format_type(&in_type);
                     let mut builder = logger
                         .error("Occurs check failed")
                         .primary(
                             format!(
-                                "Cannot make `?t{var}` equal to `{in_type}` because that would require `?t{var}` to contain itself."
+                                "Cannot make `{var}` equal to `{in_type}` because that would require `{var}` to contain itself."
                             ),
                             span,
                         );
@@ -289,14 +302,20 @@ pub(super) fn log_type_error(
                     builder.done();
                 }
                 super::super::unify::UnifyError::Mismatch { left, right } => {
+                    let left = formatter.normalize_type(&left);
+                    let right = formatter.normalize_type(&right);
+                    let left_display = left.pretty();
+                    let right_display = right.pretty();
                     let mut builder = logger
                         .error("Type mismatch")
                         .primary(
-                            format!("Found `{left}`, but this site requires `{right}`."),
+                            format!(
+                                "Found `{left_display}`, but this site requires `{right_display}`."
+                            ),
                             span,
                         )
-                        .note(format!("found: `{left}`"))
-                        .note(format!("required: `{right}`"));
+                        .note(format!("found: `{left_display}`"))
+                        .note(format!("required: `{right_display}`"));
                     if let Some(context) = context {
                         builder = builder.note(format!("While {context}."));
                     }
@@ -311,11 +330,11 @@ pub(super) fn log_type_error(
 }
 
 fn mismatch_detail_note(
-    left: &super::super::Type,
-    right: &super::super::Type,
+    left: &Type,
+    right: &Type,
 ) -> Option<String> {
     match (left, right) {
-        (super::super::Type::Tuple(left_items), super::super::Type::Tuple(right_items))
+        (Type::Tuple(left_items), Type::Tuple(right_items))
             if left_items.len() != right_items.len() =>
         {
             Some(format!(
@@ -325,28 +344,28 @@ fn mismatch_detail_note(
             ))
         }
         (
-            super::super::Type::Struct {
+            Type::Struct {
                 fields: left_fields,
             },
-            super::super::Type::Struct {
+            Type::Struct {
                 fields: right_fields,
             },
         ) => struct_field_difference_note(left_fields, right_fields),
         (
-            super::super::Type::StructConstraint {
+            Type::StructConstraint {
                 fields: left_fields,
                 ..
             },
-            super::super::Type::StructConstraint {
+            Type::StructConstraint {
                 fields: right_fields,
                 ..
             },
         ) => struct_field_difference_note(left_fields, right_fields),
         (
-            super::super::Type::Named {
+            Type::Named {
                 name: left_name, ..
             },
-            super::super::Type::Named {
+            Type::Named {
                 name: right_name, ..
             },
         ) if left_name != right_name => {
@@ -359,8 +378,8 @@ fn mismatch_detail_note(
 }
 
 fn struct_field_difference_note(
-    left_fields: &IndexMap<String, super::super::Type>,
-    right_fields: &IndexMap<String, super::super::Type>,
+    left_fields: &IndexMap<String, Type>,
+    right_fields: &IndexMap<String, Type>,
 ) -> Option<String> {
     let missing = right_fields
         .keys()
@@ -389,6 +408,132 @@ fn struct_field_difference_note(
         }
         (true, true) => String::new(),
     })
+}
+
+#[derive(Default)]
+struct TypeErrorFormatter {
+    meta_vars: HashMap<MetaVarId, MetaVarId>,
+}
+
+impl TypeErrorFormatter {
+    fn normalize_type(
+        &mut self,
+        type_: &Type,
+    ) -> Type {
+        MetaVarNormalizer {
+            meta_vars: &mut self.meta_vars,
+        }
+        .transform(type_)
+        .unwrap_or_else(|| type_.clone())
+    }
+
+    fn format_type(
+        &mut self,
+        type_: &Type,
+    ) -> String {
+        self.normalize_type(type_).pretty()
+    }
+
+    fn format_meta_var(
+        &mut self,
+        id: MetaVarId,
+    ) -> String {
+        format!("?t{}", self.meta_var_name(id))
+    }
+
+    fn format_trait_ref(
+        &mut self,
+        trait_ref: &TraitRef,
+    ) -> String {
+        if trait_ref.arguments.is_empty() {
+            trait_ref.trait_name.to_string()
+        } else {
+            let args = trait_ref
+                .arguments
+                .iter()
+                .map(|argument| self.format_trait_argument(argument))
+                .collect::<Vec<_>>()
+                .join(" ");
+            format!("{} {args}", trait_ref.trait_name)
+        }
+    }
+
+    fn format_trait_argument(
+        &mut self,
+        type_: &Type,
+    ) -> String {
+        match type_ {
+            Type::Apply { .. } => format!("({})", self.format_type(type_)),
+            _ => self.format_type(type_),
+        }
+    }
+
+    fn meta_var_name(
+        &mut self,
+        id: MetaVarId,
+    ) -> MetaVarId {
+        if let Some(name) = self.meta_vars.get(&id) {
+            *name
+        } else {
+            let next = self.meta_vars.len() as MetaVarId;
+            self.meta_vars.insert(id, next);
+            next
+        }
+    }
+}
+
+struct MetaVarNormalizer<'a> {
+    meta_vars: &'a mut HashMap<MetaVarId, MetaVarId>,
+}
+
+impl TypeTransform for MetaVarNormalizer<'_> {
+    fn meta_var(
+        &mut self,
+        id: MetaVarId,
+    ) -> Option<Type> {
+        let mapped = if let Some(existing) = self.meta_vars.get(&id) {
+            *existing
+        } else {
+            let next = self.meta_vars.len() as MetaVarId;
+            self.meta_vars.insert(id, next);
+            next
+        };
+        Some(Type::MetaVar(mapped))
+    }
+
+    fn named(
+        &mut self,
+        name: &Path,
+        body: &Type,
+    ) -> Option<Type> {
+        Some(Type::Named {
+            name: name.clone(),
+            body: Box::new(self.transform(body)?),
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn type_error_formatter_renumbers_meta_vars_stably() {
+        let mut formatter = TypeErrorFormatter::default();
+        let left = Type::func(Type::MetaVar(999), Type::MetaVar(42));
+        let right = Type::Tuple(vec![Type::MetaVar(42), Type::MetaVar(999)]);
+
+        assert_eq!(formatter.format_type(&left), "(v0 -> v1)");
+        assert_eq!(formatter.format_type(&right), "(v1, v0)");
+    }
+
+    #[test]
+    fn type_error_formatter_formats_meta_var_with_normalized_name() {
+        let mut formatter = TypeErrorFormatter::default();
+
+        assert_eq!(formatter.format_meta_var(777), "?t0");
+        assert_eq!(formatter.format_type(&Type::MetaVar(777)), "v0");
+    }
 }
 
 /// Emit diagnostics for shared type-expression lowering errors.

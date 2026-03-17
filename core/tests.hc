@@ -22,6 +22,37 @@ let test_string_and_bool = fn _ =>
   let _ = assert (core::opt::is_some (core::bool::select true 1)) "bool select some" in
   let _ = assert (core::bool::select_else true (fn _ => 1) (fn _ => 2) == 1) "bool select_else true" in
   let _ = assert (core::opt::contains 3 (core::bool::guard true 3)) "bool guard true" in
+  let _ = assert (core::string::replace "banana" "na" "xo" == "baxoxo") "string replace repeated substring" in
+  let _ = assert (core::string::replace "aaaa" "aa" "b" == "bb") "string replace non-overlapping" in
+  let _ = assert (core::string::replace "hello" "" "x" == "hello") "string replace empty needle no-op" in
+  let split_with_substring = core::string::split "a--b--c" "--" in
+  let _ = assert
+    (match split_with_substring with
+      | ["a", "b", "c"] => true
+      | _ => false)
+    "string split substring delimiter"
+  in
+  let split_without_delimiter = core::string::split "hello" "-" in
+  let _ = assert
+    (match split_without_delimiter with
+      | ["hello"] => true
+      | _ => false)
+    "string split delimiter missing"
+  in
+  let split_with_empty_delimiter = core::string::split "hello" "" in
+  let _ = assert
+    (match split_with_empty_delimiter with
+      | ["hello"] => true
+      | _ => false)
+    "string split empty delimiter returns original"
+  in
+  let split_with_empty_segments = core::string::split "a,,b," "," in
+  let _ = assert
+    (match split_with_empty_segments with
+      | ["a", "", "b", ""] => true
+      | _ => false)
+    "string split preserves empty segments"
+  in
   ()
 
 let test_function_helpers = fn _ =>
@@ -34,6 +65,9 @@ let test_function_helpers = fn _ =>
   ()
 
 let test_array_and_option = fn _ =>
+  let _ = assert ([1, 2, 3] == [1, 2, 3]) "array integer equality" in
+  let _ = assert (["a", "b"] == ["a", "b"]) "array string equality" in
+  let _ = assert (not ([1, 2] == [1, 2, 3])) "array equality length mismatch" in
   let _ = assert (core::opt::is_some (Some 1)) "option is_some" in
   let _ = assert (core::opt::contains 1 (Some 1)) "option contains" in
   ()

@@ -116,7 +116,16 @@ impl<'a> Encoder<'a> {
         symbols: &SymbolTable,
         constructors: &ConstructorTable,
     ) {
-        let Pattern { kind, type_, .. } = pat;
+        let Pattern {
+            kind,
+            type_,
+            span,
+            ..
+        } = pat;
+        let previous_origin = self.current_origin.clone();
+        if let Some(origin) = self.module.source_origin_for_span(span) {
+            self.current_origin = Some(origin);
+        }
         let lowered_type = lower_type(&type_, symbols);
         match kind {
             PatternKind::Hole => {
@@ -150,10 +159,13 @@ impl<'a> Encoder<'a> {
                 glob,
                 ending,
             } => {
-                let SemanticType::Array(inner_type) = &type_ else {
+                let SemanticType::Array(_) = &type_ else {
                     unreachable!()
                 };
-                let inner_type_lowered = lower_type(inner_type, symbols);
+                let Type::Array(inner_type_lowered) = lowered_type.clone() else {
+                    unreachable!()
+                };
+                let inner_type_lowered = *inner_type_lowered;
                 let temporary = self.temporary_name("array_pattern");
                 self.new_register(temporary.clone(), scope, lowered_type.clone());
                 self.ref_cast_if_needed(&lowered_type);
@@ -220,7 +232,6 @@ impl<'a> Encoder<'a> {
                             },
                         ]);
                         // Bind to glob name
-                        self.new_register(glob_name.clone(), scope, lowered_type.clone());
                         self.extend([i::Get(new_array), i::Set(glob_name.clone())]);
                     }
 
@@ -439,6 +450,7 @@ impl<'a> Encoder<'a> {
                 self.lower_pattern(*inner, scope, symbols, constructors);
             }
         }
+        self.current_origin = previous_origin;
     }
     pub(crate) fn lower_ir(
         &mut self,
@@ -446,7 +458,16 @@ impl<'a> Encoder<'a> {
         symbols: &SymbolTable,
         constructors: &ConstructorTable,
     ) {
-        let Term { kind, type_, .. } = term;
+        let Term {
+            kind,
+            type_,
+            span,
+            ..
+        } = term;
+        let previous_origin = self.current_origin.clone();
+        if let Some(origin) = self.module.source_origin_for_span(span) {
+            self.current_origin = Some(origin);
+        }
         match kind {
             TermKind::Let {
                 assignee,
@@ -624,6 +645,7 @@ impl<'a> Encoder<'a> {
                 self.push(i::Unreachable);
             }
         }
+        self.current_origin = previous_origin;
     }
 
     pub(crate) fn lower_constructor(

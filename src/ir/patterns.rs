@@ -86,7 +86,9 @@ pub fn pattern(
                 let mut glob = Glob::None;
                 let mut ending = Vec::new();
                 for child in pat_array.syntax().children() {
-                    if let Some(rest) = ast::PatRest::cast(child.clone()) {
+                    if let Some(rest) = ast::PatRest::cast(child.clone())
+                        .map(|node| node.with_file_id(pat_array.file_id()))
+                    {
                         if !matches!(glob, Glob::None) {
                             logger
                                 .error("Invalid array pattern")
@@ -111,7 +113,9 @@ pub fn pattern(
                         };
                         continue;
                     }
-                    if let Some(pattern_node) = ast::Pattern::cast(child) {
+                    if let Some(pattern_node) =
+                        ast::Pattern::cast(child).map(|node| node.with_file_id(pat_array.file_id()))
+                    {
                         let pat = pattern(scope, logger, pattern_node)?;
                         if matches!(glob, Glob::None) {
                             starting.push(pat);
@@ -160,20 +164,11 @@ pub fn pattern(
             }
             ast::Pattern::Constructor(constructor) => {
                 PatternKind::Constructor(
-                    match constructor.head()? {
-                        ast::PathOrIdent::Ident(pat_ident) => {
-                            scope.query_string(
-                                pat_ident.name_text_spanned()?,
-                                NameSpace::Constructor,
-                            )
-                        }
-                        ast::PathOrIdent::Path(pat_path) => {
-                            let resolved = scope
-                                .resolve_path(&pat_path, NameSpace::Constructor, pat_path.span())?
-                                .with_span(pat_path.span());
-                            scope.query_path(resolved, NameSpace::Constructor)
-                        }
-                    },
+                    super::resolve_path_or_ident(
+                        scope,
+                        constructor.head()?,
+                        NameSpace::Constructor,
+                    )?,
                     pattern(scope, logger, constructor.payload()?)?.into(),
                 )
             }

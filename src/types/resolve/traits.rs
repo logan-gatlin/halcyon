@@ -5,7 +5,6 @@ use std::collections::HashSet;
 use crate::logging::WithContext;
 use indexmap::IndexMap;
 
-use super::super::Type;
 use super::super::infer::InferenceContext;
 use super::super::instantiation::leading_forall_count;
 use super::super::kind::{
@@ -13,6 +12,10 @@ use super::super::kind::{
     SchemeKindError,
     constructor_kind,
     infer_scheme_kind,
+};
+use super::super::{
+    Type,
+    normalize_parameter_kinds,
 };
 use super::common::format_trait_ref;
 use super::diagnostics::log_trait_error;
@@ -144,20 +147,6 @@ pub(super) fn build_trait_definitions(
             })
         })
         .collect()
-}
-
-fn normalize_parameter_kinds(
-    mut kinds: Vec<Kind>,
-    parameter_count: usize,
-) -> Vec<Kind> {
-    if kinds.len() < parameter_count {
-        kinds.extend(std::iter::repeat_n(
-            Kind::Type,
-            parameter_count - kinds.len(),
-        ));
-    }
-    kinds.truncate(parameter_count);
-    kinds
 }
 
 fn merge_parameter_kinds(

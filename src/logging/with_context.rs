@@ -50,13 +50,11 @@ impl<'a> WithContext for super::LogBuilder<'a> {
             self.notes
                 .push("This lint occured in generated code".into());
         }
-        let span = match span {
-            Span::Source { start, width, .. } => start..(start + width),
-            Span::Generated => 0..0,
-        };
+        let file_id = span.file_id().unwrap_or(self.logger.id());
+        let span = span.range();
         self.labels.push(Label {
             style,
-            file_id: self.logger.id,
+            file_id,
             range: span,
             message: message.into(),
         });

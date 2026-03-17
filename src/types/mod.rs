@@ -724,6 +724,7 @@ fn pretty_record_fields(
         .join(", ")
 }
 
+mod common;
 mod instantiation;
 mod kind;
 mod type_expr;
@@ -735,6 +736,13 @@ pub mod traits;
 pub mod unify;
 
 pub use kind::Kind;
+
+pub(crate) use common::{
+    for_each_pattern_binding,
+    normalize_parameter_kinds,
+    split_applied_type,
+    split_applied_type_ref,
+};
 
 pub use symbol_table::{
     MethodSpecialization,

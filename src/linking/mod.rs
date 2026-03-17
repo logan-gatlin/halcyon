@@ -300,12 +300,13 @@ pub fn link_binaries<B: AsRef<[u8]>>(
     let mut linked = merge_inputs(&inputs, &options)?;
     linked.sig = merge_type_signatures(&inputs)?;
     linked.export_policy = options.export_policy;
-    let binary = asm::encode(linked);
+    let encoded = asm::encode(linked);
 
     Ok(Artifact {
         module_name: options.module_name,
         ir_module: None,
-        binary,
+        binary: encoded.binary,
+        source_map: encoded.source_map,
     })
 }
 
@@ -467,6 +468,15 @@ fn merge_inputs(
         }
     }
 
+    for module in normalized_modules.iter() {
+        for (file_name, record) in module.source_files.iter() {
+            merged
+                .source_files
+                .entry(file_name.clone())
+                .or_insert_with(|| record.clone());
+        }
+    }
+
     let start_path = unique_start_path(&merged, &options.module_name);
     let start_ops = normalized_modules
         .iter()
@@ -480,6 +490,7 @@ fn merge_inputs(
             returns: Vec::new(),
             variables: IndexMap::new(),
             ops: start_ops,
+            op_origins: Vec::new(),
         },
     );
     merged.start = start_path;
@@ -607,7 +618,9 @@ fn namespace_temporary_paths(module: &Module) -> Module {
         sig: module.sig.clone(),
         export_policy: module.export_policy,
         start: remap(&module.start),
+        source_files: module.source_files.clone(),
         closure_counter: module.closure_counter,
+        source_file_lookup: module.source_file_lookup.clone(),
     }
 }
 
@@ -638,6 +651,7 @@ fn remap_function_paths(
         returns: function.returns.clone(),
         variables,
         ops,
+        op_origins: function.op_origins.clone(),
     }
 }
 

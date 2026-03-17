@@ -6,7 +6,10 @@
 use super::*;
 use crate::hc_core::compile_core_module;
 use crate::ir::Path;
-use crate::types::SymbolTable;
+use crate::types::{
+    SymbolTable,
+    Type,
+};
 
 fn init_tracing() {
     use tracing_subscriber::EnvFilter;
@@ -59,6 +62,20 @@ fn logger_has_error_message(
     logger
         .iter()
         .any(|diagnostic| diagnostic.message.contains(message))
+}
+
+fn logger_has_error_label_in_file(
+    logger: &Logger,
+    message: &str,
+    file_name: &str,
+) -> bool {
+    logger.serialize().iter().any(|diagnostic| {
+        diagnostic.message.contains(message)
+            && diagnostic
+                .labels
+                .iter()
+                .any(|label| label.file_name == file_name)
+    })
 }
 
 fn file_logger_count_message(
@@ -205,6 +222,31 @@ fn compile_source_with_options_reports_duplicate_bundle_declarations_globally() 
     assert!(
         logger_has_error_message(&logger, "Duplicate bundle declaration"),
         "expected duplicate bundle diagnostic across imported files"
+    );
+}
+
+#[test]
+fn compile_source_with_options_reports_type_errors_in_import_file() {
+    let source = "bundle demo\nimport \"dep\"\nlet value = 1\n";
+    let dep_source = "let broken = if true then 1 else \"oops\"\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+
+    let _ = compile_source_with_options(
+        "demo.hc",
+        source,
+        &mut logger,
+        &mut symbols,
+        CompileOptions {
+            demo_mode: false,
+            use_core: false,
+            resolve_import: |path| path.ends_with("dep").then(|| dep_source.to_string()),
+        },
+    );
+
+    assert!(
+        logger_has_error_label_in_file(&logger, "Type mismatch", "dep"),
+        "expected imported type error to point at import file"
     );
 }
 
@@ -876,6 +918,53 @@ fn nested_function_captures_propagate_to_intermediate_lambdas() {
             .any(|(capture, _)| capture == &second.inner),
         "inner function should capture second parameter"
     );
+}
+
+#[test]
+fn let_expression_binding_is_recursive_during_ir_lowering() {
+    let source = "module demo =\n\tlet value = let loop = fn x => loop x in loop\nend\n";
+    let mut logger = Logger::new();
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let module = parse::parse(source, &mut file_logger)
+        .and_then(|source_file| source_file.modules().into_iter().next())
+        .and_then(|module| ir::module(module, &mut file_logger))
+        .expect("expected module");
+    logger.consume_file(file_logger);
+    assert_logger_is_ok(&logger, "IR construction should succeed");
+
+    let Some(ir::Statement::Term(term)) = module.statements.first() else {
+        panic!("expected first statement to be a term");
+    };
+    let ir::TermKind::Let {
+        value: outer_value,
+        scope: ir::ScopeKind::Global,
+        ..
+    } = &term.kind
+    else {
+        panic!("expected global let statement");
+    };
+    let ir::TermKind::Let {
+        assignee,
+        value: recursive_value,
+        scope: ir::ScopeKind::Local,
+        ..
+    } = &outer_value.kind
+    else {
+        panic!("expected nested local let expression");
+    };
+    let ir::PatternKind::Identifier(loop_path) = &assignee.kind else {
+        panic!("expected recursive let assignee to be an identifier");
+    };
+    let ir::TermKind::Function { body, .. } = &recursive_value.kind else {
+        panic!("expected recursive let value to be a function");
+    };
+    let ir::TermKind::Call { callee, .. } = &body.kind else {
+        panic!("expected recursive function body to call itself");
+    };
+    let ir::TermKind::Identifier(callee_path) = &callee.kind else {
+        panic!("expected recursive call callee to be an identifier");
+    };
+    assert_eq!(callee_path, loop_path);
 }
 
 #[test]
@@ -1630,4 +1719,133 @@ fn sum_type_does_not_publish_typename_constructor() {
         .contains(&Path::new("demo", "Option")));
     assert!(symbols.constructors().contains(&Path::new("demo", "Some")));
     assert!(symbols.constructors().contains(&Path::new("demo", "None")));
+}
+
+#[test]
+fn spread_tail_array_pattern_does_not_redefine_local_symbol() {
+    let source = "module demo =
+\tlet take_tail = fn arr => match arr with
+\t\t| [] => []
+\t\t| [_, ..tail] => tail
+end
+";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let artifacts = compile_source(source, &mut file_logger, &mut symbols);
+    logger.consume_file(file_logger);
+
+    for artifact in artifacts.into_vec() {
+        let _ = validate_artifact(artifact, &mut logger);
+    }
+
+    assert_logger_is_ok(
+        &logger,
+        "spread-tail array patterns should not redefine locals during lowering",
+    );
+}
+
+#[test]
+fn nested_array_pattern_lowers_without_wasm_type_mismatch() {
+    let source = "module demo =
+\tlet flatten = fn arr => match arr with
+\t\t| [] => []
+\t\t| [head, ..tail] => head + (flatten tail)
+\tlet value = flatten [[1], [2], [3]]
+end
+";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let artifacts = compile_source(source, &mut file_logger, &mut symbols);
+    logger.consume_file(file_logger);
+
+    for artifact in artifacts.into_vec() {
+        let _ = validate_artifact(artifact, &mut logger);
+    }
+
+    assert_logger_is_ok(
+        &logger,
+        "nested array patterns should encode with consistent wasm array types",
+    );
+}
+
+#[test]
+fn core_resolves_array_equal_specialization_for_integer_arrays() {
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    assert_logger_is_ok(&logger, "core should compile");
+
+    let specialization = symbols
+        .resolve_method_specialization(
+            &Path::new("core", "ops::[==]"),
+            &[Type::Array(Box::new(Type::Integer))],
+        )
+        .expect("method specialization lookup should not fail");
+
+    let specialization =
+        specialization.expect("expected array equality specialization for integer arrays");
+    assert_ne!(
+        specialization.impl_method_path,
+        Path::new("core", "ops::[==]"),
+        "array equality should dispatch to an impl method, not the trait item"
+    );
+
+    let method_scheme = symbols
+        .terms()
+        .get(&specialization.impl_method_path)
+        .unwrap_or_else(|| {
+            panic!(
+                "missing impl method scheme {}",
+                specialization.impl_method_path
+            )
+        });
+    assert!(
+        !method_scheme.predicates.is_empty(),
+        "array equality impl method should keep required predicates; got type {} with {} predicates",
+        method_scheme.type_.pretty(),
+        method_scheme.predicates.len()
+    );
+}
+
+#[test]
+fn core_resolves_array_equal_specialization_for_string_arrays() {
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    assert_logger_is_ok(&logger, "core should compile");
+
+    let specialization = symbols
+        .resolve_method_specialization(
+            &Path::new("core", "ops::[==]"),
+            &[Type::Array(Box::new(Type::String))],
+        )
+        .expect("method specialization lookup should not fail");
+
+    let specialization =
+        specialization.expect("expected array equality specialization for string arrays");
+    assert_ne!(
+        specialization.impl_method_path,
+        Path::new("core", "ops::[==]"),
+        "array equality should dispatch to an impl method, not the trait item"
+    );
+
+    let method_scheme = symbols
+        .terms()
+        .get(&specialization.impl_method_path)
+        .unwrap_or_else(|| {
+            panic!(
+                "missing impl method scheme {}",
+                specialization.impl_method_path
+            )
+        });
+    assert!(
+        !method_scheme.predicates.is_empty(),
+        "array equality impl method should keep required predicates; got type {} with {} predicates",
+        method_scheme.type_.pretty(),
+        method_scheme.predicates.len()
+    );
 }

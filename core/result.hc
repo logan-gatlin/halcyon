@@ -116,7 +116,7 @@ module result =
   end
 
   impl bundle::hkt::Functor for err in Result err =
-    let fmap = map
+    let fmap = fn f result => map f result
   end
 
   impl bundle::hkt::Bifunctor Result =
@@ -137,7 +137,7 @@ module result =
   end
 
   impl bundle::hkt::Monad for err in Result err =
-    let new = Ok
+    let new = fn value => Ok value
     let flatmap = fn f result => match result with
       | Ok value => f value
       | Err error => Err error

@@ -8,8 +8,8 @@ use super::{
     sexpr,
     type_expr,
 };
-use crate::parse::parser::Parser;
 use crate::parse::SyntaxKind;
+use crate::parse::parser::Parser;
 
 /// Recovery set at the module-body level: we can resume parsing at any
 /// statement-starting keyword or at `end`.

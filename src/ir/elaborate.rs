@@ -1,4 +1,5 @@
 use indexmap::IndexMap;
+use std::collections::HashMap;
 
 use crate::ir::{
     Module,
@@ -427,12 +428,116 @@ fn find_dict_binding<'a>(
     if let Some(entry) = dict_env.iter().find(|entry| entry.predicate == *predicate) {
         return Some(&entry.binding);
     }
+    let requested_key = canonical_predicate_key(predicate);
     let mut matches = dict_env
         .iter()
-        .filter(|entry| entry.predicate.trait_name == predicate.trait_name)
+        .filter(|entry| {
+            entry.predicate.trait_name == predicate.trait_name
+                && canonical_predicate_key(&entry.predicate) == requested_key
+        })
         .map(|entry| &entry.binding);
     let first = matches.next()?;
     matches.next().is_none().then_some(first)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum CanonicalVar {
+    Type(u32),
+    Meta(u32),
+}
+
+fn canonical_predicate_key(predicate: &TraitConstraint) -> String {
+    let mut vars = HashMap::<CanonicalVar, u32>::new();
+    let mut next = 0u32;
+    let args = predicate
+        .arguments
+        .iter()
+        .map(|arg| canonical_type_key(arg, &mut vars, &mut next))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!("{}({args})", predicate.trait_name)
+}
+
+fn canonical_type_key(
+    type_: &Type,
+    vars: &mut HashMap<CanonicalVar, u32>,
+    next: &mut u32,
+) -> String {
+    match type_ {
+        Type::TypeVar(index) => canonical_var_key(CanonicalVar::Type(*index), vars, next),
+        Type::MetaVar(index) => canonical_var_key(CanonicalVar::Meta(*index), vars, next),
+        Type::Unit => "unit".to_string(),
+        Type::Integer => "integer".to_string(),
+        Type::Real => "real".to_string(),
+        Type::Boolean => "boolean".to_string(),
+        Type::String => "string".to_string(),
+        Type::Glyph => "glyph".to_string(),
+        Type::Array(inner) => format!("array({})", canonical_type_key(inner, vars, next)),
+        Type::Tuple(items) => format!(
+            "tuple({})",
+            items
+                .iter()
+                .map(|item| canonical_type_key(item, vars, next))
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
+        Type::Struct { fields } => format!(
+            "struct({})",
+            fields
+                .iter()
+                .map(|(name, type_)| format!("{name}:{}", canonical_type_key(type_, vars, next)))
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
+        Type::Sum { variants } => format!(
+            "sum({})",
+            variants
+                .iter()
+                .map(|(name, type_)| format!("{name}:{}", canonical_type_key(type_, vars, next)))
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
+        Type::Function(parameter, result) => format!(
+            "fn({}->{})",
+            canonical_type_key(parameter, vars, next),
+            canonical_type_key(result, vars, next)
+        ),
+        Type::Named { name, .. } => format!("named({name})"),
+        Type::Apply {
+            constructor,
+            arguments,
+        } => format!(
+            "apply({};{})",
+            canonical_type_key(constructor, vars, next),
+            arguments
+                .iter()
+                .map(|argument| canonical_type_key(argument, vars, next))
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
+        Type::ForAll(body) => format!("forall({})", canonical_type_key(body, vars, next)),
+        Type::StructConstraint { fields, mode } => format!(
+            "constraint({mode:?};{})",
+            fields
+                .iter()
+                .map(|(name, type_)| format!("{name}:{}", canonical_type_key(type_, vars, next)))
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
+    }
+}
+
+fn canonical_var_key(
+    var: CanonicalVar,
+    vars: &mut HashMap<CanonicalVar, u32>,
+    next: &mut u32,
+) -> String {
+    let id = *vars.entry(var).or_insert_with(|| {
+        let id = *next;
+        *next += 1;
+        id
+    });
+    format!("v{id}")
 }
 
 fn wrap_with_dict_params(
@@ -1212,6 +1317,7 @@ fn predicate_key(predicate: &TraitConstraint) -> String {
 fn sorted_predicates(predicates: &[TraitConstraint]) -> Vec<TraitConstraint> {
     let mut preds = predicates.to_vec();
     preds.sort_by_key(predicate_key);
+    preds.dedup();
     preds
 }
 
@@ -1265,8 +1371,10 @@ fn substitute_type_vars_in_type(
 ) -> Option<Type> {
     match type_ {
         Type::TypeVar(index) => {
-            let binding = bindings.get(*index as usize)?;
-            binding.clone()
+            bindings
+                .get(*index as usize)
+                .and_then(|binding| binding.clone())
+                .or(Some(Type::TypeVar(*index)))
         }
         Type::Array(inner) => {
             substitute_type_vars_in_type(inner, bindings).map(|inner| Type::Array(Box::new(inner)))
@@ -1548,108 +1656,28 @@ fn match_scheme_to_type(
     concrete: &Type,
     bindings: &mut [Option<Type>],
 ) -> bool {
-    match scheme {
-        Type::TypeVar(index) => {
-            let Some(slot) = bindings.get_mut(*index as usize) else {
-                return false;
-            };
-            match slot {
-                Some(existing) => existing == concrete,
-                None => {
-                    *slot = Some(concrete.clone());
-                    true
-                }
-            }
-        }
-        Type::Unit => matches!(concrete, Type::Unit),
-        Type::Integer => matches!(concrete, Type::Integer),
-        Type::Real => matches!(concrete, Type::Real),
-        Type::Boolean => matches!(concrete, Type::Boolean),
-        Type::String => matches!(concrete, Type::String),
-        Type::Glyph => matches!(concrete, Type::Glyph),
-        Type::Array(inner) => {
-            let Type::Array(other) = concrete else {
-                return false;
-            };
-            match_scheme_to_type(inner, other, bindings)
-        }
-        Type::Tuple(items) => {
-            let Type::Tuple(other) = concrete else {
-                return false;
-            };
-            if items.len() != other.len() {
-                return false;
-            }
-            items
-                .iter()
-                .zip(other.iter())
-                .all(|(left, right)| match_scheme_to_type(left, right, bindings))
-        }
-        Type::Struct { fields } => {
-            let Type::Struct { fields: other } = concrete else {
-                return false;
-            };
-            if fields.len() != other.len() {
-                return false;
-            }
-            fields
-                .iter()
-                .zip(other.iter())
-                .all(|((ln, lt), (rn, rt))| ln == rn && match_scheme_to_type(lt, rt, bindings))
-        }
-        Type::Sum { variants } => {
-            let Type::Sum { variants: other } = concrete else {
-                return false;
-            };
-            if variants.len() != other.len() {
-                return false;
-            }
-            variants
-                .iter()
-                .zip(other.iter())
-                .all(|((ln, lt), (rn, rt))| ln == rn && match_scheme_to_type(lt, rt, bindings))
-        }
-        Type::Function(parameter, result) => {
-            let Type::Function(other_parameter, other_result) = concrete else {
-                return false;
-            };
-            match_scheme_to_type(parameter, other_parameter, bindings)
-                && match_scheme_to_type(result, other_result, bindings)
-        }
-        Type::Named { name, .. } => {
-            let Type::Named { name: other, .. } = concrete else {
-                return false;
-            };
-            name == other
-        }
-        Type::Apply {
-            constructor,
-            arguments,
-        } => {
-            let Type::Apply {
-                constructor: other_constructor,
-                arguments: other_arguments,
-            } = concrete
-            else {
-                return false;
-            };
-            if arguments.len() != other_arguments.len() {
-                return false;
-            }
-            match_scheme_to_type(constructor, other_constructor, bindings)
-                && arguments
-                    .iter()
-                    .zip(other_arguments.iter())
-                    .all(|(left, right)| match_scheme_to_type(left, right, bindings))
-        }
-        Type::StructConstraint { .. } | Type::MetaVar(_) | Type::ForAll(_) => false,
-    }
+    match_scheme_to_type_with_mode(scheme, concrete, bindings, TypeMatchMode::Strict)
 }
 
 fn match_scheme_to_type_relaxed(
     scheme: &Type,
     concrete: &Type,
     bindings: &mut [Option<Type>],
+) -> bool {
+    match_scheme_to_type_with_mode(scheme, concrete, bindings, TypeMatchMode::Relaxed)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TypeMatchMode {
+    Strict,
+    Relaxed,
+}
+
+fn match_scheme_to_type_with_mode(
+    scheme: &Type,
+    concrete: &Type,
+    bindings: &mut [Option<Type>],
+    mode: TypeMatchMode,
 ) -> bool {
     match scheme {
         Type::TypeVar(index) => {
@@ -1658,9 +1686,10 @@ fn match_scheme_to_type_relaxed(
             };
             match slot {
                 Some(existing) => {
-                    match concrete {
-                        Type::MetaVar(_) => true,
-                        _ => existing == concrete,
+                    if mode == TypeMatchMode::Relaxed && matches!(concrete, Type::MetaVar(_)) {
+                        true
+                    } else {
+                        existing == concrete
                     }
                 }
                 None => {
@@ -1679,7 +1708,7 @@ fn match_scheme_to_type_relaxed(
             let Type::Array(other) = concrete else {
                 return false;
             };
-            match_scheme_to_type_relaxed(inner, other, bindings)
+            match_scheme_to_type_with_mode(inner, other, bindings, mode)
         }
         Type::Tuple(items) => {
             let Type::Tuple(other) = concrete else {
@@ -1691,7 +1720,7 @@ fn match_scheme_to_type_relaxed(
             items
                 .iter()
                 .zip(other.iter())
-                .all(|(left, right)| match_scheme_to_type_relaxed(left, right, bindings))
+                .all(|(left, right)| match_scheme_to_type_with_mode(left, right, bindings, mode))
         }
         Type::Struct { fields } => {
             let Type::Struct { fields: other } = concrete else {
@@ -1701,7 +1730,7 @@ fn match_scheme_to_type_relaxed(
                 return false;
             }
             fields.iter().zip(other.iter()).all(|((ln, lt), (rn, rt))| {
-                ln == rn && match_scheme_to_type_relaxed(lt, rt, bindings)
+                ln == rn && match_scheme_to_type_with_mode(lt, rt, bindings, mode)
             })
         }
         Type::Sum { variants } => {
@@ -1715,15 +1744,15 @@ fn match_scheme_to_type_relaxed(
                 .iter()
                 .zip(other.iter())
                 .all(|((ln, lt), (rn, rt))| {
-                    ln == rn && match_scheme_to_type_relaxed(lt, rt, bindings)
+                    ln == rn && match_scheme_to_type_with_mode(lt, rt, bindings, mode)
                 })
         }
         Type::Function(parameter, result) => {
             let Type::Function(other_parameter, other_result) = concrete else {
                 return false;
             };
-            match_scheme_to_type_relaxed(parameter, other_parameter, bindings)
-                && match_scheme_to_type_relaxed(result, other_result, bindings)
+            match_scheme_to_type_with_mode(parameter, other_parameter, bindings, mode)
+                && match_scheme_to_type_with_mode(result, other_result, bindings, mode)
         }
         Type::Named { name, .. } => {
             let Type::Named { name: other, .. } = concrete else {
@@ -1745,11 +1774,13 @@ fn match_scheme_to_type_relaxed(
             if arguments.len() != other_arguments.len() {
                 return false;
             }
-            match_scheme_to_type_relaxed(constructor, other_constructor, bindings)
+            match_scheme_to_type_with_mode(constructor, other_constructor, bindings, mode)
                 && arguments
                     .iter()
                     .zip(other_arguments.iter())
-                    .all(|(left, right)| match_scheme_to_type_relaxed(left, right, bindings))
+                    .all(|(left, right)| {
+                        match_scheme_to_type_with_mode(left, right, bindings, mode)
+                    })
         }
         Type::StructConstraint { .. } | Type::MetaVar(_) | Type::ForAll(_) => false,
     }
@@ -1801,35 +1832,7 @@ mod tests {
         let mut file_logger = logger.new_file("test.hc", source);
         let mut symbols = SymbolTable::new();
         let _ = compile_core_module(&mut symbols, &mut Logger::new());
-        let mut prelude = Vec::new();
-        prelude.extend(
-            symbols
-                .terms()
-                .keys()
-                .cloned()
-                .map(|path| (path, crate::ir::NameSpace::Term)),
-        );
-        prelude.extend(
-            symbols
-                .type_definitions()
-                .keys()
-                .cloned()
-                .map(|path| (path, crate::ir::NameSpace::Type)),
-        );
-        prelude.extend(
-            symbols
-                .trait_defs()
-                .keys()
-                .cloned()
-                .map(|path| (path, crate::ir::NameSpace::Trait)),
-        );
-        prelude.extend(
-            symbols
-                .trait_aliases()
-                .keys()
-                .cloned()
-                .map(|path| (path, crate::ir::NameSpace::Trait)),
-        );
+        let prelude = crate::name_resolution_prelude(&symbols);
 
         let modules = parse::parse(source, &mut file_logger)
             .map(|m| m.modules())
@@ -1859,35 +1862,7 @@ mod tests {
         let mut file_logger = logger.new_file("test.hc", source);
         let mut symbols = SymbolTable::new();
         let _ = compile_core_module(&mut symbols, &mut Logger::new());
-        let mut prelude = Vec::new();
-        prelude.extend(
-            symbols
-                .terms()
-                .keys()
-                .cloned()
-                .map(|path| (path, crate::ir::NameSpace::Term)),
-        );
-        prelude.extend(
-            symbols
-                .type_definitions()
-                .keys()
-                .cloned()
-                .map(|path| (path, crate::ir::NameSpace::Type)),
-        );
-        prelude.extend(
-            symbols
-                .trait_defs()
-                .keys()
-                .cloned()
-                .map(|path| (path, crate::ir::NameSpace::Trait)),
-        );
-        prelude.extend(
-            symbols
-                .trait_aliases()
-                .keys()
-                .cloned()
-                .map(|path| (path, crate::ir::NameSpace::Trait)),
-        );
+        let prelude = crate::name_resolution_prelude(&symbols);
 
         let modules = parse::parse(source, &mut file_logger)
             .map(|m| m.modules())

@@ -11,8 +11,8 @@ use super::lexer::{
     tokenize,
 };
 use super::{
-    parse,
     SyntaxKind,
+    parse,
 };
 use crate::logging::Logger;
 
@@ -41,7 +41,7 @@ fn lex_with_text(input: &str) -> Vec<(SyntaxKind, &str)> {
         .map(|t| {
             use crate::Span;
             let text = match t.span {
-                Span::Source { start, width } => {
+                Span::Source { start, width, .. } => {
                     input.get(start..start + width).unwrap_or_default()
                 }
                 Span::Generated => "",

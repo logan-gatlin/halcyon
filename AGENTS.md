@@ -1,4 +1,5 @@
 # Halcyon Agent Guide
+This is an in-development language not concerned with backwards compatibility.
 
 ## Halcyon language notes
 - File extension: `.hc`.
@@ -8,6 +9,7 @@
 - Bundle root files should be named `bundle.hc` by convention.
 - Paths are `Path.major` (bundle name), and `Path.minor` (the declaration path inside that bundle).
 - i.e. `core::foo::bar` = `Path { major: "core", minor: foo::bar }`
+- Operators are defined like regular symbols, `let [+] = ...` defines (possibly overriding) the `+` operator in the current scope.
 - Core types live in the `core` bundle.
 - The `core::prelude` module contains symbols which are always in scope
 - CLI bundle compilation expects exactly one bundle-root file whose first item is `bundle <ident>`; imported files are part of the same bundle and must not redeclare `bundle`.
@@ -28,10 +30,3 @@
 - Polymorphism: let-generalization yields rank-1 schemes; higher-rank polymorphism is predicative and annotation-only (`for a in ... [where ...]`), never inferred implicitly.
 - Constraints: trait predicates (`T τ1 ... τn`) are inferred/checked, kind-checked, solved via global trait instances, then elaborated to dictionaries.
 - Type structure: primitives, tuples, arrays, functions, nominal named types (`bundle::name` with parameters), explicit structural record constraints, and type-constructor application.
-
-## User interfaces
-- The target audience is programmers with only a basic understanding of FP
-- Assume knowledge of primitives such as map, fold, flatmap, zip, traverse, etc
-- Avoid jargon such as Monad, Kind, Skolem, polymorphism, type variable, etc
-- Make error messages as long as they need to be to effectively communicate the problem - brevity is not a virtue
-- NEVER make assumptions about intent, instead demonstrate contradiction with concrete examples

@@ -212,18 +212,11 @@ pub fn type_expr(
                     .constraints()
                     .into_iter()
                     .map(|constraint| {
-                        let trait_name = match constraint.trait_name()? {
-                            ast::PathOrIdent::Ident(ident) => {
-                                inner_scope
-                                    .query_string(ident.name_text_spanned()?, NameSpace::Trait)
-                            }
-                            ast::PathOrIdent::Path(path) => {
-                                let resolved = inner_scope
-                                    .resolve_path(&path, NameSpace::Trait, path.span())?
-                                    .with_span(path.span());
-                                inner_scope.query_path(resolved, NameSpace::Trait)
-                            }
-                        };
+                        let trait_name = super::resolve_path_or_ident(
+                            &mut inner_scope,
+                            constraint.trait_name()?,
+                            NameSpace::Trait,
+                        )?;
                         let arguments = constraint
                             .args()
                             .into_iter()

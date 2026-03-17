@@ -142,19 +142,17 @@ fn define_named_type_constructors(
     Some(())
 }
 
-fn resolve_constructor_reference(
-    scope: &mut ModuleScope,
+pub(super) fn resolve_path_or_ident(
+    scope: &mut impl Scope,
     target: ast::PathOrIdent,
+    namespace: NameSpace,
 ) -> Option<Path> {
     Some(match target {
-        ast::PathOrIdent::Ident(ident) => {
-            scope.query_string(ident.name_text_spanned()?, NameSpace::Constructor)
-        }
+        ast::PathOrIdent::Ident(ident) => scope.query_string(ident.name_text_spanned()?, namespace),
         ast::PathOrIdent::Path(path) => {
-            let resolved = scope
-                .resolve_path(&path, NameSpace::Constructor, path.span())?
-                .with_span(path.span());
-            scope.query_path(resolved, NameSpace::Constructor)
+            let span = path.span();
+            let resolved = scope.resolve_path(&path, namespace, span)?.with_span(span);
+            scope.query_path(resolved, namespace)
         }
     })
 }
@@ -213,6 +211,21 @@ pub(super) fn lint_pascal_case_name(
     });
 }
 
+fn enter_nested_module_scope(
+    module_scope: &mut ModuleScope,
+    logger: &mut FileLogger,
+    nested_module_name: Spanned<String>,
+) {
+    lint_kebab_case_name(
+        logger,
+        "Module",
+        &nested_module_name.inner,
+        nested_module_name.span,
+    );
+    module_scope.enter_module(nested_module_name);
+    module_scope.register_implicit_open_use(&[crate::CORE_BUNDLE_NAME, "prelude"]);
+}
+
 fn lower_module_statements(
     module_scope: &mut ModuleScope,
     module_name: &str,
@@ -240,8 +253,11 @@ fn lower_module_statements(
                         term_path, constructor_path,
                         "constructor alias paths must match across term and constructor namespaces"
                     );
-                    let target =
-                        resolve_constructor_reference(module_scope, let_statement.alias_target()?)?;
+                    let target = resolve_path_or_ident(
+                        module_scope,
+                        let_statement.alias_target()?,
+                        NameSpace::Constructor,
+                    )?;
                     Statement::ConstructorAlias {
                         comments,
                         path: constructor_path,
@@ -269,23 +285,26 @@ fn lower_module_statements(
                     })
                 }
             }
-            ast::Statement::Do(do_statement) => Statement::Term(Term {
-                comments,
-                kind: TermKind::Let {
-                    assignee: Pattern {
-                        comments: String::new(),
-                        kind: PatternKind::Hole,
-                        span: do_statement.span(),
-                        type_: (),
+            ast::Statement::Do(do_statement) => {
+                Statement::Term(Term {
+                    comments,
+                    kind: TermKind::Let {
+                        assignee: Pattern {
+                            comments: String::new(),
+                            kind: PatternKind::Hole,
+                            span: do_statement.span(),
+                            type_: (),
+                        },
+                        value: term(module_scope, wasm_type_defs, logger, do_statement.value()?)?
+                            .into(),
+                        scope: ScopeKind::Global,
+                        then: Term::unit().into(),
+                        else_: Term::unreachable().into(),
                     },
-                    value: term(module_scope, wasm_type_defs, logger, do_statement.value()?)?.into(),
-                    scope: ScopeKind::Global,
-                    then: Term::unit().into(),
-                    else_: Term::unreachable().into(),
-                },
-                span: do_statement.span(),
-                type_: (),
-            }),
+                    span: do_statement.span(),
+                    type_: (),
+                })
+            }
             ast::Statement::Type(type_statement) => {
                 let type_name = type_statement.name_text_spanned()?;
                 lint_pascal_case_name(logger, "Type", &type_name.inner, type_name.span);
@@ -322,17 +341,11 @@ fn lower_module_statements(
                 lint_pascal_case_name(logger, "Trait", &trait_name.inner, trait_name.span);
                 let path = module_scope.define(trait_name, NameSpace::Trait);
                 if trait_statement.is_alias() {
-                    let target = match trait_statement.alias_target()? {
-                        ast::PathOrIdent::Ident(ident) => {
-                            module_scope.query_string(ident.name_text_spanned()?, NameSpace::Trait)
-                        }
-                        ast::PathOrIdent::Path(path) => {
-                            let resolved = module_scope
-                                .resolve_path(&path, NameSpace::Trait, path.span())?
-                                .with_span(path.span());
-                            module_scope.query_path(resolved, NameSpace::Trait)
-                        }
-                    };
+                    let target = resolve_path_or_ident(
+                        module_scope,
+                        trait_statement.alias_target()?,
+                        NameSpace::Trait,
+                    )?;
                     Statement::TraitAlias {
                         comments,
                         path,
@@ -379,17 +392,11 @@ fn lower_module_statements(
                 }
             }
             ast::Statement::Impl(impl_statement) => {
-                let trait_path = match impl_statement.trait_name()? {
-                    ast::PathOrIdent::Ident(ident) => {
-                        module_scope.query_string(ident.name_text_spanned()?, NameSpace::Trait)
-                    }
-                    ast::PathOrIdent::Path(path) => {
-                        let resolved = module_scope
-                            .resolve_path(&path, NameSpace::Trait, path.span())?
-                            .with_span(path.span());
-                        module_scope.query_path(resolved, NameSpace::Trait)
-                    }
-                };
+                let trait_path = resolve_path_or_ident(
+                    module_scope,
+                    impl_statement.trait_name()?,
+                    NameSpace::Trait,
+                )?;
 
                 let arguments = impl_statement
                     .type_args()
@@ -446,14 +453,7 @@ fn lower_module_statements(
             }
             ast::Statement::Module(nested_module) => {
                 let nested_module_name = nested_module.name_text_spanned()?;
-                lint_kebab_case_name(
-                    logger,
-                    "Module",
-                    &nested_module_name.inner,
-                    nested_module_name.span,
-                );
-                module_scope.enter_module(nested_module_name);
-                module_scope.register_implicit_open_use(&["core", "prelude"]);
+                enter_nested_module_scope(module_scope, logger, nested_module_name);
                 let lowered = lower_module_statements(
                     module_scope,
                     module_name,
@@ -564,57 +564,6 @@ pub fn bundle_statements_with_prelude_and_wasm_types_and_salt(
     })
 }
 
-fn decode_hex_nibble(ch: char) -> Option<u32> {
-    match ch {
-        '0'..='9' => Some((ch as u32) - ('0' as u32)),
-        'a'..='f' => Some((ch as u32) - ('a' as u32) + 10),
-        'A'..='F' => Some((ch as u32) - ('A' as u32) + 10),
-        _ => None,
-    }
-}
-
-fn decode_import_path_literal(literal: &str) -> Option<String> {
-    if literal.len() < 2 || !literal.starts_with('"') || !literal.ends_with('"') {
-        return None;
-    }
-
-    let mut result = String::new();
-    let mut chars = literal.strip_prefix('"')?.strip_suffix('"')?.chars();
-    while let Some(ch) = chars.next() {
-        if ch != '\\' {
-            result.push(ch);
-            continue;
-        }
-
-        let escaped = chars.next()?;
-        match escaped {
-            'n' => result.push('\n'),
-            'r' => result.push('\r'),
-            't' => result.push('\t'),
-            'b' => result.push('\x08'),
-            '\\' => result.push('\\'),
-            '0' => result.push('\0'),
-            '"' => result.push('"'),
-            '\'' => result.push('\''),
-            'x' => {
-                let b1 = decode_hex_nibble(chars.next()?)?;
-                let b2 = decode_hex_nibble(chars.next()?)?;
-                result.push(char::from_u32((b1 << 4) | b2)?);
-            }
-            'w' => {
-                let b1 = decode_hex_nibble(chars.next()?)?;
-                let b2 = decode_hex_nibble(chars.next()?)?;
-                let b3 = decode_hex_nibble(chars.next()?)?;
-                let b4 = decode_hex_nibble(chars.next()?)?;
-                result.push(char::from_u32((b1 << 12) | (b2 << 8) | (b3 << 4) | b4)?);
-            }
-            _ => return None,
-        }
-    }
-
-    Some(result)
-}
-
 #[tracing::instrument(skip_all, fields(bundle = %bundle_name))]
 pub fn bundle_source_file_with_imports_and_prelude<R>(
     bundle_name: String,
@@ -696,7 +645,10 @@ where
                     }
                     ast::Statement::Import(import_statement) => {
                         for path_literal in import_statement.path_literals() {
-                            let Some(import_path) = decode_import_path_literal(&path_literal.inner)
+                            let Some(import_path) =
+                                crate::parse::lexer::decode_quoted_string_literal(
+                                    &path_literal.inner,
+                                )
                             else {
                                 file_logger
                                     .error("Invalid import path")
@@ -720,15 +672,11 @@ where
                     }
                     ast::Statement::Module(nested_module) => {
                         let nested_module_name = nested_module.name_text_spanned()?;
-                        lint_kebab_case_name(
+                        enter_nested_module_scope(
+                            self.module_scope,
                             file_logger,
-                            "Module",
-                            &nested_module_name.inner,
-                            nested_module_name.span,
+                            nested_module_name,
                         );
-                        self.module_scope.enter_module(nested_module_name);
-                        self.module_scope
-                            .register_implicit_open_use(&[crate::CORE_MODULE_NAME, "prelude"]);
                         let lowered =
                             self.lower_statements(&nested_module.statements(), file_logger);
                         self.module_scope.leave_module();
@@ -758,7 +706,7 @@ where
     for (path, namespace) in prelude {
         module_scope.predefine(path.clone(), *namespace);
     }
-    module_scope.register_implicit_open_use(&[crate::CORE_MODULE_NAME, "prelude"]);
+    module_scope.register_implicit_open_use(&[crate::CORE_BUNDLE_NAME, "prelude"]);
 
     let mut name_resolution_logger = root_file_logger.spawn_new();
     let mut wasm_type_defs: IndexMap<String, WasmType> = IndexMap::new();

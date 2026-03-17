@@ -1761,22 +1761,9 @@ fn string_token_value(text: &str) -> Option<String> {
 }
 
 fn parse_integer_literal(text: &str) -> Option<i64> {
-    let text = text.replace('_', "");
-    let (digits, radix) =
-        if let Some(hex) = text.strip_prefix("0x").or_else(|| text.strip_prefix("0X")) {
-            (hex, 16)
-        } else if let Some(oct) = text.strip_prefix("0o").or_else(|| text.strip_prefix("0O")) {
-            (oct, 8)
-        } else if let Some(bin) = text.strip_prefix("0b").or_else(|| text.strip_prefix("0B")) {
-            (bin, 2)
-        } else if let Some(dec) = text.strip_prefix("0d").or_else(|| text.strip_prefix("0D")) {
-            (dec, 10)
-        } else {
-            (text.as_str(), 10)
-        };
-    i64::from_str_radix(digits, radix).ok()
+    crate::parse::lexer::parse_integer_literal(text)
 }
 
 fn parse_float_literal(text: &str) -> Option<f64> {
-    text.replace('_', "").parse::<f64>().ok()
+    crate::parse::lexer::parse_real_literal(text)
 }

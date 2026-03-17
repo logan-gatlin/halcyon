@@ -108,30 +108,14 @@ pub fn immediate(
     Some(match token.kind() {
         SyntaxKind::INTEGER => {
             let raw_text = token.text();
-            let text = raw_text.replace('_', "");
-            let (digits, radix) = if let Some(hex) =
-                text.strip_prefix("0x").or_else(|| text.strip_prefix("0X"))
-            {
-                (hex, 16)
-            } else if let Some(oct) = text.strip_prefix("0o").or_else(|| text.strip_prefix("0O")) {
-                (oct, 8)
-            } else if let Some(bin) = text.strip_prefix("0b").or_else(|| text.strip_prefix("0B")) {
-                (bin, 2)
-            } else if let Some(dec) = text.strip_prefix("0d").or_else(|| text.strip_prefix("0D")) {
-                (dec, 10)
-            } else {
-                (text.as_str(), 10)
-            };
-            match i64::from_str_radix(digits, radix) {
-                Ok(i) => ImmediateValue::Integer(i),
-                Err(_) => {
-                    let span: Span = token.text_range().into();
+            match crate::parse::lexer::parse_integer_literal_with_radix(raw_text) {
+                Some((value, _)) => ImmediateValue::Integer(value),
+                None => {
+                    let span: Span = Span::from(token.text_range()).with_file_id(logger.id());
                     logger
                         .error("Failed to parse integer literal.")
                         .primary(
-                            format!(
-                                "The literal `{raw_text}` is not a valid base {radix} integer."
-                            ),
+                            format!("The literal `{raw_text}` is not a valid integer."),
                             span,
                         )
                         .note("Integer literals must fit within a signed 64-bit value.")
@@ -142,10 +126,10 @@ pub fn immediate(
         }
         SyntaxKind::REAL => {
             let raw_text = token.text();
-            ImmediateValue::Real(match raw_text.replace('_', "").parse() {
-                Ok(r) => r,
-                Err(_) => {
-                    let span: Span = token.text_range().into();
+            ImmediateValue::Real(match crate::parse::lexer::parse_real_literal(raw_text) {
+                Some(value) => value,
+                None => {
+                    let span: Span = Span::from(token.text_range()).with_file_id(logger.id());
                     logger
                         .error("Failed to parse real literal.")
                         .primary(
@@ -160,7 +144,7 @@ pub fn immediate(
         }
         SyntaxKind::STRING => {
             let text = token.text();
-            let span: Span = token.text_range().into();
+            let span: Span = Span::from(token.text_range()).with_file_id(logger.id());
             let Some(decoded) = crate::parse::lexer::decode_quoted_string_literal(text) else {
                 logger
                     .error("Failed to parse string literal.")
@@ -175,7 +159,7 @@ pub fn immediate(
         }
         SyntaxKind::GLYPH => {
             let text = token.text();
-            let span: Span = token.text_range().into();
+            let span: Span = Span::from(token.text_range()).with_file_id(logger.id());
             let Some(ch) = crate::parse::lexer::decode_quoted_glyph_literal(text) else {
                 logger
                     .error("Failed to parse glyph literal.")
@@ -286,7 +270,9 @@ fn array_term(
     let mut current = mk(TermKind::Identifier(empty), span);
 
     for child in array_expr.syntax().children() {
-        if let Some(splat) = ast::ArraySplat::cast(child.clone()) {
+        if let Some(splat) =
+            ast::ArraySplat::cast(child.clone()).map(|node| node.with_file_id(array_expr.file_id()))
+        {
             let concat_path = CoreSymbol::ArrayConcat.path();
             let elem = term(scope, wasm_type_defs, logger, splat.expr()?)?;
             let elem_span = elem.span;
@@ -304,7 +290,9 @@ fn array_term(
                 },
                 elem_span,
             );
-        } else if let Some(expr) = ast::Expr::cast(child) {
+        } else if let Some(expr) =
+            ast::Expr::cast(child).map(|node| node.with_file_id(array_expr.file_id()))
+        {
             let push_path = CoreSymbol::ArrayPush.path();
             let elem = term(scope, wasm_type_defs, logger, expr)?;
             let elem_span = elem.span;
@@ -336,9 +324,9 @@ pub fn term(
     let span = expr.span();
     Some(match expr {
         ast::Expr::Let(let_expr) => {
-            let value = term(scope, wasm_type_defs, logger, let_expr.value()?)?;
             let mut inner_scope = scope.nest_scope();
             let pat = pattern(&mut inner_scope, logger, let_expr.pattern()?)?;
+            let value = term(&mut inner_scope, wasm_type_defs, logger, let_expr.value()?)?;
             let body = term(&mut inner_scope, wasm_type_defs, logger, let_expr.body()?)?;
             mk(
                 TermKind::Let {
@@ -527,7 +515,7 @@ pub fn term(
                 let rhs = term(scope, wasm_type_defs, logger, binary_expr.rhs()?)?;
                 mk(TermKind::Semicolon(lhs.into(), rhs.into()), span)
             } else {
-                let op_span: Span = op_token.text_range().into();
+                let op_span: Span = Span::from(op_token.text_range()).with_file_id(logger.id());
                 let op_path = scope.query_string(
                     binary_op_name(op_kind)?.to_string().with_span(op_span),
                     NameSpace::Term,
@@ -552,7 +540,7 @@ pub fn term(
         }
         ast::Expr::Unary(unary_expr) => {
             let op_token = unary_expr.op_token()?;
-            let op_span: Span = op_token.text_range().into();
+            let op_span: Span = Span::from(op_token.text_range()).with_file_id(logger.id());
             let op_path = scope.query_string(
                 unary_op_name(op_token.kind())?
                     .to_string()

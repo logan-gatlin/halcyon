@@ -63,6 +63,7 @@ impl<'a> Command<'a> {
                 let linked = compile_and_link_inputs(paths, "app")?;
                 std::fs::create_dir_all("target")?;
                 linked.save_wasm_to_file("target")?;
+                linked.save_source_map_to_file("target")?;
                 Ok(())
             }
             Self::Run(paths) => {
@@ -499,6 +500,7 @@ fn compile_source_bundle(
     .into_vec();
 
     if !logger.is_ok() {
+        logger.print_logs();
         return Err("Compilation failed".into());
     }
 
@@ -622,6 +624,7 @@ fn load_binary_artifact(
         module_name: lowered_module.name,
         ir_module: None,
         binary,
+        source_map: None,
     })
 }
 

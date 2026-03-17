@@ -28,6 +28,10 @@ use super::super::kind::{
     constructor_kind,
     infer_scheme_kind,
 };
+use super::super::{
+    normalize_parameter_kinds,
+    split_applied_type,
+};
 use super::diagnostics::{
     log_trait_error,
     log_type_error,
@@ -552,20 +556,6 @@ fn normalize_alias_application_root(
         .unwrap_or_else(|| apply_arguments(Type::Named { name, body }, arguments))
 }
 
-fn split_applied_type(type_: Type) -> (Type, Vec<Type>) {
-    match type_ {
-        Type::Apply {
-            constructor,
-            arguments,
-        } => {
-            let (base, mut constructor_arguments) = split_applied_type(*constructor);
-            constructor_arguments.extend(arguments);
-            (base, constructor_arguments)
-        }
-        other => (other, Vec::new()),
-    }
-}
-
 fn apply_arguments(
     constructor: Type,
     arguments: Vec<Type>,
@@ -662,20 +652,6 @@ fn type_contains_local_nominal_type(
         | Type::TypeVar(_)
         | Type::MetaVar(_) => false,
     }
-}
-
-fn normalize_parameter_kinds(
-    mut kinds: Vec<Kind>,
-    parameter_count: usize,
-) -> Vec<Kind> {
-    if kinds.len() < parameter_count {
-        kinds.extend(std::iter::repeat_n(
-            Kind::Type,
-            parameter_count - kinds.len(),
-        ));
-    }
-    kinds.truncate(parameter_count);
-    kinds
 }
 
 fn log_impl_argument_kind_error(

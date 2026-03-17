@@ -1,4 +1,5 @@
 use std::collections::{
+    BTreeMap,
     BTreeSet,
     HashMap,
 };
@@ -203,7 +204,7 @@ fn default_value(valtype: &ValType) -> ConstExpr {
 // 10 Code
 // 11 Data
 // 12 DataCount
-pub fn encode(asm_module: Module) -> Vec<u8> {
+pub fn encode(asm_module: Module) -> EncodedModule {
     let mut name_section = NameSection::new();
     let mut global_names = NameMap::new();
     let mut type_section = TypeSection::new();
@@ -291,6 +292,8 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
     let start_function_index = func_namespace[&asm_module.start];
     export_section.export("_start", ExportKind::Func, start_function_index);
 
+    let mut function_operator_origins = Vec::new();
+
     for (_, f) in &asm_module.functions {
         let parameter_types = f.parameters.values().cloned().collect::<Vec<_>>();
         let type_id = type_section.new_function(&parameter_types, &f.returns);
@@ -307,8 +310,13 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
         let mut function_body = wasm_encoder::Function::new_with_locals_types(
             f.variables.iter().map(|(_, t)| type_section.valtype_of(t)),
         );
+        let mut expanded_origins = Vec::new();
         // Instruction lowering
-        for op in &f.ops {
+        for (op_index, op) in f.ops.iter().enumerate() {
+            let origin = f.op_origins.get(op_index).cloned().unwrap_or(None);
+            let mut record_origin = |count: usize| {
+                expanded_origins.extend(std::iter::repeat_n(origin.clone(), count));
+            };
             use Instruction as i;
             match op {
                 i::Set(path) => {
@@ -319,6 +327,7 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
                     } else {
                         function_body.instruction(&winstr::Unreachable);
                     }
+                    record_origin(1);
                 }
                 i::Get(path) => {
                     if let Some(&idx) = local_namespace.get(path) {
@@ -328,6 +337,7 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
                     } else {
                         function_body.instruction(&winstr::Unreachable);
                     }
+                    record_origin(1);
                 }
                 i::Const(const_value) => {
                     let instr = match const_value {
@@ -341,12 +351,15 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
                         ImmediateValue::Glyph(c) => winstr::I32Const(*c as i32),
                     };
                     function_body.instruction(&instr);
+                    record_origin(1);
                 }
                 i::I32Const(i) => {
                     function_body.instruction(&winstr::I32Const(*i));
+                    record_origin(1);
                 }
                 i::F32Const(f) => {
                     function_body.instruction(&winstr::F32Const((*f).into()));
+                    record_origin(1);
                 }
                 i::Func(path) => {
                     if let Some(&idx) = func_namespace.get(path) {
@@ -355,9 +368,11 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
                     } else {
                         function_body.instruction(&winstr::Unreachable);
                     }
+                    record_origin(1);
                 }
                 i::StructNew(items) => {
                     function_body.instruction(&winstr::StructNew(type_section.new_struct(items)));
+                    record_origin(1);
                 }
                 i::StructGet(t, field_index) => {
                     let struct_type_index = type_section.new_struct(t);
@@ -368,6 +383,7 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
                         struct_type_index,
                         field_index: *field_index as u32,
                     });
+                    record_origin(2);
                 }
                 i::ArrayGet(t) => {
                     let arr_idx = type_section.new_array(t);
@@ -376,24 +392,29 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
                         _ => winstr::ArrayGet(arr_idx),
                     };
                     function_body.instruction(&instr);
+                    record_origin(1);
                 }
                 i::ArrayNewFixed { inner_type, length } => {
                     function_body.instruction(&winstr::ArrayNewFixed {
                         array_type_index: type_section.new_array(inner_type),
                         array_size: *length as u32,
                     });
+                    record_origin(1);
                 }
                 i::ArrayNewDefault(t) => {
                     function_body.instruction(&winstr::ArrayNewDefault(type_section.new_array(t)));
+                    record_origin(1);
                 }
                 i::ArrayLen => {
                     function_body.instruction(&winstr::ArrayLen);
+                    record_origin(1);
                 }
                 i::ArrayCopy { dst_type, src_type } => {
                     function_body.instruction(&winstr::ArrayCopy {
                         array_type_index_dst: type_section.new_array(dst_type),
                         array_type_index_src: type_section.new_array(src_type),
                     });
+                    record_origin(1);
                 }
                 i::CallRef {
                     parameters,
@@ -402,51 +423,65 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
                     function_body.instruction(&winstr::CallRef(
                         type_section.new_function(parameters, returns),
                     ));
+                    record_origin(1);
                 }
                 i::Unreachable => {
                     function_body.instruction(&winstr::Unreachable);
+                    record_origin(1);
                 }
                 i::Drop => {
                     function_body.instruction(&winstr::Drop);
+                    record_origin(1);
                 }
                 i::If(result) => {
                     function_body.instruction(&winstr::If(match result {
                         Some(r) => BlockType::Result(type_section.valtype_of(r)),
                         None => BlockType::Empty,
                     }));
+                    record_origin(1);
                 }
                 i::Else => {
                     function_body.instruction(&winstr::Else);
+                    record_origin(1);
                 }
                 i::End => {
                     function_body.instruction(&winstr::End);
+                    record_origin(1);
                 }
                 i::Loop => {
                     function_body.instruction(&winstr::Loop(BlockType::Empty));
+                    record_origin(1);
                 }
                 i::Block(result) => {
                     function_body.instruction(&winstr::Block(match result {
                         Some(r) => BlockType::Result(type_section.valtype_of(r)),
                         None => BlockType::Empty,
                     }));
+                    record_origin(1);
                 }
                 i::Break(target) => {
                     function_body.instruction(&winstr::Br(*target as u32));
+                    record_origin(1);
                 }
                 i::BreakIf(target) => {
                     function_body.instruction(&winstr::BrIf(*target as u32));
+                    record_origin(1);
                 }
                 i::I32Op(op) => {
                     function_body.instruction(&lower_i32_op(*op));
+                    record_origin(1);
                 }
                 i::I64Op(op) => {
                     function_body.instruction(&lower_i64_op(*op));
+                    record_origin(1);
                 }
                 i::F32Op(op) => {
                     function_body.instruction(&lower_f32_op(*op));
+                    record_origin(1);
                 }
                 i::F64Op(op) => {
                     function_body.instruction(&lower_f64_op(*op));
+                    record_origin(1);
                 }
                 i::RefCastFunc {
                     parameters,
@@ -455,17 +490,20 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
                     let func_type_idx = type_section.new_function(parameters, returns);
                     function_body
                         .instruction(&winstr::RefCastNullable(HeapType::Concrete(func_type_idx)));
+                    record_origin(1);
                 }
                 i::RefCastStruct(fields) => {
                     let struct_type_idx = type_section.new_struct(fields);
                     function_body.instruction(&winstr::RefCastNullable(HeapType::Concrete(
                         struct_type_idx,
                     )));
+                    record_origin(1);
                 }
                 i::RefCastArray(inner) => {
                     let array_type_idx = type_section.new_array(inner);
                     function_body
                         .instruction(&winstr::RefCastNullable(HeapType::Concrete(array_type_idx)));
+                    record_origin(1);
                 }
                 i::I32Store8 => {
                     function_body.instruction(&winstr::I32Store8(wasm_encoder::MemArg {
@@ -473,6 +511,7 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
                         align: 0,
                         memory_index: 0,
                     }));
+                    record_origin(1);
                 }
                 i::I32Load => {
                     function_body.instruction(&winstr::I32Load(wasm_encoder::MemArg {
@@ -480,6 +519,7 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
                         align: 2,
                         memory_index: 0,
                     }));
+                    record_origin(1);
                 }
                 i::I32Store => {
                     function_body.instruction(&winstr::I32Store(wasm_encoder::MemArg {
@@ -487,6 +527,7 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
                         align: 2,
                         memory_index: 0,
                     }));
+                    record_origin(1);
                 }
                 i::I64Load => {
                     function_body.instruction(&winstr::I64Load(wasm_encoder::MemArg {
@@ -494,39 +535,51 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
                         align: 3,
                         memory_index: 0,
                     }));
+                    record_origin(1);
                 }
                 i::I64ExtendI32U => {
                     function_body.instruction(&winstr::I64ExtendI32U);
+                    record_origin(1);
                 }
                 i::I32WrapI64 => {
                     function_body.instruction(&winstr::I32WrapI64);
+                    record_origin(1);
                 }
                 i::I32TruncF32S => {
                     function_body.instruction(&winstr::I32TruncF32S);
+                    record_origin(1);
                 }
                 i::I32TruncF32U => {
                     function_body.instruction(&winstr::I32TruncF32U);
+                    record_origin(1);
                 }
                 i::I32TruncF64S => {
                     function_body.instruction(&winstr::I32TruncF64S);
+                    record_origin(1);
                 }
                 i::I32TruncF64U => {
                     function_body.instruction(&winstr::I32TruncF64U);
+                    record_origin(1);
                 }
                 i::I64TruncF32S => {
                     function_body.instruction(&winstr::I64TruncF32S);
+                    record_origin(1);
                 }
                 i::I64TruncF32U => {
                     function_body.instruction(&winstr::I64TruncF32U);
+                    record_origin(1);
                 }
                 i::I64TruncF64S => {
                     function_body.instruction(&winstr::I64TruncF64S);
+                    record_origin(1);
                 }
                 i::I64TruncF64U => {
                     function_body.instruction(&winstr::I64TruncF64U);
+                    record_origin(1);
                 }
                 i::F32DemoteF64 => {
                     function_body.instruction(&winstr::F32DemoteF64);
+                    record_origin(1);
                 }
                 i::Call(path) => {
                     if let Some(&idx) = func_namespace.get(path) {
@@ -534,9 +587,11 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
                     } else {
                         function_body.instruction(&winstr::Unreachable);
                     }
+                    record_origin(1);
                 }
             }
         }
+        function_operator_origins.push(expanded_origins);
         function_body.instruction(&winstr::End);
         code_section.function(&function_body);
     }
@@ -561,6 +616,11 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
 
     let mut module = wasm_encoder::Module::new();
     let lowered_module_section = LoweredModuleSection::new(&asm_module);
+    let source_map_url = format!("{}.wasm.map", asm_module.name);
+    let source_map_url_section = wasm_encoder::CustomSection {
+        name: "sourceMappingURL".into(),
+        data: source_map_url.as_bytes().to_vec().into(),
+    };
     module
         .section(&name_section)
         .section(&type_section)
@@ -576,8 +636,179 @@ pub fn encode(asm_module: Module) -> Vec<u8> {
         .section(&element_section)
         .section(&code_section)
         .section(&asm_module.sig)
-        .section(&lowered_module_section);
-    module.finish()
+        .section(&lowered_module_section)
+        .section(&source_map_url_section);
+    let binary = module.finish();
+    let source_map = build_source_map_json(&asm_module, &binary, &function_operator_origins);
+    EncodedModule { binary, source_map }
+}
+
+fn build_source_map_json(
+    module: &Module,
+    binary: &[u8],
+    function_operator_origins: &[Vec<Option<SourceOrigin>>],
+) -> Option<String> {
+    let function_offsets = read_function_operator_offsets(binary)?;
+    let mut mappings = Vec::new();
+
+    for (offsets, origins) in function_offsets
+        .iter()
+        .zip(function_operator_origins.iter())
+    {
+        for (index, offset) in offsets.iter().enumerate() {
+            let origin = origins.get(index).cloned().flatten();
+            if let Some(origin) = origin {
+                mappings.push((*offset, origin));
+            }
+        }
+    }
+
+    if mappings.is_empty() {
+        return None;
+    }
+
+    mappings.sort_by_key(|(offset, _)| *offset);
+
+    let mut sources = module.source_files.keys().cloned().collect::<Vec<_>>();
+    for (_, origin) in &mappings {
+        if !sources.contains(&origin.file_name) {
+            sources.push(origin.file_name.clone());
+        }
+    }
+
+    let source_indexes = sources
+        .iter()
+        .enumerate()
+        .map(|(index, source)| (source.clone(), index as i64))
+        .collect::<BTreeMap<_, _>>();
+    let source_contents = sources
+        .iter()
+        .map(|source| {
+            module
+                .source_files
+                .get(source)
+                .map(|record| record.source.clone())
+                .unwrap_or_default()
+        })
+        .collect::<Vec<_>>();
+
+    let mappings = encode_source_map_mappings(&mappings, &source_indexes, module);
+
+    serde_json::to_string(&serde_json::json!({
+        "version": 3,
+        "file": format!("{}.wasm", module.name),
+        "sources": sources,
+        "sourcesContent": source_contents,
+        "names": [],
+        "mappings": mappings,
+    }))
+    .ok()
+}
+
+fn read_function_operator_offsets(binary: &[u8]) -> Option<Vec<Vec<usize>>> {
+    let mut functions = Vec::new();
+    for payload in wasmparser::Parser::new(0).parse_all(binary) {
+        let Ok(payload) = payload else {
+            return None;
+        };
+        if let wasmparser::Payload::CodeSectionEntry(body) = payload {
+            let mut offsets = Vec::new();
+            let mut reader = body.get_operators_reader().ok()?;
+            while !reader.eof() {
+                let offset = reader.original_position();
+                let operator = reader.read().ok()?;
+                if !matches!(operator, wasmparser::Operator::End) {
+                    offsets.push(offset);
+                }
+            }
+            functions.push(offsets);
+        }
+    }
+    Some(functions)
+}
+
+fn encode_source_map_mappings(
+    mappings: &[(usize, SourceOrigin)],
+    source_indexes: &BTreeMap<String, i64>,
+    module: &Module,
+) -> String {
+    let mut output = String::new();
+    let mut previous_generated_column = 0i64;
+    let mut previous_source = 0i64;
+    let mut previous_original_line = 0i64;
+    let mut previous_original_column = 0i64;
+
+    for (idx, (generated_column, origin)) in mappings.iter().enumerate() {
+        if idx > 0 {
+            output.push(',');
+        }
+
+        let source_index = source_indexes.get(&origin.file_name).copied().unwrap_or(0);
+        let (line, column) = original_line_column(origin, module);
+        let generated_column = *generated_column as i64;
+
+        output.push_str(&encode_vlq(generated_column - previous_generated_column));
+        output.push_str(&encode_vlq(source_index - previous_source));
+        output.push_str(&encode_vlq(line - previous_original_line));
+        output.push_str(&encode_vlq(column - previous_original_column));
+
+        previous_generated_column = generated_column;
+        previous_source = source_index;
+        previous_original_line = line;
+        previous_original_column = column;
+    }
+
+    output
+}
+
+fn original_line_column(
+    origin: &SourceOrigin,
+    module: &Module,
+) -> (i64, i64) {
+    let Some(file) = module.source_files.get(&origin.file_name) else {
+        return (0, 0);
+    };
+    let mut line = 0i64;
+    let mut column = 0i64;
+    let mut consumed = 0usize;
+    let target = origin.start.min(file.source.len());
+
+    for ch in file.source.chars() {
+        if consumed >= target {
+            break;
+        }
+        if ch == '\n' {
+            line += 1;
+            column = 0;
+        } else {
+            column += 1;
+        }
+        consumed += ch.len_utf8();
+    }
+
+    (line, column)
+}
+
+fn encode_vlq(value: i64) -> String {
+    const BASE64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut value = if value < 0 {
+        ((-value as u64) << 1) | 1
+    } else {
+        (value as u64) << 1
+    };
+    let mut encoded = String::new();
+    loop {
+        let mut digit = (value & 0x1F) as u8;
+        value >>= 5;
+        if value > 0 {
+            digit |= 0x20;
+        }
+        encoded.push(BASE64[digit as usize] as char);
+        if value == 0 {
+            break;
+        }
+    }
+    encoded
 }
 
 fn lower_i32_op(op: NumberOperation) -> winstr<'static> {

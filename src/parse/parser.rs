@@ -64,10 +64,15 @@ impl<'src, 'log> Parser<'src, 'log> {
         }
         if let Some(last) = self.tokens.last() {
             match last.span {
-                Span::Source { start, width } => {
+                Span::Source {
+                    start,
+                    width,
+                    file_id,
+                } => {
                     Span::Source {
                         start: start + width,
                         width: 0,
+                        file_id,
                     }
                 }
                 Span::Generated => Span::Generated,
@@ -137,7 +142,9 @@ impl<'src, 'log> Parser<'src, 'log> {
         tok: &LexToken,
     ) -> &'src str {
         match tok.span {
-            Span::Source { start, width } => self.source.get(start..(start + width)).unwrap_or(""),
+            Span::Source { start, width, .. } => {
+                self.source.get(start..(start + width)).unwrap_or("")
+            }
             Span::Generated => "",
         }
     }

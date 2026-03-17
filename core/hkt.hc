@@ -108,11 +108,11 @@ module hkt =
   let fold_count = fn items => fold (fn count _ => count + 1) 0 items
 
   -- Return true when any element satisfies the predicate.
-  let fold_any =
+  let any =
     fn pred items => fold (fn acc item => if acc then true else pred item) false items
 
   -- Return true when all elements satisfy the predicate.
-  let fold_all =
+  let all =
     fn pred items => fold (fn acc item => if acc then pred item else false) true items
 
 end

@@ -16,6 +16,7 @@ use super::{
     Type,
     for_each_child_type,
     normalize_empty_apply,
+    split_applied_type_ref,
 };
 
 /// State of a unification meta variable.
@@ -566,7 +567,7 @@ impl UnificationTable {
     ) -> Option<IndexMap<String, Type>> {
         // Only named types expose structural fields here, and only for
         // struct-constraint matching.
-        let (base, arguments) = split_apply(type_);
+        let (base, arguments) = split_applied_type_ref(type_);
         let Type::Named { body, .. } = base else {
             return None;
         };
@@ -669,20 +670,6 @@ fn struct_constraint_matches_fields(
                 .keys()
                 .all(|key| target_fields.contains_key(key))
         }
-    }
-}
-
-fn split_apply(type_: &Type) -> (Type, Vec<Type>) {
-    match type_ {
-        Type::Apply {
-            constructor,
-            arguments,
-        } => {
-            let (base, mut args) = split_apply(constructor);
-            args.extend(arguments.iter().cloned());
-            (base, args)
-        }
-        other => (other.clone(), Vec::new()),
     }
 }
 

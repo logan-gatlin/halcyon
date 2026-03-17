@@ -9,7 +9,6 @@ use crate::ir::StructTypeMember;
 use crate::logging::WithContext;
 use indexmap::IndexMap;
 
-use super::super::StructMatch;
 use super::super::instantiation::instantiate_forall_strict;
 use super::super::kind::{
     KindError,
@@ -22,14 +21,17 @@ use super::super::type_expr::{
     lower_type_expr,
     lower_type_scheme_expr,
 };
+use super::super::{
+    StructMatch,
+    for_each_pattern_binding,
+    normalize_parameter_kinds,
+    split_applied_type,
+};
 use super::diagnostics::log_type_expr_lower_error;
 use super::{
     FileLogger,
-    Glob,
     Kind,
     Path,
-    Pattern,
-    PatternKind,
     PendingTypeDefinitionEntry,
     ScopeKind,
     Span,
@@ -85,7 +87,9 @@ pub(super) fn collect_term_definitions(statements: &[Statement<()>]) -> Vec<(Pat
                 else {
                     continue;
                 };
-                definitions.extend(collect_pattern_bindings(assignee));
+                for_each_pattern_binding(assignee, |path, span| {
+                    definitions.push((path.clone(), span));
+                });
             }
             Statement::ConstructorAlias { path, span, .. } => {
                 definitions.push((path.clone(), *span));
@@ -295,32 +299,6 @@ fn type_definition_kind_from_decl_kind(kind: TypeDeclKind) -> TypeDefinitionKind
     }
 }
 
-fn collect_pattern_bindings(pattern: &Pattern<()>) -> Vec<(Path, Span)> {
-    match &pattern.kind {
-        PatternKind::Hole | PatternKind::Immediate(_) | PatternKind::ConstConstructor(_) => {
-            Vec::new()
-        }
-        PatternKind::Identifier(path) => vec![(path.clone(), pattern.span)],
-        PatternKind::Constructor(_, payload) => collect_pattern_bindings(payload),
-        PatternKind::Tuple(items) => items.iter().flat_map(collect_pattern_bindings).collect(),
-        PatternKind::Array {
-            starting,
-            glob,
-            ending,
-        } => {
-            let mut bindings = Vec::new();
-            bindings.extend(starting.iter().flat_map(collect_pattern_bindings));
-            bindings.extend(ending.iter().flat_map(collect_pattern_bindings));
-            if let Glob::Named(path) = glob {
-                bindings.push((path.clone(), pattern.span));
-            }
-            bindings
-        }
-        PatternKind::Struct(fields) => fields.values().flat_map(collect_pattern_bindings).collect(),
-        PatternKind::TypeHint(inner, _) => collect_pattern_bindings(inner),
-    }
-}
-
 fn resolve_type_definition(
     path: &Path,
     entries: &IndexMap<Path, PendingTypeDefinitionEntry>,
@@ -515,20 +493,6 @@ fn infer_definition_parameter_kinds(
     }
 }
 
-fn normalize_parameter_kinds(
-    mut kinds: Vec<Kind>,
-    parameter_count: usize,
-) -> Vec<Kind> {
-    if kinds.len() < parameter_count {
-        kinds.extend(std::iter::repeat_n(
-            Kind::Type,
-            parameter_count - kinds.len(),
-        ));
-    }
-    kinds.truncate(parameter_count);
-    kinds
-}
-
 fn log_definition_kind_error(
     logger: &mut FileLogger,
     path: &Path,
@@ -684,7 +648,7 @@ fn spread_type_fields(type_: Type) -> Option<IndexMap<String, Type>> {
             constructor,
             arguments,
         } => {
-            let (base, mut flattened_arguments) = split_apply_type(*constructor);
+            let (base, mut flattened_arguments) = split_applied_type(*constructor);
             flattened_arguments.extend(arguments);
             let Type::Named { body, .. } = base else {
                 return None;
@@ -692,20 +656,6 @@ fn spread_type_fields(type_: Type) -> Option<IndexMap<String, Type>> {
             instantiate_forall_strict(&body, &flattened_arguments).and_then(spread_type_fields)
         }
         _ => None,
-    }
-}
-
-fn split_apply_type(type_: Type) -> (Type, Vec<Type>) {
-    match type_ {
-        Type::Apply {
-            constructor,
-            arguments,
-        } => {
-            let (base, mut flattened) = split_apply_type(*constructor);
-            flattened.extend(arguments);
-            (base, flattened)
-        }
-        other => (other, Vec::new()),
     }
 }
 

@@ -11,7 +11,6 @@ use std::collections::HashSet;
 use indexmap::IndexMap;
 
 use crate::ir::{
-    Glob,
     Module,
     Path,
     Pattern,
@@ -47,6 +46,7 @@ use super::{
     TypeDefinitionKind,
     TypeScheme,
     for_each_child_type,
+    for_each_pattern_binding,
 };
 
 mod common;
@@ -440,37 +440,16 @@ pub fn resolve_module_with_symbols_and_schemes(
 }
 
 fn pattern_binding_paths<T>(pattern: &Pattern<T>) -> Vec<Path> {
-    match &pattern.kind {
-        PatternKind::Identifier(path) => vec![path.clone()],
-        PatternKind::Constructor(_, payload) => pattern_binding_paths(payload),
-        PatternKind::Tuple(items) => items.iter().flat_map(pattern_binding_paths).collect(),
-        PatternKind::Array {
-            starting,
-            glob,
-            ending,
-        } => {
-            let mut paths = starting
-                .iter()
-                .chain(ending.iter())
-                .flat_map(pattern_binding_paths)
-                .collect::<Vec<_>>();
-            if let Glob::Named(path) = glob {
-                paths.push(path.clone());
-            }
-            paths
-        }
-        PatternKind::Struct(fields) => fields.values().flat_map(pattern_binding_paths).collect(),
-        PatternKind::TypeHint(inner, _) => pattern_binding_paths(inner),
-        PatternKind::Hole | PatternKind::ConstConstructor(_) | PatternKind::Immediate(_) => {
-            Vec::new()
-        }
-    }
+    let mut paths = Vec::new();
+    for_each_pattern_binding(pattern, |path, _| paths.push(path.clone()));
+    paths
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::hc_core::compile_core_module;
+    use crate::ir::Glob;
     use crate::{
         Logger,
         ir,
