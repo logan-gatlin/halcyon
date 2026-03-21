@@ -154,6 +154,10 @@ fn lower_type_expr_dyn(
         }
         TypeExprKind::ForAll(params, constraints, body) => {
             let count = params.len();
+            let forall_parameter_display_names = params
+                .iter()
+                .map(type_parameter_display_name)
+                .collect::<Vec<_>>();
             let forall_parameter_indices: HashMap<Path, u32> = params
                 .iter()
                 .enumerate()
@@ -186,7 +190,9 @@ fn lower_type_expr_dyn(
                         span: constraint.span,
                     });
             }
-            body.type_ = body.type_.for_all(count);
+            body.type_ = body
+                .type_
+                .for_all_with_names(forall_parameter_display_names.into_iter().map(Some));
             body
         }
         TypeExprKind::Placeholder => {
@@ -214,6 +220,10 @@ fn lower_type_scheme_expr_dyn(
     match &expr.kind {
         TypeExprKind::ForAll(params, constraints, body) => {
             let count = params.len();
+            let forall_parameter_display_names = params
+                .iter()
+                .map(type_parameter_display_name)
+                .collect::<Vec<_>>();
             let forall_parameter_indices: HashMap<Path, u32> = params
                 .iter()
                 .enumerate()
@@ -267,7 +277,10 @@ fn lower_type_scheme_expr_dyn(
                 lowered_body.errors.append(&mut errors);
             }
             current_predicates.append(&mut lowered_body.scheme.predicates);
-            lowered_body.scheme.type_ = lowered_body.scheme.type_.for_all(count);
+            lowered_body.scheme.type_ = lowered_body
+                .scheme
+                .type_
+                .for_all_with_names(forall_parameter_display_names.into_iter().map(Some));
             lowered_body.scheme.predicates = current_predicates;
             lowered_body
         }
@@ -306,6 +319,18 @@ fn lower_trait_constraint(
         },
         errors,
     )
+}
+
+fn type_parameter_display_name(path: &Path) -> String {
+    let leaf = path
+        .minor
+        .rsplit(Path::DELIMETER)
+        .next()
+        .unwrap_or(path.minor.as_str());
+    leaf.split_once('#')
+        .map(|(name, _)| name)
+        .unwrap_or(leaf)
+        .to_string()
 }
 
 fn lower_tuple(
@@ -926,6 +951,38 @@ mod tests {
             lowered.scheme.predicates,
             vec![TraitRef::new(Path::new("demo", "Eq"), vec![Type::v(0)])]
         );
+    }
+
+    #[test]
+    fn lower_type_scheme_expr_preserves_forall_parameter_display_names() {
+        let item = Path::new("demo", "item#7");
+        let function = CoreType::Function.path();
+        let lowered = lower_type_scheme_expr(
+            &expr(TypeExprKind::ForAll(
+                [item.clone()].into(),
+                [].into(),
+                expr(TypeExprKind::Instantiation(
+                    function.clone(),
+                    [
+                        expr(TypeExprKind::Instantiation(item.clone(), [].into())),
+                        expr(TypeExprKind::Instantiation(item.clone(), [].into())),
+                    ]
+                    .into(),
+                ))
+                .into(),
+            )),
+            &mut |path| {
+                if path == &function {
+                    TypeExprSymbol::Definition(Type::function().def(2))
+                } else {
+                    TypeExprSymbol::Unknown
+                }
+            },
+            &mut |_| None,
+        );
+
+        assert!(lowered.errors.is_empty());
+        assert_eq!(lowered.scheme.type_.pretty(), "for item in item -> item");
     }
 
     #[test]

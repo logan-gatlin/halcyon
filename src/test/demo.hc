@@ -1,4 +1,5 @@
 bundle demo
 
-do println "Hello world!"
-do panic "panic"
+let a = 4
+
+do show (Some 1.00001) |> println

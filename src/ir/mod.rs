@@ -150,7 +150,9 @@ pub(super) fn resolve_path_or_ident(
     Some(match target {
         ast::PathOrIdent::Ident(ident) => scope.query_string(ident.name_text_spanned()?, namespace),
         ast::PathOrIdent::Path(path) => {
-            let span = path.span();
+            let span = path
+                .name_text_spanned()
+                .map_or_else(|| path.span(), |segment| segment.span);
             let resolved = scope.resolve_path(&path, namespace, span)?.with_span(span);
             scope.query_path(resolved, namespace)
         }
@@ -453,6 +455,7 @@ fn lower_module_statements(
             }
             ast::Statement::Module(nested_module) => {
                 let nested_module_name = nested_module.name_text_spanned()?;
+                module_scope.define(nested_module_name.clone(), NameSpace::Module);
                 enter_nested_module_scope(module_scope, logger, nested_module_name);
                 let lowered = lower_module_statements(
                     module_scope,
@@ -534,6 +537,42 @@ pub fn bundle_statements_with_prelude_and_wasm_types(
 }
 
 #[tracing::instrument(skip_all, fields(bundle = %bundle_name))]
+pub fn bundle_statements_with_prelude_indexed(
+    bundle_name: String,
+    ast_statements: &[ast::Statement],
+    logger: &mut FileLogger,
+    prelude: &[(Path, NameSpace)],
+) -> Option<(Module<()>, NameIndex)> {
+    let mut wasm_type_defs: IndexMap<String, WasmType> = IndexMap::new();
+    bundle_statements_with_prelude_and_wasm_types_indexed(
+        bundle_name,
+        ast_statements,
+        logger,
+        prelude,
+        &mut wasm_type_defs,
+    )
+}
+
+#[tracing::instrument(skip_all, fields(bundle = %bundle_name))]
+pub fn bundle_statements_with_prelude_and_wasm_types_indexed(
+    bundle_name: String,
+    ast_statements: &[ast::Statement],
+    logger: &mut FileLogger,
+    prelude: &[(Path, NameSpace)],
+    wasm_type_defs: &mut IndexMap<String, WasmType>,
+) -> Option<(Module<()>, NameIndex)> {
+    let mut salt = 0;
+    bundle_statements_with_prelude_and_wasm_types_and_salt_indexed(
+        bundle_name,
+        ast_statements,
+        logger,
+        prelude,
+        wasm_type_defs,
+        &mut salt,
+    )
+}
+
+#[tracing::instrument(skip_all, fields(bundle = %bundle_name))]
 pub fn bundle_statements_with_prelude_and_wasm_types_and_salt(
     bundle_name: String,
     ast_statements: &[ast::Statement],
@@ -542,26 +581,57 @@ pub fn bundle_statements_with_prelude_and_wasm_types_and_salt(
     wasm_type_defs: &mut IndexMap<String, WasmType>,
     salt: &mut usize,
 ) -> Option<Module<()>> {
+    bundle_statements_with_prelude_and_wasm_types_and_salt_indexed(
+        bundle_name,
+        ast_statements,
+        logger,
+        prelude,
+        wasm_type_defs,
+        salt,
+    )
+    .map(|(module, _)| module)
+}
+
+#[tracing::instrument(skip_all, fields(bundle = %bundle_name))]
+pub fn bundle_statements_with_prelude_and_wasm_types_and_salt_indexed(
+    bundle_name: String,
+    ast_statements: &[ast::Statement],
+    logger: &mut FileLogger,
+    prelude: &[(Path, NameSpace)],
+    wasm_type_defs: &mut IndexMap<String, WasmType>,
+    salt: &mut usize,
+) -> Option<(Module<()>, NameIndex)> {
+    let _profile_total = crate::profiling::scope("ir.bundle_statements.total");
     let mut module_scope = ModuleScope::with_salt(bundle_name.clone(), *salt);
     for (path, namespace) in prelude {
         module_scope.predefine(path.clone(), *namespace);
     }
     module_scope.register_implicit_open_use(&[crate::CORE_BUNDLE_NAME, "prelude"]);
     let mut lowered_statements = Vec::new();
-    lower_module_statements(
-        &mut module_scope,
-        &bundle_name,
-        wasm_type_defs,
-        &mut lowered_statements,
-        logger,
-        ast_statements,
-    )?;
+    {
+        let _profile = crate::profiling::scope("ir.bundle_statements.lower_statements");
+        lower_module_statements(
+            &mut module_scope,
+            &bundle_name,
+            wasm_type_defs,
+            &mut lowered_statements,
+            logger,
+            ast_statements,
+        )?;
+    }
     *salt = module_scope.salt();
-    module_scope.report_name_resolution_errors(logger);
-    Some(Module {
-        name: bundle_name,
-        statements: lowered_statements.into_boxed_slice(),
-    })
+    {
+        let _profile = crate::profiling::scope("ir.bundle_statements.report_name_errors");
+        module_scope.report_name_resolution_errors(logger);
+    }
+    let name_index = module_scope.name_index();
+    Some((
+        Module {
+            name: bundle_name,
+            statements: lowered_statements.into_boxed_slice(),
+        },
+        name_index,
+    ))
 }
 
 #[tracing::instrument(skip_all, fields(bundle = %bundle_name))]
@@ -576,6 +646,31 @@ pub fn bundle_source_file_with_imports_and_prelude<R>(
 where
     R: FnMut(String) -> Option<String>,
 {
+    bundle_source_file_with_imports_and_prelude_indexed(
+        bundle_name,
+        source_file,
+        root_file_logger,
+        logger,
+        prelude,
+        resolve_import_source,
+    )
+    .map(|(module, _)| module)
+}
+
+#[tracing::instrument(skip_all, fields(bundle = %bundle_name))]
+pub fn bundle_source_file_with_imports_and_prelude_indexed<R>(
+    bundle_name: String,
+    source_file: ast::SourceFile,
+    root_file_logger: FileLogger,
+    logger: &mut crate::Logger,
+    prelude: &[(Path, NameSpace)],
+    resolve_import_source: &mut R,
+) -> Option<(Module<()>, NameIndex)>
+where
+    R: FnMut(String) -> Option<String>,
+{
+    let _profile_total = crate::profiling::scope("ir.bundle_with_imports.total");
+
     fn resolve_import_lookup_path(
         import_path: &str,
         current_file_name: &str,
@@ -672,6 +767,8 @@ where
                     }
                     ast::Statement::Module(nested_module) => {
                         let nested_module_name = nested_module.name_text_spanned()?;
+                        self.module_scope
+                            .define(nested_module_name.clone(), NameSpace::Module);
                         enter_nested_module_scope(
                             self.module_scope,
                             file_logger,
@@ -713,6 +810,7 @@ where
     let mut lowered_statements = Vec::new();
 
     {
+        let _profile = crate::profiling::scope("ir.bundle_with_imports.lower_all");
         let mut resolve_import = |path: String,
                                   mut current_logger: FileLogger|
          -> Option<(ast::SourceFile, FileLogger)> {
@@ -765,15 +863,22 @@ where
         lowering_context.lower_source_file(source_file, root_file_logger)?;
     }
 
-    module_scope.report_name_resolution_errors(&mut name_resolution_logger);
+    {
+        let _profile = crate::profiling::scope("ir.bundle_with_imports.report_name_errors");
+        module_scope.report_name_resolution_errors(&mut name_resolution_logger);
+    }
     deferred_loggers.borrow_mut().push(name_resolution_logger);
 
     for file_logger in deferred_loggers.into_inner() {
         logger.consume_file(file_logger);
     }
 
-    Some(Module {
-        name: bundle_name,
-        statements: lowered_statements.into_boxed_slice(),
-    })
+    let name_index = module_scope.name_index();
+    Some((
+        Module {
+            name: bundle_name,
+            statements: lowered_statements.into_boxed_slice(),
+        },
+        name_index,
+    ))
 }

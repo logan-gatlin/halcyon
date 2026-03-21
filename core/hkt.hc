@@ -1,6 +1,6 @@
 module hkt =
-  use core
-  use core::ops
+  use bundle
+  use bundle::ops
 
   -- Supports combining wrapped computations with wrapped functions.
   trait Applicative: m =

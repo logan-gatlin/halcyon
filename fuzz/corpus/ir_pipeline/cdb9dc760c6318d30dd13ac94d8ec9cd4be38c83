@@ -1,0 +1,3 @@
+module $pp =
+    let value = 42
+end

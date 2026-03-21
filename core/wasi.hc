@@ -1,6 +1,6 @@
 module wasi =
   use core
-  use core::ops
+  use bundle::ops
 
   wasm => (
     (import "wasi_snapshot_preview1" "fd_write"

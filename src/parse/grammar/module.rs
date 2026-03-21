@@ -7,6 +7,7 @@ use super::{
     pattern,
     sexpr,
     type_expr,
+    use_target_path_or_ident,
 };
 use crate::parse::SyntaxKind;
 use crate::parse::parser::Parser;
@@ -118,7 +119,7 @@ fn do_statement(p: &mut Parser<'_, '_>) {
 fn use_statement(p: &mut Parser<'_, '_>) {
     let m = p.start_node_with_leading_comments(SyntaxKind::USE_STATEMENT);
     p.expect(SyntaxKind::USE_KW);
-    path_or_ident(p);
+    use_target_path_or_ident(p);
     if p.eat(SyntaxKind::AS_KW) {
         expect_identifier(p);
     }

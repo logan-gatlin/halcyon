@@ -1,5 +1,5 @@
 module function =
-  use core::ops
+  use bundle::ops
 
   let identity = fn value => value
   let constant = fn value => fn _ => value

@@ -5,6 +5,7 @@
 //! backend lowering.
 
 use indexmap::IndexMap;
+use std::collections::HashSet;
 
 use crate::ir::Path;
 
@@ -15,7 +16,7 @@ pub type TypeParameterIndex = u32;
 pub type MetaVarId = u32;
 
 /// Structural match mode for struct constraints.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum StructMatch {
     Exact,
     AtLeast,
@@ -32,7 +33,7 @@ pub enum StructMatch {
 ///   and pattern checking; it intentionally does not represent a first-class record
 ///   declaration.
 /// - `Type::Apply` with zero arguments is canonicalized to its constructor.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub enum Type {
     /// The empty type ()
     #[default]
@@ -51,8 +52,15 @@ pub enum Type {
     TypeVar(TypeParameterIndex),
     /// Inference-time meta type variable
     MetaVar(MetaVarId),
-    /// Universal type binder for parameters
-    ForAll(Box<Type>),
+    /// Universal type binder for parameters.
+    ///
+    /// `name` is optional display metadata that preserves source binder names
+    /// when available. It has no semantic effect on equality, unification, or
+    /// inference.
+    ForAll {
+        name: Option<String>,
+        body: Box<Type>,
+    },
     /// Nominal type definition.
     ///
     /// The `body` is retained for controlled instantiation/introspection in later
@@ -80,6 +88,10 @@ pub enum Type {
     },
 }
 
+const TYPE_FUNCTION_BP: u8 = 10;
+const TYPE_APPLICATION_BP: u8 = 20;
+const TYPE_ATOM_BP: u8 = 30;
+
 impl PartialEq for Type {
     fn eq(
         &self,
@@ -97,7 +109,7 @@ impl PartialEq for Type {
             | (Glyph, Glyph) => true,
             (TypeVar(left), TypeVar(right)) => left == right,
             (MetaVar(left), MetaVar(right)) => left == right,
-            (ForAll(left), ForAll(right)) => left == right,
+            (ForAll { body: left, .. }, ForAll { body: right, .. }) => left == right,
             (Named { name: left, .. }, Named { name: right, .. }) => left == right,
             (
                 StructConstraint {
@@ -170,7 +182,7 @@ pub(crate) fn for_each_child_type(
     mut visit: impl FnMut(&Type),
 ) {
     match type_ {
-        Type::ForAll(body) | Type::Array(body) => {
+        Type::ForAll { body, .. } | Type::Array(body) => {
             visit(body);
         }
         Type::Function(parameter, result) => {
@@ -284,7 +296,7 @@ pub(crate) trait TypeTransform {
     ) {
         self.visit(type_);
         match type_ {
-            Type::ForAll(body) => {
+            Type::ForAll { body, .. } => {
                 self.enter_forall();
                 self.walk(body);
                 self.leave_forall();
@@ -307,11 +319,14 @@ pub(crate) trait TypeTransform {
             | Type::Glyph => Some(type_.clone()),
             Type::TypeVar(index) => self.type_var(*index),
             Type::MetaVar(index) => self.meta_var(*index),
-            Type::ForAll(body) => {
+            Type::ForAll { name, body } => {
                 self.enter_forall();
                 let body = self.transform(body)?;
                 self.leave_forall();
-                Some(Type::ForAll(Box::new(body)))
+                Some(Type::ForAll {
+                    name: name.clone(),
+                    body: Box::new(body),
+                })
             }
             Type::Named { name, body } => self.named(name, body),
             Type::StructConstraint { fields, mode } => {
@@ -432,7 +447,25 @@ impl Type {
         self,
         count: usize,
     ) -> Self {
-        (0..count).fold(self, |body, _| Type::ForAll(body.into()))
+        (0..count).fold(self, |body, _| {
+            Type::ForAll {
+                name: None,
+                body: body.into(),
+            }
+        })
+    }
+
+    pub fn for_all_with_names(
+        self,
+        names: impl IntoIterator<Item = Option<String>>,
+    ) -> Self {
+        let names = names.into_iter().collect::<Vec<_>>();
+        names.into_iter().rev().fold(self, |body, name| {
+            Type::ForAll {
+                name,
+                body: body.into(),
+            }
+        })
     }
 
     /// Build a function type (`t1 -> t2`).
@@ -552,43 +585,52 @@ impl Type {
         &self,
         param_names: &[String],
     ) -> String {
-        match self {
-            Type::Unit => "()".to_string(),
-            Type::Integer => "integer".to_string(),
-            Type::Real => "real".to_string(),
-            Type::Boolean => "boolean".to_string(),
-            Type::String => "string".to_string(),
-            Type::Glyph => "glyph".to_string(),
-            Type::TypeVar(index) => lookup_name(param_names, *index, type_var_name),
-            Type::MetaVar(index) => format!("v{index}"),
-            Type::ForAll(body) => {
-                let name = type_var_name(param_names.len() as u32);
-                let mut next_params = param_names.to_vec();
-                next_params.push(name.clone());
-                format!("for {name} in {}", body.pretty_with_context(&next_params))
+        self.pretty_in_context(param_names, 0, true)
+    }
+
+    fn pretty_in_context(
+        &self,
+        param_names: &[String],
+        min_bp: u8,
+        allow_forall: bool,
+    ) -> String {
+        if let Type::ForAll { .. } = self {
+            let pretty = self.pretty_consecutive_foralls(param_names);
+            if allow_forall && min_bp == 0 {
+                return pretty;
             }
-            Type::Named { name, .. } => format!("{name}"),
+            return format!("({pretty})");
+        }
+
+        let (binding_power, pretty) = match self {
+            Type::Unit => (TYPE_ATOM_BP, "()".to_string()),
+            Type::Integer => (TYPE_ATOM_BP, "integer".to_string()),
+            Type::Real => (TYPE_ATOM_BP, "real".to_string()),
+            Type::Boolean => (TYPE_ATOM_BP, "boolean".to_string()),
+            Type::String => (TYPE_ATOM_BP, "string".to_string()),
+            Type::Glyph => (TYPE_ATOM_BP, "glyph".to_string()),
+            Type::TypeVar(index) => (TYPE_ATOM_BP, lookup_name(param_names, *index)),
+            Type::MetaVar(index) => (TYPE_ATOM_BP, format!("v{index}")),
+            Type::Named { name, .. } => (TYPE_ATOM_BP, format!("{name}")),
             Type::StructConstraint { fields, mode } => {
                 let fields = pretty_record_fields(fields, param_names);
                 let suffix = match mode {
                     StructMatch::Exact => "",
                     StructMatch::AtLeast => ", ..",
                 };
-                format!("{{{fields}{suffix}}}")
+                (TYPE_ATOM_BP, format!("{{{fields}{suffix}}}"))
             }
             Type::Struct { fields } => {
                 let fields = pretty_record_fields(fields, param_names);
-                format!("{{{fields}}}")
+                (TYPE_ATOM_BP, format!("{{{fields}}}"))
             }
-            Type::Array(inner) => format!("[] {}", inner.pretty_with_context(param_names)),
-            Type::Tuple(items) => {
-                let items = items
-                    .iter()
-                    .map(|item| item.pretty_with_context(param_names))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                format!("({items})")
+            Type::Array(inner) => {
+                (
+                    TYPE_APPLICATION_BP,
+                    format!("[] {}", inner.pretty_as_type_primary(param_names)),
+                )
             }
+            Type::Tuple(items) => (TYPE_ATOM_BP, self.pretty_tuple(items, param_names)),
             Type::Sum { variants } => {
                 let items = variants
                     .iter()
@@ -596,51 +638,129 @@ impl Type {
                         if matches!(type_, Type::Unit) {
                             name.clone()
                         } else {
-                            format!("{name} {}", type_.pretty_wrapped(param_names))
+                            format!("{name} {}", type_.pretty_as_type_primary(param_names))
                         }
                     })
                     .collect::<Vec<_>>()
                     .join(" | ");
-                format!("(| {items} )")
+                (TYPE_ATOM_BP, format!("(| {items} )"))
             }
             Type::Function(parameter, result) => {
-                format!(
-                    "({} -> {})",
-                    parameter.pretty_wrapped(param_names),
-                    result.pretty_wrapped(param_names)
+                (
+                    TYPE_FUNCTION_BP,
+                    format!(
+                        "{} -> {}",
+                        parameter.pretty_in_context(param_names, TYPE_FUNCTION_BP + 1, false),
+                        result.pretty_in_context(param_names, TYPE_FUNCTION_BP, false)
+                    ),
                 )
             }
-            Type::Apply {
-                constructor,
-                arguments,
-            } => {
-                if arguments.is_empty() {
-                    constructor.pretty_with_context(param_names)
-                } else {
-                    let args = arguments
-                        .iter()
-                        .map(|arg| arg.pretty_wrapped(param_names))
-                        .collect::<Vec<_>>()
-                        .join(" ");
-                    format!("{} {args}", constructor.pretty_wrapped(param_names))
-                }
+            Type::Apply { .. } => {
+                (
+                    TYPE_APPLICATION_BP,
+                    self.pretty_type_application(param_names),
+                )
             }
+            Type::ForAll { .. } => unreachable!("forall handled above"),
+        };
+
+        if binding_power < min_bp {
+            format!("({pretty})")
+        } else {
+            pretty
         }
     }
 
-    fn pretty_wrapped(
+    fn pretty_consecutive_foralls(
         &self,
         param_names: &[String],
     ) -> String {
-        let pretty = self.pretty_with_context(param_names);
-        if self.is_wrapped_atom() {
-            pretty
-        } else {
-            format!("({pretty})")
+        let explicit_names = forall_explicit_names(self);
+        let mut names = Vec::new();
+        let mut next_params = param_names.to_vec();
+        let mut used_generated_names = param_names
+            .iter()
+            .cloned()
+            .chain(explicit_names)
+            .collect::<HashSet<_>>();
+        let mut generated_index = param_names.len() as u32;
+        let mut body = self;
+
+        while let Type::ForAll { name, body: inner } = body {
+            let binder_name = name.clone().unwrap_or_else(|| {
+                next_available_type_var_name(&mut generated_index, &used_generated_names)
+            });
+            if name.is_none() {
+                used_generated_names.insert(binder_name.clone());
+            }
+            next_params.push(binder_name.clone());
+            names.push(binder_name);
+            body = inner;
+        }
+
+        debug_assert!(!names.is_empty());
+        format!(
+            "for {} in {}",
+            names.join(" "),
+            body.pretty_in_context(&next_params, 0, true)
+        )
+    }
+
+    fn pretty_type_application(
+        &self,
+        param_names: &[String],
+    ) -> String {
+        let Type::Apply {
+            constructor,
+            arguments,
+        } = self
+        else {
+            unreachable!("pretty_type_application called for non-application type")
+        };
+
+        if arguments.is_empty() {
+            return constructor.pretty_in_context(param_names, 0, true);
+        }
+
+        let mut rendered = constructor.pretty_in_context(param_names, TYPE_APPLICATION_BP, false);
+        for argument in arguments {
+            rendered.push(' ');
+            rendered.push_str(&argument.pretty_as_type_primary(param_names));
+        }
+        rendered
+    }
+
+    fn pretty_tuple(
+        &self,
+        items: &[Type],
+        param_names: &[String],
+    ) -> String {
+        match items {
+            [] => "()".to_string(),
+            [item] => format!("({},)", item.pretty_in_context(param_names, 0, true)),
+            _ => {
+                let items = items
+                    .iter()
+                    .map(|item| item.pretty_in_context(param_names, 0, true))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("({items})")
+            }
         }
     }
 
-    fn is_wrapped_atom(&self) -> bool {
+    fn pretty_as_type_primary(
+        &self,
+        param_names: &[String],
+    ) -> String {
+        if self.is_type_primary() {
+            self.pretty_in_context(param_names, 0, true)
+        } else {
+            format!("({})", self.pretty_in_context(param_names, 0, true))
+        }
+    }
+
+    fn is_type_primary(&self) -> bool {
         matches!(
             self,
             Type::Unit
@@ -652,13 +772,7 @@ impl Type {
                 | Type::TypeVar(_)
                 | Type::MetaVar(_)
                 | Type::Named { .. }
-                | Type::StructConstraint { .. }
-                | Type::Array(_)
                 | Type::Tuple(_)
-                | Type::Struct { .. }
-                | Type::Sum { .. }
-                | Type::Function(_, _)
-                | Type::Apply { .. }
         )
     }
 }
@@ -687,18 +801,110 @@ fn shift_index(
 fn lookup_name(
     names: &[String],
     index: u32,
-    fallback: fn(u32) -> String,
 ) -> String {
     let offset = index as usize;
     let index_from_end = names.len().checked_sub(offset + 1);
     index_from_end
         .and_then(|pos| names.get(pos))
         .cloned()
-        .unwrap_or_else(|| fallback(index))
+        .unwrap_or_else(|| type_var_name_avoiding(index, names))
+}
+
+fn type_var_name_avoiding(
+    index: u32,
+    used_names: &[String],
+) -> String {
+    let used = used_names
+        .iter()
+        .map(String::as_str)
+        .collect::<HashSet<_>>();
+    let mut candidate_index = 0u32;
+    let mut emitted = 0u32;
+    loop {
+        let name = type_var_name(candidate_index);
+        if !used.contains(name.as_str()) {
+            if emitted == index {
+                return name;
+            }
+            emitted += 1;
+        }
+        candidate_index += 1;
+    }
+}
+
+fn next_available_type_var_name(
+    generated_index: &mut u32,
+    used_names: &HashSet<String>,
+) -> String {
+    loop {
+        let candidate = type_var_name(*generated_index);
+        *generated_index += 1;
+        if !used_names.contains(&candidate) {
+            return candidate;
+        }
+    }
+}
+
+fn forall_explicit_names(type_: &Type) -> HashSet<String> {
+    let mut names = HashSet::new();
+    let mut current = type_;
+    while let Type::ForAll { name, body } = current {
+        if let Some(name) = name {
+            names.insert(name.clone());
+        }
+        current = body;
+    }
+    names
 }
 
 fn type_var_name(index: u32) -> String {
-    format!("'{}", alpha_name(index))
+    let mut candidate_index = 0u32;
+    let mut emitted = 0u32;
+    loop {
+        let name = alpha_name(candidate_index);
+        if !is_reserved_type_variable_name(name.as_str()) {
+            if emitted == index {
+                return name;
+            }
+            emitted += 1;
+        }
+        candidate_index += 1;
+    }
+}
+
+fn is_reserved_type_variable_name(name: &str) -> bool {
+    matches!(
+        name,
+        "let"
+            | "do"
+            | "in"
+            | "module"
+            | "bundle"
+            | "import"
+            | "use"
+            | "as"
+            | "of"
+            | "end"
+            | "match"
+            | "with"
+            | "if"
+            | "then"
+            | "else"
+            | "and"
+            | "or"
+            | "xor"
+            | "not"
+            | "true"
+            | "false"
+            | "fn"
+            | "type"
+            | "trait"
+            | "impl"
+            | "wasm"
+            | "for"
+            | "where"
+            | "root"
+    )
 }
 
 fn alpha_name(index: u32) -> String {
@@ -727,6 +933,7 @@ fn pretty_record_fields(
 mod common;
 mod instantiation;
 mod kind;
+mod predicate;
 mod type_expr;
 
 pub mod infer;
@@ -742,6 +949,12 @@ pub(crate) use common::{
     normalize_parameter_kinds,
     split_applied_type,
     split_applied_type_ref,
+};
+
+pub(crate) use predicate::{
+    predicate_is_ground,
+    predicate_sort_key,
+    sorted_unique_predicates,
 };
 
 pub use symbol_table::{

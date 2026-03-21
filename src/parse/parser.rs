@@ -90,19 +90,46 @@ impl<'src, 'log> Parser<'src, 'log> {
         &self,
         n: usize,
     ) -> Option<SyntaxKind> {
+        self.nth_non_trivia_index(n)
+            .map(|index| self.tokens[index].inner)
+    }
+
+    fn nth_non_trivia_index(
+        &self,
+        n: usize,
+    ) -> Option<usize> {
         let mut i = self.pos;
         let mut remaining = n;
         while i < self.tokens.len() {
             let kind = self.tokens[i].inner;
             if !kind.is_trivia() {
                 if remaining == 0 {
-                    return Some(kind);
+                    return Some(i);
                 }
                 remaining -= 1;
             }
             i += 1;
         }
         None
+    }
+
+    fn token_column(
+        &self,
+        token_index: usize,
+    ) -> Option<usize> {
+        let token = self.tokens.get(token_index)?;
+        let start = match token.span {
+            Span::Source { start, .. } => start,
+            Span::Generated => return None,
+        };
+        let source_until_token = self.source.get(..start)?;
+        let line_start = source_until_token.rfind('\n').map_or(0, |index| index + 1);
+        Some(start - line_start)
+    }
+
+    pub fn current_column(&self) -> Option<usize> {
+        self.nth_non_trivia_index(0)
+            .and_then(|token_index| self.token_column(token_index))
     }
 
     pub fn at(

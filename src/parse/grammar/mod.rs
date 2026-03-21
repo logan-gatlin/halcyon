@@ -132,6 +132,51 @@ pub(crate) fn path_or_ident(p: &mut Parser<'_, '_>) {
     }
 }
 
+/// Parse a `use` target (identifier or path), allowing bare `bundle` to
+/// refer to the current bundle root.
+pub(crate) fn use_target_path_or_ident(p: &mut Parser<'_, '_>) {
+    let checkpoint = p.checkpoint();
+    if p.eat(SyntaxKind::ROOT_KW) {
+        let m = p.start_node_at(checkpoint, SyntaxKind::PATH);
+        p.expect(SyntaxKind::DOUBLE_COLON);
+        expect_identifier(p);
+        while p.eat(SyntaxKind::DOUBLE_COLON) {
+            expect_identifier(p);
+        }
+        p.finish_node(m);
+        return;
+    }
+    if p.eat(SyntaxKind::BUNDLE_KW) {
+        let m = p.start_node_at(checkpoint, SyntaxKind::PATH);
+        if p.eat(SyntaxKind::DOUBLE_COLON) {
+            expect_identifier(p);
+            while p.eat(SyntaxKind::DOUBLE_COLON) {
+                expect_identifier(p);
+            }
+        }
+        p.finish_node(m);
+        return;
+    }
+
+    if !identifier(p) {
+        p.error_and_bump("expected identifier");
+        return;
+    }
+
+    if p.at(SyntaxKind::DOUBLE_COLON) {
+        let m = p.start_node_at(checkpoint, SyntaxKind::PATH);
+        p.bump();
+        expect_identifier(p);
+        while p.eat(SyntaxKind::DOUBLE_COLON) {
+            expect_identifier(p);
+        }
+        p.finish_node(m);
+    } else {
+        let m = p.start_node_at(checkpoint, SyntaxKind::IDENT_NODE);
+        p.finish_node(m);
+    }
+}
+
 /// Parse a literal (integer, real, string, glyph, boolean).
 pub(crate) fn literal(p: &mut Parser<'_, '_>) {
     let m = p.start_node(SyntaxKind::LITERAL);

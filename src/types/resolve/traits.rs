@@ -499,7 +499,7 @@ mod tests {
 
         let mut foralls = 0usize;
         let mut body = &method_scheme.type_;
-        while let Type::ForAll(next) = body {
+        while let Type::ForAll { body: next, .. } = body {
             foralls += 1;
             body = next;
         }

@@ -15,6 +15,7 @@ use indexmap::IndexMap;
 use crate::Span;
 use crate::ir::{
     Glob,
+    ImmediateValue,
     Path,
     Pattern,
     PatternKind,
@@ -101,6 +102,8 @@ pub enum TypeError {
         predicates: Vec<TraitConstraint>,
         span: Span,
     },
+    /// Pattern set does not cover every possible value.
+    NonExhaustivePatterns { span: Span, counterexample: String },
     /// Unification failure with source span context.
     Unification {
         error: UnifyError,
@@ -545,6 +548,35 @@ mod tests {
         ctx.infer_term(&mut global_env, &global, &mut schemes)
             .expect("global let should infer");
         assert!(global_env.get(&binding).is_some());
+    }
+
+    #[test]
+    fn if_desugared_let_preserves_condition_predicates() {
+        let mut ctx = InferenceContext::new();
+        let mut env = TypeEnv::new();
+        let mut schemes = IndexMap::new();
+        let condition = Path::new("demo", "condition");
+        let condition_predicate = TraitRef::new(Path::new("demo", "Compare"), vec![Type::Integer]);
+
+        env.insert(
+            condition.clone(),
+            Type::Boolean.scheme_with_predicates(vec![condition_predicate.clone()]),
+        );
+
+        let if_desugared = term(TermKind::Let {
+            assignee: pattern(PatternKind::Immediate(ImmediateValue::Boolean(true))),
+            scope: ScopeKind::Local,
+            value: term(TermKind::Identifier(condition)).into(),
+            then: term(TermKind::Immediate(ImmediateValue::Integer(1))).into(),
+            else_: term(TermKind::Immediate(ImmediateValue::Integer(0))).into(),
+        });
+
+        let typed = ctx
+            .infer_term(&mut env, &if_desugared, &mut schemes)
+            .expect("if-desugared let should infer");
+
+        assert_eq!(typed.term.type_, Type::Integer);
+        assert_eq!(typed.predicates, vec![condition_predicate]);
     }
 
     #[test]
@@ -1216,6 +1248,44 @@ mod tests {
     }
 
     #[test]
+    fn top_level_forall_annotation_preserves_display_names_in_generalized_scheme() {
+        let mut ctx = InferenceContext::new();
+        let mut env = TypeEnv::new();
+        let mut schemes = IndexMap::new();
+        let binding = Path::new("demo", "id");
+        let forall_param = Path::new("demo", "item");
+        let value_param = Path::new("demo", "x");
+
+        let let_term = term(TermKind::Let {
+            assignee: pattern(PatternKind::TypeHint(
+                Box::new(pattern(PatternKind::Identifier(binding.clone()))),
+                forall_identity_type_expr(forall_param),
+            )),
+            scope: ScopeKind::Local,
+            value: term(TermKind::Function {
+                parameter_name: value_param.clone().with_span(Span::Generated),
+                parameter_type: None,
+                captures: [].into(),
+                body: term(TermKind::Identifier(value_param)).into(),
+            })
+            .into(),
+            then: term(TermKind::Identifier(binding.clone())).into(),
+            else_: term(TermKind::Unreachable).into(),
+        });
+
+        ctx.infer_term(&mut env, &let_term, &mut schemes)
+            .expect("let with forall annotation should infer");
+
+        let scheme = schemes
+            .get(&binding)
+            .expect("generalized scheme should be recorded");
+        let Type::ForAll { name, .. } = &scheme.type_ else {
+            panic!("expected leading forall in generalized scheme")
+        };
+        assert_eq!(name.as_deref(), Some("item"));
+    }
+
+    #[test]
     fn polymorphic_annotation_checks_all_nested_forall_hints() {
         let mut ctx = InferenceContext::new();
         ctx.set_type_definitions(core_type_definitions());
@@ -1299,7 +1369,7 @@ mod tests {
 }
 
 fn type_contains_forall(type_: &Type) -> bool {
-    matches!(type_, Type::ForAll(_)) || {
+    matches!(type_, Type::ForAll { .. }) || {
         let mut contains_forall = false;
         for_each_child_type(type_, false, |child| {
             if !contains_forall && type_contains_forall(child) {
@@ -1357,6 +1427,55 @@ fn collect_forall_type_hints<'a>(
     }
 }
 
+fn top_level_type_hint_identifier_path(pattern: &Pattern<Type>) -> Option<&Path> {
+    let PatternKind::TypeHint(inner, _) = &pattern.kind else {
+        return None;
+    };
+    let PatternKind::Identifier(path) = &inner.kind else {
+        return None;
+    };
+    Some(path)
+}
+
+fn leading_forall_display_names(type_: &Type) -> Vec<Option<String>> {
+    let mut names = Vec::new();
+    let mut current = type_;
+    while let Type::ForAll { name, body } = current {
+        names.push(name.clone());
+        current = body;
+    }
+    names
+}
+
+fn apply_leading_forall_display_names(
+    mut type_: Type,
+    names: &[Option<String>],
+) -> Type {
+    let mut remaining = names.iter();
+    let mut current = &mut type_;
+    while let Type::ForAll { name, body } = current {
+        let Some(next_name) = remaining.next() else {
+            break;
+        };
+        *name = next_name.clone();
+        current = body;
+    }
+    type_
+}
+
+fn apply_forall_display_names_to_scheme(
+    scheme: TypeScheme,
+    names: &[Option<String>],
+) -> TypeScheme {
+    if names.is_empty() {
+        return scheme;
+    }
+    TypeScheme {
+        predicates: scheme.predicates,
+        type_: apply_leading_forall_display_names(scheme.type_, names),
+    }
+}
+
 fn rigidify_meta_vars_for_annotation_check(
     type_: &Type,
     replacements: &mut HashMap<MetaVarId, Type>,
@@ -1408,7 +1527,7 @@ fn instantiate_leading_foralls_with_metas(
     span: Span,
 ) -> Result<Type, TypeError> {
     let mut current = table.normalize(type_);
-    while let Type::ForAll(body) = current {
+    while let Type::ForAll { body, .. } = current {
         let fresh = table.new_meta(level);
         current = body
             .open_forall(&fresh)
@@ -1424,7 +1543,7 @@ fn skolemize_leading_foralls_for_annotation_check(
 ) -> Result<Type, TypeError> {
     let mut current = table.normalize(type_);
     let mut index = 0usize;
-    while let Type::ForAll(body) = current {
+    while let Type::ForAll { body, .. } = current {
         let skolem = Type::Named {
             name: Path::new("[annotation-skolem]", format!("#{index}")),
             body: Box::new(Type::Unit),
@@ -1721,7 +1840,7 @@ impl InferenceContext {
         span: Span,
     ) -> Result<Type, TypeError> {
         let mut current = self.table.normalize(type_);
-        while let Type::ForAll(body) = current {
+        while let Type::ForAll { body, .. } = current {
             let skolem = self.fresh_skolem();
             current = body
                 .open_forall(&skolem)
@@ -2020,7 +2139,7 @@ pub fn infer_term(
         } => {
             let asserted_type_value = type_expr_to_type(ctx, asserted_type)?;
             let inferred_type = match asserted_type_value {
-                forall @ Type::ForAll(_) => {
+                forall @ Type::ForAll { .. } => {
                     let scheme = TypeScheme::new(forall);
                     ctx.instantiate(&scheme, asserted_type.span)?
                 }
@@ -2123,6 +2242,7 @@ pub fn infer_term(
             );
             let mut forall_type_hints = Vec::new();
             collect_forall_type_hints(assignee, &mut forall_type_hints);
+            let mut top_level_forall_annotation_names = None;
             if !forall_type_hints.is_empty() {
                 let inferred = ctx.generalize_with_predicates(
                     &typed_value.term.type_,
@@ -2150,6 +2270,8 @@ pub fn infer_term(
                         &annotation,
                         type_expr.span,
                     )?;
+                    top_level_forall_annotation_names =
+                        Some(leading_forall_display_names(&annotation.type_));
                 }
             }
             let mut bindings = Vec::new();
@@ -2173,6 +2295,12 @@ pub fn infer_term(
             }
             ctx.level = outer_level;
 
+            let include_value_predicates = matches!(
+                typed_pattern.kind,
+                PatternKind::Immediate(ImmediateValue::Boolean(true))
+            );
+            let top_level_hint_binding_path =
+                top_level_type_hint_identifier_path(&typed_pattern).cloned();
             let generalized = bindings
                 .into_iter()
                 .map(|(path, type_)| {
@@ -2181,6 +2309,18 @@ pub fn infer_term(
                         outer_level,
                         typed_value.predicates.clone(),
                     );
+                    let scheme = if top_level_hint_binding_path
+                        .as_ref()
+                        .is_some_and(|hint_path| hint_path == &path)
+                    {
+                        top_level_forall_annotation_names
+                            .as_deref()
+                            .map_or(scheme.clone(), |names| {
+                                apply_forall_display_names_to_scheme(scheme, names)
+                            })
+                    } else {
+                        scheme
+                    };
                     tracing::trace!(
                         path = %path,
                         raw_type = %type_.pretty(),
@@ -2209,6 +2349,9 @@ pub fn infer_term(
             let result_type = ctx.table.normalize(&typed_then.term.type_);
             let mut predicates = typed_then.predicates;
             predicates.extend(typed_else.predicates);
+            if include_value_predicates {
+                predicates.extend(typed_value.predicates);
+            }
             if *scope == ScopeKind::Global {
                 env.extend(generalized);
             }
@@ -2627,8 +2770,8 @@ fn infer_pattern(
             let hint_type = hint_scheme.type_;
             let expected_type = ctx.table.normalize(expected);
             let hint_type = match (hint_type, expected_type) {
-                (forall @ Type::ForAll(_), Type::ForAll(_)) => forall,
-                (forall @ Type::ForAll(_), _) => {
+                (forall @ Type::ForAll { .. }, Type::ForAll { .. }) => forall,
+                (forall @ Type::ForAll { .. }, _) => {
                     let scheme = TypeScheme::new(forall);
                     ctx.instantiate(&scheme, type_expr.span)?
                 }
@@ -2883,7 +3026,7 @@ fn required_outer_type_var_binders(
 fn leading_forall_count(type_: &Type) -> u32 {
     let mut current = type_;
     let mut count = 0;
-    while let Type::ForAll(body) = current {
+    while let Type::ForAll { body, .. } = current {
         count += 1;
         current = body;
     }
@@ -2896,20 +3039,26 @@ fn max_free_type_var_index(
 ) -> Option<u32> {
     match type_ {
         Type::TypeVar(index) => (*index >= depth).then(|| index - depth),
-        Type::ForAll(body) => max_free_type_var_index(body, depth + 1),
+        Type::ForAll { body, .. } => max_free_type_var_index(body, depth + 1),
         Type::Array(inner) => max_free_type_var_index(inner, depth),
-        Type::Tuple(items) => items
-            .iter()
-            .filter_map(|item| max_free_type_var_index(item, depth))
-            .max(),
-        Type::Struct { fields } | Type::StructConstraint { fields, .. } => fields
-            .values()
-            .filter_map(|field| max_free_type_var_index(field, depth))
-            .max(),
-        Type::Sum { variants } => variants
-            .values()
-            .filter_map(|variant| max_free_type_var_index(variant, depth))
-            .max(),
+        Type::Tuple(items) => {
+            items
+                .iter()
+                .filter_map(|item| max_free_type_var_index(item, depth))
+                .max()
+        }
+        Type::Struct { fields } | Type::StructConstraint { fields, .. } => {
+            fields
+                .values()
+                .filter_map(|field| max_free_type_var_index(field, depth))
+                .max()
+        }
+        Type::Sum { variants } => {
+            variants
+                .values()
+                .filter_map(|variant| max_free_type_var_index(variant, depth))
+                .max()
+        }
         Type::Function(parameter, result) => {
             max_free_type_var_index(parameter, depth)
                 .into_iter()
@@ -2920,14 +3069,16 @@ fn max_free_type_var_index(
         Type::Apply {
             constructor,
             arguments,
-        } => max_free_type_var_index(constructor, depth)
-            .into_iter()
-            .chain(
-                arguments
-                    .iter()
-                    .filter_map(|argument| max_free_type_var_index(argument, depth)),
-            )
-            .max(),
+        } => {
+            max_free_type_var_index(constructor, depth)
+                .into_iter()
+                .chain(
+                    arguments
+                        .iter()
+                        .filter_map(|argument| max_free_type_var_index(argument, depth)),
+                )
+                .max()
+        }
         Type::Unit
         | Type::Integer
         | Type::Real

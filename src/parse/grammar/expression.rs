@@ -11,6 +11,7 @@ use super::{
     pattern,
     sexpr,
     type_expr,
+    use_target_path_or_ident,
 };
 
 /// Parse any expression.
@@ -298,7 +299,7 @@ fn let_expr(p: &mut Parser<'_, '_>) {
 fn use_expr(p: &mut Parser<'_, '_>) {
     let m = p.start_node(SyntaxKind::USE_EXPR);
     p.expect(SyntaxKind::USE_KW);
-    path_or_ident(p);
+    use_target_path_or_ident(p);
     if p.eat(SyntaxKind::AS_KW) {
         expect_identifier(p);
     }
@@ -359,7 +360,8 @@ fn param(p: &mut Parser<'_, '_>) {
 fn fn_shorthand(p: &mut Parser<'_, '_>) {
     let m = p.start_node(SyntaxKind::FN_SHORTHAND_EXPR);
     p.expect(SyntaxKind::FN_KW);
-    while p.at(SyntaxKind::PIPE) {
+    let arm_indent = p.current_column();
+    while next_match_arm_has_expected_indent(p, arm_indent) {
         match_arm(p, true);
     }
     p.finish_node(m);
@@ -384,18 +386,33 @@ fn match_expr(p: &mut Parser<'_, '_>) {
     expr(p);
     p.expect(SyntaxKind::WITH_KW);
     if p.at(SyntaxKind::PIPE) {
-        while p.at(SyntaxKind::PIPE) {
+        let arm_indent = p.current_column();
+        while next_match_arm_has_expected_indent(p, arm_indent) {
             match_arm(p, true);
         }
     } else if p.current().is_some_and(pattern::can_start_pattern) {
+        let arm_indent = p.current_column();
         match_arm(p, false);
-        while p.at(SyntaxKind::PIPE) {
+        while next_match_arm_has_expected_indent(p, arm_indent) {
             match_arm(p, true);
         }
     } else {
         p.error_at_current("expected match arm");
     }
     p.finish_node(m);
+}
+
+fn next_match_arm_has_expected_indent(
+    p: &Parser<'_, '_>,
+    expected_indent: Option<usize>,
+) -> bool {
+    if !p.at(SyntaxKind::PIPE) {
+        return false;
+    }
+    match (expected_indent, p.current_column()) {
+        (Some(expected), Some(actual)) => actual == expected,
+        _ => true,
+    }
 }
 
 /// `"|" pattern "=>" expr`

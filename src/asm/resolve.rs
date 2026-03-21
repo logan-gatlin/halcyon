@@ -68,6 +68,8 @@ pub enum ResolvedInstruction {
     I64TruncF64S,
     I64TruncF64U,
     F32DemoteF64,
+    F64ConvertI64S,
+    F64ConvertI64U,
 }
 
 #[derive(Debug, Clone)]
@@ -337,5 +339,7 @@ fn resolve_instruction(
         Instruction::I64TruncF64S => ResolvedInstruction::I64TruncF64S,
         Instruction::I64TruncF64U => ResolvedInstruction::I64TruncF64U,
         Instruction::F32DemoteF64 => ResolvedInstruction::F32DemoteF64,
+        Instruction::F64ConvertI64S => ResolvedInstruction::F64ConvertI64S,
+        Instruction::F64ConvertI64U => ResolvedInstruction::F64ConvertI64U,
     })
 }

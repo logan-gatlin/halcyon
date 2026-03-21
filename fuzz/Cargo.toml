@@ -1,0 +1,98 @@
+[package]
+name = "halcyon-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+arbitrary = "1"
+indexmap = "2.11"
+libfuzzer-sys = "0.4"
+wasmparser = "0.244"
+wasm-encoder = "0.244"
+
+[dependencies.halcyon-lib]
+path = ".."
+
+[[bin]]
+name = "type_unify_ops"
+path = "fuzz_targets/type_unify_ops.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "type_scheme_ops"
+path = "fuzz_targets/type_scheme_ops.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "type_resolve_only"
+path = "fuzz_targets/type_resolve_only.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "lexer_only"
+path = "fuzz_targets/lexer_only.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "parser_roundtrip"
+path = "fuzz_targets/parser_roundtrip.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "full_source_pipeline"
+path = "fuzz_targets/full_source_pipeline.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "full_source_with_imports"
+path = "fuzz_targets/full_source_with_imports.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ir_pipeline"
+path = "fuzz_targets/ir_pipeline.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "linker_inputs"
+path = "fuzz_targets/linker_inputs.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "custom_section_decoders"
+path = "fuzz_targets/custom_section_decoders.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "tooling_positions"
+path = "fuzz_targets/tooling_positions.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
+members = ["."]

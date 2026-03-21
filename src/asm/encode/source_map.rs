@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+use rayon::prelude::*;
+
 use super::super::*;
 
 /// Handles build source map json.
@@ -9,18 +11,21 @@ pub(crate) fn build_source_map_json(
     function_operator_origins: &[Vec<Option<SourceOrigin>>],
 ) -> Option<String> {
     let function_offsets = read_function_operator_offsets(binary)?;
-    let mut mappings = Vec::new();
-
-    for (offsets, origins) in function_offsets
-        .iter()
-        .zip(function_operator_origins.iter())
-    {
-        for (index, offset) in offsets.iter().enumerate() {
-            if let Some(origin) = origins.get(index).cloned().flatten() {
-                mappings.push((*offset, origin));
-            }
-        }
-    }
+    let mut mappings = function_offsets
+        .par_iter()
+        .zip(function_operator_origins.par_iter())
+        .flat_map_iter(|(offsets, origins)| {
+            offsets
+                .iter()
+                .enumerate()
+                .filter_map(move |(index, offset)| {
+                    origins
+                        .get(index)
+                        .and_then(|origin| origin.clone())
+                        .map(|origin| (*offset, origin))
+                })
+        })
+        .collect::<Vec<_>>();
 
     if mappings.is_empty() {
         return None;

@@ -4,17 +4,23 @@ use super::*;
 
 use crate::hc_core::compile_core_module;
 use crate::types::{
-    resolve_module_with_symbols_and_schemes,
     SymbolTable,
+    resolve_module_with_symbols_and_schemes,
 };
 use crate::{
-    parse,
     Logger,
+    parse,
 };
 use wasmparser::Payload;
 
 /// Handles compile modules.
-fn compile_modules(source: &str) -> (Vec<crate::ir::ElaborationResult>, SymbolTable, SourceCatalog) {
+fn compile_modules(
+    source: &str
+) -> (
+    Vec<crate::ir::ElaborationResult>,
+    SymbolTable,
+    SourceCatalog,
+) {
     let mut logger = Logger::new();
     let mut file_logger = logger.new_file("test.hc", source);
     let mut symbols = SymbolTable::new();
@@ -205,11 +211,95 @@ fn emits_dwarf_debug_sections() {
 }
 
 #[test]
+fn encode_options_can_disable_all_debug_metadata() {
+    let source = "module demo =\n\tlet value : core::Integer = core::default\nend\n";
+    let (mut modules, symbols, source_catalog) = compile_modules(source);
+    let module = modules.pop().unwrap();
+    let encoded = encode_with_options(
+        lower_module(module, &symbols, &source_catalog),
+        DebugInfoOptions::none(),
+    );
+
+    assert!(
+        encoded.source_map.is_none(),
+        "source map should be disabled when debug metadata is disabled"
+    );
+
+    let mut has_source_mapping_url = false;
+    let mut has_dwarf = false;
+    for payload in wasmparser::Parser::new(0).parse_all(&encoded.binary) {
+        let payload = payload.unwrap();
+        if let Payload::CustomSection(reader) = payload {
+            let name = reader.name();
+            if name == "sourceMappingURL" {
+                has_source_mapping_url = true;
+            }
+            if name.starts_with(".debug_") {
+                has_dwarf = true;
+            }
+        }
+    }
+
+    assert!(
+        !has_source_mapping_url,
+        "sourceMappingURL section should be omitted when source maps are disabled"
+    );
+    assert!(
+        !has_dwarf,
+        "DWARF custom sections should be omitted when DWARF is disabled"
+    );
+}
+
+#[test]
+fn encode_options_can_emit_source_map_without_dwarf() {
+    let source = "module demo =\n\tlet value : core::Integer = core::default\nend\n";
+    let (mut modules, symbols, source_catalog) = compile_modules(source);
+    let module = modules.pop().unwrap();
+    let encoded = encode_with_options(
+        lower_module(module, &symbols, &source_catalog),
+        DebugInfoOptions {
+            emit_source_map: true,
+            emit_dwarf: false,
+        },
+    );
+
+    assert!(
+        encoded.source_map.is_some(),
+        "source map should be emitted when source map output is enabled"
+    );
+
+    let mut has_source_mapping_url = false;
+    let mut has_dwarf = false;
+    for payload in wasmparser::Parser::new(0).parse_all(&encoded.binary) {
+        let payload = payload.unwrap();
+        if let Payload::CustomSection(reader) = payload {
+            let name = reader.name();
+            if name == "sourceMappingURL" {
+                has_source_mapping_url = true;
+            }
+            if name.starts_with(".debug_") {
+                has_dwarf = true;
+            }
+        }
+    }
+
+    assert!(
+        has_source_mapping_url,
+        "sourceMappingURL section should be present when source maps are enabled"
+    );
+    assert!(
+        !has_dwarf,
+        "DWARF custom sections should be absent when emit_dwarf is disabled"
+    );
+}
+
+#[test]
 /// Handles demo init keeps demo source origins.
 fn demo_init_keeps_demo_source_origins() {
     let source_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/test/demo.hc");
     let source_name = source_path.to_string_lossy().to_string();
-    let source = std::fs::read_to_string(&source_path).expect("demo source file should be readable");
+    let source =
+        std::fs::read_to_string(&source_path).expect("demo source file should be readable");
     let mut logger = Logger::new();
     let mut symbols = SymbolTable::new();
 
@@ -221,6 +311,8 @@ fn demo_init_keeps_demo_source_origins() {
         crate::CompileOptions {
             demo_mode: false,
             use_core: true,
+            emit_source_map: true,
+            emit_dwarf: true,
             resolve_import: |_| None,
         },
     );
@@ -279,5 +371,55 @@ fn demo_init_keeps_demo_source_origins() {
         .function_indices
         .get(&crate::ir::Path::new("demo", "[init]"))
         .expect("resolved module should index demo init");
-    assert_eq!(demo_index, 481, "expected demo init function index to match runtime frame index");
+    let expected_demo_index = linked.function_imports.len() as u32
+        + linked
+            .functions
+            .iter()
+            .position(|(path, _)| path.major == "demo" && path.minor == "[init]")
+            .expect("linked module should preserve demo init ordering") as u32;
+    assert_eq!(
+        demo_index, expected_demo_index,
+        "expected demo init function index to match linked ordering"
+    );
+}
+
+#[test]
+#[ignore = "debug helper"]
+fn debug_option_show_runtime_trap() {
+    let source = "module demo =\n\tlet value = show (core::opt::Some 1)\nend\n";
+    let binary =
+        crate::compile_source_linked_with_core(source).expect("compilation should succeed");
+
+    let mut linked = None;
+    for payload in wasmparser::Parser::new(0).parse_all(&binary) {
+        let payload = payload.expect("valid wasm payload");
+        if let Payload::CustomSection(reader) = payload
+            && reader.name() == super::module_section::LoweredModuleSection::NAME
+        {
+            linked = super::module_section::LoweredModuleSection::decode_data_slice(reader.data());
+            break;
+        }
+    }
+    let linked = linked.expect("linked lowered module section should decode");
+
+    let import_count = linked.function_imports.len();
+    println!("function imports: {import_count}");
+
+    for (index, (path, function)) in linked.functions.iter().enumerate() {
+        let absolute_index = import_count + index;
+        for (op_index, op) in function.ops.iter().enumerate() {
+            let referenced = match op {
+                Instruction::Get(path) | Instruction::Set(path) | Instruction::Call(path) => {
+                    Some(path)
+                }
+                Instruction::Func(path) => Some(path),
+                _ => None,
+            };
+            if let Some(referenced) = referenced
+                && referenced.minor.contains("show#")
+            {
+                println!("fn {absolute_index} ({path}) op#{op_index}: {op:?}");
+            }
+        }
+    }
 }

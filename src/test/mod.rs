@@ -103,6 +103,8 @@ fn compile_source_with_options_resolves_imports_during_ir_generation() {
         CompileOptions {
             demo_mode: false,
             use_core: true,
+            emit_source_map: true,
+            emit_dwarf: true,
             resolve_import: |path| path.ends_with("dep").then(|| dep_source.to_string()),
         },
     );
@@ -130,6 +132,8 @@ fn compile_source_with_options_reports_duplicate_imports() {
         CompileOptions {
             demo_mode: false,
             use_core: true,
+            emit_source_map: true,
+            emit_dwarf: true,
             resolve_import: |path| path.ends_with("dep").then(|| dep_source.to_string()),
         },
     );
@@ -162,6 +166,8 @@ end
         CompileOptions {
             demo_mode: false,
             use_core: true,
+            emit_source_map: true,
+            emit_dwarf: true,
             resolve_import: |path| path.ends_with("dep").then(|| dep_source.to_string()),
         },
     );
@@ -190,6 +196,8 @@ fn compile_source_with_options_reports_bundle_not_first_in_root() {
         CompileOptions {
             demo_mode: false,
             use_core: false,
+            emit_source_map: true,
+            emit_dwarf: true,
             resolve_import: |_| None,
         },
     );
@@ -215,6 +223,8 @@ fn compile_source_with_options_reports_duplicate_bundle_declarations_globally() 
         CompileOptions {
             demo_mode: false,
             use_core: true,
+            emit_source_map: true,
+            emit_dwarf: true,
             resolve_import: |path| path.ends_with("dep").then(|| dep_source.to_string()),
         },
     );
@@ -240,6 +250,8 @@ fn compile_source_with_options_reports_type_errors_in_import_file() {
         CompileOptions {
             demo_mode: false,
             use_core: false,
+            emit_source_map: true,
+            emit_dwarf: true,
             resolve_import: |path| path.ends_with("dep").then(|| dep_source.to_string()),
         },
     );
@@ -540,7 +552,7 @@ fn higher_kinded_annotation_rejects_constructor_kind_where_type_is_required() {
 #[test]
 fn core_monad_methods_dispatch_for_option_array_and_result() {
     init_tracing();
-    let source = "module demo =\n\tlet opt_map : core::opt::Option core::Integer = core::hkt::map (fn x => x + 1) (core::opt::Some 1)\n\tlet opt_flatten : core::opt::Option core::Integer = core::hkt::flatten (core::opt::Some (core::opt::Some 1))\n\tlet opt_bind : core::opt::Option core::Integer = core::hkt::flatten (core::hkt::map (fn x => core::opt::Some (x + 1)) (core::opt::Some 1))\n\tlet res_bind : core::result::Result core::String core::Integer = core::hkt::flatten (core::hkt::map (fn x => core::result::Ok (x + 1)) (core::result::Ok 1))\nend\n";
+    let source = "module demo =\n\tlet opt_map : core::opt::Option core::Integer = core::hkt::map (fn x => x + 1) (core::opt::Some 1)\n\tlet opt_flatten : core::opt::Option core::Integer = core::hkt::flatten (core::opt::Some (core::opt::Some 1))\n\tlet opt_bind : core::opt::Option core::Integer = core::hkt::flatten (core::hkt::map (fn x => core::opt::Some (x + 1)) (core::opt::Some 1))\n\tlet arr_map : [] core::Integer = core::hkt::map (fn x => x + 1) [1, 2, 3]\n\tlet res_bind : core::result::Result core::String core::Integer = core::hkt::flatten (core::hkt::map (fn x => core::result::Ok (x + 1)) (core::result::Ok 1))\nend\n";
     let mut symbols = SymbolTable::new();
     let mut logger = Logger::new();
     let _core = compile_core_module(&mut symbols, &mut logger);
@@ -1306,6 +1318,126 @@ fn nested_module_paths_can_use_bundle_for_current_bundle_roots() {
 }
 
 #[test]
+fn implicit_bundle_relative_path_fallback_emits_warning() {
+    let source = "bundle demo\nmodule values =\n\tlet answer : core::Integer = 41\nend\nmodule consumer =\n\tlet value : core::Integer = demo::values::answer\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let _ = compile_source(source, &mut file_logger, &mut symbols);
+
+    assert_eq!(
+        file_logger_count_message(&file_logger, "Implicit bundle-relative path"),
+        1
+    );
+    assert!(
+        file_logger.is_ok(),
+        "Compilation should succeed with a warning"
+    );
+}
+
+#[test]
+fn implicit_bundle_relative_path_warning_is_not_emitted_for_local_resolution() {
+    let source = "bundle demo\nmodule outer =\n\tmodule demo =\n\t\tmodule values =\n\t\t\tlet answer : core::Integer = 1\n\t\tend\n\tend\n\tlet local : core::Integer = demo::values::answer\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let _ = compile_source(source, &mut file_logger, &mut symbols);
+
+    assert_eq!(
+        file_logger_count_message(&file_logger, "Implicit bundle-relative path"),
+        0
+    );
+    assert!(file_logger.is_ok(), "Compilation failed");
+}
+
+#[test]
+fn implicit_bundle_relative_path_warning_is_not_emitted_for_undefined_path() {
+    let source = "bundle demo\nlet value : core::Integer = demo::missing\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let _ = compile_source(source, &mut file_logger, &mut symbols);
+
+    assert!(file_logger_has_error_message(
+        &file_logger,
+        "Undefined term"
+    ));
+    assert_eq!(
+        file_logger_count_message(&file_logger, "Implicit bundle-relative path"),
+        0
+    );
+}
+
+#[test]
+fn implicit_bundle_relative_use_target_fallback_emits_warning() {
+    let source = "bundle demo\nmodule helper =\n\tlet token : core::Integer = 1\nend\nmodule consumer =\n\tuse demo::helper\n\tlet value : core::Integer = token\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let _ = compile_source(source, &mut file_logger, &mut symbols);
+
+    assert_eq!(
+        file_logger_count_message(&file_logger, "Implicit bundle-relative path"),
+        1
+    );
+    assert!(
+        file_logger.is_ok(),
+        "Compilation should succeed with a warning"
+    );
+}
+
+#[test]
+fn implicit_bundle_relative_use_target_without_suffix_emits_bundle_warning() {
+    let source = "bundle core\nmodule consumer =\n\tuse core\n\tlet value = 1\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("core.hc", source);
+    let _ = compile_source(source, &mut file_logger, &mut symbols);
+
+    assert_eq!(
+        file_logger_count_message(&file_logger, "Implicit bundle-relative path"),
+        1
+    );
+    assert!(
+        file_logger.iter().any(|diagnostic| {
+            diagnostic.message.contains("Implicit bundle-relative path")
+                && diagnostic.labels.iter().any(|label| {
+                    label.message.contains("`core` resolves to `root::core::`")
+                        && label.message.contains(
+                            "use `bundle` to refer to the current bundle in a less ambiguous way",
+                        )
+                })
+        }),
+        "warning should include root-qualified resolution and bundle suggestion"
+    );
+    assert!(
+        file_logger.is_ok(),
+        "Compilation should succeed with a warning"
+    );
+}
+
+#[test]
+fn implicit_bundle_relative_use_target_without_suffix_no_warning_for_local_module() {
+    let source = "bundle demo\nmodule outer =\n\tmodule demo =\n\t\tlet value = 1\n\tend\n\tuse demo\n\tlet result = value\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let _ = compile_source(source, &mut file_logger, &mut symbols);
+
+    assert_eq!(
+        file_logger_count_message(&file_logger, "Implicit bundle-relative path"),
+        0
+    );
+    assert!(file_logger.is_ok(), "Compilation failed");
+}
+
+#[test]
 fn nested_module_types_are_reachable_via_relative_paths() {
     let source = "module demo =\n\tmodule model =\n\t\ttype ~Token = root::core::Integer\n\tend\n\tlet value : model::Token = 1\nend\n";
     let mut symbols = SymbolTable::new();
@@ -1342,6 +1474,40 @@ fn use_imports_module_symbols_for_following_statements() {
 #[test]
 fn use_bundle_imports_symbols_from_bundle_root_modules() {
     let source = "bundle demo\nmodule first =\n\tlet value : core::Integer = 1\nend\nmodule second =\n\tuse bundle::first\n\tlet result : core::Integer = value\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let artifacts = compile_source(source, &mut file_logger, &mut symbols);
+    logger.consume_file(file_logger);
+
+    for artifact in artifacts.into_vec() {
+        let _ = validate_artifact(artifact, &mut logger);
+    }
+
+    assert_logger_is_ok(&logger, "Compilation failed");
+}
+
+#[test]
+fn use_bundle_without_suffix_opens_current_bundle_root() {
+    let source = "bundle demo\nmodule helper =\n\tlet token : core::Integer = 1\nend\nmodule consumer =\n\tuse bundle\n\tlet value : core::Integer = helper::token\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let artifacts = compile_source(source, &mut file_logger, &mut symbols);
+    logger.consume_file(file_logger);
+
+    for artifact in artifacts.into_vec() {
+        let _ = validate_artifact(artifact, &mut logger);
+    }
+
+    assert_logger_is_ok(&logger, "Compilation failed");
+}
+
+#[test]
+fn use_bundle_expression_without_suffix_opens_current_bundle_root() {
+    let source = "bundle demo\nmodule helper =\n\tlet token : core::Integer = 1\nend\nmodule consumer =\n\tlet value : core::Integer = use bundle in helper::token\nend\n";
     let mut symbols = SymbolTable::new();
     let mut logger = Logger::new();
     let _core = compile_core_module(&mut symbols, &mut logger);
@@ -1596,7 +1762,7 @@ let value = id 1
     );
     assert_eq!(
         impls[0].head.arguments[0].pretty(),
-        "'a",
+        "a",
         "expected generic impl head argument"
     );
     logger.consume_file(file_logger);
@@ -1714,9 +1880,11 @@ fn sum_type_does_not_publish_typename_constructor() {
     }
 
     assert_logger_is_ok(&logger, "sum constructors should still compile");
-    assert!(!symbols
-        .constructors()
-        .contains(&Path::new("demo", "Option")));
+    assert!(
+        !symbols
+            .constructors()
+            .contains(&Path::new("demo", "Option"))
+    );
     assert!(symbols.constructors().contains(&Path::new("demo", "Some")));
     assert!(symbols.constructors().contains(&Path::new("demo", "None")));
 }
@@ -1848,4 +2016,146 @@ fn core_resolves_array_equal_specialization_for_string_arrays() {
         method_scheme.type_.pretty(),
         method_scheme.predicates.len()
     );
+}
+
+#[test]
+fn core_compare_trait_item_retains_compare_predicate() {
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    assert_logger_is_ok(&logger, "core should compile");
+
+    let compare_method = symbols
+        .terms()
+        .get(&Path::new("core", "ops::[>]"))
+        .expect("missing core compare trait item");
+
+    assert!(
+        compare_method
+            .predicates
+            .iter()
+            .any(|predicate| predicate.trait_name == Path::new("core", "ops::Compare")),
+        "core::ops::[>] should require the Compare predicate"
+    );
+}
+
+#[test]
+fn core_ge_operator_retains_compare_and_equal_predicates() {
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    assert_logger_is_ok(&logger, "core should compile");
+
+    let ge = symbols
+        .terms()
+        .get(&Path::new("core", "ops::[>=]"))
+        .expect("missing core >= operator");
+
+    let has_compare = ge
+        .predicates
+        .iter()
+        .any(|predicate| predicate.trait_name == Path::new("core", "ops::Compare"));
+    let has_equal = ge
+        .predicates
+        .iter()
+        .any(|predicate| predicate.trait_name == Path::new("core", "ops::Equal"));
+
+    let predicate_names = ge
+        .predicates
+        .iter()
+        .map(|predicate| predicate.trait_name.to_string())
+        .collect::<Vec<_>>();
+
+    assert!(
+        has_compare,
+        "core::ops::[>=] should require Compare; got predicates {:?} and type {}",
+        predicate_names,
+        ge.type_.pretty()
+    );
+    assert!(
+        has_equal,
+        "core::ops::[>=] should require Equal; got predicates {:?} and type {}",
+        predicate_names,
+        ge.type_.pretty()
+    );
+}
+
+#[test]
+fn prelude_gt_alias_retains_compare_predicate() {
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    assert_logger_is_ok(&logger, "core should compile");
+
+    let prelude_gt = symbols
+        .terms()
+        .get(&Path::new("core", "prelude::[>]"))
+        .expect("missing prelude > alias");
+
+    assert!(
+        prelude_gt
+            .predicates
+            .iter()
+            .any(|predicate| predicate.trait_name == Path::new("core", "ops::Compare")),
+        "prelude::[>] should require Compare"
+    );
+}
+
+#[test]
+fn user_defined_ge_function_infers_compare_and_equal_predicates() {
+    let source = "module demo =\n\tlet ge = fn left right => if left > right then true else left == right\nend\n";
+
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let _artifacts = compile_source(source, &mut file_logger, &mut symbols);
+    logger.consume_file(file_logger);
+    assert_logger_is_ok(&logger, "demo source should compile");
+
+    let ge = symbols
+        .terms()
+        .iter()
+        .find_map(|(path, scheme)| path.minor.ends_with("ge").then_some(scheme))
+        .expect("missing ge symbol");
+
+    let has_compare = ge
+        .predicates
+        .iter()
+        .any(|predicate| predicate.trait_name == Path::new("core", "ops::Compare"));
+    let has_equal = ge
+        .predicates
+        .iter()
+        .any(|predicate| predicate.trait_name == Path::new("core", "ops::Equal"));
+
+    let predicate_names = ge
+        .predicates
+        .iter()
+        .map(|predicate| predicate.trait_name.to_string())
+        .collect::<Vec<_>>();
+
+    assert!(
+        has_compare,
+        "demo::ge should require Compare; got predicates {:?} and type {}",
+        predicate_names,
+        ge.type_.pretty()
+    );
+    assert!(
+        has_equal,
+        "demo::ge should require Equal; got predicates {:?} and type {}",
+        predicate_names,
+        ge.type_.pretty()
+    );
+}
+
+#[test]
+fn debug_dump_core_wat_for_big_num_validation() {
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let core = compile_core_module(&mut symbols, &mut logger);
+    assert!(logger.is_ok(), "core compile should succeed for debug dump");
+    let wat = core
+        .decompile_to_wat()
+        .expect("core binary should decompile for debug dump");
+    std::fs::write("/tmp/core_debug.wat", wat).expect("write debug wat");
 }

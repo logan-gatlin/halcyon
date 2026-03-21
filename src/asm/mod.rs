@@ -12,10 +12,10 @@
 pub mod custom_section;
 mod encode;
 mod lower;
-mod resolve;
-mod verify;
 pub mod module_section;
 pub mod pretty_print;
+mod resolve;
+mod verify;
 
 #[cfg(test)]
 mod tests;
@@ -24,7 +24,6 @@ use custom_section::*;
 use indexmap::IndexMap;
 use std::collections::HashMap;
 
-use crate::Artifact;
 use crate::ir::{
     ElaborationResult,
     ImmediateValue,
@@ -34,14 +33,20 @@ use crate::ir::{
     wasm,
 };
 use crate::logging::FileId;
-use crate::Span;
 use crate::types::SymbolTable;
+use crate::{
+    Artifact,
+    Span,
+};
 
-pub use encode::encode;
-pub(crate) use resolve::resolve_module;
-pub(crate) use verify::verify_module;
+pub use encode::{
+    encode,
+    encode_with_options,
+};
 pub(crate) use lower::ConstructorTable;
 pub use lower::lower_type;
+pub(crate) use resolve::resolve_module;
+pub(crate) use verify::verify_module;
 
 #[derive(Debug, Clone)]
 pub struct BackendError {
@@ -144,6 +149,34 @@ pub type SourceCatalog = Vec<(FileId, String, String)>;
 pub struct EncodedModule {
     pub binary: Vec<u8>,
     pub source_map: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct DebugInfoOptions {
+    pub emit_source_map: bool,
+    pub emit_dwarf: bool,
+}
+
+impl DebugInfoOptions {
+    pub const fn all() -> Self {
+        Self {
+            emit_source_map: true,
+            emit_dwarf: true,
+        }
+    }
+
+    pub const fn none() -> Self {
+        Self {
+            emit_source_map: false,
+            emit_dwarf: false,
+        }
+    }
+}
+
+impl Default for DebugInfoOptions {
+    fn default() -> Self {
+        Self::all()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -604,6 +637,16 @@ pub enum Instruction {
     ///
     /// Stack: `[value: f64] -> [value: f32]`
     F32DemoteF64,
+
+    /// Convert signed i64 to f64.
+    ///
+    /// Stack: `[value: i64] -> [value: f64]`
+    F64ConvertI64S,
+
+    /// Convert unsigned i64 to f64.
+    ///
+    /// Stack: `[value: i64] -> [value: f64]`
+    F64ConvertI64U,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -794,11 +837,19 @@ pub fn compile_module(
     elaborated: ElaborationResult,
     symbols: &SymbolTable,
     source_catalog: &SourceCatalog,
+    debug_info: DebugInfoOptions,
 ) -> Artifact {
+    let _profile_total = crate::profiling::scope("asm.compile_module.total");
     let ir_module = elaborated.module.clone();
     let module_name = ir_module.name.clone();
-    let module = lower_module(elaborated, symbols, source_catalog);
-    let encoded = encode(module);
+    let module = {
+        let _profile = crate::profiling::scope("asm.compile_module.lower_module");
+        lower_module(elaborated, symbols, source_catalog)
+    };
+    let encoded = {
+        let _profile = crate::profiling::scope("asm.compile_module.encode");
+        encode_with_options(module, debug_info)
+    };
     Artifact {
         module_name,
         ir_module: Some(ir_module),
@@ -826,6 +877,7 @@ impl Module {
             module: self,
             temporary_salt: 0,
             current_origin: None,
+            recursive_binding: None,
         }
     }
 
@@ -838,9 +890,11 @@ impl Module {
             self.source_file_lookup.insert(*file_id, file_name.clone());
             self.source_files
                 .entry(file_name.clone())
-                .or_insert_with(|| SourceFileRecord {
-                    file_name: file_name.clone(),
-                    source: source.clone(),
+                .or_insert_with(|| {
+                    SourceFileRecord {
+                        file_name: file_name.clone(),
+                        source: source.clone(),
+                    }
                 });
         }
     }
@@ -872,6 +926,7 @@ pub struct Encoder<'a> {
     pub func_name: Path,
     pub temporary_salt: usize,
     pub current_origin: Option<SourceOrigin>,
+    pub recursive_binding: Option<Path>,
 }
 
 impl<'a> Encoder<'a> {
@@ -897,7 +952,9 @@ impl<'a> Encoder<'a> {
         &mut self,
         instrs: impl IntoIterator<Item = Instruction>,
     ) {
-        instrs.into_iter().for_each(|instruction| self.push(instruction));
+        instrs
+            .into_iter()
+            .for_each(|instruction| self.push(instruction));
     }
 
     /// Handles with origin.

@@ -97,7 +97,10 @@ enum WireSemanticType {
     Glyph,
     TypeVar(u32),
     MetaVar(u32),
-    ForAll(Box<WireSemanticType>),
+    ForAll {
+        name: Option<String>,
+        body: Box<WireSemanticType>,
+    },
     Named {
         name: WirePath,
         body: Box<WireSemanticType>,
@@ -129,7 +132,7 @@ enum TypeSignatureDecodeError {
 
 impl TypeSignatureSection {
     pub const NAME: &str = "type_signature";
-    const VERSION: u32 = 2;
+    const VERSION: u32 = 3;
 
     /// Creates a new instance.
     pub fn new(
@@ -442,7 +445,12 @@ impl WireSemanticType {
             SemanticType::Glyph => Self::Glyph,
             SemanticType::TypeVar(id) => Self::TypeVar(*id),
             SemanticType::MetaVar(id) => Self::MetaVar(*id),
-            SemanticType::ForAll(body) => Self::ForAll(Box::new(Self::from(body))),
+            SemanticType::ForAll { name, body } => {
+                Self::ForAll {
+                    name: name.clone(),
+                    body: Box::new(Self::from(body)),
+                }
+            }
             SemanticType::Named { name, body } => {
                 Self::Named {
                     name: WirePath::from(name),
@@ -505,7 +513,12 @@ impl WireSemanticType {
             Self::Glyph => SemanticType::Glyph,
             Self::TypeVar(id) => SemanticType::TypeVar(id),
             Self::MetaVar(id) => SemanticType::MetaVar(id),
-            Self::ForAll(body) => SemanticType::ForAll(Box::new(body.into_semantic_type())),
+            Self::ForAll { name, body } => {
+                SemanticType::ForAll {
+                    name,
+                    body: Box::new(body.into_semantic_type()),
+                }
+            }
             Self::Named { name, body } => {
                 SemanticType::Named {
                     name: name.into_path(),
@@ -675,7 +688,10 @@ mod tests {
         roundtrip_type(SemanticType::Glyph);
         roundtrip_type(SemanticType::TypeVar(2));
         roundtrip_type(SemanticType::MetaVar(3));
-        roundtrip_type(SemanticType::ForAll(Box::new(SemanticType::TypeVar(0))));
+        roundtrip_type(SemanticType::ForAll {
+            name: None,
+            body: Box::new(SemanticType::TypeVar(0)),
+        });
 
         let mut fields = IndexMap::new();
         fields.insert("x".into(), SemanticType::Integer);
@@ -704,13 +720,16 @@ mod tests {
     /// Handles roundtrip named apply and scheme.
     fn roundtrip_named_apply_and_scheme() {
         let path = Path::new("test", "Box");
-        let body = SemanticType::ForAll(Box::new(SemanticType::Struct {
-            fields: {
-                let mut fields = IndexMap::new();
-                fields.insert("value".into(), SemanticType::TypeVar(0));
-                fields
-            },
-        }));
+        let body = SemanticType::ForAll {
+            name: None,
+            body: Box::new(SemanticType::Struct {
+                fields: {
+                    let mut fields = IndexMap::new();
+                    fields.insert("value".into(), SemanticType::TypeVar(0));
+                    fields
+                },
+            }),
+        };
         let applied = SemanticType::Apply {
             constructor: Box::new(SemanticType::Named {
                 name: path.clone(),

@@ -1,6 +1,6 @@
 module opt =
   use core
-  use core::ops
+  use bundle::ops
   type Option: a = | Some a | None
 
   let map = fn f opt => match opt with
@@ -107,6 +107,13 @@ module opt =
         match right with
           | Some _ => false
           | None => true
+  end
+
+  impl bundle::show::Show for a in Option a where bundle::show::Show a =
+    let show = fn value =>
+      match value with
+        | Some inner => "Some(" + (bundle::show::show inner) + ")"
+        | None => "None"
   end
 
   impl bundle::hkt::Applicative Option =

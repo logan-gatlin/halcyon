@@ -10,7 +10,7 @@ use super::{
 pub(crate) fn leading_forall_count(type_: &Type) -> usize {
     let mut count = 0;
     let mut current = type_;
-    while let Type::ForAll(body) = current {
+    while let Type::ForAll { body, .. } = current {
         count += 1;
         current = body;
     }
@@ -21,7 +21,7 @@ pub(crate) fn leading_forall_count(type_: &Type) -> usize {
 pub(crate) fn peel_leading_foralls(type_: &Type) -> (usize, Type) {
     let mut count = 0;
     let mut current = type_.clone();
-    while let Type::ForAll(body) = current {
+    while let Type::ForAll { body, .. } = current {
         count += 1;
         current = *body;
     }
@@ -38,7 +38,7 @@ pub(crate) fn instantiate_forall_strict(
     arguments
         .iter()
         .try_fold(type_.clone(), |current, argument| {
-            let Type::ForAll(body) = current else {
+            let Type::ForAll { body, .. } = current else {
                 return None;
             };
             body.open_forall(argument)

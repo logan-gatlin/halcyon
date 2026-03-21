@@ -257,6 +257,8 @@ impl PrettyPrint for Instruction {
             I64TruncF64S => "i64.trunc_f64_s".into(),
             I64TruncF64U => "i64.trunc_f64_u".into(),
             F32DemoteF64 => "f32.demote_f64".into(),
+            F64ConvertI64S => "f64.convert_i64_s".into(),
+            F64ConvertI64U => "f64.convert_i64_u".into(),
             Call(path) => format!("call {}", path.pretty()),
         }
     }

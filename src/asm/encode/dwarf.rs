@@ -11,12 +11,13 @@ use gimli::write::{
     Sections,
 };
 use gimli::{
-    constants,
     Encoding,
     Format,
     LineEncoding,
     LittleEndian,
+    constants,
 };
+use rayon::prelude::*;
 
 use super::super::*;
 
@@ -40,34 +41,32 @@ pub(crate) fn build_dwarf_sections(
         return Vec::new();
     };
 
-    let mut sequences = Vec::new();
-    for (offsets, origins) in parsed_offsets
+    let mut sequences = parsed_offsets
         .functions
-        .iter()
-        .zip(function_operator_origins.iter())
-    {
-        let Some(start) = offsets.first().copied() else {
-            continue;
-        };
-        let end = offsets.last().copied().unwrap_or(start).saturating_add(1) as u64;
-
-        let mut rows = Vec::new();
-        for (index, offset) in offsets.iter().enumerate() {
-            let Some(origin) = origins.get(index).cloned().flatten() else {
-                continue;
-            };
-            let (line, column) = original_line_column(&origin, module);
-            rows.push((*offset as u64, origin.file_name, line, column));
-        }
-        if rows.is_empty() {
-            continue;
-        }
-        sequences.push(DwarfSequence {
-            start_address: start as u64,
-            end_address: end,
-            rows,
-        });
-    }
+        .par_iter()
+        .zip(function_operator_origins.par_iter())
+        .filter_map(|(offsets, origins)| {
+            let start = offsets.first().copied()?;
+            let end = offsets.last().copied().unwrap_or(start).saturating_add(1) as u64;
+            let rows = offsets
+                .iter()
+                .enumerate()
+                .filter_map(|(index, offset)| {
+                    let origin = origins.get(index).and_then(|origin| origin.clone())?;
+                    let (line, column) = original_line_column(&origin, module);
+                    Some((*offset as u64, origin.file_name, line, column))
+                })
+                .collect::<Vec<_>>();
+            if rows.is_empty() {
+                return None;
+            }
+            Some(DwarfSequence {
+                start_address: start as u64,
+                end_address: end,
+                rows,
+            })
+        })
+        .collect::<Vec<_>>();
 
     if sequences.is_empty() {
         return Vec::new();

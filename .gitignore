@@ -2,4 +2,7 @@
 /lib/target
 /lib/pkg
 /hcc/target
+/fuzz/target
+/fuzz/artifacts
+/fuzz/coverage
 .DS_Store

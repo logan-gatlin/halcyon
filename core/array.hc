@@ -1,7 +1,7 @@
 module array =
   use core
-  use core::ops
-  use core::opt
+  use bundle::ops
+  use bundle::opt
   let empty : for a in Array a = (wasm : for a in Array a) => (
     i32.const 0
     array.new_default any
@@ -170,6 +170,12 @@ module array =
               then array::equal_with compare left_tail right_tail
               else false
 
+  let show_items = fn arr =>
+    match arr with
+      | [] => ""
+      | [value] => bundle::show::show value
+      | [value, ..tail] => (bundle::show::show value) + ", " + (show_items tail)
+
   impl Default for a in Array a =
     let default = []
   end
@@ -182,6 +188,10 @@ module array =
     let [==] = fn left right =>
       let compare = bundle::ops::[==] in
       array::equal_with compare left right
+  end
+
+  impl bundle::show::Show for a in Array a where bundle::show::Show a =
+    let show = fn arr => "[" + (show_items arr) + "]"
   end
 
   impl bundle::hkt::Applicative Array =

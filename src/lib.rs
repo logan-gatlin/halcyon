@@ -8,6 +8,8 @@ pub mod logging;
 pub mod map;
 pub mod operator;
 pub mod parse;
+pub mod profiling;
+pub mod tooling;
 pub mod types;
 #[cfg(target_arch = "wasm32")]
 pub mod web;
@@ -25,7 +27,10 @@ pub use indoc::*;
 pub use logging::*;
 pub use map::*;
 
-pub use crate::hc_core::compile_core_module;
+pub use crate::hc_core::{
+    compile_core_module,
+    compile_core_module_with_debug_info,
+};
 use crate::parse::ast::SourceFile;
 
 /// Grabs the version number from Cargo.toml at compile time
@@ -90,8 +95,24 @@ where
     pub demo_mode: bool,
     /// Link with the core bundle
     pub use_core: bool,
+    /// Emit source map JSON and sourceMappingURL custom section.
+    pub emit_source_map: bool,
+    /// Emit DWARF custom sections for backtraces.
+    pub emit_dwarf: bool,
     /// Attempt to get the source text for a given path
     pub resolve_import: F,
+}
+
+impl<F> CompileOptions<F>
+where
+    F: FnMut(String) -> Option<String>,
+{
+    fn debug_info_options(&self) -> asm::DebugInfoOptions {
+        asm::DebugInfoOptions {
+            emit_source_map: self.emit_source_map,
+            emit_dwarf: self.emit_dwarf,
+        }
+    }
 }
 
 pub(crate) fn name_resolution_prelude(
@@ -172,14 +193,26 @@ fn compile_ir_bundle(
     symbols: &mut types::SymbolTable,
     logger: &mut FileLogger,
     source_catalog: &asm::SourceCatalog,
+    debug_info: asm::DebugInfoOptions,
 ) -> Option<Artifact> {
-    let resolved = types::resolve_module_with_symbols_and_schemes(symbols, ir_bundle, logger);
+    let _profile_total = profiling::scope("pipeline.compile_ir_bundle.total");
+
+    let resolved = {
+        let _profile = profiling::scope("pipeline.resolve_module");
+        types::resolve_module_with_symbols_and_schemes(symbols, ir_bundle, logger)
+    };
     if !logger.is_ok() {
         return None;
     }
 
-    let elaborated = ir::elaborate_module(resolved, symbols);
-    Some(asm::compile_module(elaborated, symbols, source_catalog))
+    let elaborated = {
+        let _profile = profiling::scope("pipeline.elaborate_module");
+        ir::elaborate_module(resolved, symbols)
+    };
+    Some({
+        let _profile = profiling::scope("pipeline.asm_compile_module");
+        asm::compile_module(elaborated, symbols, source_catalog, debug_info)
+    })
 }
 
 fn compile_ir_bundle_artifacts(
@@ -187,8 +220,9 @@ fn compile_ir_bundle_artifacts(
     symbols: &mut types::SymbolTable,
     logger: &mut FileLogger,
     source_catalog: &asm::SourceCatalog,
+    debug_info: asm::DebugInfoOptions,
 ) -> Box<[Artifact]> {
-    compile_ir_bundle(ir_bundle, symbols, logger, source_catalog)
+    compile_ir_bundle(ir_bundle, symbols, logger, source_catalog, debug_info)
         .map(|compiled| vec![compiled].into_boxed_slice())
         .unwrap_or_else(no_artifacts)
 }
@@ -244,6 +278,8 @@ fn compile_source_linked_with_core_logger(source: &str) -> Result<Vec<u8>, Logge
         CompileOptions {
             demo_mode: true,
             use_core: true,
+            emit_source_map: false,
+            emit_dwarf: false,
             resolve_import: |_| None,
         },
     );
@@ -273,17 +309,30 @@ pub fn compile_source_with_options<F>(
 where
     F: FnMut(String) -> Option<String>,
 {
+    let _profile_total = profiling::scope("pipeline.compile_source.total");
     let mut artifacts = Vec::new();
+    let debug_info = options.debug_info_options();
 
     if options.use_core {
-        artifacts.push(compile_core_module(symbols, logger));
+        artifacts.push({
+            let _profile = profiling::scope("pipeline.compile_source.core");
+            hc_core::compile_core_module_with_debug_info(
+                symbols,
+                logger,
+                options.emit_source_map,
+                options.emit_dwarf,
+            )
+        });
         if !logger.is_ok() {
             return artifacts.into_boxed_slice();
         }
     }
 
     let mut source_file_logger = logger.new_file(source_name, source);
-    let Some(source_file) = parse::parse(source, &mut source_file_logger) else {
+    let Some(source_file) = ({
+        let _profile = profiling::scope("pipeline.compile_source.parse");
+        parse::parse(source, &mut source_file_logger)
+    }) else {
         logger.consume_file(source_file_logger);
         return artifacts.into_boxed_slice();
     };
@@ -296,14 +345,17 @@ where
     }
 
     let prelude = name_resolution_prelude(symbols);
-    let Some(ir_bundle) = ir::bundle_source_file_with_imports_and_prelude(
-        bundle_name,
-        source_file,
-        source_file_logger,
-        logger,
-        &prelude,
-        &mut options.resolve_import,
-    ) else {
+    let Some(ir_bundle) = ({
+        let _profile = profiling::scope("pipeline.compile_source.lower_with_imports");
+        ir::bundle_source_file_with_imports_and_prelude(
+            bundle_name,
+            source_file,
+            source_file_logger,
+            logger,
+            &prelude,
+            &mut options.resolve_import,
+        )
+    }) else {
         return artifacts.into_boxed_slice();
     };
 
@@ -313,8 +365,16 @@ where
 
     let mut typing_file_logger = logger.new_file(source_name, source);
     let source_catalog = logger.source_files();
-    let compiled_artifacts =
-        compile_ir_bundle_artifacts(ir_bundle, symbols, &mut typing_file_logger, &source_catalog);
+    let compiled_artifacts = {
+        let _profile = profiling::scope("pipeline.compile_source.type_elab_codegen");
+        compile_ir_bundle_artifacts(
+            ir_bundle,
+            symbols,
+            &mut typing_file_logger,
+            &source_catalog,
+            debug_info,
+        )
+    };
     logger.consume_file(typing_file_logger);
     if compiled_artifacts.is_empty() {
         return artifacts.into_boxed_slice();
@@ -368,7 +428,13 @@ pub fn compile_source(
         return no_artifacts();
     };
 
-    compile_ir_bundle_artifacts(ir_bundle, symbols, logger, &Vec::new())
+    compile_ir_bundle_artifacts(
+        ir_bundle,
+        symbols,
+        logger,
+        &Vec::new(),
+        asm::DebugInfoOptions::default(),
+    )
 }
 
 #[tracing::instrument(skip_all, fields(module = %art.module_name))]
@@ -376,6 +442,8 @@ pub fn validate_artifact(
     art: Artifact,
     logger: &mut Logger,
 ) -> Artifact {
+    let _profile_total = profiling::scope("pipeline.validate_artifact.total");
+
     fn find_wat_line_for_offset(
         offset_map: &[(usize, Option<usize>)],
         target_offset: usize,
@@ -403,14 +471,17 @@ pub fn validate_artifact(
 
     let file_name = format!("{}.wat", art.module_name);
     let mut wat_with_offsets = String::new();
-    let offset_map = wasmprinter::Config::new()
-        .offsets_and_lines(&art.binary, &mut wat_with_offsets)
-        .map(|iter| {
-            iter.enumerate()
-                .map(|(idx, (offset, _text))| (idx + 1, offset))
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
+    let offset_map = {
+        let _profile = profiling::scope("pipeline.validate_artifact.offsets_and_lines");
+        wasmprinter::Config::new()
+            .offsets_and_lines(&art.binary, &mut wat_with_offsets)
+            .map(|iter| {
+                iter.enumerate()
+                    .map(|(idx, (offset, _text))| (idx + 1, offset))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default()
+    };
     let wat = if wat_with_offsets.is_empty() {
         art.decompile_to_wat()
     } else {
@@ -425,7 +496,10 @@ pub fn validate_artifact(
         return art;
     };
     let mut file_logger = logger.new_file(file_name, wat.clone());
-    if let Err(error) = wasmparser::validate(&art.binary) {
+    if let Err(error) = {
+        let _profile = profiling::scope("pipeline.validate_artifact.wasmparser_validate");
+        wasmparser::validate(&art.binary)
+    } {
         let line = find_wat_line_for_offset(&offset_map, error.offset());
         let byte_start = wat_line_byte_offset(&wat, line);
         let byte_end = wat_line_byte_offset(&wat, line + 1).min(wat.len());
