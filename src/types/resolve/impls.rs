@@ -87,64 +87,74 @@ impl ImplProcessingContext<'_> {
         arguments: Box<[TypeExpr]>,
         methods: Box<[ImplMethod<()>]>,
     ) -> (Statement<Type>, Vec<Term<Type>>) {
-        let mut resolved_type_definitions = self.type_definitions.clone();
+        let _profile_total = crate::profiling::scope("resolve.impl.process.total");
+        let mut resolved_type_definitions = {
+            let _profile = crate::profiling::scope("resolve.impl.clone_type_definitions");
+            self.type_definitions.clone()
+        };
         let canonical_trait_path = self
             .symbols
             .canonical_trait_path(&trait_path)
             .unwrap_or_else(|| trait_path.clone());
         let trait_definition = self.symbols.trait_definition(&trait_path).cloned();
 
-        let raw_argument_schemes = arguments
-            .iter()
-            .map(|arg| {
-                type_expr_to_scheme_in_def(
-                    arg,
-                    &HashMap::new(),
-                    self.pending_type_definitions,
-                    &mut resolved_type_definitions,
-                    &mut Vec::new(),
-                    self.logger,
-                )
-            })
-            .collect::<Vec<_>>();
-        let argument_kinds = arguments
-            .iter()
-            .zip(raw_argument_schemes.iter())
-            .map(|(argument_expr, argument_scheme)| {
-                match infer_scheme_kind(
-                    argument_scheme,
-                    0,
-                    &|type_path| {
-                        resolved_type_definitions.get(type_path).map(|definition| {
-                            constructor_kind(definition.parameters, &definition.parameter_kinds)
-                        })
-                    },
-                    &|trait_name| {
-                        let canonical = self
-                            .symbols
-                            .canonical_trait_path(trait_name)
-                            .unwrap_or_else(|| trait_name.clone());
-                        self.symbols.trait_defs().get(&canonical).map(|definition| {
-                            normalize_parameter_kinds(
-                                definition.parameter_kinds.clone(),
-                                definition.parameters,
-                            )
-                        })
-                    },
-                ) {
-                    Ok(inferred) => inferred.kind,
-                    Err(error) => {
-                        log_impl_argument_kind_error(
-                            self.logger,
-                            &canonical_trait_path,
-                            argument_expr.span,
-                            error,
-                        );
-                        Kind::Type
+        let raw_argument_schemes = {
+            let _profile = crate::profiling::scope("resolve.impl.argument_schemes");
+            arguments
+                .iter()
+                .map(|arg| {
+                    type_expr_to_scheme_in_def(
+                        arg,
+                        &HashMap::new(),
+                        self.pending_type_definitions,
+                        &mut resolved_type_definitions,
+                        &mut Vec::new(),
+                        self.logger,
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        let argument_kinds = {
+            let _profile = crate::profiling::scope("resolve.impl.argument_kinds");
+            arguments
+                .iter()
+                .zip(raw_argument_schemes.iter())
+                .map(|(argument_expr, argument_scheme)| {
+                    match infer_scheme_kind(
+                        argument_scheme,
+                        0,
+                        &|type_path| {
+                            resolved_type_definitions.get(type_path).map(|definition| {
+                                constructor_kind(definition.parameters, &definition.parameter_kinds)
+                            })
+                        },
+                        &|trait_name| {
+                            let canonical = self
+                                .symbols
+                                .canonical_trait_path(trait_name)
+                                .unwrap_or_else(|| trait_name.clone());
+                            self.symbols.trait_defs().get(&canonical).map(|definition| {
+                                normalize_parameter_kinds(
+                                    definition.parameter_kinds.clone(),
+                                    definition.parameters,
+                                )
+                            })
+                        },
+                    ) {
+                        Ok(inferred) => inferred.kind,
+                        Err(error) => {
+                            log_impl_argument_kind_error(
+                                self.logger,
+                                &canonical_trait_path,
+                                argument_expr.span,
+                                error,
+                            );
+                            Kind::Type
+                        }
                     }
-                }
-            })
-            .collect::<Vec<_>>();
+                })
+                .collect::<Vec<_>>()
+        };
         let peeled_arguments = raw_argument_schemes
             .iter()
             .map(|scheme| {
@@ -241,11 +251,14 @@ impl ImplProcessingContext<'_> {
                 .map(|(_, name)| name)
                 .unwrap_or_else(|| method.trait_method.minor.as_str());
             let canonical_trait_method = canonical_trait_path.sibling(method_name);
-            let (mut typed_value, mut predicates) = match self.inference_context.infer_term(
-                self.type_environment,
-                &method.value,
-                self.schemes,
-            ) {
+            let (mut typed_value, mut predicates) = match {
+                let _profile = crate::profiling::scope("resolve.impl.method_infer_term");
+                self.inference_context.infer_term(
+                    self.type_environment,
+                    &method.value,
+                    self.schemes,
+                )
+            } {
                 Ok(output) => (output.term, output.predicates),
                 Err(error) => {
                     log_type_error(self.logger, error);
@@ -278,32 +291,42 @@ impl ImplProcessingContext<'_> {
                             instantiated = %instantiated.type_.pretty(),
                             "instantiated method scheme for impl check",
                         );
-                        let expected_type = normalize_alias_applications(
-                            instantiate_forall_for_impl_check(
-                                self.inference_context,
-                                instantiated.type_.clone(),
-                                method.span,
-                            ),
-                            &resolved_type_definitions,
-                        );
-                        let value_type = normalize_alias_applications(
-                            instantiate_forall_for_impl_check(
-                                self.inference_context,
-                                typed_value.type_.clone(),
-                                method.span,
-                            ),
-                            &resolved_type_definitions,
-                        );
+                        let expected_type = {
+                            let _profile =
+                                crate::profiling::scope("resolve.impl.normalize_expected_type");
+                            normalize_alias_applications(
+                                instantiate_forall_for_impl_check(
+                                    self.inference_context,
+                                    instantiated.type_.clone(),
+                                    method.span,
+                                ),
+                                &resolved_type_definitions,
+                            )
+                        };
+                        let value_type = {
+                            let _profile =
+                                crate::profiling::scope("resolve.impl.normalize_value_type");
+                            normalize_alias_applications(
+                                instantiate_forall_for_impl_check(
+                                    self.inference_context,
+                                    typed_value.type_.clone(),
+                                    method.span,
+                                ),
+                                &resolved_type_definitions,
+                            )
+                        };
                         tracing::debug!(
                             expected = %expected_type.pretty(),
                             inferred = %value_type.pretty(),
                             "impl method type check",
                         );
-                        if let Err(error) = self
-                            .inference_context
-                            .table_mut()
-                            .unify(&value_type, &expected_type)
-                        {
+                        if let Err(error) = {
+                            let _profile =
+                                crate::profiling::scope("resolve.impl.unify_method_type");
+                            self.inference_context
+                                .table_mut()
+                                .unify(&value_type, &expected_type)
+                        } {
                             log_type_error(
                                 self.logger,
                                 TypeError::Unification {
@@ -350,14 +373,17 @@ impl ImplProcessingContext<'_> {
 
             typed_value = normalize_term_types(typed_value, self.inference_context.table_mut());
             let normalized_type = typed_value.type_.clone();
-            solve_predicates_with_assumptions(
-                self.logger,
-                self.inference_context,
-                self.symbols,
-                method.span,
-                &predicates,
-                &predicate_assumptions,
-            );
+            {
+                let _profile = crate::profiling::scope("resolve.impl.solve_predicates");
+                solve_predicates_with_assumptions(
+                    self.logger,
+                    self.inference_context,
+                    self.symbols,
+                    method.span,
+                    &predicates,
+                    &predicate_assumptions,
+                );
+            }
 
             let scheme = self.inference_context.generalize_with_predicates(
                 &normalized_type,
@@ -432,7 +458,7 @@ fn instantiate_forall_for_impl_check(
     span: Span,
 ) -> Type {
     match type_ {
-        forall @ Type::ForAll(_) => {
+        forall @ Type::ForAll { .. } => {
             inference_context
                 .instantiate(&TypeScheme::new(forall.clone()), span)
                 .unwrap_or(forall)
@@ -454,11 +480,11 @@ fn normalize_alias_applications(
         | Type::Glyph
         | Type::TypeVar(_)
         | Type::MetaVar(_) => type_,
-        Type::ForAll(body) => {
-            Type::ForAll(Box::new(normalize_alias_applications(
-                *body,
-                type_definitions,
-            )))
+        Type::ForAll { name, body } => {
+            Type::ForAll {
+                name,
+                body: Box::new(normalize_alias_applications(*body, type_definitions)),
+            }
         }
         Type::Named { name, body } => Type::Named { name, body },
         Type::StructConstraint { fields, mode } => {
@@ -607,7 +633,7 @@ fn type_contains_local_nominal_type(
 ) -> bool {
     match type_ {
         Type::Named { name, .. } => name.major == module_name,
-        Type::Array(inner) | Type::ForAll(inner) => {
+        Type::Array(inner) | Type::ForAll { body: inner, .. } => {
             type_contains_local_nominal_type(inner, module_name)
         }
         Type::Tuple(items) => {

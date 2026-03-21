@@ -1,0 +1,3 @@
+module app =
+    let value = 42
+end

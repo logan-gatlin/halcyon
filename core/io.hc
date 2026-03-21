@@ -1,6 +1,6 @@
 module io =
   use core
-  use core::ops
+  use bundle::ops
 
   let write_stdout = wasi::write_stdout
   let write_stderr = wasi::write_stderr

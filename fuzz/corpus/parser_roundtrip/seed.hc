@@ -1,0 +1,4 @@
+bundle fuzz
+module app =
+    let id = fn x => x
+end

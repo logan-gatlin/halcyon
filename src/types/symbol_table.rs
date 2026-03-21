@@ -4,9 +4,13 @@
 //! provides trait-instance selection/resolution utilities shared by resolve and
 //! elaboration.
 
-use std::collections::HashSet;
+use std::collections::{
+    HashMap,
+    HashSet,
+};
 
 use indexmap::IndexMap;
+use rayon::prelude::*;
 
 use crate::ir::Path;
 
@@ -64,7 +68,7 @@ pub trait Symbol {
 }
 
 /// Global definitions shared across modules during typechecking.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct SymbolTable {
     terms: IndexMap<Path, TypeScheme>,
     types: IndexMap<Path, TypeDefinition>,
@@ -73,6 +77,129 @@ pub struct SymbolTable {
     trait_defs: IndexMap<Path, TraitDef>,
     trait_aliases: IndexMap<Path, Path>,
     trait_impls: IndexMap<Path, Vec<TraitImpl>>,
+    #[serde(skip)]
+    trait_impl_indexes: IndexMap<Path, TraitImplIndex>,
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+struct TraitImplIndex {
+    all: Vec<usize>,
+    by_position: Vec<IndexMap<TypeHeadKey, Vec<usize>>>,
+    wildcard_by_position: Vec<Vec<usize>>,
+}
+
+impl TraitImplIndex {
+    fn build(implementations: &[TraitImpl]) -> Self {
+        let arity = implementations
+            .iter()
+            .map(|implementation| implementation.head.arguments.len())
+            .max()
+            .unwrap_or(0);
+
+        let mut index = Self {
+            all: Vec::with_capacity(implementations.len()),
+            by_position: vec![IndexMap::new(); arity],
+            wildcard_by_position: vec![Vec::new(); arity],
+        };
+
+        for (impl_index, implementation) in implementations.iter().enumerate() {
+            index.all.push(impl_index);
+            for (position, argument) in implementation.head.arguments.iter().enumerate() {
+                if let Some(head_key) = type_head_key(argument) {
+                    index
+                        .by_position
+                        .get_mut(position)
+                        .unwrap_or_else(|| unreachable!("position must be in bounds"))
+                        .entry(head_key)
+                        .or_default()
+                        .push(impl_index);
+                } else {
+                    index
+                        .wildcard_by_position
+                        .get_mut(position)
+                        .unwrap_or_else(|| unreachable!("position must be in bounds"))
+                        .push(impl_index);
+                }
+            }
+        }
+
+        index
+    }
+
+    fn candidate_indices(
+        &self,
+        predicate: &TraitRef,
+    ) -> Vec<usize> {
+        let mut filtered: Option<Vec<usize>> = None;
+
+        for (position, argument) in predicate.arguments.iter().enumerate() {
+            let Some(head_key) = type_head_key(argument) else {
+                continue;
+            };
+            if !head_key.is_rigid() {
+                continue;
+            };
+
+            let wildcard = self
+                .wildcard_by_position
+                .get(position)
+                .cloned()
+                .unwrap_or_default();
+            let keyed = self
+                .by_position
+                .get(position)
+                .and_then(|index| index.get(&head_key))
+                .cloned()
+                .unwrap_or_default();
+
+            if wildcard.is_empty() && keyed.is_empty() {
+                return Vec::new();
+            }
+
+            let mut constrained = wildcard;
+            constrained.extend(keyed);
+            constrained.sort_unstable();
+            constrained.dedup();
+
+            filtered = Some(match filtered {
+                None => constrained,
+                Some(existing) => intersect_sorted_indices(&existing, &constrained),
+            });
+
+            if filtered.as_ref().is_some_and(Vec::is_empty) {
+                return Vec::new();
+            }
+        }
+
+        filtered.unwrap_or_else(|| self.all.clone())
+    }
+}
+
+fn intersect_sorted_indices(
+    left: &[usize],
+    right: &[usize],
+) -> Vec<usize> {
+    let mut result = Vec::new();
+    let mut left_index = 0;
+    let mut right_index = 0;
+
+    while left_index < left.len() && right_index < right.len() {
+        match left[left_index].cmp(&right[right_index]) {
+            std::cmp::Ordering::Less => {
+                left_index += 1;
+            }
+            std::cmp::Ordering::Greater => {
+                right_index += 1;
+            }
+            std::cmp::Ordering::Equal => {
+                result.push(left[left_index]);
+                left_index += 1;
+                right_index += 1;
+            }
+        }
+    }
+
+    result
 }
 
 #[derive(Debug, Clone)]
@@ -91,6 +218,63 @@ impl SymbolTable {
     /// Create an empty symbol table.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Merge symbols from another table, preserving existing entries when identical.
+    pub fn absorb(
+        &mut self,
+        other: &SymbolTable,
+    ) {
+        self.terms.extend(other.terms.clone());
+        self.types.extend(other.types.clone());
+        self.constructors.extend(other.constructors.iter().cloned());
+        self.constructor_aliases
+            .extend(other.constructor_aliases.clone());
+        self.trait_defs.extend(other.trait_defs.clone());
+        self.trait_aliases.extend(other.trait_aliases.clone());
+        for (trait_name, implementations) in &other.trait_impls {
+            let entry = self.trait_impls.entry(trait_name.clone()).or_default();
+            for implementation in implementations {
+                if !entry.contains(implementation) {
+                    entry.push(implementation.clone());
+                }
+            }
+            self.rebuild_trait_impl_index_for_trait(trait_name);
+        }
+    }
+
+    fn rebuild_trait_impl_index_for_trait(
+        &mut self,
+        trait_name: &Path,
+    ) {
+        let Some(implementations) = self.trait_impls.get(trait_name) else {
+            self.trait_impl_indexes.shift_remove(trait_name);
+            return;
+        };
+        self.trait_impl_indexes
+            .insert(trait_name.clone(), TraitImplIndex::build(implementations));
+    }
+
+    pub fn rebuild_derived_indexes(&mut self) {
+        self.trait_impl_indexes.clear();
+        let trait_names = self.trait_impls.keys().cloned().collect::<Vec<_>>();
+        for trait_name in trait_names {
+            self.rebuild_trait_impl_index_for_trait(&trait_name);
+        }
+    }
+
+    fn candidate_impl_indices(
+        &self,
+        predicate: &TraitRef,
+    ) -> Vec<usize> {
+        let Some(candidates) = self.trait_impls.get(&predicate.trait_name) else {
+            return Vec::new();
+        };
+
+        self.trait_impl_indexes
+            .get(&predicate.trait_name)
+            .map(|index| index.candidate_indices(predicate))
+            .unwrap_or_else(|| (0..candidates.len()).collect())
     }
 
     /// Insert any symbol kind and return the previous value if present.
@@ -294,7 +478,10 @@ impl SymbolTable {
                 trait_name: trait_implementation.head.trait_name.clone(),
             });
         }
-        let impls = self.trait_impls.entry(canonical_trait_name).or_default();
+        let impls = self
+            .trait_impls
+            .entry(canonical_trait_name.clone())
+            .or_default();
         for existing in impls.iter() {
             if instances_overlap(existing, &trait_implementation)? {
                 return Err(TraitError::OverlappingInstance {
@@ -305,6 +492,7 @@ impl SymbolTable {
             }
         }
         impls.push(trait_implementation);
+        self.rebuild_trait_impl_index_for_trait(&canonical_trait_name);
         Ok(())
     }
 
@@ -324,10 +512,14 @@ impl SymbolTable {
         predicates: &[TraitConstraint],
         assumptions: &[TraitConstraint],
     ) -> Result<Vec<TraitConstraint>, TraitError> {
+        let _profile_total = crate::profiling::scope("symbols.resolve_predicates.total");
         let mut unresolved = Vec::new();
         let mut stack = Vec::new();
+        let mut memo = HashMap::<Vec<u8>, Result<Vec<TraitConstraint>, TraitError>>::new();
         for predicate in predicates {
-            for remaining in self.resolve_predicate(table, predicate, assumptions, &mut stack)? {
+            for remaining in
+                self.resolve_predicate(table, predicate, assumptions, &mut stack, &mut memo)?
+            {
                 if self.predicate_matches_assumptions(table, &remaining, assumptions) {
                     continue;
                 }
@@ -376,7 +568,14 @@ impl SymbolTable {
 
         let mut matched: Option<TraitImpl> = None;
         if let Some(candidates) = self.trait_impls.get(&normalized.trait_name) {
-            for candidate in candidates {
+            for candidate in self
+                .candidate_impl_indices(&normalized)
+                .into_iter()
+                .filter_map(|index| candidates.get(index))
+            {
+                if !impl_head_may_match_predicate(&normalized, &candidate.head) {
+                    continue;
+                }
                 let mut local_table = UnificationTable::default();
                 let instantiated = instantiate_trait_impl(&mut local_table, candidate)?;
                 if matches_trait_ref(&mut local_table, &normalized, &instantiated.head) {
@@ -439,6 +638,7 @@ impl SymbolTable {
         predicate: &TraitConstraint,
         assumptions: &[TraitConstraint],
     ) -> bool {
+        let _profile = crate::profiling::scope("symbols.predicate_matches_assumptions");
         for assumption in assumptions {
             let mut local_table = table.clone();
             let mut normalized_predicate = local_table.normalize_trait_ref(predicate);
@@ -468,7 +668,9 @@ impl SymbolTable {
         predicate: &TraitConstraint,
         assumptions: &[TraitConstraint],
         stack: &mut Vec<TraitConstraint>,
+        memo: &mut HashMap<Vec<u8>, Result<Vec<TraitConstraint>, TraitError>>,
     ) -> Result<Vec<TraitConstraint>, TraitError> {
+        let _profile_total = crate::profiling::scope("symbols.resolve_predicate.total");
         if self.predicate_matches_assumptions(table, predicate, assumptions) {
             return Ok(Vec::new());
         }
@@ -497,20 +699,68 @@ impl SymbolTable {
             });
         }
 
+        let memo_key = predicate_solver_memo_key(&normalized, assumptions);
+        if let Some(key) = memo_key.as_ref()
+            && let Some(cached) = memo.get(key)
+        {
+            return cached.clone();
+        }
+
         stack.push(normalized.clone());
 
         let mut matched: Option<(UnificationTable, Vec<TraitConstraint>)> = None;
         let mut ambiguous = false;
         if let Some(candidates) = self.trait_impls.get(&normalized.trait_name) {
-            for candidate in candidates {
-                let mut local_table = table.clone();
-                let instantiated = instantiate_trait_impl(&mut local_table, candidate)?;
-                if matches_trait_ref(&mut local_table, &normalized, &instantiated.head) {
-                    if matched.is_some() {
-                        ambiguous = true;
-                        break;
+            {
+                let _profile = crate::profiling::scope("symbols.resolve_predicate.candidates");
+                let candidate_indices = self.candidate_impl_indices(&normalized);
+                let selected_candidates = candidate_indices
+                    .into_iter()
+                    .filter_map(|index| candidates.get(index))
+                    .collect::<Vec<_>>();
+
+                let candidate_results = if selected_candidates.len() > 8 {
+                    selected_candidates
+                        .par_iter()
+                        .map(|candidate| {
+                            if !impl_head_may_match_predicate(&normalized, &candidate.head) {
+                                return Ok(None);
+                            }
+                            let mut local_table = table.clone();
+                            let instantiated = instantiate_trait_impl(&mut local_table, candidate)?;
+                            if matches_trait_ref(&mut local_table, &normalized, &instantiated.head) {
+                                Ok(Some((local_table, instantiated.predicates)))
+                            } else {
+                                Ok(None)
+                            }
+                        })
+                        .collect::<Vec<Result<Option<(UnificationTable, Vec<TraitConstraint>)>, TraitError>>>()
+                } else {
+                    selected_candidates
+                        .iter()
+                        .map(|candidate| {
+                            if !impl_head_may_match_predicate(&normalized, &candidate.head) {
+                                return Ok(None);
+                            }
+                            let mut local_table = table.clone();
+                            let instantiated = instantiate_trait_impl(&mut local_table, candidate)?;
+                            if matches_trait_ref(&mut local_table, &normalized, &instantiated.head) {
+                                Ok(Some((local_table, instantiated.predicates)))
+                            } else {
+                                Ok(None)
+                            }
+                        })
+                        .collect::<Vec<Result<Option<(UnificationTable, Vec<TraitConstraint>)>, TraitError>>>()
+                };
+
+                for candidate_result in candidate_results {
+                    if let Some((candidate_table, candidate_predicates)) = candidate_result? {
+                        if matched.is_some() {
+                            ambiguous = true;
+                            break;
+                        }
+                        matched = Some((candidate_table, candidate_predicates));
                     }
-                    matched = Some((local_table, instantiated.predicates));
                 }
             }
         }
@@ -522,12 +772,17 @@ impl SymbolTable {
         } else if let Some((winning_table, context)) = matched {
             *table = winning_table;
             let mut pending = Vec::new();
-            for predicate in context {
-                for remaining in self.resolve_predicate(table, &predicate, assumptions, stack)? {
-                    if self.predicate_matches_assumptions(table, &remaining, assumptions) {
-                        continue;
+            {
+                let _profile = crate::profiling::scope("symbols.resolve_predicate.context");
+                for predicate in context {
+                    for remaining in
+                        self.resolve_predicate(table, &predicate, assumptions, stack, memo)?
+                    {
+                        if self.predicate_matches_assumptions(table, &remaining, assumptions) {
+                            continue;
+                        }
+                        push_unique(&mut pending, remaining);
                     }
-                    push_unique(&mut pending, remaining);
                 }
             }
             Ok(pending)
@@ -536,12 +791,15 @@ impl SymbolTable {
         };
 
         stack.pop();
+        if let Some(key) = memo_key {
+            memo.insert(key, result.clone());
+        }
         result
     }
 }
 
 /// Definition of a named type with its parameters and body.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum TypeDefinitionKind {
     /// Nominal type; identity is name-based.
     Named,
@@ -551,12 +809,143 @@ pub enum TypeDefinitionKind {
 }
 
 /// Stored type definition with arity, body, and nominal/alias kind.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TypeDefinition {
     pub parameters: usize,
     pub parameter_kinds: Vec<Kind>,
     pub body: Type,
     pub kind: TypeDefinitionKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+enum TypeHeadKey {
+    Unit,
+    Integer,
+    Real,
+    Boolean,
+    String,
+    Glyph,
+    Named(Path),
+    Array,
+    Tuple(usize),
+    Struct,
+    Sum,
+    Function,
+}
+
+impl TypeHeadKey {
+    fn is_rigid(&self) -> bool {
+        match self {
+            Self::Unit
+            | Self::Integer
+            | Self::Real
+            | Self::Boolean
+            | Self::String
+            | Self::Glyph
+            | Self::Array
+            | Self::Tuple(_)
+            | Self::Sum
+            | Self::Function => true,
+            Self::Named(_) | Self::Struct => false,
+        }
+    }
+}
+
+fn type_head_key(type_: &Type) -> Option<TypeHeadKey> {
+    match type_ {
+        Type::Unit => Some(TypeHeadKey::Unit),
+        Type::Integer => Some(TypeHeadKey::Integer),
+        Type::Real => Some(TypeHeadKey::Real),
+        Type::Boolean => Some(TypeHeadKey::Boolean),
+        Type::String => Some(TypeHeadKey::String),
+        Type::Glyph => Some(TypeHeadKey::Glyph),
+        Type::Named { name, .. } => Some(TypeHeadKey::Named(name.clone())),
+        Type::Array(_) => Some(TypeHeadKey::Array),
+        Type::Tuple(items) => Some(TypeHeadKey::Tuple(items.len())),
+        Type::Struct { .. } | Type::StructConstraint { .. } => Some(TypeHeadKey::Struct),
+        Type::Sum { .. } => Some(TypeHeadKey::Sum),
+        Type::Function(..) => Some(TypeHeadKey::Function),
+        Type::Apply {
+            constructor,
+            arguments: _,
+        } => type_head_key(constructor),
+        Type::TypeVar(_) | Type::MetaVar(_) | Type::ForAll { .. } => None,
+    }
+}
+
+fn argument_head_compatible(
+    predicate_argument: &Type,
+    impl_head_argument: &Type,
+) -> bool {
+    let Some(predicate_key) = type_head_key(predicate_argument) else {
+        return true;
+    };
+    let Some(impl_head_key) = type_head_key(impl_head_argument) else {
+        return true;
+    };
+    if !predicate_key.is_rigid() || !impl_head_key.is_rigid() {
+        return true;
+    }
+    impl_head_key == predicate_key
+}
+
+fn impl_head_may_match_predicate(
+    predicate: &TraitRef,
+    impl_head: &TraitRef,
+) -> bool {
+    if predicate.arguments.len() != impl_head.arguments.len() {
+        return false;
+    }
+
+    predicate
+        .arguments
+        .iter()
+        .zip(impl_head.arguments.iter())
+        .all(|(predicate_argument, impl_head_argument)| {
+            argument_head_compatible(predicate_argument, impl_head_argument)
+        })
+}
+
+fn type_is_ground_for_memo(type_: &Type) -> bool {
+    match type_ {
+        Type::Unit | Type::Integer | Type::Real | Type::Boolean | Type::String | Type::Glyph => {
+            true
+        }
+        Type::Named { .. } => true,
+        Type::Array(item) => type_is_ground_for_memo(item),
+        Type::Tuple(items) => items.iter().all(type_is_ground_for_memo),
+        Type::Struct { fields } | Type::StructConstraint { fields, .. } => {
+            fields.values().all(type_is_ground_for_memo)
+        }
+        Type::Sum { variants } => variants.values().all(type_is_ground_for_memo),
+        Type::Function(parameter, result) => {
+            type_is_ground_for_memo(parameter) && type_is_ground_for_memo(result)
+        }
+        Type::Apply {
+            constructor,
+            arguments,
+        } => type_is_ground_for_memo(constructor) && arguments.iter().all(type_is_ground_for_memo),
+        Type::TypeVar(_) | Type::MetaVar(_) | Type::ForAll { .. } => false,
+    }
+}
+
+fn trait_ref_is_ground_for_memo(trait_ref: &TraitRef) -> bool {
+    trait_ref.arguments.iter().all(type_is_ground_for_memo)
+}
+
+fn predicate_solver_memo_key(
+    predicate: &TraitConstraint,
+    assumptions: &[TraitConstraint],
+) -> Option<Vec<u8>> {
+    if !trait_ref_is_ground_for_memo(predicate)
+        || assumptions
+            .iter()
+            .any(|assumption| !trait_ref_is_ground_for_memo(assumption))
+    {
+        return None;
+    }
+
+    postcard::to_stdvec(&(predicate, assumptions)).ok()
 }
 
 struct InstantiatedTraitImpl {
@@ -763,6 +1152,9 @@ fn push_unique(
 #[cfg(test)]
 mod tests {
     use indexmap::IndexMap;
+
+    use crate::Logger;
+    use crate::hc_core::compile_core_module;
 
     use super::*;
 
@@ -1274,6 +1666,39 @@ mod tests {
         assert_eq!(
             specialization.predicates,
             vec![TraitRef::new(trait_name, vec![Type::Integer])]
+        );
+    }
+
+    #[test]
+    fn core_show_option_specialization_propagates_inner_show_predicate() {
+        let mut symbols = SymbolTable::new();
+        let mut logger = Logger::new();
+        let _ = compile_core_module(&mut symbols, &mut logger);
+
+        let method_path = Path::new("core", "show::show");
+        let option_integer = Type::Named {
+            name: Path::new("core", "opt::Option"),
+            body: Box::new(Type::Unit),
+        }
+        .apply(vec![Type::Integer]);
+
+        let specialization = symbols
+            .resolve_method_specialization(&method_path, &[option_integer])
+            .expect("resolution should succeed")
+            .expect("expected specialization");
+
+        println!("specialization: {:?}", specialization);
+        println!(
+            "impl scheme: {:?}",
+            symbols.terms().get(&specialization.impl_method_path)
+        );
+
+        assert_eq!(
+            specialization.predicates,
+            vec![TraitRef::new(
+                Path::new("core", "show::Show"),
+                vec![Type::Integer]
+            )]
         );
     }
 }

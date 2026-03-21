@@ -50,7 +50,9 @@ pub fn generate(
     resolved: &ResolvedModule,
     symbols: &SymbolTable,
 ) -> Vec<Documentation> {
-    let ResolvedModule { module, schemes } = resolved;
+    let ResolvedModule {
+        module, schemes, ..
+    } = resolved;
     module
         .statements
         .iter()
@@ -317,32 +319,12 @@ pub fn render_json(
                         "major": doc.name.major.as_str(),
                         "minor": doc.name.minor.as_str(),
                     },
-                    "signature": format_type_signature(&doc.type_),
+                    "signature": doc.type_.pretty(),
                     "comments": doc.comments.trim(),
                 })
             })
             .collect::<Vec<_>>(),
     }))
-}
-
-fn format_type_signature(type_scheme: &TypeScheme) -> String {
-    use std::fmt::Write;
-
-    let mut out = String::new();
-    if !type_scheme.predicates.is_empty() {
-        for (i, predicate) in type_scheme.predicates.iter().enumerate() {
-            if i > 0 {
-                let _ = write!(out, ", ");
-            }
-            let _ = write!(out, "{}", predicate.trait_name.minor);
-            for arg in &predicate.arguments {
-                let _ = write!(out, " {arg}");
-            }
-        }
-        let _ = write!(out, " => ");
-    }
-    let _ = write!(out, "{}", type_scheme.type_);
-    out
 }
 
 fn render_entry(
@@ -353,11 +335,49 @@ fn render_entry(
 
     let _ = writeln!(out, "### `{}`\n", doc.name.minor);
     let _ = writeln!(out, "```");
-    let _ = writeln!(out, "{}", format_type_signature(&doc.type_));
+    let _ = writeln!(out, "{}", doc.type_.pretty());
     let _ = writeln!(out, "```\n");
 
     let comments = doc.comments.trim();
     if !comments.is_empty() {
         let _ = writeln!(out, "{comments}\n");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::TraitRef;
+
+    #[test]
+    fn rendered_signatures_use_where_clause_for_predicates() {
+        let docs = vec![Documentation {
+            kind: StatementKind::Term,
+            name: Path::new("demo", "eq_id"),
+            comments: String::new(),
+            type_: TypeScheme::with_predicates(
+                Type::ForAll {
+                    name: None,
+                    body: Box::new(Type::func(Type::v(0), Type::v(0))),
+                },
+                vec![TraitRef::new(Path::new("demo", "Eq"), vec![Type::v(0)])],
+            ),
+        }];
+
+        let markdown = render_markdown("demo", &docs);
+        assert!(
+            markdown.contains("for a in a -> a where demo::Eq a"),
+            "markdown should render where-clause constraints"
+        );
+        assert!(
+            !markdown.contains("=>"),
+            "markdown signatures should not use `=>` predicate form"
+        );
+
+        let json = render_json("demo", &docs).expect("json rendering should succeed");
+        assert!(
+            json.contains("for a in a -> a where demo::Eq a"),
+            "json signatures should render where-clause constraints"
+        );
     }
 }

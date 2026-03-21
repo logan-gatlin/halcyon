@@ -7,6 +7,8 @@ use std::collections::BTreeSet;
 
 use indexmap::IndexMap;
 
+use crate::ir::Path;
+
 use super::instantiation::instantiate_forall_strict;
 use super::{
     MetaVarId,
@@ -68,19 +70,7 @@ impl UnificationTable {
         &mut self,
         type_: &Type,
     ) -> Type {
-        match type_ {
-            Type::MetaVar(id) => {
-                match self.meta_var_states.get(*id as usize).cloned() {
-                    Some(MetaVarState::Link(link)) => {
-                        let pruned = self.prune(&link);
-                        self.meta_var_states[*id as usize] = MetaVarState::Link(pruned.clone());
-                        pruned
-                    }
-                    _ => type_.clone(),
-                }
-            }
-            _ => type_.clone(),
-        }
+        self.prune_with_seen(type_, &mut BTreeSet::new())
     }
 
     /// Deeply normalize a type by pruning and normalizing children.
@@ -88,6 +78,57 @@ impl UnificationTable {
         &mut self,
         type_: &Type,
     ) -> Type {
+        self.normalize_with_seen(type_, &mut BTreeSet::new())
+    }
+
+    fn prune_with_seen(
+        &mut self,
+        type_: &Type,
+        seen: &mut BTreeSet<MetaVarId>,
+    ) -> Type {
+        match type_ {
+            Type::MetaVar(id) => {
+                if !seen.insert(*id) {
+                    return Type::MetaVar(*id);
+                }
+                let pruned = match self.meta_var_states.get(*id as usize).cloned() {
+                    Some(MetaVarState::Link(Type::MetaVar(linked_id))) if linked_id == *id => {
+                        Type::MetaVar(*id)
+                    }
+                    Some(MetaVarState::Link(link)) => self.prune_with_seen(&link, seen),
+                    _ => Type::MetaVar(*id),
+                };
+                seen.remove(id);
+                if let Some(state @ MetaVarState::Link(_)) =
+                    self.meta_var_states.get_mut(*id as usize)
+                {
+                    *state = MetaVarState::Link(pruned.clone());
+                }
+                pruned
+            }
+            _ => type_.clone(),
+        }
+    }
+
+    fn normalize_with_seen(
+        &mut self,
+        type_: &Type,
+        seen: &mut BTreeSet<MetaVarId>,
+    ) -> Type {
+        if let Type::MetaVar(id) = type_ {
+            if !seen.insert(*id) {
+                return Type::MetaVar(*id);
+            }
+            let pruned = self.prune(type_);
+            let normalized = if pruned == Type::MetaVar(*id) {
+                Type::MetaVar(*id)
+            } else {
+                self.normalize_with_seen(&pruned, seen)
+            };
+            seen.remove(id);
+            return normalized;
+        }
+
         let pruned = self.prune(type_);
         match pruned {
             Type::Unit
@@ -98,13 +139,18 @@ impl UnificationTable {
             | Type::Glyph
             | Type::TypeVar(_)
             | Type::MetaVar(_) => pruned,
-            Type::ForAll(body) => Type::ForAll(Box::new(self.normalize(&body))),
+            Type::ForAll { name, body } => {
+                Type::ForAll {
+                    name,
+                    body: Box::new(self.normalize_with_seen(&body, seen)),
+                }
+            }
             Type::Named { name, body } => Type::Named { name, body },
             Type::StructConstraint { fields, mode } => {
                 Type::StructConstraint {
                     fields: fields
                         .into_iter()
-                        .map(|(name, type_)| (name, self.normalize(&type_)))
+                        .map(|(name, type_)| (name, self.normalize_with_seen(&type_, seen)))
                         .collect(),
                     mode,
                 }
@@ -113,16 +159,16 @@ impl UnificationTable {
                 Type::Struct {
                     fields: fields
                         .into_iter()
-                        .map(|(name, type_)| (name, self.normalize(&type_)))
+                        .map(|(name, type_)| (name, self.normalize_with_seen(&type_, seen)))
                         .collect(),
                 }
             }
-            Type::Array(inner) => Type::Array(Box::new(self.normalize(&inner))),
+            Type::Array(inner) => Type::Array(Box::new(self.normalize_with_seen(&inner, seen))),
             Type::Tuple(items) => {
                 Type::Tuple(
                     items
                         .into_iter()
-                        .map(|item| self.normalize(&item))
+                        .map(|item| self.normalize_with_seen(&item, seen))
                         .collect(),
                 )
             }
@@ -130,22 +176,25 @@ impl UnificationTable {
                 Type::Sum {
                     variants: variants
                         .into_iter()
-                        .map(|(name, type_)| (name, self.normalize(&type_)))
+                        .map(|(name, type_)| (name, self.normalize_with_seen(&type_, seen)))
                         .collect(),
                 }
             }
             Type::Function(parameter, result) => {
-                Type::func(self.normalize(&parameter), self.normalize(&result))
+                Type::func(
+                    self.normalize_with_seen(&parameter, seen),
+                    self.normalize_with_seen(&result, seen),
+                )
             }
             Type::Apply {
                 constructor,
                 arguments,
             } => {
                 Type::Apply {
-                    constructor: Box::new(self.normalize(&constructor)),
+                    constructor: Box::new(self.normalize_with_seen(&constructor, seen)),
                     arguments: arguments
                         .into_iter()
-                        .map(|arg| self.normalize(&arg))
+                        .map(|arg| self.normalize_with_seen(&arg, seen))
                         .collect(),
                 }
             }
@@ -218,6 +267,12 @@ impl UnificationTable {
         left: Type,
         right: Type,
     ) -> Result<(), UnifyError> {
+        let promoted_left = promote_builtin_constructor_application(left.clone(), &right);
+        let promoted_right = promote_builtin_constructor_application(right.clone(), &promoted_left);
+        if promoted_left != left || promoted_right != right {
+            return self.unify_non_meta(promoted_left, promoted_right);
+        }
+
         match (left, right) {
             (Type::Unit, Type::Unit)
             | (Type::Integer, Type::Integer)
@@ -226,7 +281,9 @@ impl UnificationTable {
             | (Type::String, Type::String)
             | (Type::Glyph, Type::Glyph) => Ok(()),
             (Type::TypeVar(left), Type::TypeVar(right)) if left == right => Ok(()),
-            (Type::ForAll(left), Type::ForAll(right)) => self.unify(&left, &right),
+            (Type::ForAll { body: left, .. }, Type::ForAll { body: right, .. }) => {
+                self.unify(&left, &right)
+            }
             // Named types are nominal on the main unification path.
             (Type::Named { name: left, .. }, Type::Named { name: right, .. }) if left == right => {
                 Ok(())
@@ -653,6 +710,29 @@ impl UnificationTable {
     }
 }
 
+fn promote_builtin_constructor_application(
+    type_: Type,
+    other: &Type,
+) -> Type {
+    if !matches!(other, Type::Apply { .. }) {
+        return type_;
+    }
+    match type_ {
+        Type::Array(inner) => core_constructor("Array").apply(vec![*inner]),
+        Type::Function(parameter, result) => {
+            core_constructor("Fn").apply(vec![*parameter, *result])
+        }
+        other => other,
+    }
+}
+
+fn core_constructor(name: &str) -> Type {
+    Type::Named {
+        name: Path::core(name),
+        body: Box::new(Type::Unit),
+    }
+}
+
 fn struct_constraint_matches_fields(
     constraint_fields: &IndexMap<String, Type>,
     mode: StructMatch,
@@ -856,6 +936,25 @@ mod tests {
     }
 
     #[test]
+    fn unify_apply_with_builtin_array_type_binds_constructor_meta() {
+        let mut table = UnificationTable::default();
+        let constructor_meta = table.new_meta(0);
+        let element_meta = table.new_meta(0);
+        let expected = constructor_meta.clone().apply(vec![element_meta.clone()]);
+        let actual = Type::Array(Box::new(Type::String));
+
+        table
+            .unify(&expected, &actual)
+            .expect("application should unify with builtin array type constructor");
+
+        assert_eq!(
+            table.prune(&constructor_meta),
+            named("core", "Array", Type::Unit)
+        );
+        assert_eq!(table.prune(&element_meta), Type::String);
+    }
+
+    #[test]
     fn unify_meta_links_and_prunes() {
         let mut table = UnificationTable::default();
         let meta = table.new_meta(0);
@@ -946,6 +1045,31 @@ mod tests {
         let mut table = UnificationTable::default();
         let named = named("demo", "Token", Type::MetaVar(0));
         assert_eq!(table.normalize(&named), named);
+    }
+
+    #[test]
+    fn normalize_handles_self_referential_meta_links() {
+        let mut table = UnificationTable::default();
+        let meta = table.new_meta(0);
+        let id = meta_id(&meta);
+        table.meta_var_states[id as usize] =
+            MetaVarState::Link(Type::Tuple(vec![Type::MetaVar(id)]));
+
+        assert_eq!(table.normalize(&meta), Type::Tuple(vec![Type::MetaVar(id)]));
+    }
+
+    #[test]
+    fn prune_handles_mutual_meta_cycles() {
+        let mut table = UnificationTable::default();
+        let left = table.new_meta(0);
+        let right = table.new_meta(0);
+        let left_id = meta_id(&left);
+        let right_id = meta_id(&right);
+        table.meta_var_states[left_id as usize] = MetaVarState::Link(Type::MetaVar(right_id));
+        table.meta_var_states[right_id as usize] = MetaVarState::Link(Type::MetaVar(left_id));
+
+        assert_eq!(table.prune(&left), Type::MetaVar(left_id));
+        assert_eq!(table.prune(&right), Type::MetaVar(left_id));
     }
 
     #[test]

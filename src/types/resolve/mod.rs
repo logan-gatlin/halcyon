@@ -45,23 +45,25 @@ use super::{
     TypeDefinition,
     TypeDefinitionKind,
     TypeScheme,
-    for_each_child_type,
     for_each_pattern_binding,
+    predicate_is_ground,
+    sorted_unique_predicates,
 };
 
 mod common;
 mod diagnostics;
+mod exhaustiveness;
 mod impls;
 mod recovery;
 mod traits;
 mod type_defs;
 
-use common::predicate_is_ground;
 use diagnostics::{
     log_duplicate_definition,
     log_term_duplicates,
     log_type_error,
 };
+use exhaustiveness::check_term_exhaustiveness;
 use impls::ImplProcessingContext;
 use recovery::{
     fallback_term,
@@ -111,6 +113,9 @@ pub struct ResolvedModule {
 
     /// Final inferred/generalized schemes for exported bindings.
     pub schemes: IndexMap<Path, TypeScheme>,
+
+    /// Per-binding runtime evidence requirements after predicate normalization.
+    pub evidence_requirements: IndexMap<Path, Vec<TraitConstraint>>,
 }
 
 /// Resolve a module with a fresh symbol table.
@@ -140,9 +145,13 @@ pub fn resolve_module_with_symbols_and_schemes(
     module: Module<()>,
     logger: &mut FileLogger,
 ) -> ResolvedModule {
+    let _profile_total = crate::profiling::scope("resolve.module.total");
     let Module { name, statements } = module;
     let statements = Vec::from(statements);
-    let pending_type_definitions = collect_type_entries(&statements);
+    let pending_type_definitions = {
+        let _profile = crate::profiling::scope("resolve.collect_type_entries");
+        collect_type_entries(&statements)
+    };
     let duplicate_type_paths = pending_type_definitions
         .keys()
         .filter(|path| symbols.type_definitions().contains_key(*path))
@@ -154,9 +163,14 @@ pub fn resolve_module_with_symbols_and_schemes(
         }
     }
 
-    let mut pending_term_definitions = collect_term_definitions(&statements);
-    let pending_constructor_definitions =
-        collect_constructor_definitions(&pending_type_definitions, &duplicate_type_paths);
+    let mut pending_term_definitions = {
+        let _profile = crate::profiling::scope("resolve.collect_term_definitions");
+        collect_term_definitions(&statements)
+    };
+    let pending_constructor_definitions = {
+        let _profile = crate::profiling::scope("resolve.collect_constructor_definitions");
+        collect_constructor_definitions(&pending_type_definitions, &duplicate_type_paths)
+    };
     let pending_constructor_paths = pending_constructor_definitions
         .iter()
         .map(|(path, _)| path.clone())
@@ -164,11 +178,14 @@ pub fn resolve_module_with_symbols_and_schemes(
     pending_term_definitions.extend(pending_constructor_definitions);
     log_term_duplicates(logger, symbols, &pending_term_definitions);
 
-    let type_definitions = build_type_definitions(
-        symbols.type_definitions(),
-        &pending_type_definitions,
-        logger,
-    );
+    let type_definitions = {
+        let _profile = crate::profiling::scope("resolve.build_type_definitions");
+        build_type_definitions(
+            symbols.type_definitions(),
+            &pending_type_definitions,
+            logger,
+        )
+    };
     tracing::debug!(
         type_count = type_definitions.len(),
         "type definitions built",
@@ -192,16 +209,28 @@ pub fn resolve_module_with_symbols_and_schemes(
         }
     }
 
-    let pending_trait_definitions = build_trait_definitions(
-        &statements,
-        &pending_type_definitions,
-        &type_definitions,
-        symbols.trait_defs(),
-        logger,
-    );
-    register_trait_definitions(symbols, &pending_trait_definitions, logger);
-    let pending_trait_aliases = build_trait_alias_entries(&statements);
-    register_trait_aliases(symbols, &pending_trait_aliases, logger);
+    let pending_trait_definitions = {
+        let _profile = crate::profiling::scope("resolve.build_trait_definitions");
+        build_trait_definitions(
+            &statements,
+            &pending_type_definitions,
+            &type_definitions,
+            symbols.trait_defs(),
+            logger,
+        )
+    };
+    {
+        let _profile = crate::profiling::scope("resolve.register_trait_definitions");
+        register_trait_definitions(symbols, &pending_trait_definitions, logger);
+    }
+    let pending_trait_aliases = {
+        let _profile = crate::profiling::scope("resolve.build_trait_aliases");
+        build_trait_alias_entries(&statements)
+    };
+    {
+        let _profile = crate::profiling::scope("resolve.register_trait_aliases");
+        register_trait_aliases(symbols, &pending_trait_aliases, logger);
+    }
     tracing::debug!(
         trait_count = pending_trait_definitions.len(),
         alias_count = pending_trait_aliases.len(),
@@ -215,8 +244,10 @@ pub fn resolve_module_with_symbols_and_schemes(
             .iter()
             .map(|(path, scheme)| (path.clone(), scheme.clone())),
     );
-    let constructors =
-        build_type_constructors(&pending_type_definitions, &type_definitions, logger);
+    let constructors = {
+        let _profile = crate::profiling::scope("resolve.build_type_constructors");
+        build_type_constructors(&pending_type_definitions, &type_definitions, logger)
+    };
     type_environment.extend(constructors);
 
     let mut inference_context = InferenceContext::new();
@@ -243,17 +274,42 @@ pub fn resolve_module_with_symbols_and_schemes(
         "beginning statement inference",
     );
     let mut typed_statements = Vec::new();
-    for statement in statements.into_iter() {
-        match statement {
-            Statement::Term(term) => {
-                let known_scheme_paths = schemes.keys().cloned().collect::<HashSet<_>>();
-                let output = match inference_context.infer_term(
-                    &mut type_environment,
-                    &term,
-                    &mut schemes,
-                ) {
-                    Ok(output) => output,
-                    Err(error) => {
+    {
+        let _profile = crate::profiling::scope("resolve.infer_statements");
+        for statement in statements.into_iter() {
+            match statement {
+                Statement::Term(term) => {
+                    let known_scheme_paths = schemes.keys().cloned().collect::<HashSet<_>>();
+                    let type_environment_snapshot = type_environment.clone();
+                    let schemes_snapshot = schemes.clone();
+                    let mut output = match {
+                        let _profile = crate::profiling::scope("resolve.infer_term");
+                        inference_context.infer_term(&mut type_environment, &term, &mut schemes)
+                    } {
+                        Ok(output) => output,
+                        Err(error) => {
+                            log_type_error(logger, error);
+                            if let TermKind::Let {
+                                assignee,
+                                scope: ScopeKind::Global,
+                                ..
+                            } = &term.kind
+                            {
+                                failed_term_paths.extend(pattern_binding_paths(assignee));
+                            }
+                            typed_statements.push(Statement::Term(fallback_term(&term)));
+                            continue;
+                        }
+                    };
+
+                    output.term = normalize_term_types(output.term, inference_context.table_mut());
+                    let mut constructor_aliases = symbols.constructor_aliases().clone();
+                    constructor_aliases.extend(resolved_constructor_aliases.iter().cloned());
+                    if let Err(error) = check_term_exhaustiveness(
+                        &output.term,
+                        symbols.type_definitions(),
+                        &constructor_aliases,
+                    ) {
                         log_type_error(logger, error);
                         if let TermKind::Let {
                             assignee,
@@ -263,163 +319,177 @@ pub fn resolve_module_with_symbols_and_schemes(
                         {
                             failed_term_paths.extend(pattern_binding_paths(assignee));
                         }
+                        type_environment = type_environment_snapshot;
+                        schemes = schemes_snapshot;
                         typed_statements.push(Statement::Term(fallback_term(&term)));
                         continue;
                     }
-                };
 
-                solve_predicates(
-                    logger,
-                    &mut inference_context,
-                    symbols,
-                    term.span,
-                    &output.predicates,
-                );
-                let mut grounded_predicates = Vec::new();
-                for (path, scheme) in schemes.iter() {
-                    if known_scheme_paths.contains(path) {
-                        continue;
+                    {
+                        let _profile = crate::profiling::scope("resolve.solve_predicates.direct");
+                        solve_predicates(
+                            logger,
+                            &mut inference_context,
+                            symbols,
+                            term.span,
+                            &output.predicates,
+                        );
                     }
 
-                    for predicate in scheme.predicates.iter() {
-                        if predicate_is_ground(predicate)
-                            && !grounded_predicates.contains(predicate)
-                        {
-                            grounded_predicates.push(predicate.clone());
+                    let mut grounded_predicates = Vec::new();
+                    for (path, scheme) in schemes.iter() {
+                        if known_scheme_paths.contains(path) {
+                            continue;
+                        }
+
+                        for predicate in scheme.predicates.iter() {
+                            if predicate_is_ground(predicate)
+                                && !grounded_predicates.contains(predicate)
+                            {
+                                grounded_predicates.push(predicate.clone());
+                            }
                         }
                     }
+
+                    {
+                        let _profile = crate::profiling::scope("resolve.solve_predicates.grounded");
+                        solve_predicates(
+                            logger,
+                            &mut inference_context,
+                            symbols,
+                            term.span,
+                            &grounded_predicates,
+                        );
+                    }
+
+                    typed_statements.push(Statement::Term(output.term));
                 }
-                solve_predicates(
-                    logger,
-                    &mut inference_context,
-                    symbols,
-                    term.span,
-                    &grounded_predicates,
-                );
-                typed_statements.push(Statement::Term(normalize_term_types(
-                    output.term,
-                    inference_context.table_mut(),
-                )));
-            }
-            Statement::ConstructorAlias {
-                comments,
-                path,
-                target,
-                span,
-            } => {
-                let Some(target_scheme) = type_environment.get(&target).cloned() else {
-                    failed_term_paths.insert(path.clone());
-                    logger
-                        .error("Unknown constructor alias target")
-                        .primary(
-                            format!(
-                                "`{target}` is not available as a constructor term in this scope."
-                            ),
+                Statement::ConstructorAlias {
+                    comments,
+                    path,
+                    target,
+                    span,
+                } => {
+                    let Some(target_scheme) = type_environment.get(&target).cloned() else {
+                        failed_term_paths.insert(path.clone());
+                        logger
+                            .error("Unknown constructor alias target")
+                            .primary(
+                                format!(
+                                    "`{target}` is not available as a constructor term in this scope."
+                                ),
+                                span,
+                            )
+                            .done();
+                        typed_statements.push(Statement::ConstructorAlias {
+                            comments,
+                            path,
+                            target,
                             span,
-                        )
-                        .done();
+                        });
+                        continue;
+                    };
+                    type_environment.insert(path.clone(), target_scheme.clone());
+                    schemes.insert(path.clone(), target_scheme);
+                    resolved_constructor_aliases.push((path.clone(), target.clone()));
                     typed_statements.push(Statement::ConstructorAlias {
                         comments,
                         path,
                         target,
                         span,
                     });
-                    continue;
-                };
-                type_environment.insert(path.clone(), target_scheme.clone());
-                schemes.insert(path.clone(), target_scheme);
-                resolved_constructor_aliases.push((path.clone(), target.clone()));
-                typed_statements.push(Statement::ConstructorAlias {
-                    comments,
-                    path,
-                    target,
-                    span,
-                });
-            }
-            Statement::Type {
-                comments,
-                path,
-                parameters,
-                def,
-                kind,
-            } => {
-                typed_statements.push(Statement::Type {
+                }
+                Statement::Type {
                     comments,
                     path,
                     parameters,
                     def,
                     kind,
-                });
-            }
-            Statement::Trait {
-                comments,
-                path,
-                parameters,
-                methods,
-            } => {
-                typed_statements.push(Statement::Trait {
+                } => {
+                    typed_statements.push(Statement::Type {
+                        comments,
+                        path,
+                        parameters,
+                        def,
+                        kind,
+                    });
+                }
+                Statement::Trait {
                     comments,
                     path,
                     parameters,
                     methods,
-                });
-            }
-            Statement::TraitAlias {
-                comments,
-                path,
-                target,
-            } => {
-                typed_statements.push(Statement::TraitAlias {
+                } => {
+                    typed_statements.push(Statement::Trait {
+                        comments,
+                        path,
+                        parameters,
+                        methods,
+                    });
+                }
+                Statement::TraitAlias {
                     comments,
                     path,
                     target,
-                });
-            }
-            Statement::Impl {
-                comments,
-                trait_path,
-                arguments,
-                methods,
-            } => {
-                let (typed_impl, generated_terms) = ImplProcessingContext {
-                    module_name: &name,
-                    logger,
-                    inference_context: &mut inference_context,
-                    type_environment: &mut type_environment,
-                    symbols,
-                    schemes: &mut schemes,
-                    pending_type_definitions: &pending_type_definitions,
-                    type_definitions: &type_definitions,
+                } => {
+                    typed_statements.push(Statement::TraitAlias {
+                        comments,
+                        path,
+                        target,
+                    });
                 }
-                .process(comments, trait_path, arguments, methods);
-                typed_statements.push(typed_impl);
-                typed_statements.extend(generated_terms.into_iter().map(Statement::Term));
+                Statement::Impl {
+                    comments,
+                    trait_path,
+                    arguments,
+                    methods,
+                } => {
+                    let (typed_impl, generated_terms) = {
+                        let _profile = crate::profiling::scope("resolve.process_impl");
+                        ImplProcessingContext {
+                            module_name: &name,
+                            logger,
+                            inference_context: &mut inference_context,
+                            type_environment: &mut type_environment,
+                            symbols,
+                            schemes: &mut schemes,
+                            pending_type_definitions: &pending_type_definitions,
+                            type_definitions: &type_definitions,
+                        }
+                        .process(comments, trait_path, arguments, methods)
+                    };
+                    typed_statements.push(typed_impl);
+                    typed_statements.extend(generated_terms.into_iter().map(Statement::Term));
+                }
+                Statement::Wasm(sexpr) => typed_statements.push(Statement::Wasm(sexpr)),
             }
-            Statement::Wasm(sexpr) => typed_statements.push(Statement::Wasm(sexpr)),
         }
     }
 
     let mut published_term_paths = HashSet::new();
-    for (path, span) in pending_term_definitions.iter() {
-        if symbols.terms().contains_key(path) {
-            continue;
-        }
-        if failed_term_paths.contains(path) {
-            continue;
-        }
-        match type_environment.get(path).cloned() {
-            Some(scheme) => {
-                symbols.insert_term(path.clone(), scheme);
-                published_term_paths.insert(path.clone());
-                if pending_constructor_paths.contains(path) {
-                    symbols.insert_constructor(path.clone());
-                }
+    {
+        let _profile = crate::profiling::scope("resolve.publish_terms");
+        for (path, span) in pending_term_definitions.iter() {
+            if symbols.terms().contains_key(path) {
+                continue;
             }
-            None => {
-                logger
-                    .error("Missing term definition")
-                    .primary(format!("`{path}` was not assigned a type."), *span)
-                    .done();
+            if failed_term_paths.contains(path) {
+                continue;
+            }
+            match type_environment.get(path).cloned() {
+                Some(scheme) => {
+                    symbols.insert_term(path.clone(), scheme);
+                    published_term_paths.insert(path.clone());
+                    if pending_constructor_paths.contains(path) {
+                        symbols.insert_constructor(path.clone());
+                    }
+                }
+                None => {
+                    logger
+                        .error("Missing term definition")
+                        .primary(format!("`{path}` was not assigned a type."), *span)
+                        .done();
+                }
             }
         }
     }
@@ -430,13 +500,31 @@ pub fn resolve_module_with_symbols_and_schemes(
         }
     }
 
+    let evidence_requirements = {
+        let _profile = crate::profiling::scope("resolve.collect_evidence_requirements");
+        collect_evidence_requirements(&schemes)
+    };
+
     ResolvedModule {
         module: Module {
             name,
             statements: typed_statements.into_boxed_slice(),
         },
         schemes,
+        evidence_requirements,
     }
+}
+
+fn collect_evidence_requirements(
+    schemes: &IndexMap<Path, TypeScheme>
+) -> IndexMap<Path, Vec<TraitConstraint>> {
+    schemes
+        .iter()
+        .filter_map(|(path, scheme)| {
+            let requirements = sorted_unique_predicates(&scheme.predicates);
+            (!requirements.is_empty()).then_some((path.clone(), requirements))
+        })
+        .collect()
 }
 
 fn pattern_binding_paths<T>(pattern: &Pattern<T>) -> Vec<Path> {
@@ -587,6 +675,22 @@ mod tests {
     }
 
     #[test]
+    fn resolve_module_collects_evidence_requirements_for_predicated_bindings() {
+        let source = "module demo =\n  trait Addish : a =\n    let plus : a -> a -> a\n  end\n  let double = fn x => plus x x\nend\n";
+        let mut symbols = SymbolTable::new();
+
+        let (resolved, file_logger) = resolve_source(source, &mut symbols);
+        assert!(file_logger.is_ok());
+
+        let evidence = resolved
+            .evidence_requirements
+            .get(&Path::new("demo", "double"))
+            .expect("expected evidence requirements for predicated binding");
+        assert_eq!(evidence.len(), 1);
+        assert_eq!(evidence[0].trait_name, Path::new("demo", "Addish"));
+    }
+
+    #[test]
     fn resolve_module_reports_unresolved_ground_predicates() {
         let source = "module demo =\n  trait Eq : a =\n    let eq : a -> a -> core::Boolean\n  end\n  let value = eq 1 1\nend\n";
         let mut symbols = SymbolTable::new();
@@ -616,5 +720,120 @@ mod tests {
                 .iter()
                 .any(|diagnostic| diagnostic.message == "Unresolved trait constraint")
         );
+    }
+
+    #[test]
+    fn resolve_module_reports_non_exhaustive_boolean_match_with_counterexample() {
+        let source = "module demo =\n  let value =\n    match true with\n    | true => 1\nend\n";
+        let mut symbols = SymbolTable::new();
+
+        let (_resolved, file_logger) = resolve_source(source, &mut symbols);
+        assert!(!file_logger.is_ok());
+        let Some(diagnostic) = file_logger
+            .iter()
+            .find(|diagnostic| diagnostic.message == "Non-exhaustive patterns")
+        else {
+            panic!("expected non-exhaustive pattern diagnostic");
+        };
+        assert!(
+            diagnostic.notes.iter().any(|note| note.contains("false")),
+            "expected boolean counterexample note"
+        );
+    }
+
+    #[test]
+    fn resolve_module_accepts_exhaustive_boolean_match() {
+        let source = "module demo =\n  let value =\n    match true with\n    | true => 1\n    | false => 0\nend\n";
+        let mut symbols = SymbolTable::new();
+
+        let (_resolved, file_logger) = resolve_source(source, &mut symbols);
+        assert!(file_logger.is_ok());
+    }
+
+    #[test]
+    fn resolve_module_reports_non_exhaustive_sum_match_with_counterexample() {
+        let source = "module demo =\n  type Option: a = | Some a | None\n  let pick = fn value =>\n    match value with\n    | Some _ => 1\nend\n";
+        let mut symbols = SymbolTable::new();
+
+        let (_resolved, file_logger) = resolve_source(source, &mut symbols);
+        assert!(!file_logger.is_ok());
+        let Some(diagnostic) = file_logger
+            .iter()
+            .find(|diagnostic| diagnostic.message == "Non-exhaustive patterns")
+        else {
+            panic!("expected non-exhaustive pattern diagnostic");
+        };
+        assert!(
+            diagnostic.notes.iter().any(|note| note.contains("None")),
+            "expected missing constructor counterexample"
+        );
+    }
+
+    #[test]
+    fn resolve_module_accepts_nested_pattern_exhaustiveness() {
+        let source = "module demo =\n  let classify = fn value =>\n    match value with\n    | (true, true) => 1\n    | (true, false) => 2\n    | (false, true) => 3\n    | (false, false) => 4\nend\n";
+        let mut symbols = SymbolTable::new();
+
+        let (_resolved, file_logger) = resolve_source(source, &mut symbols);
+        assert!(file_logger.is_ok());
+    }
+
+    #[test]
+    fn resolve_module_reports_non_exhaustive_nested_pattern_with_counterexample() {
+        let source = "module demo =\n  let classify = fn value =>\n    match value with\n    | (true, true) => 1\n    | (true, false) => 2\n    | (false, true) => 3\nend\n";
+        let mut symbols = SymbolTable::new();
+
+        let (_resolved, file_logger) = resolve_source(source, &mut symbols);
+        assert!(!file_logger.is_ok());
+        let Some(diagnostic) = file_logger
+            .iter()
+            .find(|diagnostic| diagnostic.message == "Non-exhaustive patterns")
+        else {
+            panic!("expected non-exhaustive pattern diagnostic");
+        };
+        assert!(
+            diagnostic
+                .notes
+                .iter()
+                .any(|note| note.contains("(false, false)")),
+            "expected nested counterexample note"
+        );
+    }
+
+    #[test]
+    fn resolve_module_accepts_deep_array_partition_exhaustiveness() {
+        let source = "module demo =\n  let classify = fn xs =>\n    match xs with\n    | [] => 0\n    | [true, ..] => 1\n    | [false, ..] => 2\nend\n";
+        let mut symbols = SymbolTable::new();
+
+        let (_resolved, file_logger) = resolve_source(source, &mut symbols);
+        assert!(file_logger.is_ok());
+    }
+
+    #[test]
+    fn resolve_module_reports_non_exhaustive_array_partition_with_counterexample() {
+        let source = "module demo =\n  let classify = fn xs =>\n    match xs with\n    | [true, ..] => 1\n    | [false, ..] => 2\nend\n";
+        let mut symbols = SymbolTable::new();
+
+        let (_resolved, file_logger) = resolve_source(source, &mut symbols);
+        assert!(!file_logger.is_ok());
+        let Some(diagnostic) = file_logger
+            .iter()
+            .find(|diagnostic| diagnostic.message == "Non-exhaustive patterns")
+        else {
+            panic!("expected non-exhaustive pattern diagnostic");
+        };
+        assert!(
+            diagnostic.notes.iter().any(|note| note.contains("[]")),
+            "expected empty-array counterexample"
+        );
+    }
+
+    #[test]
+    fn resolve_module_allows_positive_branch_refinement_for_nested_lets() {
+        let source = "module demo =\n  let value = fn input =>\n    match input with\n    | true => let true = input in 1\n    | false => 0\nend\n";
+        let mut symbols = SymbolTable::new();
+
+        let (_resolved, file_logger) = resolve_source(source, &mut symbols);
+        assert!(file_logger.is_ok());
     }
 }

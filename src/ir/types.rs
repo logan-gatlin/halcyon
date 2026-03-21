@@ -164,9 +164,11 @@ pub fn type_expr(
                 TypeExprKind::Instantiation(CoreType::Array.path(), [].into())
             }
             ast::TypeExpr::Path(path_expr) => {
-                let span = path_expr.span();
-                let path = scope.resolve_path(&path_expr, NameSpace::Type, span)?;
-                scope.query_path(path.clone().with_span(span), NameSpace::Type);
+                let usage_span = path_expr
+                    .name_text_spanned()
+                    .map_or_else(|| path_expr.span(), |segment| segment.span);
+                let path = scope.resolve_path(&path_expr, NameSpace::Type, usage_span)?;
+                scope.query_path(path.clone().with_span(usage_span), NameSpace::Type);
                 TypeExprKind::alias(path)
             }
             ast::TypeExpr::Ident(ident) => {
@@ -245,7 +247,9 @@ pub fn type_expr(
                         ast::TypeExpr::Array(_) => CoreType::Array.path(),
                         ast::TypeExpr::Unit(_) => CoreType::Unit.path(),
                         ast::TypeExpr::Path(path_expr) => {
-                            let span = path_expr.span();
+                            let span = path_expr
+                                .name_text_spanned()
+                                .map_or_else(|| path_expr.span(), |segment| segment.span);
                             let resolved = scope
                                 .resolve_path(&path_expr, NameSpace::Type, span)?
                                 .with_span(span);

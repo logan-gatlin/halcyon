@@ -7,19 +7,22 @@ module prelude =
 
   -- Types --
   
-  type ~Integer = core::Integer
-  type ~Real = core::Real
-  type ~Boolean = core::Boolean
-  type ~Unit = core::Unit
-  type ~Glyph = core::Glyph
-  type ~String = core::String
-  type ~Array: a = core::Array a
-  type ~Option: a = core::opt::Option a
-  type ~Result: err ok = core::result::Result err ok
+  type ~Integer = bundle::Integer
+  type ~Real = bundle::Real
+  type ~Boolean = bundle::Boolean
+  type ~Unit = bundle::Unit
+  type ~Glyph = bundle::Glyph
+  type ~String = bundle::String
+  type ~Natural = bundle::big-num::Natural
+  type ~BigInteger = bundle::big-num::BigInteger
+  type ~Array: a = bundle::Array a
+  type ~Option: a = bundle::opt::Option a
+  type ~Result: err ok = bundle::result::Result err ok
 
   -- Traits --
 
   trait ~Default = core::Default
+  trait ~Show = core::show::Show
   trait ~Applicative = core::hkt::Applicative
   trait ~Monad = core::hkt::Monad
   trait ~Traversable = core::hkt::Traversable
@@ -40,49 +43,50 @@ module prelude =
 
   -- Operators --
 
-  let [+] = core::ops::[+]
-  let [-] = core::ops::[-]
-  let [~] = core::ops::[~]
-  let [*] = core::ops::[*]
-  let [/] = core::ops::[/]
-  let [%] = core::ops::[%]
-  let [|>] = core::ops::[|>]
-  let [>>] = core::ops::[>>]
-  let [<<] = core::ops::[<<]
-  let [and] = core::ops::[and]
-  let [or] = core::ops::[or]
-  let [xor] = core::ops::[xor]
-  let [not] = core::ops::[not]
-  let [==] = core::ops::[==]
-  let [!=] = core::ops::[!=]
-  let [<] = core::ops::[<]
-  let [>] = core::ops::[>]
-  let [<=] = core::ops::[<=]
-  let [>=] = core::ops::[>=]
+  let [+] = bundle::ops::[+]
+  let [-] = bundle::ops::[-]
+  let [~] = bundle::ops::[~]
+  let [*] = bundle::ops::[*]
+  let [/] = bundle::ops::[/]
+  let [%] = bundle::ops::[%]
+  let [|>] = bundle::ops::[|>]
+  let [>>] = bundle::ops::[>>]
+  let [<<] = bundle::ops::[<<]
+  let [and] = bundle::ops::[and]
+  let [or] = bundle::ops::[or]
+  let [xor] = bundle::ops::[xor]
+  let [not] = bundle::ops::[not]
+  let [==] = bundle::ops::[==]
+  let [!=] = bundle::ops::[!=]
+  let [<] = bundle::ops::[<]
+  let [>] = bundle::ops::[>]
+  let [<=] = bundle::ops::[<=]
+  let [>=] = bundle::ops::[>=]
 
   -- Terms --
 
-  let min = core::ops::min
-  let max = core::ops::max
-  let clamp = core::ops::clamp
-  let between = core::ops::between
-  let read = core::io::read
-  let print = core::io::print
-  let println = core::io::println
-  let readln = core::io::readln
-  let eprint = core::io::eprint
-  let eprintln = core::io::eprintln
-  let array_push = core::array::push
-  let option_map = core::opt::map
-  let result_map = core::result::map
-  let result_map_err = core::result::map_err
-  let assert = core::test::assert
-  let panic = core::test::panic
-  let default = core::default
-  let map = core::hkt::map
-  let flatten = core::hkt::flatten
-  let fold = core::hkt::fold
-  let filter = core::hkt::filter
-  let any = core::hkt::any
-  let all = core::hkt::all
+  let min = bundle::ops::min
+  let max = bundle::ops::max
+  let clamp = bundle::ops::clamp
+  let between = bundle::ops::between
+  let read = bundle::io::read
+  let print = bundle::io::print
+  let println = bundle::io::println
+  let readln = bundle::io::readln
+  let eprint = bundle::io::eprint
+  let eprintln = bundle::io::eprintln
+  let array_push = bundle::array::push
+  let option_map = bundle::opt::map
+  let result_map = bundle::result::map
+  let result_map_err = bundle::result::map_err
+  let assert = bundle::test::assert
+  let panic = bundle::test::panic
+  let default = bundle::default
+  let show = bundle::show::show
+  let map = bundle::hkt::map
+  let flatten = bundle::hkt::flatten
+  let fold = bundle::hkt::fold
+  let filter = bundle::hkt::filter
+  let any = bundle::hkt::any
+  let all = bundle::hkt::all
 end

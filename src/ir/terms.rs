@@ -276,17 +276,18 @@ fn array_term(
             let concat_path = CoreSymbol::ArrayConcat.path();
             let elem = term(scope, wasm_type_defs, logger, splat.expr()?)?;
             let elem_span = elem.span;
+            let existing = current;
             current = mk(
                 TermKind::Call {
                     callee: mk(
                         TermKind::Call {
                             callee: mk(TermKind::Identifier(concat_path), elem_span).into(),
-                            argument: elem.into(),
+                            argument: existing.into(),
                         },
                         elem_span,
                     )
                     .into(),
-                    argument: current.into(),
+                    argument: elem.into(),
                 },
                 elem_span,
             );
@@ -629,8 +630,11 @@ pub fn term(
             mk(TermKind::Identifier(path), span)
         }
         ast::Expr::Path(path_expr) => {
-            let path = scope.resolve_path(&path_expr, NameSpace::Term, span)?;
-            scope.query_path(path.clone().with_span(span), NameSpace::Term);
+            let usage_span = path_expr
+                .name_text_spanned()
+                .map_or_else(|| path_expr.span(), |segment| segment.span);
+            let path = scope.resolve_path(&path_expr, NameSpace::Term, usage_span)?;
+            scope.query_path(path.clone().with_span(usage_span), NameSpace::Term);
             mk(TermKind::Identifier(path), span)
         }
     })

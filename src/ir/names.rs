@@ -5,6 +5,7 @@ use std::collections::{
 
 use crate::parse::ast::{
     self,
+    AstNode,
     HasName,
 };
 use crate::{
@@ -16,7 +17,7 @@ use crate::{
     WithSpan,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize)]
 pub struct Path {
     pub major: String,
     pub minor: String,
@@ -95,6 +96,7 @@ impl std::fmt::Display for Path {
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum NameSpace {
+    Module,
     Constructor,
     Trait,
     Type,
@@ -106,6 +108,67 @@ pub enum NameSpace {
 pub struct ScopedPath {
     pub path: Path,
     pub namespace: NameSpace,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct NameIndex {
+    pub definitions: HashMap<ScopedPath, Box<[Span]>>,
+    pub usages: HashMap<ScopedPath, Box<[Span]>>,
+}
+
+impl NameIndex {
+    pub fn references(
+        &self,
+        symbol: &ScopedPath,
+    ) -> Box<[Span]> {
+        self.definitions
+            .get(symbol)
+            .into_iter()
+            .flatten()
+            .copied()
+            .chain(self.usages.get(symbol).into_iter().flatten().copied())
+            .collect::<Vec<_>>()
+            .into_boxed_slice()
+    }
+
+    pub fn symbol_at(
+        &self,
+        file_id: usize,
+        byte_offset: usize,
+    ) -> Option<ScopedPath> {
+        fn contains_offset(
+            span: Span,
+            file_id: usize,
+            byte_offset: usize,
+        ) -> Option<usize> {
+            match span {
+                Span::Source {
+                    start,
+                    width,
+                    file_id: Some(span_file_id),
+                } if span_file_id == file_id
+                    && byte_offset >= start
+                    && byte_offset < start + width =>
+                {
+                    Some(width)
+                }
+                _ => None,
+            }
+        }
+
+        self.definitions
+            .iter()
+            .chain(self.usages.iter())
+            .flat_map(|(symbol, spans)| {
+                spans
+                    .iter()
+                    .filter_map(|span| contains_offset(*span, file_id, byte_offset))
+                    .map(|width| (symbol, width))
+                    .collect::<Vec<_>>()
+            })
+            .min_by_key(|(_, width)| *width)
+            .map(|(symbol, _)| symbol.clone())
+    }
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -152,6 +215,15 @@ struct AmbiguousUsage {
     candidates: Box<[Path]>,
 }
 
+#[derive(Debug, Clone)]
+struct ImplicitBundleRelativeUsage {
+    namespace: NameSpace,
+    reference: String,
+    explicit_reference: String,
+    resolved: Path,
+    span: Span,
+}
+
 impl std::fmt::Display for NameSpace {
     fn fmt(
         &self,
@@ -161,6 +233,7 @@ impl std::fmt::Display for NameSpace {
             f,
             "{}",
             match self {
+                NameSpace::Module => "module",
                 NameSpace::Constructor => "constructor",
                 NameSpace::Trait => "trait",
                 NameSpace::Type => "type",
@@ -201,6 +274,7 @@ pub struct ModuleScope {
     undefined_usages: HashMap<ScopedPath, Vec<Span>>,
     multiple_definitions: HashSet<ScopedPath>,
     ambiguous_usages: Vec<AmbiguousUsage>,
+    implicit_bundle_relative_usages: Vec<ImplicitBundleRelativeUsage>,
     alias_collisions: Vec<AliasCollision>,
 }
 
@@ -268,6 +342,7 @@ impl ModuleScope {
             undefined_usages: Default::default(),
             multiple_definitions: Default::default(),
             ambiguous_usages: Default::default(),
+            implicit_bundle_relative_usages: Default::default(),
             alias_collisions: Default::default(),
         }
     }
@@ -292,7 +367,23 @@ impl ModuleScope {
         self.report_multiple_definitions(logger);
         self.report_alias_collisions(logger);
         self.report_ambiguous_usages(logger);
+        self.report_implicit_bundle_relative_usages(logger);
         self.report_undefined_usages(logger);
+    }
+
+    pub fn name_index(&self) -> NameIndex {
+        NameIndex {
+            definitions: self
+                .definitions
+                .iter()
+                .map(|(symbol, spans)| (symbol.clone(), spans.clone().into_boxed_slice()))
+                .collect(),
+            usages: self
+                .usages
+                .iter()
+                .map(|(symbol, spans)| (symbol.clone(), spans.clone().into_boxed_slice()))
+                .collect(),
+        }
     }
 
     pub fn predefine(
@@ -349,16 +440,17 @@ impl ModuleScope {
         &mut self,
         target: ast::PathOrIdent,
         alias: Option<Spanned<String>>,
-        _span: Span,
+        span: Span,
     ) -> Option<()> {
+        #[derive(Clone, Copy)]
         enum PathPrefix {
             None,
             Root,
             Bundle,
         }
 
-        let (segments, path_prefix) = match target {
-            ast::PathOrIdent::Ident(ident) => (vec![ident.name_text()?], PathPrefix::None),
+        let (source_segments, path_prefix) = match target {
+            ast::PathOrIdent::Ident(ident) => (vec![ident.name_text_spanned()?], PathPrefix::None),
             ast::PathOrIdent::Path(path) => {
                 let path_prefix = if path.is_rooted() {
                     PathPrefix::Root
@@ -367,13 +459,19 @@ impl ModuleScope {
                 } else {
                     PathPrefix::None
                 };
-                (path.segments(), path_prefix)
+                (path.segments_spanned(), path_prefix)
             }
         };
+        let segments = source_segments
+            .iter()
+            .map(|segment| segment.inner.clone())
+            .collect::<Vec<_>>();
         if segments.is_empty() {
             return None;
         }
+        let reference_segments = segments.clone();
 
+        let mut used_absolute_fallback = false;
         let module_segments = match path_prefix {
             PathPrefix::Root => segments,
             PathPrefix::Bundle => {
@@ -391,10 +489,33 @@ impl ModuleScope {
                 if self.has_definition_with_prefix(&relative_segments) {
                     relative_segments
                 } else {
+                    used_absolute_fallback = true;
                     segments
                 }
             }
         };
+
+        if used_absolute_fallback {
+            let resolved_module = if module_segments.len() == 1 {
+                Path::new(module_segments[0].clone(), String::new())
+            } else if let Some(path) = Path::from_segments(&module_segments) {
+                path
+            } else {
+                return None;
+            };
+            self.maybe_record_implicit_bundle_relative_usage(
+                NameSpace::Module,
+                &reference_segments,
+                &resolved_module,
+                span,
+            );
+        }
+
+        self.record_module_usages_for_use_target(
+            &source_segments,
+            matches!(path_prefix, PathPrefix::Root),
+            &module_segments,
+        );
 
         if let Some(alias) = alias {
             if let Some(previous) = self.lookup_alias(&alias.inner) {
@@ -589,24 +710,178 @@ impl ModuleScope {
         known_candidates.into_iter().next()
     }
 
+    fn maybe_record_implicit_bundle_relative_usage(
+        &mut self,
+        namespace: NameSpace,
+        reference_segments: &[String],
+        resolved: &Path,
+        span: Span,
+    ) {
+        if span == Span::Generated || matches!(span.file_id(), None | Some(0)) {
+            return;
+        }
+        if reference_segments.is_empty() {
+            return;
+        }
+        if reference_segments.first() != Some(&self.module_name) {
+            return;
+        }
+        let resolved_exists = if namespace == NameSpace::Module && resolved.minor.is_empty() {
+            self.has_definition_with_prefix(reference_segments)
+        } else {
+            self.has_definition(resolved, namespace)
+        };
+        if !resolved_exists {
+            return;
+        }
+        let explicit_reference = if reference_segments.len() == 1 {
+            "bundle".to_string()
+        } else {
+            format!("bundle::{}", reference_segments[1..].join(Path::DELIMETER))
+        };
+        self.implicit_bundle_relative_usages
+            .push(ImplicitBundleRelativeUsage {
+                namespace,
+                reference: reference_segments.join(Path::DELIMETER),
+                explicit_reference,
+                resolved: resolved.clone(),
+                span,
+            });
+    }
+
+    fn module_prefixes_for_symbol_path(path: &Path) -> Vec<Path> {
+        let minor_segments = path
+            .minor
+            .split(Path::DELIMETER)
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        if minor_segments.len() < 2 {
+            return Vec::new();
+        }
+        (1..minor_segments.len())
+            .map(|prefix_len| {
+                Path::new(
+                    path.major.clone(),
+                    minor_segments[..prefix_len].join(Path::DELIMETER),
+                )
+            })
+            .collect()
+    }
+
+    fn module_prefixes_for_module_path_segments(segments: &[String]) -> Vec<Path> {
+        if segments.len() < 2 {
+            return Vec::new();
+        }
+        (2..=segments.len())
+            .filter_map(|prefix_len| Path::from_segments(&segments[..prefix_len]))
+            .collect()
+    }
+
+    fn record_module_usages_from_alignment(
+        &mut self,
+        source_module_segments: &[Spanned<String>],
+        resolved_module_paths: &[Path],
+    ) {
+        let paired_count = source_module_segments
+            .len()
+            .min(resolved_module_paths.len());
+        if paired_count == 0 {
+            return;
+        }
+
+        let source_start = source_module_segments.len() - paired_count;
+        let path_start = resolved_module_paths.len() - paired_count;
+        for (segment, module_path) in source_module_segments[source_start..]
+            .iter()
+            .zip(resolved_module_paths[path_start..].iter())
+        {
+            if !self.has_definition(module_path, NameSpace::Module) {
+                continue;
+            }
+
+            self.usages
+                .entry(ScopedPath {
+                    path: module_path.clone(),
+                    namespace: NameSpace::Module,
+                })
+                .or_default()
+                .push(segment.span);
+        }
+    }
+
+    fn record_module_usages_for_value_path(
+        &mut self,
+        path: &ast::Path,
+        source_segments: &[Spanned<String>],
+        resolved_path: &Path,
+        used_alias_for_first_segment: bool,
+    ) {
+        if source_segments.len() < 2 {
+            return;
+        }
+
+        let mut source_module_segments = source_segments[..source_segments.len() - 1].to_vec();
+        if path.is_rooted() && !source_module_segments.is_empty() {
+            source_module_segments.remove(0);
+        }
+        if used_alias_for_first_segment && !source_module_segments.is_empty() {
+            source_module_segments.remove(0);
+        }
+        if source_module_segments.is_empty() {
+            return;
+        }
+
+        let resolved_module_paths = Self::module_prefixes_for_symbol_path(resolved_path);
+        self.record_module_usages_from_alignment(&source_module_segments, &resolved_module_paths);
+    }
+
+    fn record_module_usages_for_use_target(
+        &mut self,
+        source_segments: &[Spanned<String>],
+        source_is_rooted: bool,
+        resolved_module_segments: &[String],
+    ) {
+        if source_segments.is_empty() {
+            return;
+        }
+
+        let mut source_module_segments = source_segments.to_vec();
+        if source_is_rooted && !source_module_segments.is_empty() {
+            source_module_segments.remove(0);
+        }
+        if source_module_segments.is_empty() {
+            return;
+        }
+
+        let resolved_module_paths =
+            Self::module_prefixes_for_module_path_segments(resolved_module_segments);
+        self.record_module_usages_from_alignment(&source_module_segments, &resolved_module_paths);
+    }
+
     fn resolve_ast_path(
         &mut self,
         path: &ast::Path,
         namespace: NameSpace,
         usage_span: Span,
     ) -> Option<Path> {
-        let segments = path.segments();
+        let source_segments = path.segments_spanned();
+        let segments = source_segments
+            .iter()
+            .map(|segment| segment.inner.clone())
+            .collect::<Vec<_>>();
+
         if path.is_rooted() {
-            return Path::from_segments(&segments);
+            let resolved = Path::from_segments(&segments)?;
+            self.record_module_usages_for_value_path(path, &source_segments, &resolved, false);
+            return Some(resolved);
         }
         if path.is_bundle_rooted() {
             if segments.is_empty() {
                 return None;
             }
-            return Some(Path::new(
-                self.module_name.clone(),
-                segments.join(Path::DELIMETER),
-            ));
+            let resolved = Path::new(self.module_name.clone(), segments.join(Path::DELIMETER));
+            self.record_module_usages_for_value_path(path, &source_segments, &resolved, false);
+            return Some(resolved);
         }
 
         let mut scoped_segments = Vec::with_capacity(1 + self.module_path.len() + segments.len());
@@ -615,24 +890,41 @@ impl ModuleScope {
         scoped_segments.extend(segments.iter().cloned());
         let scoped_path = Path::from_segments(&scoped_segments)?;
 
-        if self.has_definition(&scoped_path, namespace) {
-            return Some(scoped_path);
-        }
-
-        if let Some(alias_path) = self.resolve_from_alias(&segments) {
-            return Some(alias_path);
-        }
-
-        if let Some(use_path) = self.resolve_from_use_imports(
+        let mut used_alias_for_first_segment = false;
+        let mut used_absolute_fallback = false;
+        let resolved = if self.has_definition(&scoped_path, namespace) {
+            scoped_path
+        } else if let Some(alias_path) = self.resolve_from_alias(&segments) {
+            used_alias_for_first_segment = true;
+            alias_path
+        } else if let Some(use_path) = self.resolve_from_use_imports(
             &segments,
             namespace,
             segments.join(Path::DELIMETER),
             usage_span,
         ) {
-            return Some(use_path);
+            use_path
+        } else {
+            used_absolute_fallback = true;
+            Path::from_segments(&segments)?
+        };
+
+        if used_absolute_fallback {
+            self.maybe_record_implicit_bundle_relative_usage(
+                namespace,
+                &segments,
+                &resolved,
+                path.span(),
+            );
         }
 
-        Path::from_segments(&segments)
+        self.record_module_usages_for_value_path(
+            path,
+            &source_segments,
+            &resolved,
+            used_alias_for_first_segment,
+        );
+        Some(resolved)
     }
 
     fn report_multiple_definitions(
@@ -718,6 +1010,31 @@ impl ModuleScope {
                     format!(
                         "`{}` is provided by multiple `use` imports: {candidates}",
                         usage.reference
+                    ),
+                    usage.span,
+                )
+                .done();
+        }
+    }
+
+    fn report_implicit_bundle_relative_usages(
+        &self,
+        logger: &mut FileLogger,
+    ) {
+        let mut usages = self.implicit_bundle_relative_usages.clone();
+        usages.sort_by_key(|usage| {
+            format!(
+                "{}:{}:{}",
+                usage.namespace, usage.reference, usage.explicit_reference
+            )
+        });
+        for usage in usages {
+            logger
+                .warning("Implicit bundle-relative path")
+                .primary(
+                    format!(
+                        "`{}` resolves to `root::{}`; use `{}` to refer to the current bundle in a less ambiguous way.",
+                        usage.reference, usage.resolved, usage.explicit_reference
                     ),
                     usage.span,
                 )

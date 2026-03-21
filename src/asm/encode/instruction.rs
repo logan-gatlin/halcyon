@@ -276,6 +276,14 @@ pub(crate) fn encode_instruction(
             function_body.instruction(&winstr::F32DemoteF64);
             1
         }
+        i::F64ConvertI64S => {
+            function_body.instruction(&winstr::F64ConvertI64S);
+            1
+        }
+        i::F64ConvertI64U => {
+            function_body.instruction(&winstr::F64ConvertI64U);
+            1
+        }
     }
 }
 

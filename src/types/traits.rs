@@ -10,7 +10,7 @@ use super::{
 };
 
 /// A trait constraint applied to type arguments.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TraitRef {
     pub trait_name: Path,
     pub arguments: Vec<Type>,
@@ -31,7 +31,7 @@ impl TraitRef {
 pub type TraitConstraint = TraitRef;
 
 /// A type scheme with attached trait predicates.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TypeScheme {
     pub predicates: Vec<TraitConstraint>,
     pub type_: Type,
@@ -51,6 +51,30 @@ impl TypeScheme {
     ) -> Self {
         Self { predicates, type_ }
     }
+
+    pub fn pretty(&self) -> String {
+        let type_ = self.type_.pretty();
+        if self.predicates.is_empty() {
+            return type_;
+        }
+
+        let constraints = self
+            .predicates
+            .iter()
+            .map(format_trait_constraint)
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("{type_} where {constraints}")
+    }
+}
+
+impl std::fmt::Display for TypeScheme {
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        f.write_str(&self.pretty())
+    }
 }
 
 impl From<Type> for TypeScheme {
@@ -60,7 +84,7 @@ impl From<Type> for TypeScheme {
 }
 
 /// Definition of a trait and its trait-item signatures.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TraitDef {
     pub name: Path,
     pub parameters: usize,
@@ -104,8 +128,39 @@ pub(crate) fn ordered_trait_methods(trait_definition: &TraitDef) -> Vec<(Path, T
     methods
 }
 
+fn format_trait_constraint(constraint: &TraitConstraint) -> String {
+    if constraint.arguments.is_empty() {
+        return constraint.trait_name.to_string();
+    }
+
+    let arguments = constraint
+        .arguments
+        .iter()
+        .map(format_trait_constraint_argument)
+        .collect::<Vec<_>>()
+        .join(" ");
+    format!("{} {arguments}", constraint.trait_name)
+}
+
+fn format_trait_constraint_argument(type_: &Type) -> String {
+    let rendered = type_.pretty();
+    match type_ {
+        Type::Unit
+        | Type::Integer
+        | Type::Real
+        | Type::Boolean
+        | Type::String
+        | Type::Glyph
+        | Type::TypeVar(_)
+        | Type::MetaVar(_)
+        | Type::Named { .. }
+        | Type::Tuple(_) => rendered,
+        _ => format!("({rendered})"),
+    }
+}
+
 /// A trait implementation head with its context predicates.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TraitImpl {
     pub parameters: usize,
     pub head: TraitRef,
@@ -212,5 +267,19 @@ mod tests {
             .map(|(path, _)| path.minor)
             .collect::<Vec<_>>();
         assert_eq!(names, vec!["a", "m", "z"]);
+    }
+
+    #[test]
+    fn type_scheme_pretty_uses_where_clause_for_predicates() {
+        let scheme = TypeScheme::with_predicates(
+            Type::ForAll {
+                name: None,
+                body: Box::new(Type::func(Type::v(0), Type::v(0))),
+            },
+            vec![TraitRef::new(Path::new("demo", "Eq"), vec![Type::v(0)])],
+        );
+
+        assert_eq!(scheme.pretty(), "for a in a -> a where demo::Eq a");
+        assert_eq!(scheme.to_string(), "for a in a -> a where demo::Eq a");
     }
 }

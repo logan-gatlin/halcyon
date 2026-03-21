@@ -3,17 +3,18 @@ use std::collections::{
     HashMap,
 };
 
+mod dwarf;
 mod instruction;
 mod source_map;
 mod type_section;
-mod dwarf;
 
 use super::module_section::LoweredModuleSection;
 use super::resolve::ResolvedModule;
 use super::*;
-use instruction::encode_instruction;
-use source_map::build_source_map_json;
 use dwarf::build_dwarf_sections;
+use instruction::encode_instruction;
+use rayon::join;
+use source_map::build_source_map_json;
 use type_section::{
     TypeSection,
     default_value,
@@ -31,17 +32,33 @@ use wasm_encoder::{
 
 /// Handles encode.
 pub fn encode(asm_module: Module) -> EncodedModule {
-    let resolved = resolve_module(asm_module)
-        .and_then(|resolved| {
-            verify_module(&resolved)?;
-            Ok(resolved)
-        })
-        .unwrap_or_else(|error| panic!("{error}"));
-    encode_resolved_module(resolved)
+    encode_with_options(asm_module, DebugInfoOptions::default())
+}
+
+/// Handles encode with configurable debug metadata emission.
+pub fn encode_with_options(
+    asm_module: Module,
+    debug_info: DebugInfoOptions,
+) -> EncodedModule {
+    let _profile_total = crate::profiling::scope("asm.encode.total");
+    let resolved = {
+        let _profile = crate::profiling::scope("asm.encode.resolve_and_verify");
+        resolve_module(asm_module)
+            .and_then(|resolved| {
+                verify_module(&resolved)?;
+                Ok(resolved)
+            })
+            .unwrap_or_else(|error| panic!("{error}"))
+    };
+    encode_resolved_module(resolved, debug_info)
 }
 
 /// Handles encode resolved module.
-fn encode_resolved_module(resolved: ResolvedModule) -> EncodedModule {
+fn encode_resolved_module(
+    resolved: ResolvedModule,
+    debug_info: DebugInfoOptions,
+) -> EncodedModule {
+    let _profile_total = crate::profiling::scope("asm.encode.resolved.total");
     let asm_module = &resolved.lowered;
 
     let mut name_section = NameSection::new();
@@ -126,32 +143,36 @@ fn encode_resolved_module(resolved: ResolvedModule) -> EncodedModule {
     export_section.export("_start", ExportKind::Func, resolved.start_function_index);
 
     let mut function_operator_origins = Vec::new();
-    for function in &resolved.functions {
-        let parameter_types = function.parameters.values().cloned().collect::<Vec<_>>();
-        function_section.function(type_section.new_function(&parameter_types, &function.returns));
+    {
+        let _profile = crate::profiling::scope("asm.encode.emit_functions");
+        for function in &resolved.functions {
+            let parameter_types = function.parameters.values().cloned().collect::<Vec<_>>();
+            function_section
+                .function(type_section.new_function(&parameter_types, &function.returns));
 
-        let mut function_body = wasm_encoder::Function::new_with_locals_types(
-            function
-                .variables
-                .iter()
-                .map(|(_, type_)| type_section.valtype_of(type_)),
-        );
-        let mut expanded_origins = Vec::new();
-
-        for (op_index, op) in function.ops.iter().enumerate() {
-            let emitted = encode_instruction(
-                op,
-                &mut type_section,
-                &mut function_body,
-                &mut referenced_funcs,
+            let mut function_body = wasm_encoder::Function::new_with_locals_types(
+                function
+                    .variables
+                    .iter()
+                    .map(|(_, type_)| type_section.valtype_of(type_)),
             );
-            let origin = function.op_origins.get(op_index).cloned().unwrap_or(None);
-            expanded_origins.extend(std::iter::repeat_n(origin, emitted));
-        }
+            let mut expanded_origins = Vec::new();
 
-        function_operator_origins.push(expanded_origins);
-        function_body.instruction(&wasm_encoder::Instruction::End);
-        code_section.function(&function_body);
+            for (op_index, op) in function.ops.iter().enumerate() {
+                let emitted = encode_instruction(
+                    op,
+                    &mut type_section,
+                    &mut function_body,
+                    &mut referenced_funcs,
+                );
+                let origin = function.op_origins.get(op_index).cloned().unwrap_or(None);
+                expanded_origins.extend(std::iter::repeat_n(origin, emitted));
+            }
+
+            function_operator_origins.push(expanded_origins);
+            function_body.instruction(&wasm_encoder::Instruction::End);
+            code_section.function(&function_body);
+        }
     }
 
     let referenced_funcs = referenced_funcs.into_iter().collect::<Vec<_>>();
@@ -171,12 +192,6 @@ fn encode_resolved_module(resolved: ResolvedModule) -> EncodedModule {
     name_section.functions(&func_names);
     name_section.globals(&global_names);
 
-    let source_map_url = format!("{}.wasm.map", asm_module.name);
-    let source_map_url_section = wasm_encoder::CustomSection {
-        name: "sourceMappingURL".into(),
-        data: source_map_url.as_bytes().to_vec().into(),
-    };
-
     let mut preliminary_module = wasm_encoder::Module::new();
     preliminary_module
         .section(&name_section)
@@ -195,8 +210,29 @@ fn encode_resolved_module(resolved: ResolvedModule) -> EncodedModule {
         .section(&asm_module.sig)
         .section(&LoweredModuleSection::new(asm_module));
 
-    let preliminary_binary = preliminary_module.finish();
-    let dwarf_sections = build_dwarf_sections(asm_module, &preliminary_binary, &function_operator_origins);
+    let preliminary_binary = {
+        let _profile = crate::profiling::scope("asm.encode.preliminary_binary");
+        preliminary_module.finish()
+    };
+    let (dwarf_sections, source_map) = {
+        let _profile = crate::profiling::scope("asm.encode.build_debug_metadata");
+        join(
+            || {
+                if !debug_info.emit_dwarf {
+                    return Vec::new();
+                }
+                let _profile = crate::profiling::scope("asm.encode.build_dwarf_sections");
+                build_dwarf_sections(asm_module, &preliminary_binary, &function_operator_origins)
+            },
+            || {
+                if !debug_info.emit_source_map {
+                    return None;
+                }
+                let _profile = crate::profiling::scope("asm.encode.build_source_map");
+                build_source_map_json(asm_module, &preliminary_binary, &function_operator_origins)
+            },
+        )
+    };
 
     let mut module = wasm_encoder::Module::new();
     module
@@ -221,8 +257,16 @@ fn encode_resolved_module(resolved: ResolvedModule) -> EncodedModule {
             data: data.into(),
         });
     }
-    module.section(&source_map_url_section);
-    let binary = module.finish();
-    let source_map = build_source_map_json(asm_module, &binary, &function_operator_origins);
+    if source_map.is_some() {
+        let source_map_url = format!("{}.wasm.map", asm_module.name);
+        module.section(&wasm_encoder::CustomSection {
+            name: "sourceMappingURL".into(),
+            data: source_map_url.as_bytes().to_vec().into(),
+        });
+    }
+    let binary = {
+        let _profile = crate::profiling::scope("asm.encode.final_binary");
+        module.finish()
+    };
     EncodedModule { binary, source_map }
 }

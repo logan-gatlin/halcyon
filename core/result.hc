@@ -1,6 +1,6 @@
 module result =
-  use core::ops
-  use core::opt
+  use bundle::ops
+  use bundle::opt
   type Result: err ok = | Ok ok | Err err
 
   let map = fn f result => match result with
@@ -76,7 +76,7 @@ module result =
     | Err error => Some error
 
   impl bundle::Default for err ok in Result err ok where bundle::Default ok =
-    let default = Ok core::default
+    let default = Ok bundle::default
   end
 
   impl bundle::ops::Equal for err ok in Result err ok where bundle::ops::Equal err, bundle::ops::Equal ok =
@@ -89,6 +89,13 @@ module result =
         match right with
           | Ok _ => false
           | Err right_error => bundle::ops::[==] left_error right_error
+  end
+
+  impl bundle::show::Show for err ok in Result err ok where bundle::show::Show err, bundle::show::Show ok =
+    let show = fn result =>
+      match result with
+        | Ok value => "Ok(" + (bundle::show::show value) + ")"
+        | Err error => "Err(" + (bundle::show::show error) + ")"
   end
 
   impl bundle::hkt::Applicative for err in Result err =

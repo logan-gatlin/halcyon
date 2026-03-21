@@ -683,6 +683,8 @@ fn parse_instruction(
         "i64.trunc_f64_s" => Some(Instruction::I64TruncF64S),
         "i64.trunc_f64_u" => Some(Instruction::I64TruncF64U),
         "f32.demote_f64" => Some(Instruction::F32DemoteF64),
+        "f64.convert_i64_s" => Some(Instruction::F64ConvertI64S),
+        "f64.convert_i64_u" => Some(Instruction::F64ConvertI64U),
         _ => {
             parse_number_op(op).map_or_else(
                 || {
@@ -1103,7 +1105,10 @@ fn parse_path(
                 log_invalid(logger, path.span(), "Expected a two-part path.");
                 return None;
             };
-            let path = Path::new(lhs.clone(), rhs.clone()).with_span(path.span());
+            let usage_span = path
+                .name_text_spanned()
+                .map_or_else(|| path.span(), |segment| segment.span);
+            let path = Path::new(lhs.clone(), rhs.clone()).with_span(usage_span);
             Some(scope.query_path(path, namespace))
         }
         SexprItem::Atom(SexprAtom::SymbolIdent(token)) => {

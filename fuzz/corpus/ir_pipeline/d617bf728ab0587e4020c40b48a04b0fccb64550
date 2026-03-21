@@ -1,0 +1,2 @@
+module $p    let value use= 42
+end

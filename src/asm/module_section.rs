@@ -174,6 +174,8 @@ enum WireInstruction {
     I64TruncF64S,
     I64TruncF64U,
     F32DemoteF64,
+    F64ConvertI64S,
+    F64ConvertI64U,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -692,6 +694,8 @@ impl WireInstruction {
             Instruction::I64TruncF64S => Self::I64TruncF64S,
             Instruction::I64TruncF64U => Self::I64TruncF64U,
             Instruction::F32DemoteF64 => Self::F32DemoteF64,
+            Instruction::F64ConvertI64S => Self::F64ConvertI64S,
+            Instruction::F64ConvertI64U => Self::F64ConvertI64U,
         }
     }
 
@@ -823,6 +827,8 @@ impl WireInstruction {
             Self::I64TruncF64S => Instruction::I64TruncF64S,
             Self::I64TruncF64U => Instruction::I64TruncF64U,
             Self::F32DemoteF64 => Instruction::F32DemoteF64,
+            Self::F64ConvertI64S => Instruction::F64ConvertI64S,
+            Self::F64ConvertI64U => Instruction::F64ConvertI64U,
         })
     }
 }

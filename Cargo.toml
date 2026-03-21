@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "cli"]
+members = [".", "cli", "lsp"]
 
 [package]
 name = "halcyon-lib"
@@ -20,7 +20,7 @@ punycode = "0.4"
 wasm-bindgen = "0.2"
 multipeek = "0.1"
 toml = {version = "0.9", default-features = false, features = ["parse", "serde"]}
-indexmap = "2.11"
+indexmap = { version = "2.11", features = ["serde"] }
 wasmparser = {version = "0.244"}
 wasmprinter = "0.244"
 serde = { version = "1", features = ["derive"] }
@@ -39,6 +39,7 @@ inflections = "1.1"
 tracing = "0.1"
 include_dir = "0.7"
 gimli = { version = "0.32", features = ["write"] }
+rayon = "1.11"
 
 [dev-dependencies]
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
@@ -51,6 +52,12 @@ strip = true
 opt-level = "z"
 lto = true
 codegen-units = 1
+
+[profile.dev.package.wasmtime]
+opt-level = 1
+
+[profile.dev.package.wasmtime-wasi]
+opt-level = 1
 
 [lib]
 crate-type = ["cdylib", "lib"]

@@ -230,6 +230,42 @@ fn first_identifier_text_spanned(
     None
 }
 
+fn final_identifier_text_spanned(
+    parent: &SyntaxNode,
+    file_id: usize,
+) -> Option<Spanned<String>> {
+    let tokens = non_trivia_tokens(parent);
+    let mut final_name = None;
+    let mut index = 0;
+    while index < tokens.len() {
+        let token = &tokens[index];
+        if token.kind() == SyntaxKind::IDENT {
+            final_name = Some(
+                token
+                    .text()
+                    .to_string()
+                    .with_span(span_from_text_range(file_id, token.text_range())),
+            );
+            index += 1;
+            continue;
+        }
+        if token.kind() == SyntaxKind::L_SQUARE
+            && let (Some(op), Some(end)) = (tokens.get(index + 1), tokens.get(index + 2))
+            && op.kind().is_operator_token()
+            && end.kind() == SyntaxKind::R_SQUARE
+        {
+            final_name = Some(format!("[{}]", op.text()).with_span(span_from_text_range(
+                file_id,
+                rowan::TextRange::new(token.text_range().start(), end.text_range().end()),
+            )));
+            index += 3;
+            continue;
+        }
+        index += 1;
+    }
+    final_name
+}
+
 fn all_identifier_texts(parent: &SyntaxNode) -> Vec<String> {
     let tokens = non_trivia_tokens(parent);
     let mut names = Vec::new();
@@ -247,6 +283,42 @@ fn all_identifier_texts(parent: &SyntaxNode) -> Vec<String> {
             && end.kind() == SyntaxKind::R_SQUARE
         {
             names.push(format!("[{}]", op.text()));
+            index += 3;
+            continue;
+        }
+        index += 1;
+    }
+    names
+}
+
+fn all_identifier_texts_spanned(
+    parent: &SyntaxNode,
+    file_id: usize,
+) -> Vec<Spanned<String>> {
+    let tokens = non_trivia_tokens(parent);
+    let mut names = Vec::new();
+    let mut index = 0;
+    while index < tokens.len() {
+        let token = &tokens[index];
+        if token.kind() == SyntaxKind::IDENT {
+            names.push(
+                token
+                    .text()
+                    .to_string()
+                    .with_span(span_from_text_range(file_id, token.text_range())),
+            );
+            index += 1;
+            continue;
+        }
+        if token.kind() == SyntaxKind::L_SQUARE
+            && let (Some(op), Some(end)) = (tokens.get(index + 1), tokens.get(index + 2))
+            && op.kind().is_operator_token()
+            && end.kind() == SyntaxKind::R_SQUARE
+        {
+            names.push(format!("[{}]", op.text()).with_span(span_from_text_range(
+                file_id,
+                rowan::TextRange::new(token.text_range().start(), end.text_range().end()),
+            )));
             index += 3;
             continue;
         }
@@ -1280,6 +1352,12 @@ impl Path {
         all_identifier_texts(&self.syntax)
     }
 
+    /// All path segments with source spans, without the optional `root` prefix.
+    /// Bracketed operators are normalized to `[<op>]`.
+    pub fn segments_spanned(&self) -> Vec<Spanned<String>> {
+        all_identifier_texts_spanned(&self.syntax, self.file_id())
+    }
+
     pub fn is_rooted(&self) -> bool {
         non_trivia_tokens(&self.syntax)
             .first()
@@ -1300,6 +1378,10 @@ impl Path {
     /// The final name segment.
     pub fn name_text(&self) -> Option<String> {
         self.segments().last().cloned()
+    }
+
+    pub fn name_text_spanned(&self) -> Option<Spanned<String>> {
+        final_identifier_text_spanned(&self.syntax, self.file_id())
     }
 
     pub fn has_dollar_prefix(&self) -> bool {
@@ -1445,6 +1527,13 @@ impl PathOrIdent {
         match self {
             Self::Ident(id) => HasName::name_text(id),
             Self::Path(p) => p.name_text(),
+        }
+    }
+
+    pub fn name_text_spanned(&self) -> Option<Spanned<String>> {
+        match self {
+            Self::Ident(id) => id.name_text_spanned(),
+            Self::Path(path) => path.name_text_spanned(),
         }
     }
 

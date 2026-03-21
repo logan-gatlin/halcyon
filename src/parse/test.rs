@@ -786,6 +786,25 @@ fn ast_use_statement_bundle_rooted_accessors() {
 }
 
 #[test]
+fn ast_use_statement_allows_bare_bundle_target() {
+    assert_no_errors("module M =\n  use bundle\nend");
+    let sf = parse_source_file("module M =\n  use bundle\nend");
+    let m = &sf.modules()[0];
+    let ast::Statement::Use(ref use_stmt) = m.statements()[0] else {
+        panic!("expected use statement");
+    };
+    let target = use_stmt.target().expect("use should have target");
+    let ast::PathOrIdent::Path(path) = target else {
+        panic!("expected path target");
+    };
+    assert!(
+        path.is_bundle_rooted(),
+        "use target should be bundle-rooted"
+    );
+    assert_eq!(path.segments(), Vec::<String>::new());
+}
+
+#[test]
 fn ast_use_statement_alias_accessor() {
     let sf = parse_source_file("module M =\n  use core as c\nend");
     let m = &sf.modules()[0];
@@ -821,6 +840,27 @@ fn ast_use_expr_accessors() {
             .as_deref(),
         Some("c")
     );
+    assert!(use_expr.body().is_some(), "use expression should have body");
+}
+
+#[test]
+fn ast_use_expr_allows_bare_bundle_target() {
+    assert_no_errors("module M =\n  let x = use bundle in value\nend");
+    let sf = parse_source_file("module M =\n  let x = use bundle in value\nend");
+    let ast::Statement::Let(ref let_stmt) = sf.modules()[0].statements()[0] else {
+        panic!("expected let statement");
+    };
+    let ast::Expr::Use(ref use_expr) = let_stmt.value().expect("let should have value") else {
+        panic!("expected use expression");
+    };
+    let ast::PathOrIdent::Path(path) = use_expr.target().expect("use should have target") else {
+        panic!("expected path use target");
+    };
+    assert!(
+        path.is_bundle_rooted(),
+        "use target should be bundle-rooted"
+    );
+    assert_eq!(path.segments(), Vec::<String>::new());
     assert!(use_expr.body().is_some(), "use expression should have body");
 }
 

@@ -1,0 +1,2 @@
+bun: ldfuzz
+let x = 1

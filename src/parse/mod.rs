@@ -380,9 +380,19 @@ pub fn parse(
     source: &str,
     logger: &mut FileLogger,
 ) -> Option<SourceFile> {
-    let tokens = lexer::tokenize(source.chars(), logger);
-    let mut p = parser::Parser::new(&tokens, source, logger);
-    grammar::source_file(&mut p);
+    let _profile_total = crate::profiling::scope("parse.total");
+    let tokens = {
+        let _profile = crate::profiling::scope("parse.lex");
+        lexer::tokenize(source.chars(), logger)
+    };
+    let mut p = {
+        let _profile = crate::profiling::scope("parse.init_parser");
+        parser::Parser::new(&tokens, source, logger)
+    };
+    {
+        let _profile = crate::profiling::scope("parse.grammar");
+        grammar::source_file(&mut p);
+    }
     SourceFile::cast(p.finish()).map(|source_file| source_file.with_file_id(logger.id()))
 }
 

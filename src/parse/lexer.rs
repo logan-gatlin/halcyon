@@ -98,7 +98,7 @@ pub fn tokenize(
         logger,
     };
     while let Some(current) = iter.next() {
-        let start = iter.position - 1;
+        let start = iter.position - current.len_utf8();
         if current.is_whitespace() {
             while iter.peek().is_some_and(|c| c.is_whitespace()) {
                 iter.next();
@@ -672,5 +672,25 @@ fn bake_string(
             }
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Logger;
+
+    #[test]
+    fn tokenize_uses_byte_offsets_for_multibyte_chars() {
+        let source = "\u{fffd}(";
+        let mut logger = Logger::new();
+        let mut file_logger = logger.new_file("fuzz.hc", source);
+        let tokens = tokenize(source.chars(), &mut file_logger);
+
+        assert_eq!(tokens.len(), 2);
+        assert_eq!(tokens[0].inner, SyntaxKind::IDENT);
+        assert_eq!(tokens[0].span.range(), 0..3);
+        assert_eq!(tokens[1].inner, SyntaxKind::L_PAREN);
+        assert_eq!(tokens[1].span.range(), 3..4);
     }
 }

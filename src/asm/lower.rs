@@ -28,7 +28,7 @@ pub fn lower_type(
         Glyph | Boolean => Type::Struct([Type::I32].into()),
         String => Type::Array(Type::I8.into()),
         TypeVar(_) | MetaVar(_) => Type::Any,
-        ForAll(body) => lower_type(body, symbols),
+        ForAll { body, .. } => lower_type(body, symbols),
         Named { name, body } => lower_type(&resolve_named_body(name, body, symbols), symbols),
         StructConstraint { fields, .. } => {
             Type::Struct(fields.values().map(|v| lower_type(v, symbols)).collect())
@@ -37,7 +37,7 @@ pub fn lower_type(
             Type::Struct(fields.values().map(|v| lower_type(v, symbols)).collect())
         }
         Array(_) => Type::Array(Type::Any.into()),
-        Tuple(items) => Type::Struct(items.iter().map(|_| Type::Any).collect()),
+        Tuple(items) => Type::Struct(items.iter().map(|item| lower_type(item, symbols)).collect()),
         Sum { .. } => Type::Struct([Type::I32, Type::Any].into()),
         Function(..) => Type::closure_type(),
         Apply {
@@ -63,11 +63,26 @@ impl<'a> Encoder<'a> {
         parameter: Path,
         parameter_type: SemanticType,
         captures: Vec<(Path, SemanticType)>,
+        recursive_binding: Option<Path>,
         body: impl for<'b> FnOnce(&mut Encoder<'b>, &SymbolTable),
     ) -> Path {
         let id = self.module.closure_counter;
         self.module.closure_counter += 1;
         let func_name = Path::new("[temp]", format!("closure#{id}"));
+        let has_recursive_capture = recursive_binding.as_ref().is_some_and(|binding| {
+            captures
+                .iter()
+                .any(|(capture_name, _)| capture_name == binding)
+        });
+        let captures_for_env = captures
+            .iter()
+            .filter(|(capture_name, _)| {
+                recursive_binding
+                    .as_ref()
+                    .is_none_or(|binding| capture_name != binding)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
         let mut new_enc = self.module.new_function(func_name.clone());
         let capture_array_name = new_enc.temporary_name("captured_symbols");
         new_enc.new_parameter(capture_array_name.clone(), Type::Array(Type::Any.into()));
@@ -80,7 +95,7 @@ impl<'a> Encoder<'a> {
         new_enc.push(i::Get(param_anyref_name));
         new_enc.ref_cast_if_needed(&parameter_type);
         new_enc.push(i::Set(parameter));
-        for (id, (capture_name, capture_type)) in captures.clone().into_iter().enumerate() {
+        for (id, (capture_name, capture_type)) in captures_for_env.clone().into_iter().enumerate() {
             let capture_type = lower_type(&capture_type, symbols);
             new_enc.new_register(capture_name.clone(), ScopeKind::Local, capture_type.clone());
             new_enc.extend([
@@ -92,9 +107,23 @@ impl<'a> Encoder<'a> {
             new_enc.ref_cast_if_needed(&capture_type);
             new_enc.push(i::Set(capture_name.clone()));
         }
+        if has_recursive_capture {
+            let recursive_binding = recursive_binding.unwrap_or_else(|| unreachable!());
+            new_enc.new_register(
+                recursive_binding.clone(),
+                ScopeKind::Local,
+                Type::closure_type(),
+            );
+            new_enc.extend([
+                i::Get(capture_array_name.clone()),
+                i::Func(func_name.clone()),
+                i::StructNew([Type::function_capture(), Type::closure_function_type()].into()),
+                i::Set(recursive_binding),
+            ]);
+        }
         body(&mut new_enc, symbols);
-        let num_captures = captures.len();
-        for (capture, _) in captures {
+        let num_captures = captures_for_env.len();
+        for (capture, _) in captures_for_env {
             self.push(i::Get(capture));
         }
         self.extend([
@@ -119,10 +148,7 @@ impl<'a> Encoder<'a> {
         constructors: &ConstructorTable,
     ) {
         let Pattern {
-            kind,
-            type_,
-            span,
-            ..
+            kind, type_, span, ..
         } = pat;
         let previous_origin = self.current_origin.clone();
         if let Some(origin) = self.module.source_origin_for_span(span) {
@@ -462,10 +488,7 @@ impl<'a> Encoder<'a> {
         constructors: &ConstructorTable,
     ) {
         let Term {
-            kind,
-            type_,
-            span,
-            ..
+            kind, type_, span, ..
         } = term;
         let previous_origin = self.current_origin.clone();
         if let Some(origin) = self.module.source_origin_for_span(span) {
@@ -488,7 +511,16 @@ impl<'a> Encoder<'a> {
                 if !skip_pattern {
                     self.extend([i::Block(Some(result_type)), i::Block(None)]);
                 }
+                let recursive_binding = match (&assignee.kind, &value.kind) {
+                    (PatternKind::Identifier(path), TermKind::Function { .. }) => {
+                        Some(path.clone())
+                    }
+                    _ => None,
+                };
+                let previous_recursive_binding =
+                    std::mem::replace(&mut self.recursive_binding, recursive_binding);
                 self.lower_ir(*value, symbols, constructors);
+                self.recursive_binding = previous_recursive_binding;
                 if !skip_pattern {
                     self.lower_pattern(assignee, scope, symbols, constructors);
                 } else {
@@ -613,6 +645,7 @@ impl<'a> Encoder<'a> {
                     parameter_name.inner.clone(),
                     *parameter_type,
                     captures,
+                    self.recursive_binding.clone(),
                     |new_enc: &mut Encoder<'_>, symbols: &SymbolTable| {
                         new_enc.lower_ir(*body, symbols, constructors);
                     },
@@ -681,6 +714,7 @@ impl<'a> Encoder<'a> {
                         parameter_name.clone(),
                         parameter_type,
                         vec![],
+                        None,
                         |inner_func: &mut Encoder<'_>, _symbols: &SymbolTable| {
                             inner_func.extend([
                                 i::I32Const(*tag as i32),
@@ -711,6 +745,7 @@ impl<'a> Encoder<'a> {
                         parameter_name.clone(),
                         parameter_type,
                         vec![],
+                        None,
                         |inner_func: &mut Encoder<'_>, _symbols: &SymbolTable| {
                             inner_func.extend([i::Get(parameter_name)]);
                         },
@@ -764,6 +799,7 @@ impl<'a> Encoder<'a> {
             dict_name.clone(),
             dict_type,
             vec![],
+            None,
             move |inner, _symbols| {
                 inner.extend([
                     i::Get(dict_name.clone()),
@@ -1088,7 +1124,7 @@ fn sum_variants(definition: &TypeDefinition) -> Option<IndexMap<String, Semantic
     let mut current = &definition.body;
     loop {
         match current {
-            SemanticType::ForAll(body) => current = body,
+            SemanticType::ForAll { body, .. } => current = body,
             SemanticType::Sum { variants } => return Some(variants.clone()),
             _ => return None,
         }
@@ -1141,10 +1177,10 @@ fn apply_type(
     let mut current = constructor.clone();
     for arg in arguments {
         current = match current {
-            SemanticType::ForAll(body) => body.open_forall(arg)?,
+            SemanticType::ForAll { body, .. } => body.open_forall(arg)?,
             SemanticType::Named { name, body } => {
                 let resolved = resolve_named_body(&name, &body, symbols);
-                if let SemanticType::ForAll(inner) = resolved {
+                if let SemanticType::ForAll { body: inner, .. } = resolved {
                     inner.open_forall(arg)?
                 } else {
                     return None;
@@ -1163,7 +1199,7 @@ fn instantiate_named_body(
 ) -> Option<SemanticType> {
     let mut current = body.clone();
     for arg in arguments {
-        if let SemanticType::ForAll(inner) = current {
+        if let SemanticType::ForAll { body: inner, .. } = current {
             current = inner.open_forall(arg)?;
         } else {
             return None;

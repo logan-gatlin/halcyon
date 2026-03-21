@@ -179,9 +179,12 @@ pub fn pattern(
                 )
             }
             ast::Pattern::Path(pat_path) => {
+                let usage_span = pat_path
+                    .name_text_spanned()
+                    .map_or_else(|| pat_path.span(), |segment| segment.span);
                 let resolved = scope
-                    .resolve_path(&pat_path, NameSpace::Constructor, pat_path.span())?
-                    .with_span(pat_path.span());
+                    .resolve_path(&pat_path, NameSpace::Constructor, usage_span)?
+                    .with_span(usage_span);
                 PatternKind::ConstConstructor(scope.query_path(resolved, NameSpace::Constructor))
             }
         },

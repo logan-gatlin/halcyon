@@ -69,6 +69,12 @@ pub struct LinkOptions {
 
     /// Global export naming policy for the linked output.
     pub export_policy: ExportPolicy,
+
+    /// Emit source map JSON and `sourceMappingURL` custom section.
+    pub emit_source_map: bool,
+
+    /// Emit DWARF custom sections for backtraces.
+    pub emit_dwarf: bool,
 }
 
 impl Default for LinkOptions {
@@ -77,6 +83,8 @@ impl Default for LinkOptions {
             module_name: "linked".to_string(),
             strict: true,
             export_policy: ExportPolicy::Qualified,
+            emit_source_map: true,
+            emit_dwarf: true,
         }
     }
 }
@@ -135,7 +143,6 @@ pub enum LinkError {
 
     /// Type schemes disagree for the same named term.
     SignatureTermConflict { path: Path },
-
 }
 
 impl LinkError {
@@ -266,6 +273,7 @@ pub fn link_artifacts(
     options: LinkOptions,
     logger: &mut FileLogger,
 ) -> Option<Artifact> {
+    let _profile_total = crate::profiling::scope("link.link_artifacts.total");
     let binaries = artifacts
         .iter()
         .map(|artifact| artifact.binary.as_slice())
@@ -289,20 +297,39 @@ pub fn link_binaries<B: AsRef<[u8]>>(
     binaries: &[B],
     options: LinkOptions,
 ) -> Result<Artifact, LinkError> {
+    let _profile_total = crate::profiling::scope("link.link_binaries.total");
     if binaries.is_empty() {
         return Err(LinkError::EmptyInput);
     }
 
-    let inputs = binaries
-        .iter()
-        .enumerate()
-        .map(|(index, binary)| decode_link_input(binary.as_ref(), index))
-        .collect::<Result<Vec<_>, _>>()?;
+    let inputs = {
+        let _profile = crate::profiling::scope("link.link_binaries.decode_inputs");
+        binaries
+            .iter()
+            .enumerate()
+            .map(|(index, binary)| decode_link_input(binary.as_ref(), index))
+            .collect::<Result<Vec<_>, _>>()?
+    };
 
-    let mut linked = merge_inputs(&inputs, &options)?;
-    linked.sig = merge_type_signatures(&inputs)?;
+    let mut linked = {
+        let _profile = crate::profiling::scope("link.link_binaries.merge_inputs");
+        merge_inputs(&inputs, &options)?
+    };
+    linked.sig = {
+        let _profile = crate::profiling::scope("link.link_binaries.merge_signatures");
+        merge_type_signatures(&inputs)?
+    };
     linked.export_policy = options.export_policy;
-    let encoded = asm::encode(linked);
+    let encoded = {
+        let _profile = crate::profiling::scope("link.link_binaries.encode");
+        asm::encode_with_options(
+            linked,
+            asm::DebugInfoOptions {
+                emit_source_map: options.emit_source_map,
+                emit_dwarf: options.emit_dwarf,
+            },
+        )
+    };
 
     Ok(Artifact {
         module_name: options.module_name,
@@ -362,12 +389,16 @@ fn merge_inputs(
     inputs: &[LinkInput],
     options: &LinkOptions,
 ) -> Result<Module, LinkError> {
+    let _profile_total = crate::profiling::scope("link.merge_inputs.total");
     let mut merged = Module::new(options.module_name.clone());
 
-    let normalized_modules = inputs
-        .iter()
-        .map(|input| namespace_temporary_paths(&input.module))
-        .collect::<Vec<_>>();
+    let normalized_modules = {
+        let _profile = crate::profiling::scope("link.merge_inputs.namespace_modules");
+        inputs
+            .iter()
+            .map(|input| namespace_temporary_paths(&input.module))
+            .collect::<Vec<_>>()
+    };
 
     let mut module_names = IndexSet::new();
     let mut provided_globals = IndexMap::new();
@@ -598,6 +629,7 @@ fn type_definition_eq(
 }
 
 fn namespace_temporary_paths(module: &Module) -> Module {
+    let _profile_total = crate::profiling::scope("link.namespace_temporary_paths.total");
     let temp_major = format!("[temp:{}]", module.name);
     let remap = |path: &Path| remap_temporary_path(path, &temp_major);
 
@@ -642,6 +674,7 @@ fn remap_function_paths(
     function: &Function,
     temp_major: &str,
 ) -> Function {
+    let _profile_total = crate::profiling::scope("link.remap_function_paths.total");
     let remap = |path: &Path| remap_temporary_path(path, temp_major);
 
     let parameters = function

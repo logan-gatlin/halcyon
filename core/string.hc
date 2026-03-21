@@ -1,6 +1,6 @@
 module string =
   use core
-  use core::ops
+  use bundle::ops
   let empty = ""
   let concat = fn left right => left + right
 
@@ -395,7 +395,22 @@ module string =
   let is_empty = fn value => value == ""
   let non_empty = fn value => value != ""
 
+  let escape = fn value =>
+    let escaped_backslash = replace value "\\" "\\\\" in
+    let escaped_quote = replace escaped_backslash "\"" "\\\"" in
+    let escaped_newline = replace escaped_quote "\n" "\\n" in
+    let escaped_carriage_return = replace escaped_newline "\r" "\\r" in
+    let escaped_tab = replace escaped_carriage_return "\t" "\\t" in
+    let escaped_backspace = replace escaped_tab "\b" "\\b" in
+    replace escaped_backspace "\0" "\\0"
+
+  let quote = fn value => "\"" + (escape value) + "\""
+
   impl bundle::Default bundle::String =
     let default = ""
+  end
+
+  impl bundle::show::Show bundle::String =
+    let show = fn value => quote value
   end
 end

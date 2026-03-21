@@ -1,0 +1,4 @@
+bundlefuzz
+modle fuzz
+module api,d = fn}x => x
+end

@@ -18,6 +18,9 @@ use crate::types::{
     Type,
     TypeScheme,
     ordered_trait_methods,
+    predicate_is_ground,
+    predicate_sort_key,
+    sorted_unique_predicates,
 };
 use crate::{
     Span,
@@ -46,6 +49,7 @@ type DictEnv = Vec<DictEntry>;
 struct ElaborationContext<'a> {
     symbols: &'a SymbolTable,
     scheme_env: &'a IndexMap<Path, TypeScheme>,
+    evidence_requirements: &'a IndexMap<Path, Vec<TraitConstraint>>,
     module_name: &'a str,
     dict_types: IndexMap<Path, Type>,
     dict_salt: usize,
@@ -57,11 +61,13 @@ impl<'a> ElaborationContext<'a> {
     fn new(
         symbols: &'a SymbolTable,
         scheme_env: &'a IndexMap<Path, TypeScheme>,
+        evidence_requirements: &'a IndexMap<Path, Vec<TraitConstraint>>,
         module_name: &'a str,
     ) -> Self {
         Self {
             symbols,
             scheme_env,
+            evidence_requirements,
             module_name,
             dict_types: IndexMap::new(),
             dict_salt: 0,
@@ -76,10 +82,16 @@ pub fn elaborate_module(
     resolved: ResolvedModule,
     symbols: &SymbolTable,
 ) -> ElaborationResult {
-    let scheme_env = build_scheme_env(symbols, &resolved.schemes);
-    let module_name = resolved.module.name.clone();
-    let mut context = ElaborationContext::new(symbols, &scheme_env, &module_name);
-    let statements = Vec::from(resolved.module.statements)
+    let ResolvedModule {
+        module,
+        schemes,
+        evidence_requirements,
+    } = resolved;
+    let scheme_env = build_scheme_env(symbols, &schemes);
+    let module_name = module.name.clone();
+    let mut context =
+        ElaborationContext::new(symbols, &scheme_env, &evidence_requirements, &module_name);
+    let statements = Vec::from(module.statements)
         .into_iter()
         .map(|statement| {
             match statement {
@@ -160,7 +172,7 @@ pub fn elaborate_module(
 
     ElaborationResult {
         module: Module {
-            name: resolved.module.name,
+            name: module_name,
             statements,
         },
     }
@@ -269,20 +281,24 @@ fn elaborate_term(
                     .first()
                     .cloned()
                     .unwrap_or_else(|| unreachable!());
-                let predicates = context
-                    .grouped_binding_predicates
-                    .get(&binding)
-                    .cloned()
-                    .or_else(|| {
-                        let scheme = context.scheme_env.get(&binding)?;
-                        instantiate_predicates_for_scheme(scheme, &binding_type)
-                    })
-                    .unwrap_or_default();
+                let predicates = instantiated_predicates_for_path(
+                    context,
+                    &binding,
+                    &binding_type,
+                    TypeMatchMode::Strict,
+                )
+                .unwrap_or_default();
                 let has_non_concrete = predicates
                     .iter()
-                    .any(|predicate| !predicate_is_concrete(predicate));
+                    .any(|predicate| !predicate_is_ground(predicate));
                 if has_non_concrete {
-                    let sorted_predicates = sorted_predicates(&predicates);
+                    let sorted_predicates = sorted_unique_predicates(
+                        &predicates
+                            .iter()
+                            .filter(|predicate| !predicate_is_ground(predicate))
+                            .cloned()
+                            .collect::<Vec<_>>(),
+                    );
                     let dict_params = build_dict_params(
                         &sorted_predicates,
                         context.module_name,
@@ -391,8 +407,7 @@ fn elaborate_identifier(
     dict_env: &DictEnv,
 ) -> Option<Term<Type>> {
     let is_trait_item = is_trait_item_path(context, &path);
-    let scheme = context.scheme_env.get(&path)?;
-    let args = dictionary_args_for_type(scheme, &type_, dict_env, context.symbols, is_trait_item)?;
+    let args = dictionary_args_for_path(context, &path, &type_, dict_env, is_trait_item)?;
     if args.is_empty() {
         return None;
     }
@@ -473,57 +488,75 @@ fn canonical_type_key(
         Type::String => "string".to_string(),
         Type::Glyph => "glyph".to_string(),
         Type::Array(inner) => format!("array({})", canonical_type_key(inner, vars, next)),
-        Type::Tuple(items) => format!(
-            "tuple({})",
-            items
-                .iter()
-                .map(|item| canonical_type_key(item, vars, next))
-                .collect::<Vec<_>>()
-                .join(",")
-        ),
-        Type::Struct { fields } => format!(
-            "struct({})",
-            fields
-                .iter()
-                .map(|(name, type_)| format!("{name}:{}", canonical_type_key(type_, vars, next)))
-                .collect::<Vec<_>>()
-                .join(",")
-        ),
-        Type::Sum { variants } => format!(
-            "sum({})",
-            variants
-                .iter()
-                .map(|(name, type_)| format!("{name}:{}", canonical_type_key(type_, vars, next)))
-                .collect::<Vec<_>>()
-                .join(",")
-        ),
-        Type::Function(parameter, result) => format!(
-            "fn({}->{})",
-            canonical_type_key(parameter, vars, next),
-            canonical_type_key(result, vars, next)
-        ),
+        Type::Tuple(items) => {
+            format!(
+                "tuple({})",
+                items
+                    .iter()
+                    .map(|item| canonical_type_key(item, vars, next))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            )
+        }
+        Type::Struct { fields } => {
+            format!(
+                "struct({})",
+                fields
+                    .iter()
+                    .map(|(name, type_)| {
+                        format!("{name}:{}", canonical_type_key(type_, vars, next))
+                    })
+                    .collect::<Vec<_>>()
+                    .join(",")
+            )
+        }
+        Type::Sum { variants } => {
+            format!(
+                "sum({})",
+                variants
+                    .iter()
+                    .map(|(name, type_)| {
+                        format!("{name}:{}", canonical_type_key(type_, vars, next))
+                    })
+                    .collect::<Vec<_>>()
+                    .join(",")
+            )
+        }
+        Type::Function(parameter, result) => {
+            format!(
+                "fn({}->{})",
+                canonical_type_key(parameter, vars, next),
+                canonical_type_key(result, vars, next)
+            )
+        }
         Type::Named { name, .. } => format!("named({name})"),
         Type::Apply {
             constructor,
             arguments,
-        } => format!(
-            "apply({};{})",
-            canonical_type_key(constructor, vars, next),
-            arguments
-                .iter()
-                .map(|argument| canonical_type_key(argument, vars, next))
-                .collect::<Vec<_>>()
-                .join(",")
-        ),
-        Type::ForAll(body) => format!("forall({})", canonical_type_key(body, vars, next)),
-        Type::StructConstraint { fields, mode } => format!(
-            "constraint({mode:?};{})",
-            fields
-                .iter()
-                .map(|(name, type_)| format!("{name}:{}", canonical_type_key(type_, vars, next)))
-                .collect::<Vec<_>>()
-                .join(",")
-        ),
+        } => {
+            format!(
+                "apply({};{})",
+                canonical_type_key(constructor, vars, next),
+                arguments
+                    .iter()
+                    .map(|argument| canonical_type_key(argument, vars, next))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            )
+        }
+        Type::ForAll { body, .. } => format!("forall({})", canonical_type_key(body, vars, next)),
+        Type::StructConstraint { fields, mode } => {
+            format!(
+                "constraint({mode:?};{})",
+                fields
+                    .iter()
+                    .map(|(name, type_)| {
+                        format!("{name}:{}", canonical_type_key(type_, vars, next))
+                    })
+                    .collect::<Vec<_>>()
+                    .join(",")
+            )
+        }
     }
 }
 
@@ -609,13 +642,13 @@ fn grouped_binding_has_non_concrete_predicates(
     context: &ElaborationContext<'_>,
     binding_entries: &[(Path, Type)],
 ) -> bool {
-    binding_entries.iter().any(|(binding, _)| {
-        context.scheme_env.get(binding).is_some_and(|scheme| {
-            scheme
-                .predicates
-                .iter()
-                .any(|predicate| !predicate_is_concrete(predicate))
-        })
+    binding_entries.iter().any(|(binding, binding_type)| {
+        instantiated_predicates_for_path(context, binding, binding_type, TypeMatchMode::Strict)
+            .is_some_and(|predicates| {
+                predicates
+                    .iter()
+                    .any(|predicate| !predicate_is_ground(predicate))
+            })
     })
 }
 
@@ -628,7 +661,7 @@ fn grouped_binding_predicate_overrides(
         let Some(scheme) = context.scheme_env.get(binding_path) else {
             continue;
         };
-        if scheme.predicates.is_empty() {
+        if path_predicate_templates(context, binding_path).is_none() {
             continue;
         }
         let (_, var_count) = peel_forall(&scheme.type_);
@@ -651,7 +684,9 @@ fn grouped_binding_predicate_overrides(
                 }
             }
         }
-        if let Some(predicates) = instantiate_predicates(&scheme.predicates, &merged_bindings) {
+        if let Some(predicates) =
+            instantiated_predicates_for_path_bindings(context, binding_path, &merged_bindings)
+        {
             overrides.insert(binding_path.clone(), predicates);
         }
     }
@@ -1095,11 +1130,9 @@ fn apply_dictionary_args(
         return Err(callee);
     };
     let is_trait_item = is_trait_item_path(context, path);
-    let scheme = context.scheme_env.get(path).ok_or(callee.clone())?;
     let call_type = Type::func(argument.type_.clone(), result_type.clone());
-    let args =
-        dictionary_args_for_type(scheme, &call_type, dict_env, context.symbols, is_trait_item)
-            .ok_or(callee.clone())?;
+    let args = dictionary_args_for_path(context, path, &call_type, dict_env, is_trait_item)
+        .ok_or(callee.clone())?;
     Ok(apply_explicit_arguments(callee, args))
 }
 
@@ -1146,30 +1179,29 @@ fn apply_explicit_arguments(
     })
 }
 
-fn dictionary_args_for_type(
-    scheme: &TypeScheme,
+fn dictionary_args_for_path(
+    context: &ElaborationContext<'_>,
+    path: &Path,
     type_: &Type,
     dict_env: &DictEnv,
-    symbols: &SymbolTable,
-    include_concrete_predicates: bool,
+    include_ground_predicates: bool,
 ) -> Option<Vec<Term<Type>>> {
-    if scheme.predicates.is_empty() {
+    if path_predicate_templates(context, path).is_none() {
         return Some(vec![]);
     }
-    let (scheme_body, var_count) = peel_forall(&scheme.type_);
-    let mut bindings = vec![None; var_count];
-    if !match_scheme_to_type_relaxed(&scheme_body, type_, &mut bindings) {
-        tracing::debug!("match_scheme_to_type_relaxed failed");
-        return None;
-    }
-    let predicates = scheme
-        .predicates
-        .iter()
-        .filter(|predicate| include_concrete_predicates || !predicate_is_concrete(predicate))
-        .map(|predicate| substitute_type_vars_in_trait_ref(predicate, &bindings))
-        .collect::<Option<Vec<_>>>()?;
-    let args = dictionary_args_for_predicates(&predicates, dict_env, symbols);
-    tracing::debug!(arg_count = ?args.as_ref().map(|v| v.len()), "dictionary_args_for_type");
+    let predicates = instantiated_predicates_for_path_with_filter(
+        context,
+        path,
+        type_,
+        TypeMatchMode::Relaxed,
+        include_ground_predicates,
+    )?;
+    let args = dictionary_args_for_predicates(&predicates, dict_env, context.symbols);
+    tracing::debug!(
+        path = %path,
+        arg_count = ?args.as_ref().map(|v| v.len()),
+        "dictionary_args_for_path"
+    );
     args
 }
 
@@ -1178,12 +1210,12 @@ fn dictionary_args_for_predicates(
     dict_env: &DictEnv,
     symbols: &SymbolTable,
 ) -> Option<Vec<Term<Type>>> {
-    let predicates = sorted_predicates(predicates);
+    let predicates = sorted_unique_predicates(predicates);
     let mut args = Vec::new();
     for predicate in predicates {
         if let Some(binding) = find_dict_binding(dict_env, &predicate) {
             args.push(term_identifier(binding.path.clone(), binding.type_.clone()));
-        } else if predicate_is_concrete(&predicate) {
+        } else if predicate_is_ground(&predicate) {
             args.push(dictionary_term_for_predicate(&predicate, symbols));
         } else {
             return None;
@@ -1220,7 +1252,7 @@ fn dict_param_path(
     predicate: &TraitConstraint,
     dict_salt: &mut usize,
 ) -> Path {
-    let key = predicate_key(predicate);
+    let key = predicate_sort_key(predicate);
     let path = Path::new(module_name, format!("[dict] {key} #{}", *dict_salt));
     *dict_salt += 1;
     path
@@ -1294,50 +1326,145 @@ fn dictionary_term_for_predicate(
     }
 }
 
-fn predicate_key(predicate: &TraitConstraint) -> String {
-    let args = predicate
-        .arguments
-        .iter()
-        .map(type_key)
-        .collect::<Vec<_>>()
-        .join("_");
-    if args.is_empty() {
-        format!(
-            "{}::{}",
-            predicate.trait_name.major, predicate.trait_name.minor
-        )
-    } else {
-        format!(
-            "{}::{} {}",
-            predicate.trait_name.major, predicate.trait_name.minor, args
-        )
-    }
+fn path_predicate_templates<'a>(
+    context: &'a ElaborationContext<'_>,
+    path: &Path,
+) -> Option<&'a [TraitConstraint]> {
+    context
+        .grouped_binding_predicates
+        .get(path)
+        .map(Vec::as_slice)
+        .or_else(|| context.evidence_requirements.get(path).map(Vec::as_slice))
+        .or_else(|| {
+            context
+                .scheme_env
+                .get(path)
+                .map(|scheme| scheme.predicates.as_slice())
+        })
+        .filter(|predicates| !predicates.is_empty())
 }
 
-fn sorted_predicates(predicates: &[TraitConstraint]) -> Vec<TraitConstraint> {
-    let mut preds = predicates.to_vec();
-    preds.sort_by_key(predicate_key);
-    preds.dedup();
-    preds
-}
-
-fn predicate_is_concrete(predicate: &TraitConstraint) -> bool {
-    predicate.arguments.iter().all(is_concrete_type)
-}
-
-fn instantiate_predicates_for_scheme(
-    scheme: &TypeScheme,
+fn instantiated_predicates_for_path(
+    context: &ElaborationContext<'_>,
+    path: &Path,
     concrete: &Type,
+    match_mode: TypeMatchMode,
 ) -> Option<Vec<TraitConstraint>> {
+    instantiated_predicates_for_path_with_filter(context, path, concrete, match_mode, true)
+}
+
+fn instantiated_predicates_for_path_with_filter(
+    context: &ElaborationContext<'_>,
+    path: &Path,
+    concrete: &Type,
+    match_mode: TypeMatchMode,
+    include_ground_predicates: bool,
+) -> Option<Vec<TraitConstraint>> {
+    let scheme = context.scheme_env.get(path)?;
+    let (scheme_body, var_count) = peel_forall(&scheme.type_);
+    let mut bindings = vec![None; var_count];
+    let is_match = match match_mode {
+        TypeMatchMode::Strict => match_scheme_to_type(&scheme_body, concrete, &mut bindings),
+        TypeMatchMode::Relaxed => {
+            match_scheme_to_type_relaxed(&scheme_body, concrete, &mut bindings)
+        }
+    };
+    if !is_match {
+        return None;
+    }
+    instantiated_predicates_for_path_bindings_with_type(
+        context,
+        path,
+        &bindings,
+        Some(concrete),
+        include_ground_predicates,
+    )
+}
+
+fn instantiated_predicates_for_path_bindings(
+    context: &ElaborationContext<'_>,
+    path: &Path,
+    bindings: &[Option<Type>],
+) -> Option<Vec<TraitConstraint>> {
+    instantiated_predicates_for_path_bindings_with_type(context, path, bindings, None, true)
+}
+
+fn instantiated_predicates_for_path_bindings_with_type(
+    context: &ElaborationContext<'_>,
+    path: &Path,
+    bindings: &[Option<Type>],
+    concrete: Option<&Type>,
+    include_ground_predicates: bool,
+) -> Option<Vec<TraitConstraint>> {
+    if let Some(predicates) = context.grouped_binding_predicates.get(path)
+        && !predicates.is_empty()
+    {
+        if let Some(instantiated) =
+            instantiate_predicates_for_templates(predicates, bindings, include_ground_predicates)
+        {
+            return Some(instantiated);
+        }
+        if let Some(concrete) = concrete {
+            tracing::debug!(
+                path = %path,
+                concrete_type = %concrete.pretty(),
+                "failed to instantiate grouped predicate overrides; falling back"
+            );
+        } else {
+            tracing::debug!(
+                path = %path,
+                "failed to instantiate grouped predicate overrides; falling back"
+            );
+        }
+    }
+
+    if let Some(predicates) = context.evidence_requirements.get(path)
+        && !predicates.is_empty()
+    {
+        if let Some(instantiated) =
+            instantiate_predicates_for_templates(predicates, bindings, include_ground_predicates)
+        {
+            return Some(instantiated);
+        }
+        if let Some(concrete) = concrete {
+            tracing::debug!(
+                path = %path,
+                concrete_type = %concrete.pretty(),
+                "failed to instantiate evidence requirements; falling back"
+            );
+        } else {
+            tracing::debug!(
+                path = %path,
+                "failed to instantiate evidence requirements; falling back"
+            );
+        }
+    }
+
+    let scheme = context.scheme_env.get(path)?;
     if scheme.predicates.is_empty() {
         return None;
     }
-    let (scheme_body, var_count) = peel_forall(&scheme.type_);
-    let mut bindings = vec![None; var_count];
-    if !match_scheme_to_type(&scheme_body, concrete, &mut bindings) {
-        return None;
+    instantiate_predicates_for_templates(&scheme.predicates, bindings, include_ground_predicates)
+}
+
+fn instantiate_predicates_for_templates(
+    templates: &[TraitConstraint],
+    bindings: &[Option<Type>],
+    include_ground_predicates: bool,
+) -> Option<Vec<TraitConstraint>> {
+    let templates = if include_ground_predicates {
+        templates.to_vec()
+    } else {
+        templates
+            .iter()
+            .filter(|predicate| !predicate_is_ground(predicate))
+            .cloned()
+            .collect()
+    };
+    if templates.is_empty() {
+        return Some(Vec::new());
     }
-    instantiate_predicates(&scheme.predicates, &bindings)
+    instantiate_predicates(&templates, bindings)
 }
 
 fn instantiate_predicates(
@@ -1423,7 +1550,7 @@ fn substitute_type_vars_in_type(
                 arguments,
             })
         }
-        Type::StructConstraint { .. } | Type::MetaVar(_) | Type::ForAll(_) => None,
+        Type::StructConstraint { .. } | Type::MetaVar(_) | Type::ForAll { .. } => None,
         other => Some(other.clone()),
     }
 }
@@ -1642,7 +1769,7 @@ fn peel_forall(type_: &Type) -> (Type, usize) {
     let mut count = 0;
     loop {
         match current {
-            Type::ForAll(body) => {
+            Type::ForAll { body, .. } => {
                 count += 1;
                 current = *body;
             }
@@ -1782,37 +1909,8 @@ fn match_scheme_to_type_with_mode(
                         match_scheme_to_type_with_mode(left, right, bindings, mode)
                     })
         }
-        Type::StructConstraint { .. } | Type::MetaVar(_) | Type::ForAll(_) => false,
+        Type::StructConstraint { .. } | Type::MetaVar(_) | Type::ForAll { .. } => false,
     }
-}
-
-fn is_concrete_type(type_: &Type) -> bool {
-    match type_ {
-        Type::TypeVar(_) | Type::MetaVar(_) | Type::ForAll(_) | Type::StructConstraint { .. } => {
-            false
-        }
-        Type::Array(inner) => is_concrete_type(inner),
-        Type::Tuple(items) => items.iter().all(is_concrete_type),
-        Type::Struct { fields } => fields.values().all(is_concrete_type),
-        Type::Sum { variants } => variants.values().all(is_concrete_type),
-        Type::Function(parameter, result) => {
-            is_concrete_type(parameter) && is_concrete_type(result)
-        }
-        Type::Named { body, .. } => is_concrete_type(body),
-        Type::Apply {
-            constructor,
-            arguments,
-        } => is_concrete_type(constructor) && arguments.iter().all(is_concrete_type),
-        _ => true,
-    }
-}
-
-fn type_key(type_: &Type) -> String {
-    type_
-        .pretty()
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
-        .collect()
 }
 
 #[cfg(test)]
@@ -2312,6 +2410,54 @@ mod tests {
     }
 
     #[test]
+    fn evidence_requirements_drive_lifting_when_resolved_scheme_is_missing_predicates() {
+        let source = "module demo =\n\tlet double = fn x => x + x\n\tlet result = double 3\nend\n";
+        let (mut resolved, _symbols) = resolve_source(source);
+        resolved
+            .schemes
+            .get_mut(&Path::new("demo", "double"))
+            .expect("double scheme")
+            .predicates
+            .clear();
+        assert!(
+            resolved
+                .evidence_requirements
+                .contains_key(&Path::new("demo", "double")),
+            "resolved evidence should retain double predicates"
+        );
+
+        let mut symbols = SymbolTable::new();
+        let _ = compile_core_module(&mut symbols, &mut Logger::new());
+        let elaborated = elaborate_module(resolved, &symbols);
+
+        let double = find_global_binding(&elaborated.module, "double").expect("double binding");
+        let TermKind::Function { parameter_name, .. } = &double.kind else {
+            panic!("expected function");
+        };
+        assert!(parameter_name.inner.minor.starts_with("[dict]"));
+    }
+
+    #[test]
+    fn evidence_requirements_drive_callsite_inlining_when_resolved_scheme_is_missing_predicates() {
+        let source = "module demo =\n\tlet double = fn x => x + x\n\tlet result = double 3\nend\n";
+        let (mut resolved, _symbols) = resolve_source(source);
+        resolved
+            .schemes
+            .get_mut(&Path::new("demo", "double"))
+            .expect("double scheme")
+            .predicates
+            .clear();
+
+        let mut symbols = SymbolTable::new();
+        let _ = compile_core_module(&mut symbols, &mut Logger::new());
+        let elaborated = elaborate_module(resolved, &symbols);
+
+        let result = find_global_binding(&elaborated.module, "result").expect("result binding");
+        assert!(term_has_inline_dict_for(result, "double"));
+        assert_eq!(inline_dict_field_count_for(result, "double"), Some(1));
+    }
+
+    #[test]
     fn elaborates_associated_constant_dictionary_argument() {
         let source = "module demo =\n\ttrait DefaultValue : a =\n\t\tlet default : a\n\tend\n\timpl DefaultValue core::Integer =\n\t\tlet default = 7\n\tend\n\tlet value : core::Integer = default\nend\n";
         let (elaborated, _symbols) = elaborate_source(source);
@@ -2326,6 +2472,36 @@ mod tests {
         let (elaborated, _symbols) = elaborate_source(source);
         assert!(module_has_global_binding(&elaborated.module, "a"));
         assert!(module_has_global_binding(&elaborated.module, "b"));
+
+        let a = find_global_binding(&elaborated.module, "a").expect("a binding");
+        let TermKind::Function { parameter_name, .. } = &a.kind else {
+            panic!("expected dictionary-wrapper function for grouped binding");
+        };
+        assert!(parameter_name.inner.minor.starts_with("[dict]"));
+    }
+
+    #[test]
+    fn grouped_binding_uses_evidence_requirements_when_resolved_scheme_predicates_are_missing() {
+        let source = "module demo =\n\tlet default_pair = (core::default, core::default)\n\tlet (a, b) = default_pair\nend\n";
+        let (mut resolved, _symbols) = resolve_source(source);
+        for name in ["a", "b"] {
+            resolved
+                .schemes
+                .get_mut(&Path::new("demo", name))
+                .expect("grouped binding scheme")
+                .predicates
+                .clear();
+        }
+        assert!(
+            resolved
+                .evidence_requirements
+                .contains_key(&Path::new("demo", "a")),
+            "resolved evidence should retain grouped binding predicates"
+        );
+
+        let mut symbols = SymbolTable::new();
+        let _ = compile_core_module(&mut symbols, &mut Logger::new());
+        let elaborated = elaborate_module(resolved, &symbols);
 
         let a = find_global_binding(&elaborated.module, "a").expect("a binding");
         let TermKind::Function { parameter_name, .. } = &a.kind else {

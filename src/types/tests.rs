@@ -4,6 +4,7 @@ use indexmap::IndexMap;
 
 use super::*;
 use crate::ir::Path;
+use crate::parse::ast;
 
 fn named(
     module: &str,
@@ -21,6 +22,93 @@ fn fields(pairs: Vec<(&str, Type)>) -> IndexMap<String, Type> {
         .into_iter()
         .map(|(name, type_)| (name.to_string(), type_))
         .collect()
+}
+
+fn lookup_roundtrip_symbol(path: &Path) -> super::type_expr::TypeExprSymbol {
+    use super::type_expr::TypeExprSymbol;
+
+    if *path == Path::core("Fn") {
+        return TypeExprSymbol::Definition(Type::function().def(2));
+    }
+    if *path == Path::core("Array") {
+        return TypeExprSymbol::Definition(Type::array().def(1));
+    }
+
+    let primitive = match path.minor.as_str() {
+        "integer" | "Integer" => Some(Type::Integer.def(0)),
+        "real" | "Real" => Some(Type::Real.def(0)),
+        "boolean" | "Boolean" => Some(Type::Boolean.def(0)),
+        "string" | "String" => Some(Type::String.def(0)),
+        "glyph" | "Glyph" => Some(Type::Glyph.def(0)),
+        _ => None,
+    };
+
+    primitive
+        .map(TypeExprSymbol::Definition)
+        .unwrap_or(TypeExprSymbol::Unknown)
+}
+
+fn parse_pretty_type(pretty: &str) -> Type {
+    let source = format!("module M =\n  type RoundTrip = {pretty}\nend\n");
+    let mut logger = crate::Logger::new();
+    let mut file_logger = logger.new_file("<roundtrip.hc>", source.clone());
+    let source_file =
+        crate::parse::parse(source.as_str(), &mut file_logger).expect("type should parse");
+    assert!(
+        file_logger.is_ok(),
+        "pretty-printed type should parse without errors: `{pretty}`"
+    );
+
+    let module = source_file
+        .modules()
+        .into_iter()
+        .next()
+        .expect("roundtrip module should exist");
+    let type_statement = module
+        .statements()
+        .into_iter()
+        .find_map(|statement| {
+            if let ast::Statement::Type(statement) = statement {
+                Some(statement)
+            } else {
+                None
+            }
+        })
+        .expect("roundtrip type statement should exist");
+    let ast::TypeDef::Alias(alias) = type_statement
+        .type_def()
+        .expect("roundtrip type definition should exist")
+    else {
+        panic!("roundtrip helper expects alias definitions only")
+    };
+    let ast_type_expr = alias
+        .type_expr()
+        .expect("roundtrip type alias expression should exist");
+
+    let mut scope = crate::ir::ModuleScope::new("demo".to_string());
+    let ir_type_expr = crate::ir::type_expr(&mut scope, &mut file_logger, ast_type_expr)
+        .expect("IR lowering should succeed");
+    assert!(
+        file_logger.is_ok(),
+        "IR lowering should not report errors for pretty-printed type: `{pretty}`"
+    );
+
+    let lowered = super::type_expr::lower_type_expr(
+        &ir_type_expr,
+        &mut |path| lookup_roundtrip_symbol(path),
+        &mut |_| None,
+    );
+    assert!(
+        lowered.errors.is_empty(),
+        "semantic lowering should not report errors for pretty-printed type: `{pretty}`"
+    );
+    lowered.type_
+}
+
+fn assert_pretty_roundtrip(type_: Type) {
+    let pretty = type_.pretty();
+    let reparsed = parse_pretty_type(pretty.as_str());
+    assert_eq!(reparsed, type_, "pretty roundtrip mismatch for `{pretty}`");
 }
 
 #[test]
@@ -198,7 +286,7 @@ fn substitute_type_var_shifts_replacement_under_forall() {
 #[test]
 fn open_forall_opens_outermost_binder() {
     let forall = Type::func(Type::v(0), Type::v(1)).for_all(2);
-    let Type::ForAll(body) = forall else {
+    let Type::ForAll { body, .. } = forall else {
         panic!("expected forall type");
     };
     let opened = body
@@ -263,20 +351,86 @@ fn pretty_prints_sum_and_function_with_wrapping() {
 
     assert_eq!(
         function.pretty(),
-        "((| none | some (integer, boolean) ) -> integer)"
+        "(| none | some (integer, boolean) ) -> integer"
     );
 }
 
 #[test]
+fn pretty_prints_right_associative_function_without_nested_parentheses() {
+    let function = Type::curry(&[Type::v(0), Type::v(1), Type::v(2)]);
+    assert_eq!(function.pretty(), "a -> b -> c");
+}
+
+#[test]
 fn pretty_prints_type_variable_names_past_z() {
-    assert_eq!(Type::v(0).pretty(), "'a");
-    assert_eq!(Type::v(25).pretty(), "'z");
-    assert_eq!(Type::v(26).pretty(), "'aa");
-    assert_eq!(Type::v(27).pretty(), "'ab");
+    assert_eq!(Type::v(0).pretty(), "a");
+    assert_eq!(Type::v(25).pretty(), "z");
+    assert_eq!(Type::v(26).pretty(), "aa");
+    assert_eq!(Type::v(27).pretty(), "ab");
+}
+
+#[test]
+fn type_variable_names_skip_reserved_keywords() {
+    for index in 0..200u32 {
+        let name = type_var_name(index);
+        assert!(
+            !is_reserved_type_variable_name(name.as_str()),
+            "type variable name `{name}` at index {index} collides with a keyword"
+        );
+    }
+}
+
+#[test]
+fn pretty_prints_consecutive_forall_binders_compactly() {
+    let type_ = Type::Tuple(vec![Type::v(1), Type::v(0)]).for_all(2);
+    assert_eq!(type_.pretty(), "for a b in (a, b)");
+}
+
+#[test]
+fn pretty_prints_explicit_forall_names_from_source() {
+    let type_ = Type::func(Type::v(0), Type::v(0)).for_all_with_names([Some("item".to_string())]);
+    assert_eq!(type_.pretty(), "for item in item -> item");
+}
+
+#[test]
+fn generated_forall_names_avoid_explicit_name_collisions() {
+    let type_ = Type::ForAll {
+        name: None,
+        body: Box::new(Type::ForAll {
+            name: Some("a".to_string()),
+            body: Box::new(Type::func(Type::v(1), Type::v(0))),
+        }),
+    };
+
+    assert_eq!(type_.pretty(), "for b a in b -> a");
 }
 
 #[test]
 fn display_uses_pretty_output() {
     let type_ = Type::func(Type::Integer, Type::Boolean);
-    assert_eq!(format!("{type_}"), "(integer -> boolean)");
+    assert_eq!(format!("{type_}"), "integer -> boolean");
+}
+
+#[test]
+fn pretty_round_trips_source_expressible_types() {
+    assert_pretty_roundtrip(Type::Integer);
+    assert_pretty_roundtrip(Type::Tuple(vec![Type::Integer]));
+    assert_pretty_roundtrip(Type::Tuple(vec![Type::Integer, Type::Boolean]));
+    assert_pretty_roundtrip(Type::Array(Box::new(Type::Integer)));
+    assert_pretty_roundtrip(Type::Array(Box::new(Type::Array(Box::new(Type::Integer)))));
+    assert_pretty_roundtrip(Type::func(
+        Type::Integer,
+        Type::func(Type::Boolean, Type::String),
+    ));
+    assert_pretty_roundtrip(Type::func(
+        Type::func(Type::Integer, Type::Boolean),
+        Type::String,
+    ));
+    assert_pretty_roundtrip(Type::func(Type::v(1), Type::v(0)).for_all(2));
+    assert_pretty_roundtrip(Type::func(Type::Tuple(vec![Type::v(0)]), Type::v(0)).for_all(1));
+    assert_pretty_roundtrip(named("demo", "List", Type::Unit).apply(vec![Type::Integer]));
+    assert_pretty_roundtrip(named("demo", "Mapper", Type::Unit).apply(vec![
+        Type::func(Type::Integer, Type::Boolean),
+        Type::Array(Box::new(Type::String)),
+    ]));
 }

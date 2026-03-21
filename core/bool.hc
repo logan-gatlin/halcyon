@@ -1,5 +1,5 @@
 module bool =
-  use core::opt
+  use bundle::opt
 
   let select = fn condition value =>
     if condition then Some value else None
@@ -11,5 +11,9 @@ module bool =
 
   impl bundle::Default bundle::Boolean =
     let default = false
+  end
+
+  impl bundle::show::Show bundle::Boolean =
+    let show = fn value => if value then "true" else "false"
   end
 end

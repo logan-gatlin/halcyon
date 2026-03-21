@@ -8,7 +8,7 @@ use super::{
     TypeScheme,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum Kind {
     Type,
     Arrow(Box<Kind>, Box<Kind>),
@@ -286,7 +286,7 @@ pub(crate) fn infer_scheme_kind(
     let mut parameter_kinds = Vec::new();
 
     let mut current = &scheme.type_;
-    while let Type::ForAll(body) = current {
+    while let Type::ForAll { body, .. } = current {
         let kind = table.new_meta();
         if parameter_kinds.len() < leading_parameters {
             parameter_kinds.push(kind.clone());
@@ -336,7 +336,7 @@ pub(crate) fn infer_type_kind(
             };
             Ok(kind)
         }
-        Type::ForAll(body) => {
+        Type::ForAll { body, .. } => {
             bound_kinds.push(table.new_meta());
             let kind = infer_type_kind(table, body, bound_kinds, lookup_type_kind)?;
             let _ = bound_kinds.pop();

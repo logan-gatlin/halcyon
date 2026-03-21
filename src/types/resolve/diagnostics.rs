@@ -279,6 +279,21 @@ pub(super) fn log_type_error(
                 )
                 .done();
         }
+        TypeError::NonExhaustivePatterns {
+            span,
+            counterexample,
+        } => {
+            logger
+                .error("Non-exhaustive patterns")
+                .primary(
+                    "This pattern set does not cover every possible value.",
+                    span,
+                )
+                .note(format!(
+                    "For example, `{counterexample}` would reach this `unreachable` branch."
+                ))
+                .done();
+        }
         TypeError::Unification {
             error,
             span,
@@ -523,7 +538,7 @@ mod tests {
         let left = Type::func(Type::MetaVar(999), Type::MetaVar(42));
         let right = Type::Tuple(vec![Type::MetaVar(42), Type::MetaVar(999)]);
 
-        assert_eq!(formatter.format_type(&left), "(v0 -> v1)");
+        assert_eq!(formatter.format_type(&left), "v0 -> v1");
         assert_eq!(formatter.format_type(&right), "(v1, v0)");
     }
 

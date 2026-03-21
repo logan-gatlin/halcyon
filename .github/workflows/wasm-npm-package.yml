@@ -10,7 +10,31 @@ permissions:
   contents: write
 
 jobs:
+  resolve-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version_triple: ${{ steps.version.outputs.version_triple }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Read version triple
+        id: version
+        run: |
+          python - <<'PY'
+          import os
+          import tomllib
+          from pathlib import Path
+
+          cargo = tomllib.loads(Path("Cargo.toml").read_text(encoding="utf-8"))
+          version = cargo["package"]["version"]
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"version_triple={version}\n")
+          PY
+
   wasm-npm-package:
+    needs: resolve-version
     runs-on: ubuntu-latest
 
     steps:
@@ -52,12 +76,89 @@ jobs:
           name: halcyon-npm-tarball
           path: pkg/npm/*.tgz
 
+  cli-binaries:
+    needs: resolve-version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            archive_ext: tar.gz
+            bin_name: halcyon
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            archive_ext: tar.gz
+            bin_name: halcyon
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive_ext: zip
+            bin_name: halcyon.exe
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build CLI binary
+        run: cargo build --release -p halcyon --target ${{ matrix.target }}
+
+      - name: Package CLI binary (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p dist
+          archive_name="halcyon-${{ needs.resolve-version.outputs.version_triple }}-${{ matrix.target }}.${{ matrix.archive_ext }}"
+          tar -czf "dist/${archive_name}" -C "target/${{ matrix.target }}/release" "${{ matrix.bin_name }}"
+
+      - name: Package CLI binary (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path dist -Force | Out-Null
+          $archiveName = "halcyon-${{ needs.resolve-version.outputs.version_triple }}-${{ matrix.target }}.${{ matrix.archive_ext }}"
+          Compress-Archive -Path "target/${{ matrix.target }}/release/${{ matrix.bin_name }}" -DestinationPath "dist/$archiveName" -Force
+
+      - name: Upload CLI binary archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: halcyon-cli-${{ matrix.target }}
+          path: dist/*
+
+  publish-release:
+    needs:
+      - resolve-version
+      - wasm-npm-package
+      - cli-binaries
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download npm tarball artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: halcyon-npm-tarball
+          path: release-assets
+
+      - name: Download CLI archives
+        uses: actions/download-artifact@v4
+        with:
+          pattern: halcyon-cli-*
+          path: release-assets
+          merge-multiple: true
+
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: stable-${{ github.sha }}
-          name: Stable NPM Package (${{ github.sha }})
+          tag_name: stable-${{ needs.resolve-version.outputs.version_triple }}
+          name: Stable Release (${{ needs.resolve-version.outputs.version_triple }})
           body: |
-            Automated npm-compatible wasm package built from the latest commit on `stable`.
+            Automated stable release for version `${{ needs.resolve-version.outputs.version_triple }}`.
             Commit: `${{ github.sha }}`
-          files: pkg/npm/*.tgz
+          files: release-assets/*

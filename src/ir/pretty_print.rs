@@ -517,6 +517,8 @@ impl Printer {
             WasmInstruction::I64TruncF64S => "i64.trunc_f64_s".to_string(),
             WasmInstruction::I64TruncF64U => "i64.trunc_f64_u".to_string(),
             WasmInstruction::F32DemoteF64 => "f32.demote_f64".to_string(),
+            WasmInstruction::F64ConvertI64S => "f64.convert_i64_s".to_string(),
+            WasmInstruction::F64ConvertI64U => "f64.convert_i64_u".to_string(),
         }
     }
 
