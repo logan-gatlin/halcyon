@@ -1,6 +1,6 @@
 [package]
 name = "halcyon-lsp"
-version = "2026.3.2"
+version = "2026.3.3"
 authors = ["Logan Gatlin <logan@gatlintc.com>"]
 edition = "2024"
 description = "Language Server Protocol implementation for Halcyon"
