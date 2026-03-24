@@ -128,8 +128,8 @@ impl<'src, 'log> Parser<'src, 'log> {
     }
 
     pub fn current_column(&self) -> Option<usize> {
-        self.nth_non_trivia_index(0)
-            .and_then(|token_index| self.token_column(token_index))
+        let token_index = self.nth_non_trivia_index(0)?;
+        self.token_column(token_index)
     }
 
     pub fn at(

@@ -108,6 +108,7 @@ enum WireNumberOperation {
 enum WireImmediateValue {
     Unit,
     Integer(i64),
+    Natural(i64),
     Real(f64),
     Boolean(bool),
     String(String),
@@ -592,6 +593,7 @@ impl WireImmediateValue {
         match immediate_value {
             ImmediateValue::Unit => Self::Unit,
             ImmediateValue::Integer(value) => Self::Integer(*value),
+            ImmediateValue::Natural(value) => Self::Natural(*value),
             ImmediateValue::Real(value) => Self::Real(*value),
             ImmediateValue::Boolean(value) => Self::Boolean(*value),
             ImmediateValue::String(value) => Self::String(value.clone()),
@@ -604,6 +606,7 @@ impl WireImmediateValue {
         match self {
             Self::Unit => ImmediateValue::Unit,
             Self::Integer(value) => ImmediateValue::Integer(value),
+            Self::Natural(value) => ImmediateValue::Natural(value),
             Self::Real(value) => ImmediateValue::Real(value),
             Self::Boolean(value) => ImmediateValue::Boolean(value),
             Self::String(value) => ImmediateValue::String(value),

@@ -3081,6 +3081,7 @@ fn max_free_type_var_index(
         }
         Type::Unit
         | Type::Integer
+        | Type::Natural
         | Type::Real
         | Type::Boolean
         | Type::String

@@ -1,5 +1,5 @@
 module test =
-  use core
+  use bundle
 
   let panic : for a in String -> a = fn message =>
     let _ = wasi::write_stderr (bundle::ops::[+] (bundle::ops::[+] "panic: " message) "\n") in

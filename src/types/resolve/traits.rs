@@ -68,6 +68,7 @@ pub(super) fn build_trait_definitions(
             let Statement::Trait {
                 path,
                 parameters,
+                associated_types,
                 methods: method_decls,
                 ..
             } = statement
@@ -136,12 +137,17 @@ pub(super) fn build_trait_definitions(
                 .map(|kind| kind.unwrap_or(Kind::Type))
                 .collect::<Vec<_>>();
             known_trait_kinds.insert(path.clone(), parameter_kinds.clone());
+            let associated_types = associated_types
+                .iter()
+                .map(|associated_type| (associated_type.path.clone(), Kind::Type))
+                .collect();
             Some(PendingTraitDefinitionEntry {
                 span,
                 trait_definition: TraitDef {
                     name: path.clone(),
                     parameters: parameters.len(),
                     parameter_kinds,
+                    associated_types,
                     methods,
                 },
             })

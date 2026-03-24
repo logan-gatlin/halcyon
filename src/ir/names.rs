@@ -399,6 +399,21 @@ impl ModuleScope {
             .push(Span::Generated);
     }
 
+    pub fn define_path(
+        &mut self,
+        path: Path,
+        namespace: NameSpace,
+        span: Span,
+    ) {
+        let scoped_path = ScopedPath { path, namespace };
+        self.globals.insert(scoped_path.clone());
+        let defs = self.definitions.entry(scoped_path.clone()).or_default();
+        if !defs.is_empty() {
+            self.multiple_definitions.insert(scoped_path);
+        }
+        defs.push(span);
+    }
+
     pub fn enter_module(
         &mut self,
         name: Spanned<String>,
@@ -466,14 +481,16 @@ impl ModuleScope {
             .iter()
             .map(|segment| segment.inner.clone())
             .collect::<Vec<_>>();
-        if segments.is_empty() {
-            return None;
-        }
         let reference_segments = segments.clone();
 
         let mut used_absolute_fallback = false;
         let module_segments = match path_prefix {
-            PathPrefix::Root => segments,
+            PathPrefix::Root => {
+                if segments.is_empty() {
+                    return None;
+                }
+                segments
+            }
             PathPrefix::Bundle => {
                 let mut bundle_segments = Vec::with_capacity(1 + segments.len());
                 bundle_segments.push(self.module_name.clone());
@@ -649,6 +666,24 @@ impl ModuleScope {
         self.definitions
             .keys()
             .any(|scoped_path| Self::path_has_prefix(&scoped_path.path, prefix_segments))
+    }
+
+    pub fn direct_children(
+        &self,
+        parent: &Path,
+        namespace: NameSpace,
+    ) -> Vec<Path> {
+        let prefix = format!("{}{}", parent.minor, Path::DELIMETER);
+        self.definitions
+            .keys()
+            .filter(|scoped_path| {
+                scoped_path.namespace == namespace
+                    && scoped_path.path.major == parent.major
+                    && scoped_path.path.minor.starts_with(&prefix)
+                    && !scoped_path.path.minor[prefix.len()..].contains(Path::DELIMETER)
+            })
+            .map(|scoped_path| scoped_path.path.clone())
+            .collect()
     }
 
     fn concat_segments(

@@ -35,6 +35,7 @@ pub(crate) fn can_start_pattern(kind: SyntaxKind) -> bool {
         kind,
         SyntaxKind::IDENT
             | SyntaxKind::INTEGER
+            | SyntaxKind::NATURAL
             | SyntaxKind::REAL
             | SyntaxKind::STRING
             | SyntaxKind::GLYPH
@@ -58,6 +59,7 @@ fn pattern_primary(p: &mut Parser<'_, '_>) {
             match kind {
                 // Literals
                 SyntaxKind::INTEGER
+                | SyntaxKind::NATURAL
                 | SyntaxKind::REAL
                 | SyntaxKind::STRING
                 | SyntaxKind::GLYPH

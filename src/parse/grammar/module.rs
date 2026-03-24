@@ -152,8 +152,10 @@ fn type_statement(p: &mut Parser<'_, '_>) {
 }
 
 /// ```bnf
-/// <trait_statement> ::= "trait" "~"? <ident> (":" <ident>+)? "=" (<trait_method_decl>* "end" | (<ident> | <path>))
+/// <trait_statement> ::= "trait" "~"? <ident> (":" <ident>+)? "=" (<trait_item_decl>* "end" | (<ident> | <path>))
+/// <trait_item_decl> ::= <trait_method_decl> | <trait_type_decl>
 /// <trait_method_decl> ::= "let" <ident> ":" <type_expr>
+/// <trait_type_decl> ::= "type" <ident>
 /// ```
 fn trait_statement(p: &mut Parser<'_, '_>) {
     let m = p.start_node_with_leading_comments(SyntaxKind::TRAIT_STATEMENT);
@@ -176,10 +178,21 @@ fn trait_statement(p: &mut Parser<'_, '_>) {
         }
     }
     p.expect(SyntaxKind::EQUAL);
-    while p.at(SyntaxKind::LET_KW) {
-        trait_method_decl(p);
+    while p.at_any(&[SyntaxKind::LET_KW, SyntaxKind::TYPE_KW]) {
+        if p.at(SyntaxKind::LET_KW) {
+            trait_method_decl(p);
+        } else {
+            trait_type_decl(p);
+        }
     }
     p.expect(SyntaxKind::END_KW);
+    p.finish_node(m);
+}
+
+fn trait_type_decl(p: &mut Parser<'_, '_>) {
+    let m = p.start_node(SyntaxKind::TRAIT_TYPE_DECL);
+    p.expect(SyntaxKind::TYPE_KW);
+    expect_identifier(p);
     p.finish_node(m);
 }
 
@@ -193,8 +206,10 @@ fn trait_method_decl(p: &mut Parser<'_, '_>) {
 }
 
 /// ```bnf
-/// <impl_statement> ::= "impl" (<ident> | <path>) <type_expr> ("," <type_expr>)* "=" <impl_method_def>* "end"
+/// <impl_statement> ::= "impl" (<ident> | <path>) <type_expr> ("," <type_expr>)* "=" <impl_item_def>* "end"
+/// <impl_item_def> ::= <impl_method_def> | <impl_type_def>
 /// <impl_method_def> ::= "let" <ident> "=" <expr>
+/// <impl_type_def> ::= "type" <ident> "=" <type_expr>
 /// ```
 fn impl_statement(p: &mut Parser<'_, '_>) {
     let m = p.start_node_with_leading_comments(SyntaxKind::IMPL_STATEMENT);
@@ -213,10 +228,23 @@ fn impl_statement(p: &mut Parser<'_, '_>) {
         }
     }
     p.expect(SyntaxKind::EQUAL);
-    while p.at(SyntaxKind::LET_KW) {
-        impl_method_def(p);
+    while p.at_any(&[SyntaxKind::LET_KW, SyntaxKind::TYPE_KW]) {
+        if p.at(SyntaxKind::LET_KW) {
+            impl_method_def(p);
+        } else {
+            impl_type_def(p);
+        }
     }
     p.expect(SyntaxKind::END_KW);
+    p.finish_node(m);
+}
+
+fn impl_type_def(p: &mut Parser<'_, '_>) {
+    let m = p.start_node(SyntaxKind::IMPL_TYPE_DEF);
+    p.expect(SyntaxKind::TYPE_KW);
+    expect_identifier(p);
+    p.expect(SyntaxKind::EQUAL);
+    type_expr::type_expr(p);
     p.finish_node(m);
 }
 

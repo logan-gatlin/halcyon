@@ -54,6 +54,7 @@ enum WitnessValue {
     Opaque,
     Unit,
     Integer(i64),
+    Natural(i64),
     Real(f64),
     Boolean(bool),
     String(String),
@@ -73,6 +74,7 @@ impl WitnessValue {
             WitnessValue::Opaque => "<value>".to_string(),
             WitnessValue::Unit => "()".to_string(),
             WitnessValue::Integer(value) => value.to_string(),
+            WitnessValue::Natural(value) => format!("{value}n"),
             WitnessValue::Real(value) => value.to_string(),
             WitnessValue::Boolean(value) => value.to_string(),
             WitnessValue::String(value) => format!("{value:?}"),
@@ -178,6 +180,7 @@ enum MatchType {
     Opaque,
     Unit,
     Integer,
+    Natural,
     Real,
     Boolean,
     String,
@@ -186,6 +189,14 @@ enum MatchType {
     Struct(IndexMap<String, Type>),
     Array(Box<Type>),
     Sum(Vec<ConstructorCase>),
+}
+
+struct ProductSolveState<'a> {
+    field_types: &'a [Type],
+    positive_rows: &'a [Vec<TestPattern>],
+    negative_rows: &'a [Vec<TestPattern>],
+    depth: usize,
+    memo: HashMap<(usize, u128), Option<Vec<WitnessValue>>>,
 }
 
 pub(super) fn check_term_exhaustiveness(
@@ -340,11 +351,7 @@ impl ExhaustivenessChecker<'_> {
             let Some(entry) = next.subjects.get(related_path) else {
                 continue;
             };
-            let Some(witness) =
-                self.find_witness(&entry.type_, &entry.positives, &entry.negatives, 0)
-            else {
-                return None;
-            };
+            let witness = self.find_witness(&entry.type_, &entry.positives, &entry.negatives, 0)?;
             representative_witness = Some(witness);
         }
 
@@ -541,6 +548,46 @@ impl ExhaustivenessChecker<'_> {
                 }
                 Some(WitnessValue::Integer(candidate))
             }
+            MatchType::Natural => {
+                let mut required = None;
+                for pattern in positives {
+                    match pattern {
+                        TestPattern::Wildcard => {}
+                        TestPattern::Immediate(ImmediateValue::Natural(value)) => {
+                            if let Some(existing) = required
+                                && existing != *value
+                            {
+                                return None;
+                            }
+                            required = Some(*value);
+                        }
+                        _ => return None,
+                    }
+                }
+
+                let forbidden = negatives
+                    .iter()
+                    .filter_map(|pattern| {
+                        match pattern {
+                            TestPattern::Immediate(ImmediateValue::Natural(value)) => Some(*value),
+                            _ => None,
+                        }
+                    })
+                    .collect::<Vec<_>>();
+
+                if let Some(value) = required {
+                    if forbidden.contains(&value) {
+                        return None;
+                    }
+                    return Some(WitnessValue::Natural(value));
+                }
+
+                let mut candidate = 0_i64;
+                while forbidden.contains(&candidate) {
+                    candidate += 1;
+                }
+                Some(WitnessValue::Natural(candidate))
+            }
             MatchType::Real => {
                 let mut required = None;
                 for pattern in positives {
@@ -569,20 +616,14 @@ impl ExhaustivenessChecker<'_> {
                     .collect::<Vec<_>>();
 
                 if let Some(value) = required {
-                    if forbidden
-                        .iter()
-                        .any(|forbidden_value| *forbidden_value == value)
-                    {
+                    if forbidden.contains(&value) {
                         return None;
                     }
                     return Some(WitnessValue::Real(value));
                 }
 
                 let mut candidate = 0.0_f64;
-                while forbidden
-                    .iter()
-                    .any(|forbidden_value| *forbidden_value == candidate)
-                {
+                while forbidden.contains(&candidate) {
                     candidate += 1.0;
                 }
                 Some(WitnessValue::Real(candidate))
@@ -927,11 +968,7 @@ impl ExhaustivenessChecker<'_> {
         depth: usize,
     ) -> Option<Vec<WitnessValue>> {
         if field_types.is_empty() {
-            return if negative_rows.is_empty() {
-                Some(Vec::new())
-            } else {
-                None
-            };
+            return negative_rows.is_empty().then(Vec::new);
         }
 
         if negative_rows.len() > 120 {
@@ -943,17 +980,15 @@ impl ExhaustivenessChecker<'_> {
         } else {
             (1_u128 << negative_rows.len()) - 1
         };
-        let mut memo = HashMap::<(usize, u128), Option<Vec<WitnessValue>>>::new();
-
-        self.solve_product_state(
+        let mut state = ProductSolveState {
             field_types,
             positive_rows,
             negative_rows,
             depth,
-            0,
-            initial_mask,
-            &mut memo,
-        )
+            memo: HashMap::new(),
+        };
+
+        self.solve_product_state(&mut state, 0, initial_mask)
     }
 
     fn solve_product_fallback(
@@ -977,21 +1012,24 @@ impl ExhaustivenessChecker<'_> {
 
     fn solve_product_state(
         &self,
-        field_types: &[Type],
-        positive_rows: &[Vec<TestPattern>],
-        negative_rows: &[Vec<TestPattern>],
-        depth: usize,
+        state: &mut ProductSolveState<'_>,
         field_index: usize,
         unbroken_mask: u128,
-        memo: &mut HashMap<(usize, u128), Option<Vec<WitnessValue>>>,
     ) -> Option<Vec<WitnessValue>> {
-        if let Some(cached) = memo.get(&(field_index, unbroken_mask)) {
+        let field_types = state.field_types;
+        let positive_rows = state.positive_rows;
+        let negative_rows = state.negative_rows;
+        let depth = state.depth;
+
+        if let Some(cached) = state.memo.get(&(field_index, unbroken_mask)) {
             return cached.clone();
         }
 
         if field_index == field_types.len() {
             let result = (unbroken_mask == 0).then_some(Vec::new());
-            memo.insert((field_index, unbroken_mask), result.clone());
+            state
+                .memo
+                .insert((field_index, unbroken_mask), result.clone());
             return result;
         }
 
@@ -1008,7 +1046,9 @@ impl ExhaustivenessChecker<'_> {
                     self.find_witness(field_type, &positives, &[], depth + 1)
                 })
                 .collect::<Option<Vec<_>>>();
-            memo.insert((field_index, unbroken_mask), result.clone());
+            state
+                .memo
+                .insert((field_index, unbroken_mask), result.clone());
             return result;
         }
 
@@ -1027,7 +1067,7 @@ impl ExhaustivenessChecker<'_> {
 
             if is_wildcard_pattern(pattern) {
                 if !can_break_later {
-                    memo.insert((field_index, unbroken_mask), None);
+                    state.memo.insert((field_index, unbroken_mask), None);
                     return None;
                 }
                 must_stay_mask |= 1_u128 << bit;
@@ -1038,7 +1078,7 @@ impl ExhaustivenessChecker<'_> {
 
         if remaining_fields == 1 {
             if must_stay_mask != 0 {
-                memo.insert((field_index, unbroken_mask), None);
+                state.memo.insert((field_index, unbroken_mask), None);
                 return None;
             }
             optional_mask = 0;
@@ -1088,26 +1128,21 @@ impl ExhaustivenessChecker<'_> {
                 continue;
             };
 
-            let Some(mut tail) = self.solve_product_state(
-                field_types,
-                positive_rows,
-                negative_rows,
-                depth,
-                field_index + 1,
-                next_unbroken,
-                memo,
-            ) else {
+            let Some(mut tail) = self.solve_product_state(state, field_index + 1, next_unbroken)
+            else {
                 continue;
             };
 
             let mut result = Vec::with_capacity(tail.len() + 1);
             result.push(field_witness);
             result.append(&mut tail);
-            memo.insert((field_index, unbroken_mask), Some(result.clone()));
+            state
+                .memo
+                .insert((field_index, unbroken_mask), Some(result.clone()));
             return Some(result);
         }
 
-        memo.insert((field_index, unbroken_mask), None);
+        state.memo.insert((field_index, unbroken_mask), None);
         None
     }
 
@@ -1164,6 +1199,7 @@ impl ExhaustivenessChecker<'_> {
         match type_ {
             Type::Unit => MatchType::Unit,
             Type::Integer => MatchType::Integer,
+            Type::Natural => MatchType::Natural,
             Type::Real => MatchType::Real,
             Type::Boolean => MatchType::Boolean,
             Type::String => MatchType::String,
@@ -1227,6 +1263,7 @@ impl ExhaustivenessChecker<'_> {
         Some(match (name.minor.as_str(), arguments) {
             ("Unit", []) => MatchType::Unit,
             ("Integer", []) => MatchType::Integer,
+            ("Natural", []) => MatchType::Natural,
             ("Real", []) => MatchType::Real,
             ("Boolean", []) => MatchType::Boolean,
             ("String", []) => MatchType::String,

@@ -133,6 +133,7 @@ impl UnificationTable {
         match pruned {
             Type::Unit
             | Type::Integer
+            | Type::Natural
             | Type::Real
             | Type::Boolean
             | Type::String
@@ -276,6 +277,7 @@ impl UnificationTable {
         match (left, right) {
             (Type::Unit, Type::Unit)
             | (Type::Integer, Type::Integer)
+            | (Type::Natural, Type::Natural)
             | (Type::Real, Type::Real)
             | (Type::Boolean, Type::Boolean)
             | (Type::String, Type::String)

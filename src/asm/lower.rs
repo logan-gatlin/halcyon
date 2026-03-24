@@ -23,7 +23,7 @@ pub fn lower_type(
     use SemanticType::*;
     match type_ {
         Unit => Type::Struct([].into()),
-        Integer => Type::Struct([Type::I64].into()),
+        Integer | Natural => Type::Struct([Type::I64].into()),
         Real => Type::Struct([Type::F64].into()),
         Glyph | Boolean => Type::Struct([Type::I32].into()),
         String => Type::Array(Type::I8.into()),
@@ -386,6 +386,23 @@ impl<'a> Encoder<'a> {
                             i::Get(temp),
                             i::StructGet(fields.clone(), 0),
                             i::Const(ImmediateValue::Integer(value)),
+                            i::I64Op(NumberOperation::Eq),
+                            i::I32Const(1),
+                            i::I32Op(NumberOperation::Xor),
+                            i::BreakIf(0),
+                        ]);
+                    }
+                    ImmediateValue::Natural(value) => {
+                        let temp = self.temporary_name("const_pattern");
+                        let fields = lowered_struct_fields(&SemanticType::Natural, symbols)
+                            .unwrap_or_else(|| unreachable!());
+                        self.new_register(temp.clone(), scope, lowered_type.clone());
+                        self.ref_cast_if_needed(&lowered_type);
+                        self.push(i::Set(temp.clone()));
+                        self.extend([
+                            i::Get(temp),
+                            i::StructGet(fields.clone(), 0),
+                            i::Const(ImmediateValue::Natural(value)),
                             i::I64Op(NumberOperation::Eq),
                             i::I32Const(1),
                             i::I32Op(NumberOperation::Xor),

@@ -91,6 +91,7 @@ enum WireStructMatch {
 enum WireSemanticType {
     Unit,
     Integer,
+    Natural,
     Real,
     Boolean,
     String,
@@ -132,7 +133,7 @@ enum TypeSignatureDecodeError {
 
 impl TypeSignatureSection {
     pub const NAME: &str = "type_signature";
-    const VERSION: u32 = 3;
+    const VERSION: u32 = 4;
 
     /// Creates a new instance.
     pub fn new(
@@ -439,6 +440,7 @@ impl WireSemanticType {
         match type_ {
             SemanticType::Unit => Self::Unit,
             SemanticType::Integer => Self::Integer,
+            SemanticType::Natural => Self::Natural,
             SemanticType::Real => Self::Real,
             SemanticType::Boolean => Self::Boolean,
             SemanticType::String => Self::String,
@@ -507,6 +509,7 @@ impl WireSemanticType {
         match self {
             Self::Unit => SemanticType::Unit,
             Self::Integer => SemanticType::Integer,
+            Self::Natural => SemanticType::Natural,
             Self::Real => SemanticType::Real,
             Self::Boolean => SemanticType::Boolean,
             Self::String => SemanticType::String,
@@ -682,6 +685,7 @@ mod tests {
     fn roundtrip_primitives_and_compounds() {
         roundtrip_type(SemanticType::Unit);
         roundtrip_type(SemanticType::Integer);
+        roundtrip_type(SemanticType::Natural);
         roundtrip_type(SemanticType::Real);
         roundtrip_type(SemanticType::Boolean);
         roundtrip_type(SemanticType::String);

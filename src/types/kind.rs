@@ -325,6 +325,7 @@ pub(crate) fn infer_type_kind(
     match type_ {
         Type::Unit
         | Type::Integer
+        | Type::Natural
         | Type::Real
         | Type::Boolean
         | Type::String

@@ -65,6 +65,7 @@ fn format_millis(duration: Duration) -> String {
     format!("{:.3}", duration.as_secs_f64() * 1000.0)
 }
 
+#[allow(clippy::print_stderr)]
 pub fn print_report() {
     if !profiling_enabled() {
         return;

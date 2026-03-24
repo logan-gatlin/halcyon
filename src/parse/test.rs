@@ -54,7 +54,8 @@ fn lex_with_text(input: &str) -> Vec<(SyntaxKind, &str)> {
 #[test]
 fn lex_symbols() {
     use SyntaxKind::*;
-    let tokens = lex("() {} [] , : :: ; . .. + - / * % |> << >> -> => != = == > >= < <= | ~");
+    let tokens =
+        lex("() {} [] , : :: ; . .. + - / * mod |> +> *> << >> -> => != = == > >= < <= | ~");
     let expected = vec![
         L_PAREN,
         R_PAREN,
@@ -72,8 +73,10 @@ fn lex_symbols() {
         MINUS,
         SLASH,
         STAR,
-        PERCENT,
+        MODULO_KW,
         PIPE_ARROW,
+        PLUS_ARROW,
+        STAR_ARROW,
         COMPOSE_LEFT,
         COMPOSE_RIGHT,
         ARROW,
@@ -131,6 +134,16 @@ fn lex_integers() {
         vec!["123", "0xff", "0o77", "0b101"]
     );
     assert!(tokens.iter().all(|(k, _)| *k == SyntaxKind::INTEGER));
+}
+
+#[test]
+fn lex_naturals() {
+    let tokens = lex_with_text("10n 0xffn 0o77n 0b101n");
+    assert_eq!(
+        tokens.iter().map(|(_, t)| *t).collect::<Vec<_>>(),
+        vec!["10n", "0xffn", "0o77n", "0b101n"]
+    );
+    assert!(tokens.iter().all(|(k, _)| *k == SyntaxKind::NATURAL));
 }
 
 #[test]
@@ -1886,7 +1899,7 @@ fn precedence_div_before_sub() {
 
 #[test]
 fn precedence_mod_before_add() {
-    assert_root_op("1 + 2 % 3", "+");
+    assert_root_op("1 + 2 mod 3", "+");
 }
 
 // ── Additive binds tighter than comparison ───────────────────────────
@@ -1994,6 +2007,34 @@ fn left_assoc_mixed_add_sub() {
     assert_eq!(lhs.op_token().unwrap().text(), "-");
 }
 
+#[test]
+fn left_assoc_plus_arrow() {
+    // a +> f +> g => (a +> f) +> g
+    let expr = parse_expr("a +> f +> g");
+    let ast::Expr::Binary(ref bin) = expr else {
+        panic!("expected binary");
+    };
+    assert_eq!(bin.op_token().unwrap().text(), "+>");
+    let ast::Expr::Binary(ref lhs) = bin.lhs().unwrap() else {
+        panic!("lhs should be binary");
+    };
+    assert_eq!(lhs.op_token().unwrap().text(), "+>");
+}
+
+#[test]
+fn left_assoc_star_arrow() {
+    // a *> f *> g => (a *> f) *> g
+    let expr = parse_expr("a *> f *> g");
+    let ast::Expr::Binary(ref bin) = expr else {
+        panic!("expected binary");
+    };
+    assert_eq!(bin.op_token().unwrap().text(), "*>");
+    let ast::Expr::Binary(ref lhs) = bin.lhs().unwrap() else {
+        panic!("lhs should be binary");
+    };
+    assert_eq!(lhs.op_token().unwrap().text(), "*>");
+}
+
 // ── Function application vs arithmetic ──────────────────────────────
 // Call BP=24 is above additive BP=14 and multiplicative BP=16,
 // so application binds tighter than arithmetic (standard ML).
@@ -2070,9 +2111,33 @@ fn precedence_pipe_below_or() {
 }
 
 #[test]
+fn precedence_plus_arrow_below_or() {
+    // a or b +> f => (a or b) +> f, root = +>
+    assert_root_op("a or b +> f", "+>");
+}
+
+#[test]
+fn precedence_star_arrow_below_or() {
+    // a or b *> f => (a or b) *> f, root = *>
+    assert_root_op("a or b *> f", "*>");
+}
+
+#[test]
 fn precedence_pipe_above_semicolon() {
     // a |> f ; b => (a |> f) ; b, root = ;
     assert_root_op("a |> f ; b", ";");
+}
+
+#[test]
+fn precedence_plus_arrow_above_semicolon() {
+    // a +> f ; b => (a +> f) ; b, root = ;
+    assert_root_op("a +> f ; b", ";");
+}
+
+#[test]
+fn precedence_star_arrow_above_semicolon() {
+    // a *> f ; b => (a *> f) ; b, root = ;
+    assert_root_op("a *> f ; b", ";");
 }
 
 // ── Composition precedence ──────────────────────────────────────────

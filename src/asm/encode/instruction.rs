@@ -42,6 +42,7 @@ pub(crate) fn encode_instruction(
             let instr = match const_value {
                 ImmediateValue::Unit => winstr::Nop,
                 ImmediateValue::Integer(value) => winstr::I64Const(*value),
+                ImmediateValue::Natural(value) => winstr::I64Const(*value),
                 ImmediateValue::Real(value) => winstr::F64Const((*value).into()),
                 ImmediateValue::Boolean(value) => winstr::I32Const(i32::from(*value)),
                 ImmediateValue::String(_) => unreachable!("string constants are verified out"),

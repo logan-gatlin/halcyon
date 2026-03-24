@@ -1,7 +1,8 @@
 module array =
-  use core
+  use bundle
   use bundle::ops
   use bundle::opt
+  use bundle::hkt
   let empty : for a in Array a = (wasm : for a in Array a) => (
     i32.const 0
     array.new_default any
@@ -127,10 +128,12 @@ module array =
       | [] => []
       | [head, ..tail] => array::concat head (array::flatten tail)
 
-  let flat_map = fn f arr =>
-    match arr with
+  impl bundle::hkt::Monad Array =
+    let new = fn value => singleton value
+    let flat_map = fn f arr => match arr with
       | [] => []
-      | [value, ..tail] => array::concat (f value) (array::flat_map f tail)
+      | [value, ..tail] => array::concat (f value) (hkt::flat_map f tail)
+  end
 
   let traverse = fn f arr => match arr with
     | [] => bundle::hkt::new []
@@ -196,7 +199,7 @@ module array =
 
   impl bundle::hkt::Applicative Array =
     let apply = fn wrapped_fn wrapped_value =>
-      array::flat_map
+      flat_map
         (fn f => array::map f wrapped_value)
         wrapped_fn
   end
@@ -226,9 +229,5 @@ module array =
     let filter = fn predicate arr => array::filter predicate arr
   end
 
-  impl bundle::hkt::Monad Array =
-    let new = fn value => singleton value
-    let flatmap = fn f arr => flat_map f arr
-  end
 
 end

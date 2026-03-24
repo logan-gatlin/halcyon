@@ -8,7 +8,17 @@ let test_integer_ops = fn _ =>
   let _ = assert (7 - 5 == 2) "integer subtraction" in
   let _ = assert (4 * 3 == 12) "integer multiplication" in
   let _ = assert (9 / 3 == 3) "integer division" in
-  let _ = assert (7 % 4 == 3) "integer remainder" in
+  let _ = assert (7 mod 4 == 3) "integer remainder" in
+  ()
+
+let test_natural_ops = fn _ =>
+  let _ = assert (1n + 2n == 3n) "natural addition" in
+  let _ = assert (7n - 5n == 2n) "natural subtraction" in
+  let _ = assert (3n - 8n == 0n) "natural subtraction saturates" in
+  let _ = assert ((core::ops::[~] 8n) == 0n) "natural unary subtraction saturates" in
+  let _ = assert (4n * 3n == 12n) "natural multiplication" in
+  let _ = assert (9n / 3n == 3n) "natural division" in
+  let _ = assert (7n mod 4n == 3n) "natural remainder" in
   ()
 
 let test_real_ops = fn _ =>
@@ -80,19 +90,21 @@ let test_result_and_default = fn _ =>
 
 let test_big_num_ops = fn _ =>
   let natural = core::big-num::natural_from_integer in
+  let natural_from_natural = core::big-num::natural_from_natural in
   let integer = core::big-num::integer_from_integer in
   let n0 = natural 0 in
   let n1 = natural 1 in
   let n3 = natural 3 in
   let n5 = natural 5 in
   let n8 = natural 8 in
+  let _ = assert (natural_from_natural 5n == n5) "big-num natural from primitive natural" in
   let _ = assert (n5 + n8 == natural 13) "big-num natural addition" in
   let _ = assert (n8 - n3 == natural 5) "big-num natural subtraction" in
   let _ = assert (n3 - n8 == n0) "big-num natural subtraction saturates" in
   let _ = assert (core::ops::[~] n8 == n0) "big-num natural unary subtraction saturates" in
   let _ = assert (n8 * n3 == natural 24) "big-num natural multiplication" in
   let _ = assert (n8 / n3 == natural 2) "big-num natural division" in
-  let _ = assert (n8 % n3 == natural 2) "big-num natural remainder" in
+  let _ = assert (n8 mod n3 == natural 2) "big-num natural remainder" in
   let _ = assert (n3 < n8) "big-num natural compare" in
   let _ = assert (n8 > n3) "big-num natural compare reverse" in
   let _ = assert ((n5 and n3) == n1) "big-num natural bitwise and" in
@@ -113,7 +125,7 @@ let test_big_num_ops = fn _ =>
   let _ = assert (i5 - in7 == integer 12) "big-num integer subtraction" in
   let _ = assert (in2 * i7 == integer (-14)) "big-num integer multiplication" in
   let _ = assert (in7 / i3 == integer (-2)) "big-num integer division" in
-  let _ = assert (in7 % i3 == integer (-1)) "big-num integer remainder" in
+  let _ = assert (in7 mod i3 == integer (-1)) "big-num integer remainder" in
   let _ = assert (in7 < in2) "big-num integer compare" in
   let _ = assert (i5 > in2) "big-num integer compare reverse" in
   let _ = assert ((in2 and i7) == integer 6) "big-num integer bitwise and" in
@@ -154,6 +166,7 @@ let test_show_trait = fn _ =>
 
 let run = fn _ =>
   let _ = test_integer_ops () in
+  let _ = test_natural_ops () in
   let _ = test_real_ops () in
   let _ = test_string_and_bool () in
   let _ = test_function_helpers () in

@@ -1,5 +1,5 @@
 module ops =
-  use core
+  use bundle
   trait Equal : a =
     let [==] : a -> a -> Boolean
   end
@@ -27,7 +27,7 @@ module ops =
   end
 
   trait Remainder : a =
-    let [%] : a -> a -> a
+    let [mod] : a -> a -> a
   end
 
   trait Bitwise : a =
@@ -141,7 +141,7 @@ module ops =
   end
 
   impl Remainder Integer =
-    let [%] = fn left right => (wasm : Integer) => (
+    let [mod] = fn left right => (wasm : Integer) => (
       get left
       struct.get $integer 0
       get right
@@ -189,6 +189,111 @@ module ops =
       struct.new $integer
     )
   end
+
+  impl Equal Natural =
+    let [==] = fn left right => (wasm : Boolean) => (
+      get left
+      struct.get $natural 0
+      get right
+      struct.get $natural 0
+      i64.eq
+      struct.new $word
+    )
+  end
+
+  impl Compare Natural =
+    let [<] = fn left right => (wasm : Boolean) => (
+      get left
+      struct.get $natural 0
+      get right
+      struct.get $natural 0
+      i64.lt
+      struct.new $word
+    )
+
+    let [>] = fn left right => (wasm : Boolean) => (
+      get left
+      struct.get $natural 0
+      get right
+      struct.get $natural 0
+      i64.gt
+      struct.new $word
+    )
+  end
+
+  impl Add Natural =
+    let [+] = fn left right => (wasm : Natural) => (
+      get left
+      struct.get $natural 0
+      get right
+      struct.get $natural 0
+      i64.add
+      struct.new $natural
+    )
+  end
+
+  impl Subtract Natural =
+    let [-] = fn left right => (wasm : Natural) => (
+      (local $result i64)
+      get left
+      struct.get $natural 0
+      get right
+      struct.get $natural 0
+      i64.lt
+      if
+        i64.const 0
+        set $result
+      else
+        get left
+        struct.get $natural 0
+        get right
+        struct.get $natural 0
+        i64.sub
+        set $result
+      end
+      get $result
+      struct.new $natural
+    )
+
+    let [~] = fn _ => (wasm : Natural) => (
+      i64.const 0
+      struct.new $natural
+    )
+  end
+
+  impl Multiply Natural =
+    let [*] = fn left right => (wasm : Natural) => (
+      get left
+      struct.get $natural 0
+      get right
+      struct.get $natural 0
+      i64.mul
+      struct.new $natural
+    )
+  end
+
+  impl Divide Natural =
+    let [/] = fn left right => (wasm : Natural) => (
+      get left
+      struct.get $natural 0
+      get right
+      struct.get $natural 0
+      i64.div
+      struct.new $natural
+    )
+  end
+
+  impl Remainder Natural =
+    let [mod] = fn left right => (wasm : Natural) => (
+      get left
+      struct.get $natural 0
+      get right
+      struct.get $natural 0
+      i64.rem
+      struct.new $natural
+    )
+  end
+
   impl Equal Real =
     let [==] = fn left right => (wasm : Boolean) => (
       get left

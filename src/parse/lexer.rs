@@ -154,11 +154,10 @@ pub fn tokenize(
                 ';' => SEMICOLON,
                 '|' if not_next('>') => PIPE,
                 '.' if not_next('.') => DOT,
-                '+' if not_next('.') => PLUS,
+                '+' if not_next('.') && not_next('>') => PLUS,
                 '-' if not_next('.') && not_next('>') && not_next('-') => MINUS,
-                '*' if not_next('.') => STAR,
+                '*' if not_next('.') && not_next('>') => STAR,
                 '/' if not_next('.') => SLASH,
-                '%' => PERCENT,
                 '=' if not_next('=') && not_next('>') => EQUAL,
                 '<' if not_next('=') && not_next('<') => LESS,
                 '>' if not_next('=') && not_next('>') => GREATER,
@@ -183,6 +182,8 @@ pub fn tokenize(
                 ('=', '>') => DOUBLE_ARROW,
                 (':', ':') => DOUBLE_COLON,
                 ('|', '>') => PIPE_ARROW,
+                ('+', '>') => PLUS_ARROW,
+                ('*', '>') => STAR_ARROW,
                 ('<', '<') => COMPOSE_LEFT,
                 ('>', '>') => COMPOSE_RIGHT,
                 _ => TOKEN_ERROR,
@@ -273,6 +274,15 @@ pub fn tokenize(
                 && let Some(current) = iter.next()
             {
                 let _ = write!(buffer, "{current}");
+            }
+            if iter.peek() == Some('n')
+                && iter
+                    .peek_nth(1)
+                    .is_none_or(|c| c.is_whitespace() || c.is_ascii_punctuation())
+            {
+                iter.next();
+                iter.push(SyntaxKind::NATURAL, start);
+                continue;
             }
             if iter
                 .peek()
@@ -398,6 +408,7 @@ pub fn tokenize(
             "or" => OR_KW,
             "xor" => XOR_KW,
             "not" => NOT_KW,
+            "mod" => MODULO_KW,
             "true" => TRUE_KW,
             "false" => FALSE_KW,
             "fn" => FN_KW,
@@ -611,6 +622,10 @@ pub fn parse_integer_literal_with_radix(text: &str) -> Option<(i64, u32)> {
 
 pub fn parse_integer_literal(text: &str) -> Option<i64> {
     parse_integer_literal_with_radix(text).map(|(value, _)| value)
+}
+
+pub fn parse_natural_literal(text: &str) -> Option<i64> {
+    text.strip_suffix('n').and_then(parse_integer_literal)
 }
 
 pub fn parse_real_literal(text: &str) -> Option<f64> {

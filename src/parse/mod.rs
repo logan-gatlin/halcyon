@@ -34,10 +34,12 @@ pub enum SyntaxKind {
     MINUS,
     SLASH,
     STAR,
-    PERCENT,
+    MODULO_KW,
     ARROW,
     DOUBLE_ARROW,
     PIPE_ARROW,
+    PLUS_ARROW,
+    STAR_ARROW,
     COMPOSE_LEFT,
     COMPOSE_RIGHT,
     PIPE,
@@ -58,6 +60,7 @@ pub enum SyntaxKind {
     STRING,
     GLYPH,
     INTEGER,
+    NATURAL,
     REAL,
 
     MODULE_KW,
@@ -97,7 +100,7 @@ pub enum SyntaxKind {
     TOKEN_ERROR,
 
     // Note: do not introduce new node kinds that duplicate existing token kinds.
-    // The parser may reuse token kinds (IDENT, STRING, INTEGER, REAL) for nodes.
+    // The parser may reuse token kinds (IDENT, STRING, INTEGER, NATURAL, REAL) for nodes.
     SOURCE_FILE,
     BUNDLE_DECLARATION,
     MODULE,
@@ -112,7 +115,9 @@ pub enum SyntaxKind {
     WASM_STATEMENT,
 
     TRAIT_METHOD_DECL,
+    TRAIT_TYPE_DECL,
     IMPL_METHOD_DEF,
+    IMPL_TYPE_DEF,
 
     STRUCT_DEF,
     SUM_DEF,
@@ -181,8 +186,10 @@ impl SyntaxKind {
                 | Self::MINUS
                 | Self::STAR
                 | Self::SLASH
-                | Self::PERCENT
+                | Self::MODULO_KW
                 | Self::PIPE_ARROW
+                | Self::PLUS_ARROW
+                | Self::STAR_ARROW
                 | Self::COMPOSE_LEFT
                 | Self::COMPOSE_RIGHT
                 | Self::DOUBLE_EQUAL
@@ -231,8 +238,10 @@ impl std::fmt::Display for SyntaxKind {
                 MINUS => "-",
                 SLASH => "/",
                 STAR => "*",
-                PERCENT => "%",
+                MODULO_KW => "mod",
                 PIPE_ARROW => "|>",
+                PLUS_ARROW => "+>",
+                STAR_ARROW => "*>",
                 COMPOSE_LEFT => "<<",
                 COMPOSE_RIGHT => ">>",
                 ARROW => "->",
@@ -249,6 +258,7 @@ impl std::fmt::Display for SyntaxKind {
                 STRING => "string",
                 GLYPH => "glyph",
                 INTEGER => "integer",
+                NATURAL => "natural",
                 REAL => "real",
                 MODULE_KW => "module",
                 BUNDLE_KW => "bundle",
@@ -295,7 +305,9 @@ impl std::fmt::Display for SyntaxKind {
                 IMPL_STATEMENT => "impl statement",
                 WASM_STATEMENT => "wasm statement",
                 TRAIT_METHOD_DECL => "trait method declaration",
+                TRAIT_TYPE_DECL => "trait associated type declaration",
                 IMPL_METHOD_DEF => "impl method definition",
+                IMPL_TYPE_DEF => "impl associated type definition",
                 STRUCT_DEF => "struct definition",
                 SUM_DEF => "sum definition",
                 VARIANT => "variant",

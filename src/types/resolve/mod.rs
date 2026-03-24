@@ -231,6 +231,12 @@ pub fn resolve_module_with_symbols_and_schemes(
         let _profile = crate::profiling::scope("resolve.register_trait_aliases");
         register_trait_aliases(symbols, &pending_trait_aliases, logger);
     }
+    let mut type_definitions = type_definitions;
+    for (path, definition) in symbols.type_definitions().iter() {
+        type_definitions
+            .entry(path.clone())
+            .or_insert_with(|| definition.clone());
+    }
     tracing::debug!(
         trait_count = pending_trait_definitions.len(),
         alias_count = pending_trait_aliases.len(),
@@ -282,10 +288,11 @@ pub fn resolve_module_with_symbols_and_schemes(
                     let known_scheme_paths = schemes.keys().cloned().collect::<HashSet<_>>();
                     let type_environment_snapshot = type_environment.clone();
                     let schemes_snapshot = schemes.clone();
-                    let mut output = match {
+                    let inference_result = {
                         let _profile = crate::profiling::scope("resolve.infer_term");
                         inference_context.infer_term(&mut type_environment, &term, &mut schemes)
-                    } {
+                    };
+                    let mut output = match inference_result {
                         Ok(output) => output,
                         Err(error) => {
                             log_type_error(logger, error);
@@ -418,12 +425,14 @@ pub fn resolve_module_with_symbols_and_schemes(
                     comments,
                     path,
                     parameters,
+                    associated_types,
                     methods,
                 } => {
                     typed_statements.push(Statement::Trait {
                         comments,
                         path,
                         parameters,
+                        associated_types,
                         methods,
                     });
                 }
@@ -442,6 +451,7 @@ pub fn resolve_module_with_symbols_and_schemes(
                     comments,
                     trait_path,
                     arguments,
+                    associated_types,
                     methods,
                 } => {
                     let (typed_impl, generated_terms) = {
@@ -456,7 +466,13 @@ pub fn resolve_module_with_symbols_and_schemes(
                             pending_type_definitions: &pending_type_definitions,
                             type_definitions: &type_definitions,
                         }
-                        .process(comments, trait_path, arguments, methods)
+                        .process(
+                            comments,
+                            trait_path,
+                            arguments,
+                            associated_types,
+                            methods,
+                        )
                     };
                     typed_statements.push(typed_impl);
                     typed_statements.extend(generated_terms.into_iter().map(Statement::Term));
@@ -672,6 +688,43 @@ mod tests {
         assert!(file_logger.is_ok());
         assert!(resolved.schemes.contains_key(&Path::new("demo", "value")));
         assert!(symbols.trait_impls().contains_key(&Path::new("demo", "Id")));
+    }
+
+    #[test]
+    fn resolve_module_allows_recursive_trait_calls_in_impl_methods() {
+        let source = "module demo =\n  trait Id : a =\n    let id : a -> a\n  end\n  impl Id for a in a =\n    let id = fn value => demo::id value\n  end\n  let value : core::Integer = demo::id 1\nend\n";
+        let mut symbols = SymbolTable::new();
+        let mut logger = Logger::new();
+        let _ = compile_core_module(&mut symbols, &mut logger);
+
+        let (resolved, file_logger) = resolve_source(source, &mut symbols);
+        assert!(file_logger.is_ok());
+        assert!(resolved.schemes.contains_key(&Path::new("demo", "value")));
+
+        let trait_path = Path::new("demo", "Id");
+        let method_path = Path::new("demo", "id");
+        let impl_method_path = symbols
+            .trait_impls()
+            .get(&trait_path)
+            .and_then(|implementations| implementations.first())
+            .and_then(|implementation| implementation.methods.get(&method_path))
+            .cloned()
+            .expect("expected generated impl method path");
+
+        let impl_scheme = symbols
+            .terms()
+            .get(&impl_method_path)
+            .expect("expected impl method scheme");
+        assert!(
+            impl_scheme.predicates.is_empty(),
+            "impl method scheme should not retain recursive self predicate"
+        );
+        assert!(
+            !resolved
+                .evidence_requirements
+                .contains_key(&impl_method_path),
+            "impl method should not publish self evidence requirements"
+        );
     }
 
     #[test]

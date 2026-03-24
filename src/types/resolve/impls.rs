@@ -1,12 +1,16 @@
 //! Trait implementation checking and registration during resolve.
 
-use std::collections::HashMap;
+use std::collections::{
+    HashMap,
+    HashSet,
+};
 
 use indexmap::IndexMap;
 
 use crate::ir::{
     ImmediateValue,
     ImplMethod,
+    ImplTypeDef,
     TypeExpr,
 };
 use crate::logging::WithContext;
@@ -28,6 +32,7 @@ use super::super::kind::{
     constructor_kind,
     infer_scheme_kind,
 };
+use super::super::unify::UnificationTable;
 use super::super::{
     normalize_parameter_kinds,
     split_applied_type,
@@ -77,6 +82,14 @@ pub(super) struct ImplProcessingContext<'a> {
     pub(super) type_definitions: &'a IndexMap<Path, TypeDefinition>,
 }
 
+#[derive(Debug, Clone)]
+struct ImplMethodIdentity {
+    trait_item_name: String,
+    canonical_trait_method: Path,
+    impl_path: Path,
+    span: Span,
+}
+
 impl ImplProcessingContext<'_> {
     /// Type-check and register a single impl declaration.
     #[tracing::instrument(level = "debug", skip_all, fields(trait_path = %trait_path))]
@@ -85,6 +98,7 @@ impl ImplProcessingContext<'_> {
         comments: String,
         trait_path: Path,
         arguments: Box<[TypeExpr]>,
+        associated_types: Box<[ImplTypeDef]>,
         methods: Box<[ImplMethod<()>]>,
     ) -> (Statement<Type>, Vec<Term<Type>>) {
         let _profile_total = crate::profiling::scope("resolve.impl.process.total");
@@ -97,6 +111,7 @@ impl ImplProcessingContext<'_> {
             .canonical_trait_path(&trait_path)
             .unwrap_or_else(|| trait_path.clone());
         let trait_definition = self.symbols.trait_definition(&trait_path).cloned();
+        let associated_types_for_statement = associated_types.clone();
 
         let raw_argument_schemes = {
             let _profile = crate::profiling::scope("resolve.impl.argument_schemes");
@@ -238,27 +253,148 @@ impl ImplProcessingContext<'_> {
                 .done();
         }
 
+        let mut associated_type_assignments = IndexMap::new();
+        for associated_type in associated_types.into_iter() {
+            let canonical_associated_type = canonical_trait_path.child(&associated_type.name.inner);
+            let lowered = type_expr_to_scheme_in_def(
+                &associated_type.type_expr,
+                &HashMap::new(),
+                self.pending_type_definitions,
+                &mut resolved_type_definitions,
+                &mut Vec::new(),
+                self.logger,
+            );
+            if !lowered.predicates.is_empty() {
+                self.logger
+                    .error("Invalid impl associated type")
+                    .primary(
+                        "Associated type definitions in impls cannot declare trait constraints.",
+                        associated_type.span,
+                    )
+                    .done();
+            }
+            let (forall_count, body) = peel_leading_foralls(&lowered.type_);
+            if forall_count > impl_parameters {
+                self.logger
+                    .error("Invalid impl associated type")
+                    .primary(
+                        format!(
+                            "`{}` introduces {forall_count} local type parameters, but this impl head only binds {impl_parameters} parameter(s).",
+                            canonical_associated_type
+                        ),
+                        associated_type.span,
+                    )
+                    .done();
+            }
+            let normalized = normalize_impl_head_argument(&body, forall_count, 0, impl_parameters);
+            associated_type_assignments.insert(canonical_associated_type, normalized);
+        }
+
         let mut typed_methods = Vec::new();
         let mut generated_terms = Vec::new();
         let mut method_map = IndexMap::new();
+        let impl_head_predicate =
+            TraitRef::new(canonical_trait_path.clone(), argument_types.clone());
+        let method_identities = methods
+            .iter()
+            .map(|method| {
+                let trait_item_name = trait_item_name(&method.trait_method).to_string();
+                ImplMethodIdentity {
+                    trait_item_name: trait_item_name.clone(),
+                    canonical_trait_method: canonical_trait_path.sibling(trait_item_name),
+                    impl_path: method.impl_path.clone(),
+                    span: method.span,
+                }
+            })
+            .collect::<Vec<_>>();
+        let unguarded_cycles = find_unguarded_impl_method_cycles(&methods, &method_identities);
+        for cycle in unguarded_cycles.iter() {
+            log_unguarded_impl_method_cycle(self.logger, &method_identities, cycle);
+        }
+        let methods_in_unguarded_cycle = unguarded_cycles
+            .iter()
+            .flat_map(|cycle| cycle.iter().copied())
+            .collect::<HashSet<_>>();
+        let has_unguarded_cycles = !methods_in_unguarded_cycle.is_empty();
+        let recursive_impl_method_types = method_identities
+            .iter()
+            .map(|method| {
+                (
+                    method.impl_path.clone(),
+                    self.inference_context.fresh_meta(),
+                )
+            })
+            .collect::<HashMap<_, _>>();
+        self.type_environment.extend(
+            recursive_impl_method_types
+                .iter()
+                .map(|(path, type_)| (path.clone(), TypeScheme::new(type_.clone()))),
+        );
 
-        for method in methods {
-            let mut method_predicate_assumptions = Vec::new();
-            let method_name = method
-                .trait_method
-                .minor
-                .rsplit_once(Path::DELIMETER)
-                .map(|(_, name)| name)
-                .unwrap_or_else(|| method.trait_method.minor.as_str());
-            let canonical_trait_method = canonical_trait_path.sibling(method_name);
-            let (mut typed_value, mut predicates) = match {
+        for (method_index, method) in methods.into_iter().enumerate() {
+            let method_identity = &method_identities[method_index];
+            let canonical_trait_method = method_identity.canonical_trait_method.clone();
+
+            if methods_in_unguarded_cycle.contains(&method_index) {
+                let typed_value = normalize_term_types(
+                    fallback_term(&method.value),
+                    self.inference_context.table_mut(),
+                );
+                let normalized_type = typed_value.type_.clone();
+                let scheme = trait_definition
+                    .as_ref()
+                    .and_then(|trait_definition| {
+                        (argument_types.len() == trait_definition.parameters)
+                            .then_some(())
+                            .and_then(|_| trait_definition.methods.get(&canonical_trait_method))
+                            .and_then(|method_scheme| {
+                                instantiate_method_scheme(method_scheme, &argument_types)
+                            })
+                            .map(|instantiated| {
+                                let mut instantiated = substitute_impl_associated_types_in_scheme(
+                                    instantiated,
+                                    &impl_head_predicate,
+                                    &associated_type_assignments,
+                                );
+                                for predicate in impl_context_predicates.iter().cloned() {
+                                    if !instantiated.predicates.contains(&predicate) {
+                                        instantiated.predicates.push(predicate);
+                                    }
+                                }
+                                instantiated
+                            })
+                    })
+                    .unwrap_or_else(|| TypeScheme::new(normalized_type.clone()));
+                self.type_environment
+                    .insert(method.impl_path.clone(), scheme.clone());
+                self.schemes.insert(method.impl_path.clone(), scheme);
+
+                method_map.insert(canonical_trait_method.clone(), method.impl_path.clone());
+                generated_terms.push(build_impl_method_binding(
+                    method.impl_path.clone(),
+                    method.span,
+                    normalized_type,
+                    typed_value.clone(),
+                ));
+                typed_methods.push(ImplMethod {
+                    trait_method: canonical_trait_method,
+                    impl_path: method.impl_path,
+                    value: typed_value,
+                    span: method.span,
+                });
+                continue;
+            }
+
+            let mut method_declared_predicates = Vec::new();
+            let inference_result = {
                 let _profile = crate::profiling::scope("resolve.impl.method_infer_term");
                 self.inference_context.infer_term(
                     self.type_environment,
                     &method.value,
                     self.schemes,
                 )
-            } {
+            };
+            let (mut typed_value, inferred_predicates) = match inference_result {
                 Ok(output) => (output.term, output.predicates),
                 Err(error) => {
                     log_type_error(self.logger, error);
@@ -286,6 +422,11 @@ impl ImplProcessingContext<'_> {
                     } else if let Some(instantiated) =
                         instantiate_method_scheme(method_scheme, &argument_types)
                     {
+                        let instantiated = substitute_impl_associated_types_in_scheme(
+                            instantiated,
+                            &impl_head_predicate,
+                            &associated_type_assignments,
+                        );
                         tracing::debug!(
                             method = %canonical_trait_method,
                             instantiated = %instantiated.type_.pretty(),
@@ -306,13 +447,18 @@ impl ImplProcessingContext<'_> {
                         let value_type = {
                             let _profile =
                                 crate::profiling::scope("resolve.impl.normalize_value_type");
-                            normalize_alias_applications(
+                            let normalized = normalize_alias_applications(
                                 instantiate_forall_for_impl_check(
                                     self.inference_context,
                                     typed_value.type_.clone(),
                                     method.span,
                                 ),
                                 &resolved_type_definitions,
+                            );
+                            substitute_impl_associated_types_in_type(
+                                normalized,
+                                &impl_head_predicate,
+                                &associated_type_assignments,
                             )
                         };
                         tracing::debug!(
@@ -339,11 +485,8 @@ impl ImplProcessingContext<'_> {
                             );
                         }
                         for predicate in instantiated.predicates {
-                            if !method_predicate_assumptions.contains(&predicate) {
-                                method_predicate_assumptions.push(predicate.clone());
-                            }
-                            if !predicates.contains(&predicate) {
-                                predicates.push(predicate);
+                            if !method_declared_predicates.contains(&predicate) {
+                                method_declared_predicates.push(predicate);
                             }
                         }
                     } else {
@@ -358,21 +501,49 @@ impl ImplProcessingContext<'_> {
                 }
             }
 
+            let mut solve_predicates = inferred_predicates.clone();
+            for predicate in method_declared_predicates.iter().cloned() {
+                if !solve_predicates.contains(&predicate) {
+                    solve_predicates.push(predicate);
+                }
+            }
             for predicate in impl_context_predicates.iter().cloned() {
-                if !predicates.contains(&predicate) {
-                    predicates.push(predicate);
+                if !solve_predicates.contains(&predicate) {
+                    solve_predicates.push(predicate);
                 }
             }
 
-            let mut predicate_assumptions = method_predicate_assumptions.clone();
+            let mut predicate_assumptions = method_declared_predicates.clone();
             for predicate in impl_context_predicates.iter().cloned() {
                 if !predicate_assumptions.contains(&predicate) {
                     predicate_assumptions.push(predicate);
                 }
             }
+            if !predicate_assumptions.iter().any(|predicate| {
+                predicate_matches_impl_head(self.symbols, predicate, &impl_head_predicate)
+            }) {
+                predicate_assumptions.push(impl_head_predicate.clone());
+            }
 
             typed_value = normalize_term_types(typed_value, self.inference_context.table_mut());
             let normalized_type = typed_value.type_.clone();
+            if let Some(recursive_method_type) = recursive_impl_method_types.get(&method.impl_path)
+                && let Err(error) = self
+                    .inference_context
+                    .table_mut()
+                    .unify(recursive_method_type, &normalized_type)
+            {
+                log_type_error(
+                    self.logger,
+                    TypeError::Unification {
+                        error,
+                        span: method.span,
+                        context: Some(
+                            "checking recursive impl method references against the method body type",
+                        ),
+                    },
+                );
+            }
             {
                 let _profile = crate::profiling::scope("resolve.impl.solve_predicates");
                 solve_predicates_with_assumptions(
@@ -380,15 +551,30 @@ impl ImplProcessingContext<'_> {
                     self.inference_context,
                     self.symbols,
                     method.span,
-                    &predicates,
+                    &solve_predicates,
                     &predicate_assumptions,
                 );
+            }
+
+            let mut scheme_predicates = inferred_predicates;
+            scheme_predicates.retain(|predicate| {
+                !predicate_matches_impl_head(self.symbols, predicate, &impl_head_predicate)
+            });
+            for predicate in method_declared_predicates {
+                if !scheme_predicates.contains(&predicate) {
+                    scheme_predicates.push(predicate);
+                }
+            }
+            for predicate in impl_context_predicates.iter().cloned() {
+                if !scheme_predicates.contains(&predicate) {
+                    scheme_predicates.push(predicate);
+                }
             }
 
             let scheme = self.inference_context.generalize_with_predicates(
                 &normalized_type,
                 0,
-                predicates.clone(),
+                scheme_predicates,
             );
             self.type_environment
                 .insert(method.impl_path.clone(), scheme.clone());
@@ -417,13 +603,19 @@ impl ImplProcessingContext<'_> {
             parameters: impl_parameters,
             head: TraitRef::new(canonical_trait_path.clone(), argument_types),
             predicates: impl_context_predicates,
+            associated_types: associated_type_assignments,
             methods: method_map,
         };
         if orphan_rule_satisfied
             && trait_head_kinds_valid
+            && !has_unguarded_cycles
             && let Err(error) = self.symbols.insert_impl(trait_impl)
         {
-            log_trait_error(self.logger, impl_span, error);
+            log_trait_error(
+                self.logger,
+                impl_error_span(&error, &typed_methods).unwrap_or(impl_span),
+                error,
+            );
         }
 
         (
@@ -431,10 +623,28 @@ impl ImplProcessingContext<'_> {
                 comments,
                 trait_path,
                 arguments,
+                associated_types: associated_types_for_statement,
                 methods: typed_methods.into_boxed_slice(),
             },
             generated_terms,
         )
+    }
+}
+
+fn impl_error_span(
+    error: &TraitError,
+    typed_methods: &[ImplMethod<Type>],
+) -> Option<Span> {
+    match error {
+        TraitError::InvalidInstanceItems { unknown_items, .. } => {
+            unknown_items.iter().find_map(|method_path| {
+                typed_methods
+                    .iter()
+                    .find(|method| method.trait_method == *method_path)
+                    .map(|method| method.span)
+            })
+        }
+        _ => None,
     }
 }
 
@@ -450,6 +660,164 @@ pub(super) fn instantiate_method_scheme(
     let type_ = instantiate_forall_strict(&scheme.type_, arguments)?;
     let predicates = instantiate_predicates(&scheme.predicates, arguments)?;
     Some(TypeScheme { predicates, type_ })
+}
+
+fn substitute_impl_associated_types_in_scheme(
+    scheme: TypeScheme,
+    impl_head: &TraitRef,
+    associated_types: &IndexMap<Path, Type>,
+) -> TypeScheme {
+    TypeScheme {
+        type_: substitute_impl_associated_types_in_type(scheme.type_, impl_head, associated_types),
+        predicates: scheme
+            .predicates
+            .into_iter()
+            .map(|predicate| {
+                TraitRef {
+                    trait_name: predicate.trait_name,
+                    arguments: predicate
+                        .arguments
+                        .into_iter()
+                        .map(|argument| {
+                            substitute_impl_associated_types_in_type(
+                                argument,
+                                impl_head,
+                                associated_types,
+                            )
+                        })
+                        .collect(),
+                }
+            })
+            .collect(),
+    }
+}
+
+fn substitute_impl_associated_types_in_type(
+    type_: Type,
+    impl_head: &TraitRef,
+    associated_types: &IndexMap<Path, Type>,
+) -> Type {
+    let normalized = match type_ {
+        Type::Unit
+        | Type::Integer
+        | Type::Natural
+        | Type::Real
+        | Type::Boolean
+        | Type::String
+        | Type::Glyph
+        | Type::TypeVar(_)
+        | Type::MetaVar(_) => type_,
+        Type::ForAll { name, body } => {
+            Type::ForAll {
+                name,
+                body: Box::new(substitute_impl_associated_types_in_type(
+                    *body,
+                    impl_head,
+                    associated_types,
+                )),
+            }
+        }
+        Type::Named { name, body } => Type::Named { name, body },
+        Type::StructConstraint { fields, mode } => {
+            Type::StructConstraint {
+                fields: fields
+                    .into_iter()
+                    .map(|(name, field_type)| {
+                        (
+                            name,
+                            substitute_impl_associated_types_in_type(
+                                field_type,
+                                impl_head,
+                                associated_types,
+                            ),
+                        )
+                    })
+                    .collect(),
+                mode,
+            }
+        }
+        Type::Struct { fields } => {
+            Type::Struct {
+                fields: fields
+                    .into_iter()
+                    .map(|(name, field_type)| {
+                        (
+                            name,
+                            substitute_impl_associated_types_in_type(
+                                field_type,
+                                impl_head,
+                                associated_types,
+                            ),
+                        )
+                    })
+                    .collect(),
+            }
+        }
+        Type::Array(inner) => {
+            Type::Array(Box::new(substitute_impl_associated_types_in_type(
+                *inner,
+                impl_head,
+                associated_types,
+            )))
+        }
+        Type::Tuple(items) => {
+            Type::Tuple(
+                items
+                    .into_iter()
+                    .map(|item| {
+                        substitute_impl_associated_types_in_type(item, impl_head, associated_types)
+                    })
+                    .collect(),
+            )
+        }
+        Type::Sum { variants } => {
+            Type::Sum {
+                variants: variants
+                    .into_iter()
+                    .map(|(name, variant_type)| {
+                        (
+                            name,
+                            substitute_impl_associated_types_in_type(
+                                variant_type,
+                                impl_head,
+                                associated_types,
+                            ),
+                        )
+                    })
+                    .collect(),
+            }
+        }
+        Type::Function(parameter, result) => {
+            Type::func(
+                substitute_impl_associated_types_in_type(*parameter, impl_head, associated_types),
+                substitute_impl_associated_types_in_type(*result, impl_head, associated_types),
+            )
+        }
+        Type::Apply {
+            constructor,
+            arguments,
+        } => {
+            let constructor =
+                substitute_impl_associated_types_in_type(*constructor, impl_head, associated_types);
+            let arguments = arguments
+                .into_iter()
+                .map(|argument| {
+                    substitute_impl_associated_types_in_type(argument, impl_head, associated_types)
+                })
+                .collect::<Vec<_>>();
+            if let Type::Named {
+                name: associated_type,
+                ..
+            } = &constructor
+                && arguments == impl_head.arguments
+                && let Some(assigned_type) = associated_types.get(associated_type)
+            {
+                return assigned_type.clone();
+            }
+            constructor.apply(arguments)
+        }
+    };
+    normalized
 }
 
 fn instantiate_forall_for_impl_check(
@@ -474,6 +842,7 @@ fn normalize_alias_applications(
     let normalized = match type_ {
         Type::Unit
         | Type::Integer
+        | Type::Natural
         | Type::Real
         | Type::Boolean
         | Type::String
@@ -627,6 +996,295 @@ fn normalize_impl_head_predicates(
         .collect()
 }
 
+fn predicate_matches_impl_head(
+    symbols: &SymbolTable,
+    predicate: &TraitConstraint,
+    impl_head: &TraitRef,
+) -> bool {
+    let mut table = UnificationTable::default();
+    let mut normalized_predicate = table.normalize_trait_ref(predicate);
+    let mut normalized_head = table.normalize_trait_ref(impl_head);
+    if let Some(canonical_trait_name) =
+        symbols.canonical_trait_path(&normalized_predicate.trait_name)
+    {
+        normalized_predicate.trait_name = canonical_trait_name;
+    }
+    if let Some(canonical_trait_name) = symbols.canonical_trait_path(&normalized_head.trait_name) {
+        normalized_head.trait_name = canonical_trait_name;
+    }
+    if normalized_predicate.trait_name != normalized_head.trait_name
+        || normalized_predicate.arguments.len() != normalized_head.arguments.len()
+    {
+        return false;
+    }
+    normalized_predicate
+        .arguments
+        .iter()
+        .zip(normalized_head.arguments.iter())
+        .all(|(left, right)| table.unify(left, right).is_ok())
+}
+
+fn trait_item_name(path: &Path) -> &str {
+    path.minor
+        .rsplit_once(Path::DELIMETER)
+        .map(|(_, name)| name)
+        .unwrap_or(path.minor.as_str())
+}
+
+fn find_unguarded_impl_method_cycles(
+    methods: &[ImplMethod<()>],
+    method_identities: &[ImplMethodIdentity],
+) -> Vec<Vec<usize>> {
+    let impl_path_indices = method_identities
+        .iter()
+        .enumerate()
+        .map(|(index, method)| (method.impl_path.clone(), index))
+        .collect::<HashMap<_, _>>();
+    let trait_method_indices = method_identities
+        .iter()
+        .enumerate()
+        .map(|(index, method)| (method.canonical_trait_method.clone(), index))
+        .collect::<HashMap<_, _>>();
+
+    let adjacency = methods
+        .iter()
+        .map(|method| {
+            let mut references = HashSet::new();
+            if let TermKind::Identifier(path) = &method.value.kind
+                && let Some(index) = trait_method_indices.get(path).copied()
+            {
+                references.insert(index);
+            }
+            collect_unguarded_impl_method_refs(
+                &method.value,
+                false,
+                &impl_path_indices,
+                &mut references,
+            );
+            let mut edges = references.into_iter().collect::<Vec<_>>();
+            edges.sort_unstable();
+            edges
+        })
+        .collect::<Vec<_>>();
+
+    let mut cycles = strongly_connected_components(&adjacency)
+        .into_iter()
+        .filter(|component| {
+            component.len() > 1
+                || component
+                    .first()
+                    .is_some_and(|index| adjacency[*index].contains(index))
+        })
+        .collect::<Vec<_>>();
+    cycles.sort_by_key(|component| component.first().copied().unwrap_or(usize::MAX));
+    cycles
+}
+
+fn collect_unguarded_impl_method_refs(
+    term: &Term<()>,
+    inside_function: bool,
+    impl_path_indices: &HashMap<Path, usize>,
+    references: &mut HashSet<usize>,
+) {
+    match &term.kind {
+        TermKind::Identifier(path) => {
+            if inside_function {
+                return;
+            }
+            if let Some(index) = impl_path_indices.get(path).copied() {
+                references.insert(index);
+            }
+        }
+        TermKind::Let {
+            value, then, else_, ..
+        } => {
+            collect_unguarded_impl_method_refs(
+                value,
+                inside_function,
+                impl_path_indices,
+                references,
+            );
+            collect_unguarded_impl_method_refs(
+                then,
+                inside_function,
+                impl_path_indices,
+                references,
+            );
+            collect_unguarded_impl_method_refs(
+                else_,
+                inside_function,
+                impl_path_indices,
+                references,
+            );
+        }
+        TermKind::Tuple(items) => {
+            for item in items {
+                collect_unguarded_impl_method_refs(
+                    item,
+                    inside_function,
+                    impl_path_indices,
+                    references,
+                );
+            }
+        }
+        TermKind::Struct(fields) => {
+            for value in fields.values() {
+                collect_unguarded_impl_method_refs(
+                    value,
+                    inside_function,
+                    impl_path_indices,
+                    references,
+                );
+            }
+        }
+        TermKind::Field { of, .. } => {
+            collect_unguarded_impl_method_refs(of, inside_function, impl_path_indices, references);
+        }
+        TermKind::Function { body, .. } => {
+            collect_unguarded_impl_method_refs(body, true, impl_path_indices, references);
+        }
+        TermKind::Call { callee, argument } => {
+            collect_unguarded_impl_method_refs(
+                callee,
+                inside_function,
+                impl_path_indices,
+                references,
+            );
+            collect_unguarded_impl_method_refs(
+                argument,
+                inside_function,
+                impl_path_indices,
+                references,
+            );
+        }
+        TermKind::Semicolon(left, right) => {
+            collect_unguarded_impl_method_refs(
+                left,
+                inside_function,
+                impl_path_indices,
+                references,
+            );
+            collect_unguarded_impl_method_refs(
+                right,
+                inside_function,
+                impl_path_indices,
+                references,
+            );
+        }
+        TermKind::Immediate(_) | TermKind::InlineWasm { .. } | TermKind::Unreachable => {}
+    }
+}
+
+fn strongly_connected_components(adjacency: &[Vec<usize>]) -> Vec<Vec<usize>> {
+    fn dfs_post_order(
+        node: usize,
+        adjacency: &[Vec<usize>],
+        visited: &mut [bool],
+        order: &mut Vec<usize>,
+    ) {
+        visited[node] = true;
+        for edge in adjacency[node].iter().copied() {
+            if edge < adjacency.len() && !visited[edge] {
+                dfs_post_order(edge, adjacency, visited, order);
+            }
+        }
+        order.push(node);
+    }
+
+    fn dfs_component(
+        node: usize,
+        adjacency: &[Vec<usize>],
+        visited: &mut [bool],
+        component: &mut Vec<usize>,
+    ) {
+        visited[node] = true;
+        component.push(node);
+        for edge in adjacency[node].iter().copied() {
+            if edge < adjacency.len() && !visited[edge] {
+                dfs_component(edge, adjacency, visited, component);
+            }
+        }
+    }
+
+    let mut visited = vec![false; adjacency.len()];
+    let mut order = Vec::with_capacity(adjacency.len());
+    for node in 0..adjacency.len() {
+        if visited[node] {
+            continue;
+        }
+        dfs_post_order(node, adjacency, &mut visited, &mut order);
+    }
+
+    let mut reversed = vec![Vec::new(); adjacency.len()];
+    for (from, edges) in adjacency.iter().enumerate() {
+        for edge in edges {
+            if *edge < adjacency.len() {
+                reversed[*edge].push(from);
+            }
+        }
+    }
+
+    visited.fill(false);
+    let mut components = Vec::new();
+    while let Some(node) = order.pop() {
+        if visited[node] {
+            continue;
+        }
+        let mut component = Vec::new();
+        dfs_component(node, &reversed, &mut visited, &mut component);
+        component.sort_unstable();
+        components.push(component);
+    }
+
+    components
+}
+
+fn log_unguarded_impl_method_cycle(
+    logger: &mut FileLogger,
+    method_identities: &[ImplMethodIdentity],
+    cycle: &[usize],
+) {
+    let Some((&first, others)) = cycle.split_first() else {
+        return;
+    };
+    let cycle_text = format_unguarded_impl_method_cycle(method_identities, cycle);
+    let mut builder = logger.error("Invalid circular impl definition").primary(
+        format!(
+            "`{}` is part of unguarded circular definition `{cycle_text}`.",
+            method_identities[first].trait_item_name
+        ),
+        method_identities[first].span,
+    );
+    for index in others.iter().copied() {
+        builder = builder.secondary(
+            format!(
+                "`{}` also participates in this cycle.",
+                method_identities[index].trait_item_name
+            ),
+            method_identities[index].span,
+        );
+    }
+    builder
+        .note("Recursive impl definitions must be function-guarded, for example `let f = fn x => ...`.")
+        .done();
+}
+
+fn format_unguarded_impl_method_cycle(
+    method_identities: &[ImplMethodIdentity],
+    cycle: &[usize],
+) -> String {
+    let mut names = cycle
+        .iter()
+        .map(|index| method_identities[*index].trait_item_name.clone())
+        .collect::<Vec<_>>();
+    names.sort();
+    names.dedup();
+    if let Some(first) = names.first().cloned() {
+        names.push(first);
+    }
+    names.join(" -> ")
+}
+
 fn type_contains_local_nominal_type(
     type_: &Type,
     module_name: &str,
@@ -671,6 +1329,7 @@ fn type_contains_local_nominal_type(
         }
         Type::Unit
         | Type::Integer
+        | Type::Natural
         | Type::Real
         | Type::Boolean
         | Type::String
@@ -783,6 +1442,7 @@ fn typed_unreachable_term() -> Term<Type> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::WithSpan;
 
     #[test]
     fn instantiate_method_scheme_handles_partial_exact_and_excess_args() {
@@ -803,6 +1463,35 @@ mod tests {
         );
 
         assert!(instantiate_method_scheme(&scheme, &[Type::Integer, Type::Boolean]).is_none());
+    }
+
+    #[test]
+    fn impl_error_span_points_at_unknown_impl_item() {
+        let unknown_method = Path::new("demo", "flatmap");
+        let methods = vec![
+            ImplMethod {
+                trait_method: Path::new("demo", "new"),
+                impl_path: Path::new("demo", "impl_new"),
+                value: typed_unit_term(),
+                span: Span::new(1, 3),
+            },
+            ImplMethod {
+                trait_method: unknown_method.clone(),
+                impl_path: Path::new("demo", "impl_flatmap"),
+                value: typed_unit_term(),
+                span: Span::new(10, 7),
+            },
+        ];
+
+        let error = TraitError::InvalidInstanceItems {
+            trait_name: Path::new("demo", "Monad"),
+            unknown_items: vec![unknown_method],
+            missing_items: vec![Path::new("demo", "flat_map")],
+            unknown_associated_types: Vec::new(),
+            missing_associated_types: Vec::new(),
+        };
+
+        assert_eq!(impl_error_span(&error, &methods), Some(Span::new(10, 7)));
     }
 
     #[test]
@@ -982,5 +1671,95 @@ mod tests {
         assert_eq!(unit.type_, Type::Unit);
         assert!(matches!(unreachable.kind, TermKind::Unreachable));
         assert_eq!(unreachable.type_, Type::Unit);
+    }
+
+    fn untyped_term(kind: TermKind<()>) -> Term<()> {
+        Term {
+            comments: String::new(),
+            kind,
+            span: Span::Generated,
+            type_: (),
+        }
+    }
+
+    #[test]
+    fn unguarded_impl_cycles_detect_self_reference() {
+        let method = ImplMethod {
+            trait_method: Path::new("demo", "f"),
+            impl_path: Path::new("demo", "f#0"),
+            value: untyped_term(TermKind::Identifier(Path::new("demo", "f#0"))),
+            span: Span::new(1, 1),
+        };
+        let identities = vec![ImplMethodIdentity {
+            trait_item_name: "f".to_string(),
+            canonical_trait_method: Path::new("demo", "f"),
+            impl_path: Path::new("demo", "f#0"),
+            span: Span::new(1, 1),
+        }];
+
+        let cycles = find_unguarded_impl_method_cycles(&[method], &identities);
+
+        assert_eq!(cycles, vec![vec![0]]);
+    }
+
+    #[test]
+    fn unguarded_impl_cycles_ignore_function_guarded_self_calls() {
+        let method = ImplMethod {
+            trait_method: Path::new("demo", "f"),
+            impl_path: Path::new("demo", "f#0"),
+            value: untyped_term(TermKind::Function {
+                parameter_name: Path::new("demo", "x").with_span(Span::Generated),
+                parameter_type: None,
+                captures: [(Path::new("demo", "f#0"), ())].into(),
+                body: Box::new(untyped_term(TermKind::Identifier(Path::new("demo", "f#0")))),
+            }),
+            span: Span::new(1, 1),
+        };
+        let identities = vec![ImplMethodIdentity {
+            trait_item_name: "f".to_string(),
+            canonical_trait_method: Path::new("demo", "f"),
+            impl_path: Path::new("demo", "f#0"),
+            span: Span::new(1, 1),
+        }];
+
+        let cycles = find_unguarded_impl_method_cycles(&[method], &identities);
+
+        assert!(cycles.is_empty());
+    }
+
+    #[test]
+    fn unguarded_impl_cycles_include_trait_method_edges() {
+        let methods = [
+            ImplMethod {
+                trait_method: Path::new("demo", "f"),
+                impl_path: Path::new("demo", "f#0"),
+                value: untyped_term(TermKind::Identifier(Path::new("demo", "g"))),
+                span: Span::new(1, 1),
+            },
+            ImplMethod {
+                trait_method: Path::new("demo", "g"),
+                impl_path: Path::new("demo", "g#1"),
+                value: untyped_term(TermKind::Identifier(Path::new("demo", "f#0"))),
+                span: Span::new(2, 1),
+            },
+        ];
+        let identities = vec![
+            ImplMethodIdentity {
+                trait_item_name: "f".to_string(),
+                canonical_trait_method: Path::new("demo", "f"),
+                impl_path: Path::new("demo", "f#0"),
+                span: Span::new(1, 1),
+            },
+            ImplMethodIdentity {
+                trait_item_name: "g".to_string(),
+                canonical_trait_method: Path::new("demo", "g"),
+                impl_path: Path::new("demo", "g#1"),
+                span: Span::new(2, 1),
+            },
+        ];
+
+        let cycles = find_unguarded_impl_method_cycles(&methods, &identities);
+
+        assert_eq!(cycles, vec![vec![0, 1]]);
     }
 }

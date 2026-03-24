@@ -7,6 +7,7 @@ use crate::ir::Path;
 use super::{
     Kind,
     Type,
+    predicate_is_ground,
 };
 
 /// A trait constraint applied to type arguments.
@@ -54,16 +55,17 @@ impl TypeScheme {
 
     pub fn pretty(&self) -> String {
         let type_ = self.type_.pretty();
-        if self.predicates.is_empty() {
-            return type_;
-        }
-
         let constraints = self
             .predicates
             .iter()
+            .filter(|predicate| !predicate_is_ground(predicate))
             .map(format_trait_constraint)
-            .collect::<Vec<_>>()
-            .join(", ");
+            .collect::<Vec<_>>();
+        if constraints.is_empty() {
+            return type_;
+        }
+
+        let constraints = constraints.join(", ");
         format!("{type_} where {constraints}")
     }
 }
@@ -89,6 +91,7 @@ pub struct TraitDef {
     pub name: Path,
     pub parameters: usize,
     pub parameter_kinds: Vec<Kind>,
+    pub associated_types: IndexMap<Path, Kind>,
     pub methods: IndexMap<Path, TypeScheme>,
 }
 
@@ -101,8 +104,18 @@ impl TraitDef {
             name,
             parameters,
             parameter_kinds: vec![Kind::Type; parameters],
+            associated_types: Default::default(),
             methods: Default::default(),
         }
+    }
+
+    pub fn associated_type(
+        mut self,
+        path: Path,
+        kind: Kind,
+    ) -> Self {
+        self.associated_types.insert(path, kind);
+        self
     }
 
     pub fn method(
@@ -147,6 +160,7 @@ fn format_trait_constraint_argument(type_: &Type) -> String {
     match type_ {
         Type::Unit
         | Type::Integer
+        | Type::Natural
         | Type::Real
         | Type::Boolean
         | Type::String
@@ -165,6 +179,7 @@ pub struct TraitImpl {
     pub parameters: usize,
     pub head: TraitRef,
     pub predicates: Vec<TraitConstraint>,
+    pub associated_types: IndexMap<Path, Type>,
     pub methods: IndexMap<Path, Path>,
 }
 
@@ -192,12 +207,25 @@ pub enum TraitError {
     InvalidInstance {
         trait_name: Path,
     },
+    InvalidInstanceItems {
+        trait_name: Path,
+        unknown_items: Vec<Path>,
+        missing_items: Vec<Path>,
+        unknown_associated_types: Vec<Path>,
+        missing_associated_types: Vec<Path>,
+    },
     InvalidAliasTarget {
         alias: Path,
         target: Path,
     },
     KindMismatch {
         trait_name: Path,
+        expected: Kind,
+        found: Kind,
+    },
+    AssociatedTypeKindMismatch {
+        trait_name: Path,
+        associated_type: Path,
         expected: Kind,
         found: Kind,
     },
@@ -252,6 +280,7 @@ mod tests {
             name: Path::new("demo", "Ord"),
             parameters: 1,
             parameter_kinds: vec![Kind::Type],
+            associated_types: Default::default(),
             methods: [
                 (Path::new("demo", "z"), Type::Integer.scheme()),
                 (Path::new("demo", "a"), Type::Integer.scheme()),
@@ -281,5 +310,16 @@ mod tests {
 
         assert_eq!(scheme.pretty(), "for a in a -> a where demo::Eq a");
         assert_eq!(scheme.to_string(), "for a in a -> a where demo::Eq a");
+    }
+
+    #[test]
+    fn type_scheme_pretty_hides_ground_predicates() {
+        let scheme = TypeScheme::with_predicates(
+            Type::Integer,
+            vec![TraitRef::new(Path::new("demo", "Eq"), vec![Type::Integer])],
+        );
+
+        assert_eq!(scheme.pretty(), "Integer");
+        assert_eq!(scheme.to_string(), "Integer");
     }
 }

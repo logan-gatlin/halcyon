@@ -48,7 +48,7 @@ pub fn encode_with_options(
                 verify_module(&resolved)?;
                 Ok(resolved)
             })
-            .unwrap_or_else(|error| panic!("{error}"))
+            .expect("asm module should resolve and verify before encoding")
     };
     encode_resolved_module(resolved, debug_info)
 }
@@ -92,7 +92,11 @@ fn encode_resolved_module(
     for (idx, (path, fi)) in asm_module.function_imports.iter().enumerate() {
         let type_idx = type_section.new_function(&fi.params, &fi.results);
         import_section.import(&fi.module, &fi.name, EntityType::Function(type_idx));
-        debug_assert_eq!(func_namespace.get(path), Some(&(idx as u32)));
+        debug_assert_eq!(
+            func_namespace.get(path),
+            Some(&(idx as u32)),
+            "function namespace index should match import ordering for `{path}`"
+        );
     }
 
     let mut global_id = 0;

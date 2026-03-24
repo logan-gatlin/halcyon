@@ -1,5 +1,5 @@
 module opt =
-  use core
+  use bundle
   use bundle::ops
   type Option: a = | Some a | None
 
@@ -152,6 +152,6 @@ module opt =
 
   impl bundle::hkt::Monad Option =
     let new = fn value => Some value
-    let flatmap = fn f value => opt::and_then f value
+    let flat_map = fn f value => opt::and_then f value
   end
 end

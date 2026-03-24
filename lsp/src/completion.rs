@@ -13,6 +13,15 @@ pub struct CompletionContext {
     pub prefix: String,
 }
 
+pub fn completion_trigger_characters() -> Vec<String> {
+    ('a'..='z')
+        .chain('A'..='Z')
+        .chain('0'..='9')
+        .chain(['_', '-', ':'])
+        .map(|ch| ch.to_string())
+        .collect()
+}
+
 pub fn completion_context_at(
     source: &str,
     position: Position,
@@ -166,6 +175,8 @@ fn push_symbol_completion(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
+
     use halcyon_lib::ir::Path;
     use halcyon_lib::types::{
         SymbolTable,
@@ -219,5 +230,21 @@ mod tests {
             detail.contains("where demo::Eq a"),
             "completion detail should include where-clause constraints; got `{detail}`"
         );
+    }
+
+    #[test]
+    fn completion_trigger_characters_include_aggressive_identifier_set() {
+        let triggers = completion_trigger_characters();
+
+        assert!(triggers.contains(&"a".to_string()));
+        assert!(triggers.contains(&"Z".to_string()));
+        assert!(triggers.contains(&"0".to_string()));
+        assert!(triggers.contains(&"_".to_string()));
+        assert!(triggers.contains(&"-".to_string()));
+        assert!(triggers.contains(&":".to_string()));
+        assert_eq!(triggers.len(), 65);
+
+        let unique = triggers.iter().collect::<HashSet<_>>();
+        assert_eq!(unique.len(), triggers.len());
     }
 }

@@ -8,13 +8,12 @@ module prelude =
   -- Types --
   
   type ~Integer = bundle::Integer
+  type ~Natural = bundle::Natural
   type ~Real = bundle::Real
   type ~Boolean = bundle::Boolean
   type ~Unit = bundle::Unit
   type ~Glyph = bundle::Glyph
   type ~String = bundle::String
-  type ~Natural = bundle::big-num::Natural
-  type ~BigInteger = bundle::big-num::BigInteger
   type ~Array: a = bundle::Array a
   type ~Option: a = bundle::opt::Option a
   type ~Result: err ok = bundle::result::Result err ok
@@ -48,7 +47,7 @@ module prelude =
   let [~] = bundle::ops::[~]
   let [*] = bundle::ops::[*]
   let [/] = bundle::ops::[/]
-  let [%] = bundle::ops::[%]
+  let [mod] = bundle::ops::[mod]
   let [|>] = bundle::ops::[|>]
   let [>>] = bundle::ops::[>>]
   let [<<] = bundle::ops::[<<]
@@ -62,6 +61,8 @@ module prelude =
   let [>] = bundle::ops::[>]
   let [<=] = bundle::ops::[<=]
   let [>=] = bundle::ops::[>=]
+  let [+>] = bundle::hkt::[+>]
+  let [*>] = bundle::hkt::[*>]
 
   -- Terms --
 

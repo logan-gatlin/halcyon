@@ -156,10 +156,11 @@ pub fn compile_core_module_with_debug_info(
     }
 
     let root_file = Path::new(CORE_ROOT_FILE_NAME);
-    let root_source = match {
+    let root_source = {
         let _profile = crate::profiling::scope("core.read_root_source");
         read_core_source_file(root_file)
-    } {
+    };
+    let root_source = match root_source {
         Ok(source) => source,
         Err(error) => {
             let mut file_logger = logger.new_file(display_source_path(root_file), "");

@@ -40,6 +40,8 @@ pub enum Type {
     Unit,
     /// Signed 64 bit integer
     Integer,
+    /// Non-negative 64 bit integer
+    Natural,
     /// IEEE 64 bit floating point
     Real,
     /// true or false
@@ -103,6 +105,7 @@ impl PartialEq for Type {
         match (left, right) {
             (Unit, Unit)
             | (Integer, Integer)
+            | (Natural, Natural)
             | (Real, Real)
             | (Boolean, Boolean)
             | (String, String)
@@ -205,6 +208,7 @@ pub(crate) fn for_each_child_type(
         Type::Named { .. }
         | Type::Unit
         | Type::Integer
+        | Type::Natural
         | Type::Real
         | Type::Boolean
         | Type::String
@@ -313,6 +317,7 @@ pub(crate) trait TypeTransform {
         match type_ {
             Type::Unit
             | Type::Integer
+            | Type::Natural
             | Type::Real
             | Type::Boolean
             | Type::String
@@ -604,11 +609,12 @@ impl Type {
 
         let (binding_power, pretty) = match self {
             Type::Unit => (TYPE_ATOM_BP, "()".to_string()),
-            Type::Integer => (TYPE_ATOM_BP, "integer".to_string()),
-            Type::Real => (TYPE_ATOM_BP, "real".to_string()),
-            Type::Boolean => (TYPE_ATOM_BP, "boolean".to_string()),
-            Type::String => (TYPE_ATOM_BP, "string".to_string()),
-            Type::Glyph => (TYPE_ATOM_BP, "glyph".to_string()),
+            Type::Integer => (TYPE_ATOM_BP, "Integer".to_string()),
+            Type::Natural => (TYPE_ATOM_BP, "Natural".to_string()),
+            Type::Real => (TYPE_ATOM_BP, "Real".to_string()),
+            Type::Boolean => (TYPE_ATOM_BP, "Boolean".to_string()),
+            Type::String => (TYPE_ATOM_BP, "String".to_string()),
+            Type::Glyph => (TYPE_ATOM_BP, "Glyph".to_string()),
             Type::TypeVar(index) => (TYPE_ATOM_BP, lookup_name(param_names, *index)),
             Type::MetaVar(index) => (TYPE_ATOM_BP, format!("v{index}")),
             Type::Named { name, .. } => (TYPE_ATOM_BP, format!("{name}")),
@@ -698,7 +704,10 @@ impl Type {
             body = inner;
         }
 
-        debug_assert!(!names.is_empty());
+        debug_assert!(
+            !names.is_empty(),
+            "consecutive forall pretty-printer requires at least one binder"
+        );
         format!(
             "for {} in {}",
             names.join(" "),
@@ -765,6 +774,7 @@ impl Type {
             self,
             Type::Unit
                 | Type::Integer
+                | Type::Natural
                 | Type::Real
                 | Type::Boolean
                 | Type::String

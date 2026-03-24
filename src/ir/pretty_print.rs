@@ -127,16 +127,18 @@ impl Printer {
             Statement::Trait {
                 path,
                 parameters,
+                associated_types,
                 methods,
                 ..
-            } => self.trait_statement(path, parameters, methods),
+            } => self.trait_statement(path, parameters, associated_types, methods),
             Statement::TraitAlias { path, target, .. } => self.trait_alias_statement(path, target),
             Statement::Impl {
                 trait_path,
                 arguments,
+                associated_types,
                 methods,
                 ..
-            } => self.impl_statement(trait_path, arguments, methods),
+            } => self.impl_statement(trait_path, arguments, associated_types, methods),
             Statement::Wasm(declarations) => self.wasm_statement(declarations),
         }
     }
@@ -145,6 +147,7 @@ impl Printer {
         &mut self,
         path: &Path,
         parameters: &[Path],
+        associated_types: &[TraitTypeDecl],
         methods: &[TraitMethodDecl],
     ) {
         let params = if parameters.is_empty() {
@@ -159,6 +162,12 @@ impl Printer {
         };
         self.line(format!("trait {}{params} =", self.format_path(path)));
         self.indented(|printer| {
+            for associated_type in associated_types {
+                printer.line(format!(
+                    "type {}",
+                    printer.format_path(&associated_type.path)
+                ));
+            }
             for method in methods {
                 printer.line(format!(
                     "let {} : {}",
@@ -198,6 +207,7 @@ impl Printer {
         &mut self,
         trait_path: &Path,
         arguments: &[TypeExpr],
+        associated_types: &[ImplTypeDef],
         methods: &[ImplMethod<Type>],
     ) {
         let args = arguments
@@ -207,6 +217,13 @@ impl Printer {
             .join(", ");
         self.line(format!("impl {} {args} =", self.format_path(trait_path)));
         self.indented(|printer| {
+            for associated_type in associated_types {
+                printer.line(format!(
+                    "type {} = {}",
+                    associated_type.name.inner,
+                    printer.format_type_expr(&associated_type.type_expr)
+                ));
+            }
             for method in methods {
                 let method_name = printer.format_path(&method.trait_method);
                 if let Some(value) = printer.format_term_inline_expr(&method.value) {
@@ -616,6 +633,7 @@ impl Printer {
         match value {
             ImmediateValue::Unit => "()".to_string(),
             ImmediateValue::Integer(value) => value.to_string(),
+            ImmediateValue::Natural(value) => format!("{value}n"),
             ImmediateValue::Real(value) => value.to_string(),
             ImmediateValue::Boolean(value) => value.to_string(),
             ImmediateValue::String(value) => {

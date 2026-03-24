@@ -131,12 +131,14 @@ pub fn elaborate_module(
                     comments,
                     path,
                     parameters,
+                    associated_types,
                     methods,
                 } => {
                     Statement::Trait {
                         comments,
                         path,
                         parameters,
+                        associated_types,
                         methods,
                     }
                 }
@@ -155,12 +157,14 @@ pub fn elaborate_module(
                     comments,
                     trait_path,
                     arguments,
+                    associated_types,
                     methods,
                 } => {
                     Statement::Impl {
                         comments,
                         trait_path,
                         arguments,
+                        associated_types,
                         methods,
                     }
                 }
@@ -483,6 +487,7 @@ fn canonical_type_key(
         Type::MetaVar(index) => canonical_var_key(CanonicalVar::Meta(*index), vars, next),
         Type::Unit => "unit".to_string(),
         Type::Integer => "integer".to_string(),
+        Type::Natural => "natural".to_string(),
         Type::Real => "real".to_string(),
         Type::Boolean => "boolean".to_string(),
         Type::String => "string".to_string(),
@@ -1827,6 +1832,7 @@ fn match_scheme_to_type_with_mode(
         }
         Type::Unit => matches!(concrete, Type::Unit),
         Type::Integer => matches!(concrete, Type::Integer),
+        Type::Natural => matches!(concrete, Type::Natural),
         Type::Real => matches!(concrete, Type::Real),
         Type::Boolean => matches!(concrete, Type::Boolean),
         Type::String => matches!(concrete, Type::String),
@@ -2184,6 +2190,9 @@ mod tests {
         ) -> bool {
             match &pattern.kind {
                 PatternKind::Immediate(crate::ir::ImmediateValue::Integer(value)) => {
+                    *value == expected
+                }
+                PatternKind::Immediate(crate::ir::ImmediateValue::Natural(value)) => {
                     *value == expected
                 }
                 PatternKind::Constructor(_, inner) => pattern_contains_integer(inner, expected),

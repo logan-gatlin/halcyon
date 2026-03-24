@@ -3,7 +3,7 @@ module integer =
 
   let abs = fn value => if value < 0 then 0 - value else value
   let signum = fn value => if value < 0 then -1 else if value > 0 then 1 else 0
-  let is_even = fn value => (value % 2) == 0
+  let is_even = fn value => (value mod 2) == 0
   let is_odd = fn value => not (is_even value)
   let digit_to_string = fn digit =>
     match digit with
@@ -21,7 +21,7 @@ module integer =
 
   let show_magnitude = fn value =>
     let quotient = value / 10 in
-    let remainder = value % 10 in
+    let remainder = value mod 10 in
     let digit = if remainder < 0 then 0 - remainder else remainder in
     let prefix = if quotient == 0 then "" else show_magnitude quotient in
     prefix + (digit_to_string digit)

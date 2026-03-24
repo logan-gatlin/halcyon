@@ -2,6 +2,7 @@ bundle core
 
 wasm => (
   (type $integer (struct i64))
+  (type $natural (struct i64))
   (type $real (struct f64))
   (type $word (struct i32))
   (type $string (array i8))
@@ -26,8 +27,10 @@ import
   "array.hc",
   "bool.hc",
   "string.hc",
-  "big-num.hc",
   "integer.hc",
+  "natural.hc",
+  "big-num.hc",
   "real.hc",
   "function.hc",
+  "time.hc",
   "prelude.hc"

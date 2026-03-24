@@ -4,8 +4,12 @@
 #![allow(clippy::unwrap_used)]
 
 use super::*;
-use crate::hc_core::compile_core_module;
+use crate::hc_core::{
+    CoreType,
+    compile_core_module,
+};
 use crate::ir::Path;
+use crate::types::symbol_table::Symbol;
 use crate::types::{
     SymbolTable,
     Type,
@@ -44,6 +48,14 @@ fn compile_source_linked_with_core_returns_error_messages() {
     let errors = compile_source_linked_with_core(source)
         .expect_err("expected compile errors for unknown symbol");
     assert!(!errors.is_empty(), "expected at least one error message");
+}
+
+#[test]
+fn zero_argument_function_rejects_non_unit_argument() {
+    let source = "module demo =\n\tlet thunk = fn => ()\n\tlet value = thunk 1\nend\n";
+    let errors = compile_source_linked_with_core(source)
+        .expect_err("calling a zero-argument function with a non-unit argument should fail");
+    assert!(!errors.is_empty(), "expected at least one type error");
 }
 
 fn file_logger_has_error_message(
@@ -295,6 +307,18 @@ fn associated_constant_trait_item_compiles() {
 }
 
 #[test]
+fn associated_type_trait_item_compiles() {
+    let source = "module demo =\n\ttrait Iterator : iter =\n\t\ttype Item\n\t\tlet next : iter -> Iterator::Item iter\n\tend\n\ttype IntIter = { value: core::Integer }\n\timpl Iterator IntIter =\n\t\ttype Item = core::Integer\n\t\tlet next = fn iter => iter.value\n\tend\n\tlet value : Iterator::Item IntIter = next { value = 1 }\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let _ = compile_source(source, &mut file_logger, &mut symbols);
+    logger.consume_file(file_logger);
+    assert_logger_is_ok(&logger, "Compilation failed");
+}
+
+#[test]
 fn trait_alias_impl_and_dispatch_compile() {
     let source = "module demo =\n\ttrait Eq : a =\n\t\tlet eq : a -> a -> a\n\tend\n\ttrait ~Equal = Eq\n\timpl Equal Integer =\n\t\tlet eq = fn x _ => x\n\tend\n\tlet value = eq 1 1\nend\n";
     let mut symbols = SymbolTable::new();
@@ -530,6 +554,74 @@ fn higher_kinded_trait_impl_rejects_wrong_kind_argument() {
     );
     logger.consume_file(file_logger);
     assert!(!logger.is_ok(), "Compilation should fail");
+}
+
+#[test]
+fn impl_direct_self_reference_reports_circular_definition() {
+    let source = "module demo =\n\ttrait F : t =\n\t\tlet f : t -> t\n\tend\n\timpl F core::Integer =\n\t\tlet f = f\n\tend\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let _ = compile_source(source, &mut file_logger, &mut symbols);
+
+    assert!(file_logger_has_error_message(
+        &file_logger,
+        "Invalid circular impl definition"
+    ));
+    assert!(file_logger.iter().any(|diagnostic| {
+        diagnostic.message == "Invalid circular impl definition"
+            && diagnostic
+                .notes
+                .iter()
+                .any(|note| note.contains("function-guarded"))
+    }));
+    assert!(!file_logger_has_error_message(
+        &file_logger,
+        "Unknown identifier"
+    ));
+
+    logger.consume_file(file_logger);
+    assert!(!logger.is_ok(), "Compilation should fail");
+}
+
+#[test]
+fn impl_mutual_non_function_cycle_reports_circular_definition() {
+    let source = "module demo =\n\ttrait Pair : t =\n\t\tlet f : t -> t\n\t\tlet g : t -> t\n\tend\n\timpl Pair core::Integer =\n\t\tlet f = g\n\t\tlet g = f\n\tend\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let _ = compile_source(source, &mut file_logger, &mut symbols);
+
+    assert_eq!(
+        file_logger_count_message(&file_logger, "Invalid circular impl definition"),
+        1
+    );
+    assert!(!file_logger_has_error_message(
+        &file_logger,
+        "Unknown identifier"
+    ));
+
+    logger.consume_file(file_logger);
+    assert!(!logger.is_ok(), "Compilation should fail");
+}
+
+#[test]
+fn impl_mutually_recursive_functions_are_allowed() {
+    let source = "module demo =\n\ttrait Pair : t =\n\t\tlet f : t -> t\n\t\tlet g : t -> t\n\tend\n\timpl Pair core::Integer =\n\t\tlet f = fn x => g x\n\t\tlet g = fn x => f x\n\tend\n\tlet value : core::Integer = f 1\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let artifacts = compile_source(source, &mut file_logger, &mut symbols);
+    logger.consume_file(file_logger);
+
+    for artifact in artifacts.into_vec() {
+        let _ = validate_artifact(artifact, &mut logger);
+    }
+
+    assert_logger_is_ok(&logger, "Compilation failed");
 }
 
 #[test]
@@ -930,6 +1022,43 @@ fn nested_function_captures_propagate_to_intermediate_lambdas() {
             .any(|(capture, _)| capture == &second.inner),
         "inner function should capture second parameter"
     );
+}
+
+#[test]
+fn zero_argument_function_lowers_with_implicit_unit_parameter_type() {
+    let source = "module demo =\n\tlet thunk = fn => ()\nend\n";
+    let mut logger = Logger::new();
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let module = parse::parse(source, &mut file_logger)
+        .and_then(|source_file| source_file.modules().into_iter().next())
+        .and_then(|module| ir::module(module, &mut file_logger))
+        .expect("expected module");
+    logger.consume_file(file_logger);
+    assert_logger_is_ok(&logger, "IR construction should succeed");
+
+    let Some(ir::Statement::Term(term)) = module.statements.first() else {
+        panic!("expected first statement to be a term");
+    };
+    let ir::TermKind::Let {
+        value,
+        scope: ir::ScopeKind::Global,
+        ..
+    } = &term.kind
+    else {
+        panic!("expected global let statement");
+    };
+    let ir::TermKind::Function {
+        parameter_type: Some(parameter_type),
+        ..
+    } = &value.kind
+    else {
+        panic!("expected lowered function to have an implicit parameter type");
+    };
+    let ir::TypeExprKind::Instantiation(path, args) = &parameter_type.kind else {
+        panic!("expected implicit parameter type to be a concrete unit instantiation");
+    };
+    assert_eq!(path, &CoreType::Unit.path());
+    assert!(args.is_empty(), "unit type should not have type arguments");
 }
 
 #[test]

@@ -125,6 +125,51 @@ pub(super) fn log_trait_error(
                 .primary(format!("Instance for `{trait_name}` is invalid."), span)
                 .done();
         }
+        TraitError::InvalidInstanceItems {
+            trait_name,
+            unknown_items,
+            missing_items,
+            unknown_associated_types,
+            missing_associated_types,
+        } => {
+            let mut builder = logger.error("Invalid trait instance");
+            let mut details = Vec::new();
+            if !unknown_items.is_empty() {
+                details.push(format!(
+                    "unknown trait item(s) {}",
+                    format_trait_item_list(&unknown_items)
+                ));
+            }
+            if !missing_items.is_empty() {
+                details.push(format!(
+                    "missing required trait item(s) {}",
+                    format_trait_item_list(&missing_items)
+                ));
+            }
+            if !unknown_associated_types.is_empty() {
+                details.push(format!(
+                    "unknown associated type(s) {}",
+                    format_trait_item_list(&unknown_associated_types)
+                ));
+            }
+            if !missing_associated_types.is_empty() {
+                details.push(format!(
+                    "missing required associated type(s) {}",
+                    format_trait_item_list(&missing_associated_types)
+                ));
+            }
+            builder = if details.is_empty() {
+                builder.primary(format!("Instance for `{trait_name}` is invalid."), span)
+            } else {
+                builder.primary(
+                    format!("Instance for `{trait_name}` has {}.", details.join("; ")),
+                    span,
+                )
+            };
+            builder
+                .note("Trait method and associated type names must match the trait definition exactly.")
+                .done();
+        }
         TraitError::InvalidAliasTarget { alias, target } => {
             logger
                 .error("Invalid trait alias")
@@ -149,6 +194,22 @@ pub(super) fn log_trait_error(
                 )
                 .done();
         }
+        TraitError::AssociatedTypeKindMismatch {
+            trait_name,
+            associated_type,
+            expected,
+            found,
+        } => {
+            logger
+                .error("Invalid associated type kind")
+                .primary(
+                    format!(
+                        "`{associated_type}` in impl `{trait_name}` expects kind `{expected}` but this assignment has kind `{found}`."
+                    ),
+                    span,
+                )
+                .done();
+        }
         TraitError::NoInstance { predicate } => {
             logger
                 .error("Missing trait instance")
@@ -159,6 +220,23 @@ pub(super) fn log_trait_error(
                 .done();
         }
     }
+}
+
+fn format_trait_item_list(items: &[Path]) -> String {
+    items
+        .iter()
+        .map(format_trait_item)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn format_trait_item(path: &Path) -> String {
+    let name = path
+        .minor
+        .rsplit_once(Path::DELIMETER)
+        .map(|(_, tail)| tail)
+        .unwrap_or(path.minor.as_str());
+    format!("`{name}`")
 }
 
 /// Emit diagnostics for inference/type-checking errors.
@@ -528,29 +606,6 @@ impl TypeTransform for MetaVarNormalizer<'_> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn type_error_formatter_renumbers_meta_vars_stably() {
-        let mut formatter = TypeErrorFormatter::default();
-        let left = Type::func(Type::MetaVar(999), Type::MetaVar(42));
-        let right = Type::Tuple(vec![Type::MetaVar(42), Type::MetaVar(999)]);
-
-        assert_eq!(formatter.format_type(&left), "v0 -> v1");
-        assert_eq!(formatter.format_type(&right), "(v1, v0)");
-    }
-
-    #[test]
-    fn type_error_formatter_formats_meta_var_with_normalized_name() {
-        let mut formatter = TypeErrorFormatter::default();
-
-        assert_eq!(formatter.format_meta_var(777), "?t0");
-        assert_eq!(formatter.format_type(&Type::MetaVar(777)), "v0");
-    }
-}
-
 /// Emit diagnostics for shared type-expression lowering errors.
 pub(super) fn log_type_expr_lower_error(
     logger: &mut FileLogger,
@@ -598,5 +653,56 @@ pub(super) fn log_type_expr_lower_error(
                 )
                 .done();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Logger;
+
+    #[test]
+    fn type_error_formatter_renumbers_meta_vars_stably() {
+        let mut formatter = TypeErrorFormatter::default();
+        let left = Type::func(Type::MetaVar(999), Type::MetaVar(42));
+        let right = Type::Tuple(vec![Type::MetaVar(42), Type::MetaVar(999)]);
+
+        assert_eq!(formatter.format_type(&left), "v0 -> v1");
+        assert_eq!(formatter.format_type(&right), "(v1, v0)");
+    }
+
+    #[test]
+    fn type_error_formatter_formats_meta_var_with_normalized_name() {
+        let mut formatter = TypeErrorFormatter::default();
+
+        assert_eq!(formatter.format_meta_var(777), "?t0");
+        assert_eq!(formatter.format_type(&Type::MetaVar(777)), "v0");
+    }
+
+    #[test]
+    fn trait_item_mismatch_error_mentions_unknown_and_missing_items() {
+        let mut logger = Logger::new();
+        let mut file_logger = logger.new_file("demo.hc", "");
+
+        log_trait_error(
+            &mut file_logger,
+            Span::new(0, 0),
+            TraitError::InvalidInstanceItems {
+                trait_name: Path::new("demo", "Monad"),
+                unknown_items: vec![Path::new("demo", "flatmap")],
+                missing_items: vec![Path::new("demo", "flat_map")],
+                unknown_associated_types: Vec::new(),
+                missing_associated_types: Vec::new(),
+            },
+        );
+
+        let diagnostic = file_logger
+            .iter()
+            .next()
+            .expect("expected one trait diagnostic");
+        assert_eq!(diagnostic.message, "Invalid trait instance");
+        let label = diagnostic.labels.first().expect("expected primary label");
+        assert!(label.message.contains("`flatmap`"));
+        assert!(label.message.contains("`flat_map`"));
     }
 }

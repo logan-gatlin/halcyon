@@ -13,8 +13,10 @@ module hkt =
     -- Lifts a plain value into the context.
     let new : for a in a -> m a
     -- Runs the next step using the value inside the context.
-    let flatmap : for a b in (a -> m b) -> m a -> m b
+    let flat_map : for a b in (a -> m b) -> m a -> m b
   end
+
+  let [*>] = flat_map
 
   -- Walks a structure while collecting effects.
   trait Traversable: t =
@@ -69,22 +71,25 @@ module hkt =
   end
 
   -- `map` derived from Monad primitives.
-  let map = fn f x => flatmap (fn value => new (f value)) x
+  let map = fn f x => (fn value => new (f value)) *> x
+
+  let [+>] = map
+
 
   -- `flatten` derived from Monad primitives.
-  let flatten = fn x => flatmap (fn value => value) x
+  let flatten = fn x => flat_map (fn value => value) x
 
   -- Applicative-style apply derived from Monad primitives.
-  let ap = fn mf mx => flatmap (fn f => map f mx) mf
+  let ap = fn mf mx => flat_map (fn f => map f mx) mf
 
   -- Lift a two-argument function over two contexts.
-  let lift2 = fn f mx my => flatmap (fn x => map (fn y => f x y) my) mx
+  let lift2 = fn f mx my => flat_map (fn x => map (fn y => f x y) my) mx
 
   -- Replace every wrapped value with one constant value.
   let replace_with = fn replacement mx => map (fn _ => replacement) mx
 
   -- Sequence two contexts, returning the second result.
-  let sequence_next = fn left right => flatmap (fn _ => right) left
+  let sequence_next = fn left right => flat_map (fn _ => right) left
 
   -- Drop wrapped values and keep only Unit.
   let discard_value = fn mx => map (fn _ => ()) mx
@@ -114,5 +119,6 @@ module hkt =
   -- Return true when all elements satisfy the predicate.
   let all =
     fn pred items => fold (fn acc item => if acc then pred item else false) true items
+
 
 end

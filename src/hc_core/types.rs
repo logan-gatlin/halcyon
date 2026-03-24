@@ -12,6 +12,7 @@ use crate::types::{
 pub enum CoreType {
     Unit,
     Integer,
+    Natural,
     Real,
     Boolean,
     String,
@@ -25,6 +26,7 @@ impl Symbol for CoreType {
         Path::core(match self {
             CoreType::Unit => "Unit",
             CoreType::Integer => "Integer",
+            CoreType::Natural => "Natural",
             CoreType::Real => "Real",
             CoreType::Boolean => "Boolean",
             CoreType::String => "String",
@@ -37,6 +39,7 @@ impl Symbol for CoreType {
         SymbolKind::Type(match self {
             CoreType::Unit => Type::Unit.def(0),
             CoreType::Integer => Type::Integer.def(0),
+            CoreType::Natural => Type::Natural.def(0),
             CoreType::Real => Type::Real.def(0),
             CoreType::Boolean => Type::Boolean.def(0),
             CoreType::String => Type::String.def(0),
@@ -52,6 +55,7 @@ impl CoreType {
         match self {
             CoreType::Unit => Type::Unit.def(0),
             CoreType::Integer => Type::Integer.def(0),
+            CoreType::Natural => Type::Natural.def(0),
             CoreType::Real => Type::Real.def(0),
             CoreType::Boolean => Type::Boolean.def(0),
             CoreType::String => Type::String.def(0),

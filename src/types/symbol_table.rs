@@ -413,8 +413,23 @@ impl SymbolTable {
         {
             return Err(TraitError::DuplicateTrait(trait_definition.name));
         }
+        let trait_parameters = trait_definition.parameters;
+        let trait_parameter_kinds = normalize_parameter_kinds(
+            trait_definition.parameter_kinds.clone(),
+            trait_definition.parameters,
+        );
+        let associated_type_paths = trait_definition
+            .associated_types
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
         self.trait_defs
             .insert(trait_definition.name.clone(), trait_definition);
+        for associated_type_path in associated_type_paths {
+            self.types.entry(associated_type_path).or_insert_with(|| {
+                associated_type_definition(trait_parameters, &trait_parameter_kinds)
+            });
+        }
         Ok(())
     }
 
@@ -433,7 +448,32 @@ impl SymbolTable {
                 target,
             }
         })?;
+        let alias_associated_type_definitions = self
+            .trait_defs
+            .get(&canonical_target)
+            .map(|definition| {
+                let parameter_kinds = normalize_parameter_kinds(
+                    definition.parameter_kinds.clone(),
+                    definition.parameters,
+                );
+                definition
+                    .associated_types
+                    .keys()
+                    .filter_map(|associated_type_path| {
+                        associated_type_leaf_name(associated_type_path).map(|leaf_name| {
+                            (
+                                alias.child(leaf_name),
+                                associated_type_definition(definition.parameters, &parameter_kinds),
+                            )
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
         self.trait_aliases.insert(alias, canonical_target);
+        for (path, definition) in alias_associated_type_definitions {
+            self.types.entry(path).or_insert(definition);
+        }
         Ok(())
     }
 
@@ -460,24 +500,52 @@ impl SymbolTable {
             });
         }
         validate_impl_head_kinds(self, trait_definition, &trait_implementation)?;
-        let has_unknown_method = trait_implementation
+        let unknown_items = trait_implementation
             .methods
             .keys()
-            .any(|method| !trait_definition.methods.contains_key(method));
-        if has_unknown_method {
-            return Err(TraitError::InvalidInstance {
-                trait_name: trait_implementation.head.trait_name.clone(),
-            });
-        }
-        let missing_method = trait_definition
+            .filter(|method| !trait_definition.methods.contains_key(*method))
+            .cloned()
+            .collect::<Vec<_>>();
+        let missing_items = trait_definition
             .methods
             .keys()
-            .any(|method| !trait_implementation.methods.contains_key(method));
-        if missing_method {
-            return Err(TraitError::InvalidInstance {
+            .filter(|method| !trait_implementation.methods.contains_key(*method))
+            .cloned()
+            .collect::<Vec<_>>();
+        let unknown_associated_types = trait_implementation
+            .associated_types
+            .keys()
+            .filter(|associated_type| {
+                !trait_definition
+                    .associated_types
+                    .contains_key(*associated_type)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        let missing_associated_types = trait_definition
+            .associated_types
+            .keys()
+            .filter(|associated_type| {
+                !trait_implementation
+                    .associated_types
+                    .contains_key(*associated_type)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        if !unknown_items.is_empty()
+            || !missing_items.is_empty()
+            || !unknown_associated_types.is_empty()
+            || !missing_associated_types.is_empty()
+        {
+            return Err(TraitError::InvalidInstanceItems {
                 trait_name: trait_implementation.head.trait_name.clone(),
+                unknown_items,
+                missing_items,
+                unknown_associated_types,
+                missing_associated_types,
             });
         }
+        validate_impl_associated_type_kinds(self, trait_definition, &trait_implementation)?;
         let impls = self
             .trait_impls
             .entry(canonical_trait_name.clone())
@@ -630,6 +698,51 @@ impl SymbolTable {
             impl_method_path,
             predicates,
         }))
+    }
+
+    pub fn resolve_associated_type_specialization(
+        &self,
+        associated_type_path: &Path,
+        arguments: &[Type],
+    ) -> Result<Option<Type>, TraitError> {
+        let Some((trait_name, associated_type_name)) =
+            split_associated_type_path(associated_type_path)
+        else {
+            return Ok(None);
+        };
+
+        let canonical_trait_name = self
+            .canonical_trait_path(&trait_name)
+            .ok_or_else(|| TraitError::UnknownTrait(trait_name.clone()))?;
+        let canonical_associated_type_path = canonical_trait_name.child(&associated_type_name);
+        let Some(trait_definition) = self.trait_defs.get(&canonical_trait_name) else {
+            return Err(TraitError::UnknownTrait(canonical_trait_name));
+        };
+        if !trait_definition
+            .associated_types
+            .contains_key(&canonical_associated_type_path)
+        {
+            return Ok(None);
+        }
+
+        let predicate = TraitRef::new(canonical_trait_name.clone(), arguments.to_vec());
+        let Some(selected_impl) = self.select_impl(&predicate)? else {
+            return Ok(None);
+        };
+
+        let mut table = UnificationTable::default();
+        let instantiated = instantiate_trait_impl(&mut table, &selected_impl)?;
+        if !matches_trait_ref(&mut table, &predicate, &instantiated.head) {
+            return Ok(None);
+        }
+        let Some(associated_type) = instantiated
+            .associated_types
+            .get(&canonical_associated_type_path)
+            .cloned()
+        else {
+            return Ok(None);
+        };
+        Ok(Some(table.normalize(&associated_type)))
     }
 
     fn predicate_matches_assumptions(
@@ -798,6 +911,14 @@ impl SymbolTable {
     }
 }
 
+fn split_associated_type_path(path: &Path) -> Option<(Path, String)> {
+    let (trait_minor, associated_type_name) = path.minor.rsplit_once(Path::DELIMETER)?;
+    Some((
+        Path::new(path.major.clone(), trait_minor.to_string()),
+        associated_type_name.to_string(),
+    ))
+}
+
 /// Definition of a named type with its parameters and body.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum TypeDefinitionKind {
@@ -821,6 +942,7 @@ pub struct TypeDefinition {
 enum TypeHeadKey {
     Unit,
     Integer,
+    Natural,
     Real,
     Boolean,
     String,
@@ -838,6 +960,7 @@ impl TypeHeadKey {
         match self {
             Self::Unit
             | Self::Integer
+            | Self::Natural
             | Self::Real
             | Self::Boolean
             | Self::String
@@ -855,6 +978,7 @@ fn type_head_key(type_: &Type) -> Option<TypeHeadKey> {
     match type_ {
         Type::Unit => Some(TypeHeadKey::Unit),
         Type::Integer => Some(TypeHeadKey::Integer),
+        Type::Natural => Some(TypeHeadKey::Natural),
         Type::Real => Some(TypeHeadKey::Real),
         Type::Boolean => Some(TypeHeadKey::Boolean),
         Type::String => Some(TypeHeadKey::String),
@@ -870,6 +994,24 @@ fn type_head_key(type_: &Type) -> Option<TypeHeadKey> {
             arguments: _,
         } => type_head_key(constructor),
         Type::TypeVar(_) | Type::MetaVar(_) | Type::ForAll { .. } => None,
+    }
+}
+
+fn associated_type_leaf_name(path: &Path) -> Option<&str> {
+    path.minor
+        .rsplit_once(Path::DELIMETER)
+        .map(|(_, tail)| tail)
+}
+
+fn associated_type_definition(
+    trait_parameters: usize,
+    trait_parameter_kinds: &[Kind],
+) -> TypeDefinition {
+    TypeDefinition {
+        parameters: trait_parameters,
+        parameter_kinds: trait_parameter_kinds.to_vec(),
+        body: Type::Unit.for_all(trait_parameters),
+        kind: TypeDefinitionKind::Named,
     }
 }
 
@@ -908,9 +1050,13 @@ fn impl_head_may_match_predicate(
 
 fn type_is_ground_for_memo(type_: &Type) -> bool {
     match type_ {
-        Type::Unit | Type::Integer | Type::Real | Type::Boolean | Type::String | Type::Glyph => {
-            true
-        }
+        Type::Unit
+        | Type::Integer
+        | Type::Natural
+        | Type::Real
+        | Type::Boolean
+        | Type::String
+        | Type::Glyph => true,
         Type::Named { .. } => true,
         Type::Array(item) => type_is_ground_for_memo(item),
         Type::Tuple(items) => items.iter().all(type_is_ground_for_memo),
@@ -951,6 +1097,7 @@ fn predicate_solver_memo_key(
 struct InstantiatedTraitImpl {
     head: TraitRef,
     predicates: Vec<TraitConstraint>,
+    associated_types: IndexMap<Path, Type>,
 }
 
 /// Instantiate a trait impl head/context with fresh metavariables.
@@ -964,7 +1111,15 @@ fn instantiate_trait_impl(
     let head = substitute_type_vars_in_trait_ref(&trait_implementation.head, &replacements)?;
     let predicates =
         substitute_type_vars_in_predicates(&trait_implementation.predicates, &replacements)?;
-    Ok(InstantiatedTraitImpl { head, predicates })
+    let associated_types = substitute_type_vars_in_associated_types(
+        &trait_implementation.associated_types,
+        &replacements,
+    )?;
+    Ok(InstantiatedTraitImpl {
+        head,
+        predicates,
+        associated_types,
+    })
 }
 
 /// Substitute impl parameters in a trait reference.
@@ -996,6 +1151,23 @@ fn substitute_type_vars_in_predicates(
     predicates
         .iter()
         .map(|predicate| substitute_type_vars_in_trait_ref(predicate, replacements))
+        .collect()
+}
+
+fn substitute_type_vars_in_associated_types(
+    associated_types: &IndexMap<Path, Type>,
+    replacements: &[Type],
+) -> Result<IndexMap<Path, Type>, TraitError> {
+    associated_types
+        .iter()
+        .map(|(path, type_)| {
+            let substituted = substitute_type_vars(type_, replacements).ok_or_else(|| {
+                TraitError::InvalidInstance {
+                    trait_name: path.clone(),
+                }
+            })?;
+            Ok((path.clone(), substituted))
+        })
         .collect()
 }
 
@@ -1139,6 +1311,66 @@ fn validate_impl_head_kinds(
     Ok(())
 }
 
+fn validate_impl_associated_type_kinds(
+    symbols: &SymbolTable,
+    trait_definition: &TraitDef,
+    trait_implementation: &TraitImpl,
+) -> Result<(), TraitError> {
+    let mut kind_table = KindInferenceTable::default();
+    let mut bound_kinds = std::iter::repeat_with(|| kind_table.new_meta())
+        .take(trait_implementation.parameters)
+        .collect::<Vec<_>>();
+    for (associated_type, expected_kind) in trait_definition.associated_types.iter() {
+        let Some(assigned_type) = trait_implementation.associated_types.get(associated_type) else {
+            continue;
+        };
+        let inferred_kind = infer_type_kind(
+            &mut kind_table,
+            assigned_type,
+            &mut bound_kinds,
+            &|type_path| {
+                symbols.types.get(type_path).map(|definition| {
+                    constructor_kind(definition.parameters, &definition.parameter_kinds)
+                })
+            },
+        )
+        .map_err(|error| {
+            match error {
+                KindError::Mismatch { left, right } => {
+                    TraitError::AssociatedTypeKindMismatch {
+                        trait_name: trait_implementation.head.trait_name.clone(),
+                        associated_type: associated_type.clone(),
+                        expected: right,
+                        found: left,
+                    }
+                }
+                KindError::Occurs { in_kind, .. } => {
+                    TraitError::AssociatedTypeKindMismatch {
+                        trait_name: trait_implementation.head.trait_name.clone(),
+                        associated_type: associated_type.clone(),
+                        expected: expected_kind.clone(),
+                        found: in_kind,
+                    }
+                }
+            }
+        })?;
+        let expected_kind_inferred = KindInferenceTable::from_kind(expected_kind);
+        if let Err(error) = kind_table.unify(&inferred_kind, &expected_kind_inferred) {
+            let (found, expected) = match error {
+                KindError::Mismatch { left, right } => (left, right),
+                KindError::Occurs { in_kind, .. } => (in_kind, expected_kind.clone()),
+            };
+            return Err(TraitError::AssociatedTypeKindMismatch {
+                trait_name: trait_implementation.head.trait_name.clone(),
+                associated_type: associated_type.clone(),
+                expected,
+                found,
+            });
+        }
+    }
+    Ok(())
+}
+
 /// Push `predicate` only if it is not already present.
 fn push_unique(
     predicates: &mut Vec<TraitConstraint>,
@@ -1175,9 +1407,23 @@ mod tests {
             name: Path::new("demo", name),
             parameters: 1,
             parameter_kinds: vec![Kind::Type],
+            associated_types: IndexMap::new(),
             methods: [(Path::new("demo", "eq"), eq_method_scheme())]
                 .into_iter()
                 .collect(),
+        }
+    }
+
+    fn trait_with_item_associated_type(name: &str) -> TraitDef {
+        let trait_name = Path::new("demo", name);
+        TraitDef {
+            name: trait_name.clone(),
+            parameters: 1,
+            parameter_kinds: vec![Kind::Type],
+            associated_types: [(trait_name.child("Item"), Kind::Type)]
+                .into_iter()
+                .collect(),
+            methods: IndexMap::new(),
         }
     }
 
@@ -1320,6 +1566,7 @@ mod tests {
                 parameters: 0,
                 head: TraitRef::new(Path::new("demo", "Missing"), vec![Type::Integer]),
                 predicates: Vec::new(),
+                associated_types: IndexMap::new(),
                 methods: IndexMap::new(),
             }),
             Err(TraitError::UnknownTrait(_))
@@ -1330,6 +1577,7 @@ mod tests {
                 parameters: 0,
                 head: TraitRef::new(Path::new("demo", "Eq"), vec![Type::Integer, Type::Boolean]),
                 predicates: Vec::new(),
+                associated_types: IndexMap::new(),
                 methods: IndexMap::new(),
             }),
             Err(TraitError::ArityMismatch { .. })
@@ -1340,11 +1588,17 @@ mod tests {
                 parameters: 0,
                 head: TraitRef::new(Path::new("demo", "Eq"), vec![Type::Integer]),
                 predicates: Vec::new(),
+                associated_types: IndexMap::new(),
                 methods: [(Path::new("demo", "unknown"), Path::new("demo", "impl_eq"))]
                     .into_iter()
                     .collect(),
             }),
-            Err(TraitError::InvalidInstance { .. })
+            Err(TraitError::InvalidInstanceItems {
+                unknown_items,
+                missing_items,
+                ..
+            }) if unknown_items == vec![Path::new("demo", "unknown")]
+                && missing_items == vec![Path::new("demo", "eq")]
         ));
 
         assert!(matches!(
@@ -1352,9 +1606,14 @@ mod tests {
                 parameters: 0,
                 head: TraitRef::new(Path::new("demo", "Eq"), vec![Type::Integer]),
                 predicates: Vec::new(),
+                associated_types: IndexMap::new(),
                 methods: IndexMap::new(),
             }),
-            Err(TraitError::InvalidInstance { .. })
+            Err(TraitError::InvalidInstanceItems {
+                unknown_items,
+                missing_items,
+                ..
+            }) if unknown_items.is_empty() && missing_items == vec![Path::new("demo", "eq")]
         ));
 
         symbols
@@ -1362,6 +1621,7 @@ mod tests {
                 parameters: 0,
                 head: TraitRef::new(Path::new("demo", "Eq"), vec![Type::Integer]),
                 predicates: Vec::new(),
+                associated_types: IndexMap::new(),
                 methods: [(Path::new("demo", "eq"), Path::new("demo", "eq_integer"))]
                     .into_iter()
                     .collect(),
@@ -1377,6 +1637,7 @@ mod tests {
                 name: Path::new("demo", "Monad"),
                 parameters: 1,
                 parameter_kinds: vec![Kind::arrow(Kind::Type, Kind::Type)],
+                associated_types: IndexMap::new(),
                 methods: IndexMap::new(),
             })
             .expect("trait insertion should succeed");
@@ -1386,6 +1647,7 @@ mod tests {
                 parameters: 0,
                 head: TraitRef::new(Path::new("demo", "Monad"), vec![Type::Integer]),
                 predicates: Vec::new(),
+                associated_types: IndexMap::new(),
                 methods: IndexMap::new(),
             }),
             Err(TraitError::KindMismatch {
@@ -1395,6 +1657,104 @@ mod tests {
             }) if trait_name == Path::new("demo", "Monad")
                 && expected == Kind::arrow(Kind::Type, Kind::Type)
                 && found == Kind::Type
+        ));
+    }
+
+    #[test]
+    fn insert_impl_validates_associated_type_items() {
+        let mut symbols = SymbolTable::new();
+        let trait_name = Path::new("demo", "Iterator");
+        let item_path = trait_name.child("Item");
+        symbols
+            .insert_trait(trait_with_item_associated_type("Iterator"))
+            .expect("trait insertion should succeed");
+
+        assert!(matches!(
+            symbols.insert_impl(TraitImpl {
+                parameters: 0,
+                head: TraitRef::new(trait_name.clone(), vec![Type::Integer]),
+                predicates: Vec::new(),
+                associated_types: IndexMap::new(),
+                methods: IndexMap::new(),
+            }),
+            Err(TraitError::InvalidInstanceItems {
+                missing_associated_types,
+                ..
+            }) if missing_associated_types == vec![item_path.clone()]
+        ));
+
+        assert!(matches!(
+            symbols.insert_impl(TraitImpl {
+                parameters: 0,
+                head: TraitRef::new(trait_name.clone(), vec![Type::Integer]),
+                predicates: Vec::new(),
+                associated_types: [(trait_name.child("Unknown"), Type::Integer)]
+                    .into_iter()
+                    .collect(),
+                methods: IndexMap::new(),
+            }),
+            Err(TraitError::InvalidInstanceItems {
+                unknown_associated_types,
+                ..
+            }) if unknown_associated_types == vec![trait_name.child("Unknown")]
+        ));
+
+        symbols
+            .insert_impl(TraitImpl {
+                parameters: 0,
+                head: TraitRef::new(trait_name.clone(), vec![Type::Integer]),
+                predicates: Vec::new(),
+                associated_types: [(item_path.clone(), Type::Integer)].into_iter().collect(),
+                methods: IndexMap::new(),
+            })
+            .expect("impl insertion with associated type should succeed");
+    }
+
+    #[test]
+    fn insert_impl_rejects_associated_type_kind_mismatch() {
+        let mut symbols = SymbolTable::new();
+        let trait_name = Path::new("demo", "Monad");
+        let associated_type = trait_name.child("Output");
+        let box_type = Path::new("demo", "Box");
+        symbols.insert_type(box_type.clone(), Type::Unit.def_named(1));
+        symbols
+            .insert_trait(TraitDef {
+                name: trait_name.clone(),
+                parameters: 1,
+                parameter_kinds: vec![Kind::arrow(Kind::Type, Kind::Type)],
+                associated_types: [(associated_type.clone(), Kind::Type)]
+                    .into_iter()
+                    .collect(),
+                methods: IndexMap::new(),
+            })
+            .expect("trait insertion should succeed");
+
+        assert!(matches!(
+            symbols.insert_impl(TraitImpl {
+                parameters: 0,
+                head: TraitRef::new(
+                    trait_name.clone(),
+                    vec![Type::Named {
+                        name: box_type.clone(),
+                        body: Box::new(Type::Unit),
+                    }],
+                ),
+                predicates: Vec::new(),
+                associated_types: [(
+                    associated_type.clone(),
+                    Type::Named {
+                        name: box_type,
+                        body: Box::new(Type::Unit),
+                    },
+                )]
+                .into_iter()
+                .collect(),
+                methods: IndexMap::new(),
+            }),
+            Err(TraitError::AssociatedTypeKindMismatch {
+                associated_type: failed_associated_type,
+                ..
+            }) if failed_associated_type == associated_type
         ));
     }
 
@@ -1415,6 +1775,7 @@ mod tests {
                 parameters: 0,
                 head: TraitRef::new(alias.clone(), vec![Type::Integer]),
                 predicates: Vec::new(),
+                associated_types: IndexMap::new(),
                 methods: IndexMap::new(),
             })
             .expect("impl insertion through alias should succeed");
@@ -1438,6 +1799,7 @@ mod tests {
                 parameters: 1,
                 head: TraitRef::new(Path::new("demo", "Eq"), vec![list_of(Type::v(0))]),
                 predicates: Vec::new(),
+                associated_types: IndexMap::new(),
                 methods: IndexMap::new(),
             })
             .expect("generic list impl should insert");
@@ -1447,6 +1809,7 @@ mod tests {
                 parameters: 0,
                 head: TraitRef::new(Path::new("demo", "Eq"), vec![list_of(Type::Integer)]),
                 predicates: Vec::new(),
+                associated_types: IndexMap::new(),
                 methods: IndexMap::new(),
             }),
             Err(TraitError::OverlappingInstance { .. })
@@ -1464,6 +1827,7 @@ mod tests {
                 parameters: 0,
                 head: TraitRef::new(Path::new("demo", "Show"), vec![Type::Integer]),
                 predicates: Vec::new(),
+                associated_types: IndexMap::new(),
                 methods: IndexMap::new(),
             })
             .expect("impl insertion should succeed");
@@ -1509,6 +1873,7 @@ mod tests {
                 parameters: 1,
                 head: TraitRef::new(Path::new("demo", "Eq"), vec![Type::v(0)]),
                 predicates: vec![TraitRef::new(Path::new("demo", "Eq"), vec![Type::v(0)])],
+                associated_types: IndexMap::new(),
                 methods: IndexMap::new(),
             })
             .expect("recursive impl insertion should succeed");
@@ -1538,6 +1903,7 @@ mod tests {
                 parameters: 0,
                 head: TraitRef::new(Path::new("demo", "Eq"), vec![Type::Integer]),
                 predicates: Vec::new(),
+                associated_types: IndexMap::new(),
                 methods: IndexMap::new(),
             })
             .expect("impl insertion should succeed");
@@ -1582,12 +1948,14 @@ mod tests {
                     parameters: 0,
                     head: TraitRef::new(trait_name.clone(), vec![Type::Integer]),
                     predicates: Vec::new(),
+                    associated_types: IndexMap::new(),
                     methods: IndexMap::new(),
                 },
                 TraitImpl {
                     parameters: 0,
                     head: TraitRef::new(trait_name.clone(), vec![Type::Integer]),
                     predicates: Vec::new(),
+                    associated_types: IndexMap::new(),
                     methods: IndexMap::new(),
                 },
             ]);
@@ -1618,6 +1986,7 @@ mod tests {
                 parameters: 0,
                 head: TraitRef::new(trait_name.clone(), vec![Type::Integer]),
                 predicates: Vec::new(),
+                associated_types: IndexMap::new(),
                 methods: [(method_path.clone(), impl_method.clone())]
                     .into_iter()
                     .collect(),
@@ -1652,6 +2021,7 @@ mod tests {
                 parameters: 1,
                 head: TraitRef::new(trait_name.clone(), vec![list_of(Type::v(0))]),
                 predicates: vec![TraitRef::new(trait_name.clone(), vec![Type::v(0)])],
+                associated_types: IndexMap::new(),
                 methods: [(method_path.clone(), Path::new("demo", "eq_list"))]
                     .into_iter()
                     .collect(),
@@ -1666,6 +2036,46 @@ mod tests {
         assert_eq!(
             specialization.predicates,
             vec![TraitRef::new(trait_name, vec![Type::Integer])]
+        );
+    }
+
+    #[test]
+    fn resolve_associated_type_specialization_handles_direct_and_alias_paths() {
+        let mut symbols = SymbolTable::new();
+        let trait_name = Path::new("demo", "Iterator");
+        let associated_type = trait_name.child("Item");
+        symbols
+            .insert_trait(trait_with_item_associated_type("Iterator"))
+            .expect("trait insertion should succeed");
+        symbols
+            .insert_impl(TraitImpl {
+                parameters: 0,
+                head: TraitRef::new(trait_name.clone(), vec![Type::Integer]),
+                predicates: Vec::new(),
+                associated_types: [(associated_type.clone(), Type::String)]
+                    .into_iter()
+                    .collect(),
+                methods: IndexMap::new(),
+            })
+            .expect("impl insertion should succeed");
+
+        assert_eq!(
+            symbols
+                .resolve_associated_type_specialization(&associated_type, &[Type::Integer])
+                .expect("specialization should succeed"),
+            Some(Type::String)
+        );
+
+        let alias = Path::new("demo", "Iter");
+        symbols
+            .insert_trait_alias(alias.clone(), trait_name)
+            .expect("trait alias insertion should succeed");
+        let alias_associated_type = alias.child("Item");
+        assert_eq!(
+            symbols
+                .resolve_associated_type_specialization(&alias_associated_type, &[Type::Integer])
+                .expect("alias specialization should succeed"),
+            Some(Type::String)
         );
     }
 
@@ -1686,12 +2096,6 @@ mod tests {
             .resolve_method_specialization(&method_path, &[option_integer])
             .expect("resolution should succeed")
             .expect("expected specialization");
-
-        println!("specialization: {:?}", specialization);
-        println!(
-            "impl scheme: {:?}",
-            symbols.terms().get(&specialization.impl_method_path)
-        );
 
         assert_eq!(
             specialization.predicates,

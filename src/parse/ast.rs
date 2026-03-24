@@ -714,6 +714,10 @@ impl TraitStatement {
     pub fn methods(&self) -> Vec<TraitMethodDecl> {
         child_nodes(&self.syntax, self.file_id())
     }
+
+    pub fn associated_types(&self) -> Vec<TraitTypeDecl> {
+        child_nodes(&self.syntax, self.file_id())
+    }
 }
 
 ast_node!(ImplStatement, IMPL_STATEMENT);
@@ -747,6 +751,10 @@ impl ImplStatement {
     pub fn methods(&self) -> Vec<ImplMethodDef> {
         child_nodes(&self.syntax, self.file_id())
     }
+
+    pub fn associated_types(&self) -> Vec<ImplTypeDef> {
+        child_nodes(&self.syntax, self.file_id())
+    }
 }
 
 ast_node!(WasmStatement, WASM_STATEMENT);
@@ -773,6 +781,10 @@ impl TraitMethodDecl {
     }
 }
 
+ast_node!(TraitTypeDecl, TRAIT_TYPE_DECL);
+impl HasName for TraitTypeDecl {
+}
+
 ast_node!(ImplMethodDef, IMPL_METHOD_DEF);
 impl HasName for ImplMethodDef {
 }
@@ -780,6 +792,18 @@ impl HasName for ImplMethodDef {
 impl ImplMethodDef {
     pub fn value(&self) -> Option<Expr> {
         child_node_after_token(&self.syntax, self.file_id(), SyntaxKind::EQUAL)
+    }
+}
+
+ast_node!(ImplTypeDef, IMPL_TYPE_DEF);
+impl HasName for ImplTypeDef {
+}
+
+impl ImplTypeDef {
+    pub fn ty(&self) -> Option<TypeExpr> {
+        self.syntax
+            .children()
+            .find_map(|node| TypeExpr::cast(node).map(|node| node.with_file_id(self.file_id())))
     }
 }
 
@@ -1169,6 +1193,7 @@ impl BinaryExpr {
                 k,
                 SyntaxKind::IDENT
                     | SyntaxKind::INTEGER
+                    | SyntaxKind::NATURAL
                     | SyntaxKind::REAL
                     | SyntaxKind::STRING
                     | SyntaxKind::GLYPH

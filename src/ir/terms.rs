@@ -2,9 +2,13 @@ use crate::asm::{
     Instruction as WasmInstruction,
     Type as WasmType,
 };
-use crate::hc_core::CoreSymbol;
+use crate::hc_core::{
+    CoreSymbol,
+    CoreType,
+};
 use crate::parse::ast::AstNode;
 use crate::types::Type;
+use crate::types::symbol_table::Symbol;
 use crate::{
     WithContext,
     WithSpan,
@@ -16,6 +20,7 @@ use super::*;
 pub enum ImmediateValue {
     Unit,
     Integer(i64),
+    Natural(i64),
     Real(f64),
     Boolean(bool),
     String(String),
@@ -27,6 +32,7 @@ impl ImmediateValue {
         match self {
             ImmediateValue::Unit => Type::Unit,
             ImmediateValue::Integer(_) => Type::Integer,
+            ImmediateValue::Natural(_) => Type::Natural,
             ImmediateValue::Real(_) => Type::Real,
             ImmediateValue::Boolean(_) => Type::Boolean,
             ImmediateValue::String(_) => Type::String,
@@ -124,6 +130,26 @@ pub fn immediate(
                 }
             }
         }
+        SyntaxKind::NATURAL => {
+            let raw_text = token.text();
+            match crate::parse::lexer::parse_natural_literal(raw_text) {
+                Some(value) => ImmediateValue::Natural(value),
+                None => {
+                    let span: Span = Span::from(token.text_range()).with_file_id(logger.id());
+                    logger
+                        .error("Failed to parse natural literal.")
+                        .primary(
+                            format!("The literal `{raw_text}` is not a valid natural number."),
+                            span,
+                        )
+                        .note(
+                            "Natural literals must fit within a signed 64-bit non-negative value.",
+                        )
+                        .done();
+                    return None;
+                }
+            }
+        }
         SyntaxKind::REAL => {
             let raw_text = token.text();
             ImmediateValue::Real(match crate::parse::lexer::parse_real_literal(raw_text) {
@@ -182,7 +208,7 @@ fn binary_op_name(kind: SyntaxKind) -> Option<&'static str> {
     Some(match kind {
         SyntaxKind::STAR => "[*]",
         SyntaxKind::SLASH => "[/]",
-        SyntaxKind::PERCENT => "[%]",
+        SyntaxKind::MODULO_KW => "[mod]",
         SyntaxKind::PLUS => "[+]",
         SyntaxKind::MINUS => "[-]",
         SyntaxKind::COMPOSE_LEFT => "[>>]",
@@ -190,6 +216,8 @@ fn binary_op_name(kind: SyntaxKind) -> Option<&'static str> {
         SyntaxKind::XOR_KW => "[xor]",
         SyntaxKind::OR_KW => "[or]",
         SyntaxKind::PIPE_ARROW => "[|>]",
+        SyntaxKind::PLUS_ARROW => "[+>]",
+        SyntaxKind::STAR_ARROW => "[*>]",
         SyntaxKind::DOUBLE_EQUAL => "[==]",
         SyntaxKind::BANG_EQUAL => "[!=]",
         SyntaxKind::LESS => "[<]",
@@ -357,7 +385,7 @@ pub fn term(
             let params = fn_expr.params();
             let body = fn_expr.body()?;
             if params.is_empty() {
-                // Unit function: `fn () => body` => curry with a synthetic parameter
+                // Zero-argument function: `fn => body` => curry with a synthetic unit parameter.
                 let mut inner_scope = scope.nest_function_scope();
                 let param_name = "<parameter>".to_string().with_span(Span::Generated);
                 let path = inner_scope.define(param_name, NameSpace::Term);
@@ -365,7 +393,11 @@ pub fn term(
                 mk(
                     TermKind::Function {
                         parameter_name: path.with_span(Span::Generated),
-                        parameter_type: None,
+                        parameter_type: Some(TypeExpr {
+                            comments: String::new(),
+                            kind: TypeExprKind::alias(CoreType::Unit.path()),
+                            span: Span::Generated,
+                        }),
                         captures: inner_scope
                             .into_captures()
                             .into_iter()

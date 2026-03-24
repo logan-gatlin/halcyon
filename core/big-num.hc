@@ -1,91 +1,29 @@
 module big-num =
-  use core
+  use bundle
   use bundle::ops
 
-  type Natural = | Nat (Array Integer)
+  type BigNat = | Nat (Array Natural)
 
-  type BigInteger =
+  type BigInt =
     | BigZero
-    | BigPositive Natural
-    | BigNegative Natural
+    | BigPositive BigNat
+    | BigNegative BigNat
 
-  type DigitsAndInteger = | DigitsAndInteger (Array Integer, Integer)
-  type NaturalAndInteger = | NaturalAndInteger (Natural, Integer)
-  type DigitsAndNatural = | DigitsAndNatural (Array Integer, Natural)
-  type NaturalDivision = | NaturalDivision (Natural, Natural)
-  type IntegerDivision = | IntegerDivision (BigInteger, BigInteger)
+  type DigitsAndRemainder = | DigitsAndRemainder (Array Natural, Natural)
+  type NaturalAndRemainder = | NaturalAndRemainder (BigNat, Natural)
+  type DigitsAndNatural = | DigitsAndNatural (Array Natural, BigNat)
+  type NaturalDivision = | NaturalDivision (BigNat, BigNat)
+  type IntegerDivision = | IntegerDivision (BigInt, BigInt)
 
-  let i_add : Integer -> Integer -> Integer = fn left right => (wasm : Integer) => (
-    get left
-    struct.get $integer 0
-    get right
-    struct.get $integer 0
-    i64.add
-    struct.new $integer
-  )
-
-  let i_sub : Integer -> Integer -> Integer = fn left right => (wasm : Integer) => (
-    get left
-    struct.get $integer 0
-    get right
-    struct.get $integer 0
-    i64.sub
-    struct.new $integer
-  )
-
-  let i_mul : Integer -> Integer -> Integer = fn left right => (wasm : Integer) => (
-    get left
-    struct.get $integer 0
-    get right
-    struct.get $integer 0
-    i64.mul
-    struct.new $integer
-  )
-
-  let i_div : Integer -> Integer -> Integer = fn left right => (wasm : Integer) => (
-    get left
-    struct.get $integer 0
-    get right
-    struct.get $integer 0
-    i64.div
-    struct.new $integer
-  )
-
-  let i_rem : Integer -> Integer -> Integer = fn left right => (wasm : Integer) => (
-    get left
-    struct.get $integer 0
-    get right
-    struct.get $integer 0
-    i64.rem
-    struct.new $integer
-  )
-
-  let i_eq : Integer -> Integer -> Boolean = fn left right => (wasm : Boolean) => (
-    get left
-    struct.get $integer 0
-    get right
-    struct.get $integer 0
-    i64.eq
-    struct.new $word
-  )
-
-  let i_lt : Integer -> Integer -> Boolean = fn left right => (wasm : Boolean) => (
-    get left
-    struct.get $integer 0
-    get right
-    struct.get $integer 0
-    i64.lt
-    struct.new $word
-  )
-
-  let i_gt : Integer -> Integer -> Boolean = fn left right => (wasm : Boolean) => (
-    get left
-    struct.get $integer 0
-    get right
-    struct.get $integer 0
-    i64.gt
-    struct.new $word
-  )
+  let integer_to_natural : Integer -> Natural = fn value =>
+    if value < 0 then
+      0n
+    else
+      (wasm : Natural) => (
+        get value
+        struct.get $integer 0
+        struct.new $natural
+      )
 
   let reverse_into = fn remaining acc =>
     match remaining with
@@ -96,14 +34,14 @@ module big-num =
 
   let length = fn values =>
     match values with
-      | [] => 0
-      | [_, ..tail] => i_add 1 (length tail)
+      | [] => 0n
+      | [_, ..tail] => 1n + (length tail)
 
   let trim_msf_zeros = fn values =>
     match values with
       | [] => []
       | [head, ..tail] =>
-        if i_eq head 0 then
+        if head == 0n then
           trim_msf_zeros tail
         else
           [head, ..tail]
@@ -118,25 +56,24 @@ module big-num =
   let make_natural = fn digits => Nat (normalize_digit_array digits)
 
   let natural_zero = make_natural []
-  let natural_one = make_natural [1]
+  let natural_one = make_natural [1n]
 
-  let magnitude_digits_from_integer = fn value =>
-    let quotient = i_div value 10 in
-    let remainder = i_rem value 10 in
-    let digit = if i_lt remainder 0 then i_sub 0 remainder else remainder in
-    if i_eq quotient 0 then
-      if i_eq digit 0 then [] else [digit]
+  let magnitude_digits_from_natural = fn value =>
+    let quotient = value / 10n in
+    let remainder = value mod 10n in
+    if quotient == 0n then
+      if remainder == 0n then [] else [remainder]
     else
-      [digit, ..(magnitude_digits_from_integer quotient)]
+      [remainder, ..(magnitude_digits_from_natural quotient)]
 
-  let magnitude_natural_from_integer = fn value =>
-    make_natural (magnitude_digits_from_integer value)
+  let natural_from_natural = fn value =>
+    make_natural (magnitude_digits_from_natural value)
 
   let natural_from_integer = fn value =>
-    if i_lt value 0 then
+    if value < 0 then
       natural_zero
     else
-      magnitude_natural_from_integer value
+      natural_from_natural (integer_to_natural value)
 
   let natural_is_zero = fn value =>
     match natural_digits value with
@@ -150,9 +87,9 @@ module big-num =
         match right with
           | [] => 0
           | [right_head, ..right_tail] =>
-            if i_lt left_head right_head then
+            if left_head < right_head then
               -1
-            else if i_gt left_head right_head then
+            else if left_head > right_head then
               1
             else
               compare_digits_msf left_tail right_tail
@@ -162,40 +99,40 @@ module big-num =
     let right_digits = natural_digits right in
     let left_length = length left_digits in
     let right_length = length right_digits in
-    if i_lt left_length right_length then
+    if left_length < right_length then
       -1
-    else if i_gt left_length right_length then
+    else if left_length > right_length then
       1
     else
       compare_digits_msf (reverse left_digits) (reverse right_digits)
 
-  let comparison_is_negative = fn value => i_lt value 0
-  let comparison_is_zero = fn value => i_eq value 0
-  let comparison_is_positive = fn value => i_gt value 0
+  let comparison_is_negative = fn value => value < 0
+  let comparison_is_zero = fn value => value == 0
+  let comparison_is_positive = fn value => value > 0
 
   let add_digit_arrays = fn carry left right =>
     match left with
       | [] =>
         match right with
           | [] =>
-            if i_eq carry 0 then
+            if carry == 0n then
               []
             else
               [carry]
           | [right_head, ..right_tail] =>
-            let total = i_add right_head carry in
-            [(i_rem total 10), ..(add_digit_arrays (i_div total 10) [] right_tail)]
+            let total = right_head + carry in
+            [(total mod 10n), ..(add_digit_arrays (total / 10n) [] right_tail)]
       | [left_head, ..left_tail] =>
         match right with
           | [] =>
-            let total = i_add left_head carry in
-            [(i_rem total 10), ..(add_digit_arrays (i_div total 10) left_tail [])]
+            let total = left_head + carry in
+            [(total mod 10n), ..(add_digit_arrays (total / 10n) left_tail [])]
           | [right_head, ..right_tail] =>
-            let total = i_add (i_add left_head right_head) carry in
-            [(i_rem total 10), ..(add_digit_arrays (i_div total 10) left_tail right_tail)]
+            let total = left_head + right_head + carry in
+            [(total mod 10n), ..(add_digit_arrays (total / 10n) left_tail right_tail)]
 
   let natural_add = fn left right =>
-    make_natural (add_digit_arrays 0 (natural_digits left) (natural_digits right))
+    make_natural (add_digit_arrays 0n (natural_digits left) (natural_digits right))
 
   let subtract_digit_arrays_exact = fn borrow left right =>
     match left with
@@ -203,20 +140,19 @@ module big-num =
       | [left_head, ..left_tail] =>
         match right with
           | [] =>
-            let raw = i_sub left_head borrow in
-            if i_lt raw 0 then
-              [(i_add raw 10), ..(subtract_digit_arrays_exact 1 left_tail [])]
+            if left_head < borrow then
+              [((left_head + 10n) - borrow), ..(subtract_digit_arrays_exact 1n left_tail [])]
             else
-              [raw, ..(subtract_digit_arrays_exact 0 left_tail [])]
+              [(left_head - borrow), ..(subtract_digit_arrays_exact 0n left_tail [])]
           | [right_head, ..right_tail] =>
-            let raw = i_sub (i_sub left_head right_head) borrow in
-            if i_lt raw 0 then
-              [(i_add raw 10), ..(subtract_digit_arrays_exact 1 left_tail right_tail)]
+            let subtrahend = right_head + borrow in
+            if left_head < subtrahend then
+              [((left_head + 10n) - subtrahend), ..(subtract_digit_arrays_exact 1n left_tail right_tail)]
             else
-              [raw, ..(subtract_digit_arrays_exact 0 left_tail right_tail)]
+              [(left_head - subtrahend), ..(subtract_digit_arrays_exact 0n left_tail right_tail)]
 
   let natural_sub_exact = fn left right =>
-    make_natural (subtract_digit_arrays_exact 0 (natural_digits left) (natural_digits right))
+    make_natural (subtract_digit_arrays_exact 0n (natural_digits left) (natural_digits right))
 
   let natural_sub = fn left right =>
     if comparison_is_negative (natural_compare left right) then
@@ -227,88 +163,88 @@ module big-num =
   let multiply_digit_array_small = fn carry factor digits =>
     match digits with
       | [] =>
-        if i_eq carry 0 then
+        if carry == 0n then
           []
         else
           [carry]
       | [head, ..tail] =>
-        let product = i_add (i_mul head factor) carry in
-        [(i_rem product 10), ..(multiply_digit_array_small (i_div product 10) factor tail)]
+        let product = (head * factor) + carry in
+        [(product mod 10n), ..(multiply_digit_array_small (product / 10n) factor tail)]
 
   let natural_mul_small = fn value factor =>
-    if (i_lt factor 1) or (natural_is_zero value) then
+    if (factor < 1n) or (natural_is_zero value) then
       natural_zero
     else
-      make_natural (multiply_digit_array_small 0 factor (natural_digits value))
+      make_natural (multiply_digit_array_small 0n factor (natural_digits value))
 
   let natural_add_small = fn value addend =>
-    if i_eq addend 0 then
+    if addend == 0n then
       value
     else
-      natural_add value (natural_from_integer addend)
+      natural_add value (natural_from_natural addend)
 
   let prepend_zeros = fn count digits =>
-    if i_lt count 1 then
+    if count < 1n then
       digits
     else
-      prepend_zeros (i_sub count 1) [0, ..digits]
+      prepend_zeros (count - 1n) [0n, ..digits]
 
   let multiply_with_digits = fn left_digits right_digits shift acc =>
     match right_digits with
       | [] => acc
       | [right_head, ..right_tail] =>
-        let partial = prepend_zeros shift (multiply_digit_array_small 0 right_head left_digits) in
+        let partial = prepend_zeros shift (multiply_digit_array_small 0n right_head left_digits) in
         let next = natural_add acc (make_natural partial) in
-        multiply_with_digits left_digits right_tail (i_add shift 1) next
+        multiply_with_digits left_digits right_tail (shift + 1n) next
 
   let natural_mul = fn left right =>
     if (natural_is_zero left) or (natural_is_zero right) then
       natural_zero
     else
-      multiply_with_digits (natural_digits left) (natural_digits right) 0 natural_zero
+      multiply_with_digits (natural_digits left) (natural_digits right) 0n natural_zero
 
-  let divide_msf_by_small : Array Integer -> Integer -> Integer -> Array Integer -> DigitsAndInteger =
+  let divide_msf_by_small : Array Natural -> Natural -> Natural -> Array Natural -> DigitsAndRemainder =
     fn msf_digits divisor remainder quotient_reversed =>
     match msf_digits with
-      | [] => DigitsAndInteger (quotient_reversed, remainder)
+      | [] => DigitsAndRemainder (quotient_reversed, remainder)
       | [digit, ..tail] =>
-        let current = i_add (i_mul remainder 10) digit in
-        let quotient_digit = i_div current divisor in
-        let next_remainder = i_rem current divisor in
+        let current = (remainder * 10n) + digit in
+        let quotient_digit = current / divisor in
+        let next_remainder = current mod divisor in
         divide_msf_by_small tail divisor next_remainder [quotient_digit, ..quotient_reversed]
 
-  let natural_div_mod_small : Natural -> Integer -> NaturalAndInteger = fn value divisor =>
-    if i_eq divisor 0 then
-      NaturalAndInteger (natural_zero, 0)
+  let natural_div_mod_small : BigNat -> Natural -> NaturalAndRemainder = fn value divisor =>
+    if divisor == 0n then
+      NaturalAndRemainder (natural_zero, 0n)
     else
       let msf_digits = reverse (natural_digits value) in
-      let result = divide_msf_by_small msf_digits divisor 0 [] in
+      let result = divide_msf_by_small msf_digits divisor 0n [] in
       match result with
-        | DigitsAndInteger (quotient_digits, remainder) =>
-          NaturalAndInteger (make_natural quotient_digits, remainder)
+        | DigitsAndRemainder (quotient_digits, remainder) =>
+          NaturalAndRemainder (make_natural quotient_digits, remainder)
 
   let choose_quotient_digit = fn remainder divisor candidate =>
-    if i_eq candidate 0 then
-      0
+    if candidate == 0n then
+      0n
     else
       let product = natural_mul_small divisor candidate in
-      if i_lt (natural_compare product remainder) 1 then
+      if (natural_compare product remainder) < 1 then
         candidate
       else
-        choose_quotient_digit remainder divisor (i_sub candidate 1)
+        choose_quotient_digit remainder divisor (candidate - 1n)
 
-  let divide_msf : Array Integer -> Natural -> Natural -> Array Integer -> DigitsAndNatural =
+  let divide_msf : Array Natural -> BigNat -> BigNat -> Array Natural -> DigitsAndNatural =
     fn msf_digits divisor remainder quotient_reversed =>
     match msf_digits with
       | [] => DigitsAndNatural (quotient_reversed, remainder)
       | [digit, ..tail] =>
-        let shifted = natural_add_small (natural_mul_small remainder 10) digit in
-        let quotient_digit = choose_quotient_digit shifted divisor 9 in
+        let shifted = natural_add_small (natural_mul_small remainder 10n) digit in
+        let quotient_digit = choose_quotient_digit shifted divisor 9n in
         let product = natural_mul_small divisor quotient_digit in
         let next_remainder = natural_sub_exact shifted product in
         divide_msf tail divisor next_remainder [quotient_digit, ..quotient_reversed]
 
-  let natural_div_mod : Natural -> Natural -> NaturalDivision = fn left right =>
+  let natural_div_mod : BigNat -> BigNat -> NaturalDivision = fn left right =>
     if natural_is_zero right then
       NaturalDivision (natural_zero, natural_zero)
     else if comparison_is_negative (natural_compare left right) then
@@ -332,9 +268,9 @@ module big-num =
     if natural_is_zero value then
       []
     else
-      let division = natural_div_mod_small value 2 in
+      let division = natural_div_mod_small value 2n in
       match division with
-        | NaturalAndInteger (quotient, remainder) =>
+        | NaturalAndRemainder (quotient, remainder) =>
           [remainder, ..(natural_to_bits quotient)]
 
   let natural_from_bits = fn bits =>
@@ -342,14 +278,14 @@ module big-num =
       match msf_bits with
         | [] => acc
         | [bit, ..tail] =>
-          from_msf tail (natural_add_small (natural_mul_small acc 2) bit)
+          from_msf tail (natural_add_small (natural_mul_small acc 2n) bit)
     in
       from_msf (reverse bits) natural_zero
 
   let natural_bit_length = fn value =>
     length (natural_to_bits value)
 
-  let flip_bit = fn bit => if i_eq bit 0 then 1 else 0
+  let flip_bit = fn bit => if bit == 0n then 1n else 0n
 
   let bits_not = fn bits =>
     match bits with
@@ -360,42 +296,42 @@ module big-num =
     let loop = fn carry remaining =>
       match remaining with
         | [] =>
-          if i_eq carry 0 then [] else [1]
+          if carry == 0n then [] else [1n]
         | [bit, ..tail] =>
-          if i_eq carry 0 then
+          if carry == 0n then
             [bit, ..tail]
           else
-            let total = i_add bit 1 in
-            [(i_rem total 2), ..(loop (i_div total 2) tail)]
+            let total = bit + 1n in
+            [(total mod 2n), ..(loop (total / 2n) tail)]
     in
-      loop 1 bits
+      loop 1n bits
 
   let truncate_bits = fn width bits =>
-    if i_lt width 1 then
+    if width < 1n then
       []
     else
       match bits with
         | [] => []
-        | [bit, ..tail] => [bit, ..(truncate_bits (i_sub width 1) tail)]
+        | [bit, ..tail] => [bit, ..(truncate_bits (width - 1n) tail)]
 
   let pad_msf_zeros = fn count msf_bits =>
-    if i_lt count 1 then
+    if count < 1n then
       msf_bits
     else
-      pad_msf_zeros (i_sub count 1) [0, ..msf_bits]
+      pad_msf_zeros (count - 1n) [0n, ..msf_bits]
 
   let pad_bits_to = fn width bits =>
     let current = length bits in
-    if i_gt current width then
+    if current > width then
       truncate_bits width bits
-    else if i_eq current width then
+    else if current == width then
       bits
     else
-      reverse (pad_msf_zeros (i_sub width current) (reverse bits))
+      reverse (pad_msf_zeros (width - current) (reverse bits))
 
   let most_significant_bit = fn bits =>
     match bits with
-      | [] => 0
+      | [] => 0n
       | [bit] => bit
       | [_, ..tail] => most_significant_bit tail
 
@@ -405,17 +341,17 @@ module big-num =
         match right with
           | [] => []
           | [right_bit, ..right_tail] =>
-            [op 0 right_bit, ..(combine_bits_with op [] right_tail)]
+            [op 0n right_bit, ..(combine_bits_with op [] right_tail)]
       | [left_bit, ..left_tail] =>
         match right with
           | [] =>
-            [op left_bit 0, ..(combine_bits_with op left_tail [])]
+            [op left_bit 0n, ..(combine_bits_with op left_tail [])]
           | [right_bit, ..right_tail] =>
             [op left_bit right_bit, ..(combine_bits_with op left_tail right_tail)]
 
-  let bit_and = fn left right => if (i_eq left 1) and (i_eq right 1) then 1 else 0
-  let bit_or = fn left right => if (i_eq left 1) or (i_eq right 1) then 1 else 0
-  let bit_xor = fn left right => if i_eq left right then 0 else 1
+  let bit_and = fn left right => if (left == 1n) and (right == 1n) then 1n else 0n
+  let bit_or = fn left right => if (left == 1n) or (right == 1n) then 1n else 0n
+  let bit_xor = fn left right => if left == right then 0n else 1n
 
   let natural_bitwise_with = fn op left right =>
     natural_from_bits (combine_bits_with op (natural_to_bits left) (natural_to_bits right))
@@ -451,12 +387,12 @@ module big-num =
     integer_from_parts false value
 
   let integer_from_integer = fn value =>
-    if i_eq value 0 then
+    if value == 0 then
       BigZero
-    else if i_lt value 0 then
-      BigNegative (magnitude_natural_from_integer value)
+    else if value < 0 then
+      BigNegative (natural_from_natural (integer_to_natural (0 - value)))
     else
-      BigPositive (magnitude_natural_from_integer value)
+      BigPositive (natural_from_natural (integer_to_natural value))
 
   let integer_negate = fn value =>
     match value with
@@ -469,7 +405,7 @@ module big-num =
       | BigNegative left_magnitude =>
         match right with
           | BigNegative right_magnitude =>
-            i_sub 0 (natural_compare left_magnitude right_magnitude)
+            0 - (natural_compare left_magnitude right_magnitude)
           | _ => -1
       | BigZero =>
         match right with
@@ -523,7 +459,7 @@ module big-num =
       let negative = (integer_is_negative left) xor (integer_is_negative right) in
       integer_from_parts negative (natural_mul (integer_abs left) (integer_abs right))
 
-  let integer_div_rem : BigInteger -> BigInteger -> IntegerDivision = fn left right =>
+  let integer_div_rem : BigInt -> BigInt -> IntegerDivision = fn left right =>
     if integer_is_zero right then
       IntegerDivision (BigZero, BigZero)
     else if integer_is_zero left then
@@ -549,10 +485,10 @@ module big-num =
 
   let integer_bit_width = fn value =>
     let magnitude_width = natural_bit_length (integer_abs value) in
-    if i_eq magnitude_width 0 then
-      1
+    if magnitude_width == 0n then
+      1n
     else
-      i_add magnitude_width 1
+      magnitude_width + 1n
 
   let integer_to_twos_bits = fn value width =>
     match value with
@@ -564,7 +500,7 @@ module big-num =
 
   let integer_from_twos_bits = fn bits =>
     let width = length bits in
-    if i_eq (most_significant_bit bits) 0 then
+    if (most_significant_bit bits) == 0n then
       integer_from_parts false (natural_from_bits bits)
     else
       let magnitude_bits = truncate_bits width (bits_add_one (bits_not bits)) in
@@ -581,19 +517,7 @@ module big-num =
     let bits = integer_to_twos_bits value width in
     integer_from_twos_bits (truncate_bits width (bits_not bits))
 
-  let digit_to_string = fn digit =>
-    match digit with
-      | 0 => "0"
-      | 1 => "1"
-      | 2 => "2"
-      | 3 => "3"
-      | 4 => "4"
-      | 5 => "5"
-      | 6 => "6"
-      | 7 => "7"
-      | 8 => "8"
-      | 9 => "9"
-      | _ => "?"
+  let digit_to_string = bundle::natural::digit_to_string
 
   let show_digits_msf = fn digits =>
     match digits with
@@ -614,98 +538,98 @@ module big-num =
       | BigNegative magnitude => "-" + (show_natural magnitude)
 
   let natural_pow10 = fn exponent =>
-    if i_lt exponent 1 then
+    if exponent < 1 then
       natural_one
     else
-      natural_mul_small (natural_pow10 (i_sub exponent 1)) 10
+      natural_mul_small (natural_pow10 (exponent - 1)) 10n
 
   let natural = natural_from_integer
   let integer = integer_from_integer
 
-  impl bundle::Default Natural =
+  impl bundle::Default BigNat =
     let default = natural_zero
   end
 
-  impl bundle::show::Show Natural =
+  impl bundle::show::Show BigNat =
     let show = fn value => show_natural value
   end
 
-  impl ops::Equal Natural =
+  impl ops::Equal BigNat =
     let [==] = fn left right => comparison_is_zero (natural_compare left right)
   end
 
-  impl ops::Compare Natural =
+  impl ops::Compare BigNat =
     let [<] = fn left right => comparison_is_negative (natural_compare left right)
     let [>] = fn left right => comparison_is_positive (natural_compare left right)
   end
 
-  impl ops::Add Natural =
+  impl ops::Add BigNat =
     let [+] = fn left right => natural_add left right
   end
 
-  impl ops::Subtract Natural =
+  impl ops::Subtract BigNat =
     let [-] = fn left right => natural_sub left right
     let [~] = fn _ => natural_zero
   end
 
-  impl ops::Multiply Natural =
+  impl ops::Multiply BigNat =
     let [*] = fn left right => natural_mul left right
   end
 
-  impl ops::Divide Natural =
+  impl ops::Divide BigNat =
     let [/] = fn left right => natural_div left right
   end
 
-  impl ops::Remainder Natural =
-    let [%] = fn left right => natural_rem left right
+  impl ops::Remainder BigNat =
+    let [mod] = fn left right => natural_rem left right
   end
 
-  impl ops::Bitwise Natural =
+  impl ops::Bitwise BigNat =
     let [and] = fn left right => natural_bitwise_with bit_and left right
     let [or] = fn left right => natural_bitwise_with bit_or left right
     let [xor] = fn left right => natural_bitwise_with bit_xor left right
     let [not] = fn value => natural_bit_not value
   end
 
-  impl bundle::Default BigInteger =
+  impl bundle::Default BigInt =
     let default = BigZero
   end
 
-  impl bundle::show::Show BigInteger =
+  impl bundle::show::Show BigInt =
     let show = fn value => show_integer value
   end
 
-  impl ops::Equal BigInteger =
+  impl ops::Equal BigInt =
     let [==] = fn left right => comparison_is_zero (integer_compare left right)
   end
 
-  impl ops::Compare BigInteger =
+  impl ops::Compare BigInt =
     let [<] = fn left right => comparison_is_negative (integer_compare left right)
     let [>] = fn left right => comparison_is_positive (integer_compare left right)
   end
 
-  impl ops::Add BigInteger =
+  impl ops::Add BigInt =
     let [+] = fn left right => integer_add left right
   end
 
-  impl ops::Subtract BigInteger =
+  impl ops::Subtract BigInt =
     let [-] = fn left right => integer_sub left right
     let [~] = fn value => integer_negate value
   end
 
-  impl ops::Multiply BigInteger =
+  impl ops::Multiply BigInt =
     let [*] = fn left right => integer_mul left right
   end
 
-  impl ops::Divide BigInteger =
+  impl ops::Divide BigInt =
     let [/] = fn left right => integer_div left right
   end
 
-  impl ops::Remainder BigInteger =
-    let [%] = fn left right => integer_rem left right
+  impl ops::Remainder BigInt =
+    let [mod] = fn left right => integer_rem left right
   end
 
-  impl ops::Bitwise BigInteger =
+  impl ops::Bitwise BigInt =
     let [and] = fn left right => integer_bitwise_binary bit_and left right
     let [or] = fn left right => integer_bitwise_binary bit_or left right
     let [xor] = fn left right => integer_bitwise_binary bit_xor left right

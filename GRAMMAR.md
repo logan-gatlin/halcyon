@@ -24,10 +24,14 @@
 <do_statement> ::= "do" <expr>
 <use_statement> ::= "use" (<ident> | <path>) ("as" <ident>)?
 <type_statement> ::= "type" "~"? <ident> (":" <ident>+)? "=" (<type_def> | <type_expr>)
-<trait_statement> ::= "trait" "~"? <ident> (":" <ident>+)? "=" (<trait_method_decl>* "end" | (<ident> | <path>))
-<impl_statement> ::= "impl" (<ident> | <path>) <type_expr> ("," <type_expr>)* "=" <impl_method_def>* "end"
+<trait_statement> ::= "trait" "~"? <ident> (":" <ident>+)? "=" (<trait_item_decl>* "end" | (<ident> | <path>))
+<impl_statement> ::= "impl" (<ident> | <path>) <type_expr> ("," <type_expr>)* "=" <impl_item_def>* "end"
+<trait_item_decl> ::= <trait_method_decl> | <trait_type_decl>
+<impl_item_def> ::= <impl_method_def> | <impl_type_def>
 <trait_method_decl> ::= "let" <ident> ":" <type_expr>
+<trait_type_decl> ::= "type" <ident>
 <impl_method_def> ::= "let" <ident> "=" <expr>
+<impl_type_def> ::= "type" <ident> "=" <type_expr>
 <wasm_statement> ::= "wasm" "=>" <sexpr>
 ```
 
@@ -197,4 +201,4 @@ Recursion rules:
   - `use M as X` adds alias `X` for module path lookups (`X::name`) without opening contents.
   - `as` alias name collisions are errors.
   - If multiple opened modules provide the same symbol, the usage is ambiguous and reported as an error.
-- **Operators:** `+`, `-`, `*`, `/`, `%`, `|>`, `>>`, '<<', `==`, `!=`, `<`, `<=`, `>`, `>=`, `and`, `or`, `xor`, `not`, `;`.
+- **Operators:** `+`, `-`, `*`, `/`, `mod`, `|>`, `+>`, `*>`, `>>`, '<<', `==`, `!=`, `<`, `<=`, `>`, `>=`, `and`, `or`, `xor`, `not`, `;`.

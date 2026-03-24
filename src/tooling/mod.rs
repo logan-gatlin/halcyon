@@ -355,7 +355,7 @@ pub fn byte_offset_to_utf16_position(
 
     let mut line = 0u32;
     let mut character = 0u32;
-    for ch in source[..clamped].chars() {
+    for ch in source.get(..clamped).unwrap_or("").chars() {
         if ch == '\n' {
             line += 1;
             character = 0;
@@ -393,7 +393,7 @@ pub fn utf16_position_to_byte_offset(
     let mut byte_offset = line_start;
     let mut utf16_col = 0u32;
     while byte_offset < source.len() {
-        let ch = source[byte_offset..].chars().next()?;
+        let ch = source.get(byte_offset..)?.chars().next()?;
         if ch == '\n' {
             break;
         }
@@ -411,11 +411,7 @@ pub fn utf16_position_to_byte_offset(
         byte_offset += ch.len_utf8();
     }
 
-    if utf16_col == character {
-        Some(byte_offset)
-    } else {
-        None
-    }
+    (utf16_col == character).then_some(byte_offset)
 }
 
 pub fn span_to_utf16_range(
@@ -448,7 +444,7 @@ fn prelude_for_bundle(
 
 fn core_primitive_paths() -> HashSet<ir::Path> {
     [
-        "Unit", "Integer", "Real", "Boolean", "String", "Glyph", "Array", "Fn",
+        "Unit", "Integer", "Natural", "Real", "Boolean", "String", "Glyph", "Array", "Fn",
     ]
     .into_iter()
     .map(ir::Path::core)
@@ -611,7 +607,10 @@ end
             let Span::Source { start, width, .. } = span else {
                 panic!("expected source span for indexed usage")
             };
-            source[start..start + width].to_string()
+            source
+                .get(start..start + width)
+                .expect("indexed usage span should be valid UTF-8 boundaries")
+                .to_string()
         };
         assert!(
             foo_usages.iter().all(|span| usage_text(*span) == "foo"),

@@ -1,5 +1,5 @@
 module glyph =
-  use core
+  use bundle
   use bundle::ops
 
   let to_string : Glyph -> String = fn value => (wasm : String) => (

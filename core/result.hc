@@ -145,7 +145,7 @@ module result =
 
   impl bundle::hkt::Monad for err in Result err =
     let new = fn value => Ok value
-    let flatmap = fn f result => match result with
+    let flat_map = fn f result => match result with
       | Ok value => f value
       | Err error => Err error
   end

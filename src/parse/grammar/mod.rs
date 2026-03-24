@@ -177,7 +177,7 @@ pub(crate) fn use_target_path_or_ident(p: &mut Parser<'_, '_>) {
     }
 }
 
-/// Parse a literal (integer, real, string, glyph, boolean).
+/// Parse a literal (integer, natural, real, string, glyph, boolean).
 pub(crate) fn literal(p: &mut Parser<'_, '_>) {
     let m = p.start_node(SyntaxKind::LITERAL);
     p.bump();

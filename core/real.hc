@@ -1,5 +1,5 @@
 module real =
-  use core
+  use bundle
   use bundle::ops
 
   let abs = fn value => if value < 0.0 then 0.0 - value else value
@@ -37,7 +37,7 @@ module real =
     else
       let divisor = power10 (width - 1) in
       let digit = value / divisor in
-      let rest = value % divisor in
+      let rest = value mod divisor in
       (bundle::integer::digit_to_string digit) + (show_fixed_width (width - 1) rest)
 
   let repeat_zeros = fn count =>
@@ -111,7 +111,7 @@ module real =
       0
     else if value == 0 then
       width
-    else if (value % 10) == 0 then
+    else if (value mod 10) == 0 then
       1 + (trailing_fraction_zero_count (width - 1) (value / 10))
     else
       0
@@ -123,7 +123,7 @@ module real =
       let fractional_width = precision - (exponent + 1) in
       let divisor = power10 fractional_width in
       let whole = significand / divisor in
-      let fractional = significand % divisor in
+      let fractional = significand mod divisor in
       let trailing_zeros = trailing_fraction_zero_count fractional_width fractional in
       let trimmed_width = fractional_width - trailing_zeros in
       if trimmed_width == 0 then

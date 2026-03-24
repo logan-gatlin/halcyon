@@ -804,7 +804,7 @@ dependencies = [
 
 [[package]]
 name = "halcyon"
-version = "2026.3.2"
+version = "2026.3.3"
 dependencies = [
  "halcyon-lib",
  "postcard",
@@ -818,7 +818,7 @@ dependencies = [
 
 [[package]]
 name = "halcyon-lib"
-version = "2026.3.2"
+version = "2026.3.3"
 dependencies = [
  "codespan-reporting",
  "colored",
@@ -851,8 +851,9 @@ dependencies = [
 
 [[package]]
 name = "halcyon-lsp"
-version = "2026.3.2"
+version = "2026.3.3"
 dependencies = [
+ "crossbeam-channel",
  "halcyon-lib",
  "inflections",
  "lsp-server",

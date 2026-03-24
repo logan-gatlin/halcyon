@@ -225,9 +225,7 @@ fn read_function_operator_offsets(binary: &[u8]) -> Option<ParsedFunctionOffsets
             continue;
         }
         if let wasmparser::Payload::CodeSectionEntry(body) = payload {
-            let Some(code_section_start) = code_section_start else {
-                return None;
-            };
+            let code_section_start = code_section_start?;
             let mut offsets = Vec::new();
             let mut reader = body.get_operators_reader().ok()?;
             while !reader.eof() {

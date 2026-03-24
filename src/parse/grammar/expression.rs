@@ -116,7 +116,7 @@ fn infix_bp(kind: SyntaxKind) -> Option<(u8, u8)> {
     match kind {
         SyntaxKind::SEMICOLON => Some((2, 3)),
 
-        SyntaxKind::PIPE_ARROW => Some((4, 5)),
+        SyntaxKind::PIPE_ARROW | SyntaxKind::PLUS_ARROW | SyntaxKind::STAR_ARROW => Some((4, 5)),
 
         SyntaxKind::OR_KW => Some((6, 7)),
 
@@ -133,7 +133,7 @@ fn infix_bp(kind: SyntaxKind) -> Option<(u8, u8)> {
 
         SyntaxKind::PLUS | SyntaxKind::MINUS => Some((14, 15)),
 
-        SyntaxKind::STAR | SyntaxKind::SLASH | SyntaxKind::PERCENT => Some((16, 17)),
+        SyntaxKind::STAR | SyntaxKind::SLASH | SyntaxKind::MODULO_KW => Some((16, 17)),
 
         _ => None,
     }
@@ -145,6 +145,7 @@ fn can_start_atom(kind: SyntaxKind) -> bool {
         kind,
         SyntaxKind::IDENT
             | SyntaxKind::INTEGER
+            | SyntaxKind::NATURAL
             | SyntaxKind::REAL
             | SyntaxKind::STRING
             | SyntaxKind::GLYPH
@@ -170,6 +171,7 @@ fn primary(p: &mut Parser<'_, '_>) -> bool {
             match kind {
                 // Literals
                 SyntaxKind::INTEGER
+                | SyntaxKind::NATURAL
                 | SyntaxKind::REAL
                 | SyntaxKind::STRING
                 | SyntaxKind::GLYPH

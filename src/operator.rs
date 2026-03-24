@@ -25,7 +25,7 @@ pub trait Operator {
 pub enum BinaryOp {
     Star,
     Slash,
-    Percent,
+    Modulo,
     Plus,
     Minus,
     ComposeLeft,
@@ -33,6 +33,8 @@ pub enum BinaryOp {
     Xor,
     Or,
     Apply,
+    PlusArrow,
+    StarArrow,
     DoubleEqual,
     BangEqual,
     Less,
@@ -48,7 +50,7 @@ impl Operator for BinaryOp {
         match self {
             Self::Star => 15,
             Self::Slash => 15,
-            Self::Percent => 15,
+            Self::Modulo => 15,
             Self::Plus => 14,
             Self::Minus => 14,
             Self::ComposeLeft => 10,
@@ -56,6 +58,8 @@ impl Operator for BinaryOp {
             Self::Xor => 10,
             Self::Or => 9,
             Self::Apply => 9,
+            Self::PlusArrow => 9,
+            Self::StarArrow => 9,
             Self::DoubleEqual => 8,
             Self::BangEqual => 8,
             Self::Less => 8,
@@ -76,7 +80,7 @@ impl Operator for BinaryOp {
         match self {
             Self::Star => binary_trait_scheme(CoreSymbol::TraitMultiply),
             Self::Slash => binary_trait_scheme(CoreSymbol::TraitDivide),
-            Self::Percent => binary_trait_scheme(CoreSymbol::TraitRemainder),
+            Self::Modulo => binary_trait_scheme(CoreSymbol::TraitRemainder),
             Self::Plus => binary_trait_scheme(CoreSymbol::TraitAdd),
             Self::Minus => binary_trait_scheme(CoreSymbol::TraitSubtract),
             Self::ComposeLeft => {
@@ -99,7 +103,7 @@ impl Operator for BinaryOp {
             }
             Self::Xor => binary_trait_scheme(CoreSymbol::TraitBitwise),
             Self::Or => binary_trait_scheme(CoreSymbol::TraitBitwise),
-            Self::Apply => {
+            Self::Apply | Self::PlusArrow | Self::StarArrow => {
                 Type::curry(&[Type::v(1), Type::func(Type::v(1), Type::v(0)), Type::v(0)])
                     .for_all(2)
                     .scheme()
@@ -141,7 +145,7 @@ impl std::fmt::Display for BinaryOp {
             match self {
                 BinaryOp::Star => "*",
                 BinaryOp::Slash => "/",
-                BinaryOp::Percent => "%",
+                BinaryOp::Modulo => "mod",
                 BinaryOp::Plus => "+",
                 BinaryOp::Minus => "-",
                 BinaryOp::ComposeLeft => "<<",
@@ -149,6 +153,8 @@ impl std::fmt::Display for BinaryOp {
                 BinaryOp::Xor => "xor",
                 BinaryOp::Or => "or",
                 BinaryOp::Apply => "|>",
+                BinaryOp::PlusArrow => "+>",
+                BinaryOp::StarArrow => "*>",
                 BinaryOp::DoubleEqual => "==",
                 BinaryOp::BangEqual => "!=",
                 BinaryOp::Less => "<",

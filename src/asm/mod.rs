@@ -358,7 +358,7 @@ pub enum NumberOperation {
     /// Available for: integers and floats
     Div,
 
-    /// Arithmetic remainder: left % right.
+    /// Arithmetic remainder: left mod right.
     ///
     /// Available for: integers only
     Rem,

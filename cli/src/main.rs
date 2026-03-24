@@ -10,6 +10,10 @@ use std::path::{
 use halcyon_lib::asm::DebugInfoOptions;
 use halcyon_lib::asm::custom_section::TypeSignatureSection;
 use halcyon_lib::asm::module_section::LoweredModuleSection;
+use halcyon_lib::bindings::{
+    GenerateBindingsOptions,
+    generate_js_bindings,
+};
 use halcyon_lib::parse::ast::{
     self,
     AstNode,
@@ -48,6 +52,7 @@ use wasmtime_wasi::preview1;
 
 enum Command<'a> {
     Build(&'a [String]),
+    Bindings(&'a [String]),
     Doc(&'a [String]),
     Cache(&'a [String]),
     Run {
@@ -61,6 +66,7 @@ impl<'a> Command<'a> {
     fn parse(args: &'a [String]) -> Self {
         match args.first().map(String::as_str) {
             Some("build") => Self::Build(&args[1..]),
+            Some("bindings") => Self::Bindings(&args[1..]),
             Some("run") => {
                 let (input_paths, command_args) = split_run_inputs_and_args(&args[1..]);
                 Self::Run {
@@ -88,6 +94,7 @@ impl<'a> Command<'a> {
                 linked.save_source_map_to_file("target")?;
                 Ok(())
             }
+            Self::Bindings(paths) => generate_bindings(paths),
             Self::Run {
                 input_paths,
                 command_args,
@@ -120,6 +127,9 @@ fn print_usage() {
     eprintln!("Commands:");
     eprintln!(
         "  build <input>...    Compile source/binary inputs and emit one linked .wasm in target/"
+    );
+    eprintln!(
+        "  bindings <input>... Compile source/binary inputs and emit JS/TS bindings in target/"
     );
     eprintln!(
         "  run <input>... [-- <arg>...]  Compile source/binary inputs and run the linked program"
@@ -184,7 +194,7 @@ fn project_cache_dir() -> PathBuf {
         .join(".halcyon-cache")
 }
 
-const ARTIFACT_CACHE_FORMAT_VERSION: u32 = 5;
+const ARTIFACT_CACHE_FORMAT_VERSION: u32 = 6;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 enum CacheUnit {
@@ -1323,6 +1333,43 @@ fn compile_and_link_inputs(
     Ok(linked)
 }
 
+fn generate_bindings(input_paths: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let input_paths = ensure_inputs(input_paths, "bindings")?;
+    let linked = compile_and_link_inputs(
+        input_paths,
+        "app",
+        command_debug_info_options(),
+        command_validation_enabled(),
+    )?;
+
+    let generated = generate_js_bindings(
+        &linked.binary,
+        GenerateBindingsOptions {
+            module_name: Some(linked.module_name.clone()),
+            wasm_file_name: Some(format!("{}.wasm", linked.module_name)),
+        },
+    )?;
+
+    std::fs::create_dir_all("target")?;
+    linked.save_wasm_to_file("target")?;
+    linked.save_source_map_to_file("target")?;
+
+    let js_path = Path::new("target").join(format!("{}.bindings.js", generated.spec.module_name));
+    let dts_path =
+        Path::new("target").join(format!("{}.bindings.d.ts", generated.spec.module_name));
+    let json_path =
+        Path::new("target").join(format!("{}.bindings.json", generated.spec.module_name));
+
+    std::fs::write(&js_path, generated.javascript)?;
+    std::fs::write(&dts_path, generated.typescript)?;
+    std::fs::write(&json_path, generated.json)?;
+
+    eprintln!("Wrote {}", js_path.display());
+    eprintln!("Wrote {}", dts_path.display());
+    eprintln!("Wrote {}", json_path.display());
+    Ok(())
+}
+
 #[tracing::instrument(skip_all, fields(artifact_count = artifacts.len()))]
 fn link_and_run(
     artifacts: &[Artifact],
@@ -1530,6 +1577,22 @@ mod tests {
                 assert_eq!(cache_args, ["warm", "--debug-info", "src/test/demo.hc"]);
             }
             _ => panic!("expected cache command"),
+        }
+    }
+
+    #[test]
+    fn bindings_command_parser_preserves_inputs() {
+        let args = vec![
+            "bindings".to_string(),
+            "src/test/demo.hc".to_string(),
+            "core/tests.hc".to_string(),
+        ];
+
+        match Command::parse(&args) {
+            Command::Bindings(paths) => {
+                assert_eq!(paths, ["src/test/demo.hc", "core/tests.hc"]);
+            }
+            _ => panic!("expected bindings command"),
         }
     }
 }

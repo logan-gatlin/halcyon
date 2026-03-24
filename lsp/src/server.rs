@@ -11,7 +11,9 @@ use std::sync::mpsc::{
     Receiver,
     Sender,
 };
+use std::time::Duration;
 
+use crossbeam_channel::RecvTimeoutError;
 use halcyon_lib::parse::ast::{
     self,
     AstNode,
@@ -69,6 +71,8 @@ use lsp_types::{
     CodeActionParams,
     CodeActionProviderCapability,
     CodeActionResponse,
+    CompletionItem,
+    CompletionList,
     CompletionOptions,
     CompletionParams,
     CompletionResponse,
@@ -98,6 +102,7 @@ use lsp_types::{
 use crate::completion::{
     completion_context_at,
     completion_items,
+    completion_trigger_characters,
 };
 use crate::diagnostics::{
     publish_bundle_diagnostics,
@@ -120,24 +125,19 @@ use crate::util::{
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let (connection, io_threads) = Connection::stdio();
 
-    let capabilities = ServerCapabilities {
-        text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
-        completion_provider: Some(CompletionOptions::default()),
-        code_action_provider: Some(CodeActionProviderCapability::Simple(true)),
-        hover_provider: Some(true.into()),
-        rename_provider: Some(OneOf::Left(true)),
-        definition_provider: Some(OneOf::Left(true)),
-        references_provider: Some(OneOf::Left(true)),
-        ..ServerCapabilities::default()
-    };
-
-    let capabilities = serde_json::to_value(capabilities)?;
+    let capabilities = serde_json::to_value(server_capabilities())?;
     let _init_params = connection.initialize(capabilities)?;
 
     let mut server = Server::new();
 
-    for message in &connection.receiver {
-        server.drain_typecheck_results();
+    loop {
+        server.drain_typecheck_results(&connection)?;
+        let message = match connection.receiver.recv_timeout(Duration::from_millis(50)) {
+            Ok(message) => message,
+            Err(RecvTimeoutError::Timeout) => continue,
+            Err(RecvTimeoutError::Disconnected) => break,
+        };
+
         match message {
             Message::Request(request) => {
                 if connection.handle_shutdown(&request)? {
@@ -154,6 +154,29 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     io_threads.join()?;
     Ok(())
+}
+
+fn server_capabilities() -> ServerCapabilities {
+    ServerCapabilities {
+        text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
+        completion_provider: Some(CompletionOptions {
+            trigger_characters: Some(completion_trigger_characters()),
+            ..CompletionOptions::default()
+        }),
+        code_action_provider: Some(CodeActionProviderCapability::Simple(true)),
+        hover_provider: Some(true.into()),
+        rename_provider: Some(OneOf::Left(true)),
+        definition_provider: Some(OneOf::Left(true)),
+        references_provider: Some(OneOf::Left(true)),
+        ..ServerCapabilities::default()
+    }
+}
+
+fn completion_response(items: Vec<CompletionItem>) -> CompletionResponse {
+    CompletionResponse::List(CompletionList {
+        is_incomplete: true,
+        items,
+    })
 }
 
 #[derive(Debug, Clone)]
@@ -208,7 +231,7 @@ impl Server {
         request: Request,
         connection: &Connection,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        self.drain_typecheck_results();
+        self.drain_typecheck_results(connection)?;
 
         match request.method.as_str() {
             Completion::METHOD => {
@@ -263,7 +286,7 @@ impl Server {
         notification: Notification,
         connection: &Connection,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        self.drain_typecheck_results();
+        self.drain_typecheck_results(connection)?;
 
         match notification.method.as_str() {
             DidOpenTextDocument::METHOD => {
@@ -345,20 +368,20 @@ impl Server {
         connection: &Connection,
     ) -> Result<Option<CompletionResponse>, ResponseError> {
         let Some(path) = uri_to_path(&params.text_document_position.text_document.uri) else {
-            return Ok(Some(CompletionResponse::Array(Vec::new())));
+            return Ok(Some(completion_response(Vec::new())));
         };
         let Some(root_path) = self
             .ensure_frontend_for_path(&path, connection)
             .map_err(|error| response_error(error.to_string()))?
         else {
-            return Ok(Some(CompletionResponse::Array(Vec::new())));
+            return Ok(Some(completion_response(Vec::new())));
         };
 
         let Some(bundle) = self.bundles.get(&root_path) else {
-            return Ok(Some(CompletionResponse::Array(Vec::new())));
+            return Ok(Some(completion_response(Vec::new())));
         };
         let Some(source) = self.source_for_path_from_frontend(&path, &bundle.frontend) else {
-            return Ok(Some(CompletionResponse::Array(Vec::new())));
+            return Ok(Some(completion_response(Vec::new())));
         };
 
         let context = completion_context_at(&source, params.text_document_position.position)
@@ -369,7 +392,7 @@ impl Server {
             .map(|typed| &typed.analysis.symbols)
             .unwrap_or(&self.base_symbols);
         let items = completion_items(symbols, &context);
-        Ok(Some(CompletionResponse::Array(items)))
+        Ok(Some(completion_response(items)))
     }
 
     fn code_action(
@@ -645,19 +668,31 @@ impl Server {
         let Some(bundle) = self.bundles.get(&root_path) else {
             return Err(response_error("Bundle analysis is unavailable"));
         };
-        // Cross-bundle renaming should never be allowed.
-        // The rename operation is intentionally scoped to exactly one analyzed bundle.
-        if symbol.path.major != bundle.frontend.bundle_name {
-            return Err(response_error("Cross-bundle rename is not supported"));
-        }
         let Some(name_index) = &bundle.frontend.name_index else {
             return Err(response_error(
                 "Rename unavailable due to syntax/type errors in bundle",
             ));
         };
+        let rename_symbol = rename_symbol_for_trait_item(&bundle.frontend, &symbol);
+        // Cross-bundle renaming should never be allowed.
+        // The rename operation is intentionally scoped to exactly one analyzed bundle.
+        if rename_symbol.path.major != bundle.frontend.bundle_name {
+            return Err(response_error("Cross-bundle rename is not supported"));
+        }
 
+        let mut spans = name_index.references(&rename_symbol).into_vec();
+        spans.extend(trait_method_impl_definition_spans(
+            &bundle.frontend,
+            name_index,
+            &rename_symbol,
+        ));
+
+        let mut seen_spans = HashSet::new();
         let mut changes: HashMap<Uri, Vec<TextEdit>> = HashMap::new();
-        for span in name_index.references(&symbol) {
+        for span in spans {
+            if !seen_spans.insert(span) {
+                continue;
+            }
             let Some(edit) =
                 self.rename_edit_for_span(&bundle.frontend.source_files, span, &params.new_name)
             else {
@@ -969,6 +1004,7 @@ impl Server {
                     self.spawn_typecheck(
                         root_path.to_path_buf(),
                         generation,
+                        frontend.bundle_name.clone(),
                         open_document_sources,
                     );
                 }
@@ -990,10 +1026,11 @@ impl Server {
         &self,
         root_path: PathBuf,
         generation: u64,
+        bundle_name: String,
         open_document_sources: HashMap<PathBuf, String>,
     ) {
         let sender = self.typecheck_result_sender.clone();
-        let base_symbols = self.base_symbols.clone();
+        let base_symbols = self.typecheck_base_symbols_for_bundle(&bundle_name);
 
         std::thread::spawn(move || {
             let mut resolve_source = |path: &Path| {
@@ -1018,7 +1055,34 @@ impl Server {
         });
     }
 
-    fn drain_typecheck_results(&mut self) {
+    fn typecheck_base_symbols_for_bundle(
+        &self,
+        bundle_name: &str,
+    ) -> halcyon_lib::types::SymbolTable {
+        if bundle_name != halcyon_lib::CORE_MODULE_NAME {
+            return self.base_symbols.clone();
+        }
+
+        let core_primitives = core_primitive_paths();
+        let mut symbols = halcyon_lib::types::SymbolTable::new();
+        for (path, definition) in self.base_symbols.type_definitions() {
+            if core_primitives.contains(path) {
+                symbols.insert_type(path.clone(), definition.clone());
+            }
+        }
+        symbols
+    }
+
+    fn drain_typecheck_results(
+        &mut self,
+        connection: &Connection,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let open_document_versions = self
+            .open_documents
+            .iter()
+            .map(|(path, document)| (path.clone(), document.version))
+            .collect::<HashMap<_, _>>();
+
         while let Ok(result) = self.typecheck_result_receiver.try_recv() {
             let Some(bundle) = self.bundles.get_mut(&result.root_path) else {
                 continue;
@@ -1028,17 +1092,122 @@ impl Server {
             }
             match result.analysis {
                 Ok(analysis) => {
+                    let published_uris = publish_bundle_diagnostics(
+                        connection,
+                        &analysis.source_files,
+                        &analysis.diagnostics,
+                        &open_document_versions,
+                        &bundle.published_uris,
+                    )?;
                     bundle.typed = Some(TypedSnapshot {
                         generation: result.generation,
                         analysis,
                     });
+                    bundle.published_uris = published_uris;
                 }
                 Err(error) => {
                     eprintln!("{error}");
                 }
             }
         }
+
+        Ok(())
     }
+}
+
+fn rename_symbol_for_trait_item(
+    frontend: &FrontendBundleAnalysis,
+    symbol: &halcyon_lib::ir::ScopedPath,
+) -> halcyon_lib::ir::ScopedPath {
+    if symbol.namespace != halcyon_lib::ir::NameSpace::Term {
+        return symbol.clone();
+    }
+    let Some(module) = &frontend.module else {
+        return symbol.clone();
+    };
+
+    module
+        .statements
+        .iter()
+        .find_map(|statement| {
+            let halcyon_lib::ir::Statement::Impl { methods, .. } = statement else {
+                return None;
+            };
+            methods.iter().find_map(|method| {
+                if method.impl_path != symbol.path {
+                    return None;
+                }
+                if !is_declared_trait_method(frontend, &method.trait_method) {
+                    return None;
+                }
+                Some(halcyon_lib::ir::ScopedPath {
+                    path: method.trait_method.clone(),
+                    namespace: halcyon_lib::ir::NameSpace::Term,
+                })
+            })
+        })
+        .unwrap_or_else(|| symbol.clone())
+}
+
+fn core_primitive_paths() -> HashSet<halcyon_lib::ir::Path> {
+    [
+        "Unit", "Integer", "Real", "Boolean", "String", "Glyph", "Array", "Fn",
+    ]
+    .into_iter()
+    .map(halcyon_lib::ir::Path::core)
+    .collect()
+}
+
+fn trait_method_impl_definition_spans(
+    frontend: &FrontendBundleAnalysis,
+    name_index: &halcyon_lib::ir::NameIndex,
+    symbol: &halcyon_lib::ir::ScopedPath,
+) -> Vec<halcyon_lib::Span> {
+    if symbol.namespace != halcyon_lib::ir::NameSpace::Term {
+        return Vec::new();
+    }
+    if !is_declared_trait_method(frontend, &symbol.path) {
+        return Vec::new();
+    }
+
+    let Some(module) = &frontend.module else {
+        return Vec::new();
+    };
+
+    module
+        .statements
+        .iter()
+        .filter_map(|statement| {
+            let halcyon_lib::ir::Statement::Impl { methods, .. } = statement else {
+                return None;
+            };
+            Some(methods.as_ref())
+        })
+        .flatten()
+        .filter(|method| method.trait_method == symbol.path)
+        .filter_map(|method| {
+            let impl_symbol = halcyon_lib::ir::ScopedPath {
+                path: method.impl_path.clone(),
+                namespace: halcyon_lib::ir::NameSpace::Term,
+            };
+            name_index.definitions.get(&impl_symbol)
+        })
+        .flat_map(|spans| spans.iter().copied())
+        .collect()
+}
+
+fn is_declared_trait_method(
+    frontend: &FrontendBundleAnalysis,
+    trait_method: &halcyon_lib::ir::Path,
+) -> bool {
+    frontend.module.as_ref().is_some_and(|module| {
+        module.statements.iter().any(|statement| {
+            let halcyon_lib::ir::Statement::Trait { methods, .. } = statement else {
+                return false;
+            };
+            methods.iter().any(|method| method.path == *trait_method)
+        })
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -1464,10 +1633,31 @@ fn type_definition_kind(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lsp_types::notification::PublishDiagnostics;
     use lsp_types::{
         CodeActionContext,
         Diagnostic,
+        PublishDiagnosticsParams,
     };
+
+    fn placeholder_type_expr() -> halcyon_lib::ir::TypeExpr {
+        halcyon_lib::ir::TypeExpr {
+            comments: String::new(),
+            kind: halcyon_lib::ir::TypeExprKind::Placeholder,
+            span: Span::Generated,
+        }
+    }
+
+    fn frontend_with_module(module: halcyon_lib::ir::Module<()>) -> FrontendBundleAnalysis {
+        FrontendBundleAnalysis {
+            root_path: std::path::PathBuf::from("/tmp/bundle.hc"),
+            bundle_name: "demo".to_string(),
+            source_files: Vec::new().into_boxed_slice(),
+            diagnostics: Vec::new().into_boxed_slice(),
+            name_index: None,
+            module: Some(module),
+        }
+    }
 
     fn naming_candidates_for_source(source: &str) -> Vec<NamingCandidate> {
         let Some(source_file) = parse_source_file_for_naming_actions("demo.hc", source) else {
@@ -1606,5 +1796,391 @@ mod tests {
             partial_result_params: Default::default(),
         };
         assert!(!quickfix_requested(&refactor_params));
+    }
+
+    #[test]
+    fn server_capabilities_advertise_aggressive_completion_triggers() {
+        let capabilities = server_capabilities();
+        let trigger_characters = capabilities
+            .completion_provider
+            .and_then(|completion| completion.trigger_characters)
+            .expect("completion trigger characters should be configured");
+
+        assert_eq!(trigger_characters, completion_trigger_characters());
+    }
+
+    #[test]
+    fn completion_response_marks_completion_list_incomplete() {
+        let response = completion_response(Vec::new());
+        let CompletionResponse::List(list) = response else {
+            panic!("completion response should use completion list")
+        };
+
+        assert!(list.is_incomplete);
+    }
+
+    #[test]
+    fn typecheck_base_symbols_for_core_bundle_only_keep_core_primitives() {
+        let server = Server::new();
+
+        let symbols = server.typecheck_base_symbols_for_bundle(halcyon_lib::CORE_MODULE_NAME);
+
+        assert!(symbols.terms().is_empty());
+        assert!(symbols.trait_defs().is_empty());
+        assert!(symbols.trait_impls().is_empty());
+        let type_paths = symbols
+            .type_definitions()
+            .keys()
+            .cloned()
+            .collect::<HashSet<_>>();
+        assert_eq!(type_paths, core_primitive_paths());
+    }
+
+    #[test]
+    fn typecheck_base_symbols_for_non_core_bundle_reuse_full_base_symbols() {
+        let server = Server::new();
+
+        let symbols = server.typecheck_base_symbols_for_bundle("demo");
+
+        assert_eq!(symbols.terms().len(), server.base_symbols.terms().len());
+        assert_eq!(
+            symbols.type_definitions().len(),
+            server.base_symbols.type_definitions().len()
+        );
+        assert_eq!(
+            symbols.trait_defs().len(),
+            server.base_symbols.trait_defs().len()
+        );
+        assert_eq!(
+            symbols.trait_impls().len(),
+            server.base_symbols.trait_impls().len()
+        );
+    }
+
+    #[test]
+    fn rename_symbol_for_trait_item_maps_impl_method_to_trait_method() {
+        let trait_path = halcyon_lib::ir::Path::new("demo", "Alternative");
+        let trait_method = halcyon_lib::ir::Path::new("demo", "or_with");
+        let impl_method = halcyon_lib::ir::Path::new("demo", "or_with#0");
+        let module = halcyon_lib::ir::Module {
+            name: "demo".to_string(),
+            statements: vec![
+                halcyon_lib::ir::Statement::Trait {
+                    comments: String::new(),
+                    path: trait_path.clone(),
+                    parameters: Vec::new().into_boxed_slice(),
+                    methods: vec![halcyon_lib::ir::TraitMethodDecl {
+                        path: trait_method.clone(),
+                        type_expr: placeholder_type_expr(),
+                        span: Span::Generated,
+                    }]
+                    .into_boxed_slice(),
+                },
+                halcyon_lib::ir::Statement::Impl {
+                    comments: String::new(),
+                    trait_path,
+                    arguments: Vec::new().into_boxed_slice(),
+                    methods: vec![halcyon_lib::ir::ImplMethod {
+                        trait_method: trait_method.clone(),
+                        impl_path: impl_method.clone(),
+                        value: halcyon_lib::ir::Term::unit(),
+                        span: Span::Generated,
+                    }]
+                    .into_boxed_slice(),
+                },
+            ]
+            .into_boxed_slice(),
+        };
+        let frontend = frontend_with_module(module);
+        let symbol = halcyon_lib::ir::ScopedPath {
+            path: impl_method,
+            namespace: halcyon_lib::ir::NameSpace::Term,
+        };
+
+        let mapped = rename_symbol_for_trait_item(&frontend, &symbol);
+        assert_eq!(mapped.path, trait_method);
+        assert_eq!(mapped.namespace, halcyon_lib::ir::NameSpace::Term);
+    }
+
+    #[test]
+    fn trait_method_impl_definition_spans_include_impl_item_spans() {
+        let trait_path = halcyon_lib::ir::Path::new("demo", "Alternative");
+        let trait_method = halcyon_lib::ir::Path::new("demo", "or_with");
+        let impl_method = halcyon_lib::ir::Path::new("demo", "or_with#0");
+        let module = halcyon_lib::ir::Module {
+            name: "demo".to_string(),
+            statements: vec![
+                halcyon_lib::ir::Statement::Trait {
+                    comments: String::new(),
+                    path: trait_path.clone(),
+                    parameters: Vec::new().into_boxed_slice(),
+                    methods: vec![halcyon_lib::ir::TraitMethodDecl {
+                        path: trait_method.clone(),
+                        type_expr: placeholder_type_expr(),
+                        span: Span::Generated,
+                    }]
+                    .into_boxed_slice(),
+                },
+                halcyon_lib::ir::Statement::Impl {
+                    comments: String::new(),
+                    trait_path,
+                    arguments: Vec::new().into_boxed_slice(),
+                    methods: vec![halcyon_lib::ir::ImplMethod {
+                        trait_method: trait_method.clone(),
+                        impl_path: impl_method.clone(),
+                        value: halcyon_lib::ir::Term::unit(),
+                        span: Span::Generated,
+                    }]
+                    .into_boxed_slice(),
+                },
+            ]
+            .into_boxed_slice(),
+        };
+        let frontend = frontend_with_module(module);
+
+        let mut definitions = HashMap::new();
+        let impl_span = Span::Source {
+            start: 12,
+            width: 7,
+            file_id: Some(1),
+        };
+        definitions.insert(
+            halcyon_lib::ir::ScopedPath {
+                path: impl_method,
+                namespace: halcyon_lib::ir::NameSpace::Term,
+            },
+            vec![impl_span].into_boxed_slice(),
+        );
+        let name_index = halcyon_lib::ir::NameIndex {
+            definitions,
+            usages: HashMap::new(),
+        };
+        let symbol = halcyon_lib::ir::ScopedPath {
+            path: trait_method,
+            namespace: halcyon_lib::ir::NameSpace::Term,
+        };
+
+        let spans = trait_method_impl_definition_spans(&frontend, &name_index, &symbol);
+        assert_eq!(spans, vec![impl_span]);
+    }
+
+    #[test]
+    fn trait_method_impl_definition_spans_collect_across_impl_files() {
+        let trait_path = halcyon_lib::ir::Path::new("demo", "Alternative");
+        let trait_method = halcyon_lib::ir::Path::new("demo", "or_with");
+        let impl_method_a = halcyon_lib::ir::Path::new("demo", "or_with#0");
+        let impl_method_b = halcyon_lib::ir::Path::new("demo", "or_with#1");
+        let module = halcyon_lib::ir::Module {
+            name: "demo".to_string(),
+            statements: vec![
+                halcyon_lib::ir::Statement::Trait {
+                    comments: String::new(),
+                    path: trait_path.clone(),
+                    parameters: Vec::new().into_boxed_slice(),
+                    methods: vec![halcyon_lib::ir::TraitMethodDecl {
+                        path: trait_method.clone(),
+                        type_expr: placeholder_type_expr(),
+                        span: Span::Generated,
+                    }]
+                    .into_boxed_slice(),
+                },
+                halcyon_lib::ir::Statement::Impl {
+                    comments: String::new(),
+                    trait_path: trait_path.clone(),
+                    arguments: Vec::new().into_boxed_slice(),
+                    methods: vec![halcyon_lib::ir::ImplMethod {
+                        trait_method: trait_method.clone(),
+                        impl_path: impl_method_a.clone(),
+                        value: halcyon_lib::ir::Term::unit(),
+                        span: Span::Generated,
+                    }]
+                    .into_boxed_slice(),
+                },
+                halcyon_lib::ir::Statement::Impl {
+                    comments: String::new(),
+                    trait_path,
+                    arguments: Vec::new().into_boxed_slice(),
+                    methods: vec![halcyon_lib::ir::ImplMethod {
+                        trait_method: trait_method.clone(),
+                        impl_path: impl_method_b.clone(),
+                        value: halcyon_lib::ir::Term::unit(),
+                        span: Span::Generated,
+                    }]
+                    .into_boxed_slice(),
+                },
+            ]
+            .into_boxed_slice(),
+        };
+        let frontend = frontend_with_module(module);
+
+        let span_a = Span::Source {
+            start: 4,
+            width: 7,
+            file_id: Some(1),
+        };
+        let span_b = Span::Source {
+            start: 9,
+            width: 7,
+            file_id: Some(2),
+        };
+        let name_index = halcyon_lib::ir::NameIndex {
+            definitions: HashMap::from([
+                (
+                    halcyon_lib::ir::ScopedPath {
+                        path: impl_method_a,
+                        namespace: halcyon_lib::ir::NameSpace::Term,
+                    },
+                    vec![span_a].into_boxed_slice(),
+                ),
+                (
+                    halcyon_lib::ir::ScopedPath {
+                        path: impl_method_b,
+                        namespace: halcyon_lib::ir::NameSpace::Term,
+                    },
+                    vec![span_b].into_boxed_slice(),
+                ),
+            ]),
+            usages: HashMap::new(),
+        };
+        let symbol = halcyon_lib::ir::ScopedPath {
+            path: trait_method,
+            namespace: halcyon_lib::ir::NameSpace::Term,
+        };
+
+        let spans = trait_method_impl_definition_spans(&frontend, &name_index, &symbol);
+        assert_eq!(spans, vec![span_a, span_b]);
+    }
+
+    #[test]
+    fn rename_symbol_for_trait_item_skips_external_trait_impl_methods() {
+        let trait_method = halcyon_lib::ir::Path::new("core", "hkt::flat_map");
+        let impl_method = halcyon_lib::ir::Path::new("demo", "flat_map#0");
+        let module = halcyon_lib::ir::Module {
+            name: "demo".to_string(),
+            statements: vec![halcyon_lib::ir::Statement::Impl {
+                comments: String::new(),
+                trait_path: halcyon_lib::ir::Path::new("core", "hkt::Monad"),
+                arguments: Vec::new().into_boxed_slice(),
+                methods: vec![halcyon_lib::ir::ImplMethod {
+                    trait_method,
+                    impl_path: impl_method.clone(),
+                    value: halcyon_lib::ir::Term::unit(),
+                    span: Span::Generated,
+                }]
+                .into_boxed_slice(),
+            }]
+            .into_boxed_slice(),
+        };
+        let frontend = frontend_with_module(module);
+        let symbol = halcyon_lib::ir::ScopedPath {
+            path: impl_method,
+            namespace: halcyon_lib::ir::NameSpace::Term,
+        };
+
+        let mapped = rename_symbol_for_trait_item(&frontend, &symbol);
+        assert_eq!(mapped.path, symbol.path);
+    }
+
+    #[test]
+    fn drain_typecheck_results_publishes_typed_diagnostics() {
+        let (server_connection, client_connection) = Connection::memory();
+        let mut server = Server::new();
+
+        let root_path = std::path::PathBuf::from("/tmp/demo/bundle.hc");
+        let source_path = std::path::PathBuf::from("/tmp/demo/opt.hc");
+        let source = "let value = unknown\n".to_string();
+        let source_files = vec![AnalysisSourceFile {
+            id: 1,
+            path: source_path.clone(),
+            source: source.clone(),
+        }]
+        .into_boxed_slice();
+
+        server.bundles.insert(
+            root_path.clone(),
+            BundleState {
+                frontend: FrontendBundleAnalysis {
+                    root_path: root_path.clone(),
+                    bundle_name: "demo".to_string(),
+                    source_files: source_files.clone(),
+                    diagnostics: Vec::new().into_boxed_slice(),
+                    name_index: None,
+                    module: None,
+                },
+                typed: None,
+                generation: 1,
+                published_uris: HashSet::new(),
+            },
+        );
+
+        let diagnostic = halcyon_lib::SerializedDiagnostic {
+            severity: "error".to_string(),
+            code: None,
+            message: "Typed failure".to_string(),
+            labels: vec![halcyon_lib::SerializedDiagnosticLabel {
+                style: "primary".to_string(),
+                file_name: source_path.to_string_lossy().to_string(),
+                message: "Unknown value".to_string(),
+                range_start: 12,
+                range_end: 19,
+                start: halcyon_lib::SerializedDiagnosticLocation {
+                    line: 1,
+                    column: 13,
+                },
+                end: halcyon_lib::SerializedDiagnosticLocation {
+                    line: 1,
+                    column: 19,
+                },
+            }],
+            notes: Vec::new(),
+        };
+        let typed_analysis = BundleAnalysis {
+            root_path: root_path.clone(),
+            bundle_name: "demo".to_string(),
+            source_files,
+            diagnostics: vec![diagnostic].into_boxed_slice(),
+            symbols: server.base_symbols.clone(),
+            name_index: None,
+        };
+
+        server
+            .typecheck_result_sender
+            .send(TypecheckResult {
+                root_path: root_path.clone(),
+                generation: 1,
+                analysis: Ok(typed_analysis),
+            })
+            .expect("should queue typecheck result");
+        server
+            .drain_typecheck_results(&server_connection)
+            .expect("draining typecheck results should publish diagnostics");
+
+        let notification = client_connection
+            .receiver
+            .try_iter()
+            .find_map(|message| {
+                match message {
+                    Message::Notification(notification)
+                        if notification.method == PublishDiagnostics::METHOD =>
+                    {
+                        Some(notification)
+                    }
+                    _ => None,
+                }
+            })
+            .expect("typed diagnostics should be published");
+        let params: PublishDiagnosticsParams = serde_json::from_value(notification.params)
+            .expect("publishDiagnostics payload should deserialize");
+
+        assert_eq!(params.diagnostics.len(), 1);
+        assert!(params.diagnostics[0].message.contains("Typed failure"));
+        assert!(
+            server
+                .bundles
+                .get(&root_path)
+                .and_then(|bundle| bundle.typed.as_ref())
+                .is_some(),
+            "typed snapshot should be retained after publishing diagnostics"
+        );
     }
 }

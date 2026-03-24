@@ -46,6 +46,7 @@ impl std::fmt::Display for ImmediateValue {
             ImmediateValue::Unit => write!(f, "()"),
             ImmediateValue::String(s) => write!(f, "\"{s}\""),
             ImmediateValue::Integer(val) => write!(f, "{val}"),
+            ImmediateValue::Natural(val) => write!(f, "{val}n"),
             ImmediateValue::Real(val) => write!(f, "{val}"),
             ImmediateValue::Glyph(val) => write!(f, "'{val}'"),
             ImmediateValue::Boolean(val) => write!(f, "{val}"),
@@ -73,6 +74,7 @@ pub enum Statement<T> {
         comments: String,
         path: Path,
         parameters: Box<[Path]>,
+        associated_types: Box<[TraitTypeDecl]>,
         methods: Box<[TraitMethodDecl]>,
     },
     TraitAlias {
@@ -84,6 +86,7 @@ pub enum Statement<T> {
         comments: String,
         trait_path: Path,
         arguments: Box<[TypeExpr]>,
+        associated_types: Box<[ImplTypeDef]>,
         methods: Box<[ImplMethod<T>]>,
     },
     Wasm(Box<[wasm::Declaration]>),
@@ -92,6 +95,19 @@ pub enum Statement<T> {
 #[derive(Debug, Clone)]
 pub struct TraitMethodDecl {
     pub path: Path,
+    pub type_expr: TypeExpr,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct TraitTypeDecl {
+    pub path: Path,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct ImplTypeDef {
+    pub name: Spanned<String>,
     pub type_expr: TypeExpr,
     pub span: Span,
 }
@@ -348,12 +364,49 @@ fn lower_module_statements(
                         trait_statement.alias_target()?,
                         NameSpace::Trait,
                     )?;
+                    for target_associated_type in
+                        module_scope.direct_children(&target, NameSpace::Type)
+                    {
+                        let Some((_, associated_type_name)) =
+                            target_associated_type.minor.rsplit_once(Path::DELIMETER)
+                        else {
+                            continue;
+                        };
+                        module_scope.define_path(
+                            path.child(associated_type_name),
+                            NameSpace::Type,
+                            trait_statement.span(),
+                        );
+                    }
                     Statement::TraitAlias {
                         comments,
                         path,
                         target,
                     }
                 } else {
+                    let associated_types = trait_statement
+                        .associated_types()
+                        .into_iter()
+                        .map(|associated_type| {
+                            let associated_type_name = associated_type.name_text_spanned()?;
+                            lint_pascal_case_name(
+                                logger,
+                                "Associated type",
+                                &associated_type_name.inner,
+                                associated_type_name.span,
+                            );
+                            let associated_type_path = path.child(&associated_type_name.inner);
+                            module_scope.define_path(
+                                associated_type_path.clone(),
+                                NameSpace::Type,
+                                associated_type_name.span,
+                            );
+                            Some(TraitTypeDecl {
+                                path: associated_type_path,
+                                span: associated_type.span(),
+                            })
+                        })
+                        .collect::<Option<Box<[_]>>>()?;
                     let method_nodes = trait_statement.methods();
                     let method_paths = method_nodes
                         .into_iter()
@@ -389,6 +442,7 @@ fn lower_module_statements(
                         comments,
                         path,
                         parameters,
+                        associated_types,
                         methods,
                     }
                 }
@@ -404,6 +458,25 @@ fn lower_module_statements(
                     .type_args()
                     .into_iter()
                     .map(|arg| type_expr(module_scope, logger, arg))
+                    .collect::<Option<Box<[_]>>>()?;
+
+                let associated_types = impl_statement
+                    .associated_types()
+                    .into_iter()
+                    .map(|associated_type| {
+                        let associated_type_name = associated_type.name_text_spanned()?;
+                        lint_pascal_case_name(
+                            logger,
+                            "Associated type",
+                            &associated_type_name.inner,
+                            associated_type_name.span,
+                        );
+                        Some(ImplTypeDef {
+                            name: associated_type_name,
+                            type_expr: type_expr(module_scope, logger, associated_type.ty()?)?,
+                            span: associated_type.span(),
+                        })
+                    })
                     .collect::<Option<Box<[_]>>>()?;
 
                 let mut impl_scope = module_scope.nest_scope();
@@ -433,6 +506,7 @@ fn lower_module_statements(
                     comments,
                     trait_path,
                     arguments,
+                    associated_types,
                     methods,
                 }
             }

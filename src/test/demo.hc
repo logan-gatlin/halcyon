@@ -1,5 +1,7 @@
 bundle demo
 
-let a = 4
+type Point = (Real, Real)
 
-do show (Some 1.00001) |> println
+type Point2 = Point
+
+let p = Point2 (1.0, 2.0)

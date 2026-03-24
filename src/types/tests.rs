@@ -36,6 +36,7 @@ fn lookup_roundtrip_symbol(path: &Path) -> super::type_expr::TypeExprSymbol {
 
     let primitive = match path.minor.as_str() {
         "integer" | "Integer" => Some(Type::Integer.def(0)),
+        "natural" | "Natural" => Some(Type::Natural.def(0)),
         "real" | "Real" => Some(Type::Real.def(0)),
         "boolean" | "Boolean" => Some(Type::Boolean.def(0)),
         "string" | "String" => Some(Type::String.def(0)),
@@ -335,8 +336,8 @@ fn pretty_prints_struct_constraint_modes() {
         mode: StructMatch::AtLeast,
     };
 
-    assert_eq!(exact.pretty(), "{x: integer}");
-    assert_eq!(at_least.pretty(), "{x: integer, ..}");
+    assert_eq!(exact.pretty(), "{x: Integer}");
+    assert_eq!(at_least.pretty(), "{x: Integer, ..}");
 }
 
 #[test]
@@ -351,7 +352,7 @@ fn pretty_prints_sum_and_function_with_wrapping() {
 
     assert_eq!(
         function.pretty(),
-        "(| none | some (integer, boolean) ) -> integer"
+        "(| none | some (Integer, Boolean) ) -> Integer"
     );
 }
 
@@ -408,12 +409,13 @@ fn generated_forall_names_avoid_explicit_name_collisions() {
 #[test]
 fn display_uses_pretty_output() {
     let type_ = Type::func(Type::Integer, Type::Boolean);
-    assert_eq!(format!("{type_}"), "integer -> boolean");
+    assert_eq!(format!("{type_}"), "Integer -> Boolean");
 }
 
 #[test]
 fn pretty_round_trips_source_expressible_types() {
     assert_pretty_roundtrip(Type::Integer);
+    assert_pretty_roundtrip(Type::Natural);
     assert_pretty_roundtrip(Type::Tuple(vec![Type::Integer]));
     assert_pretty_roundtrip(Type::Tuple(vec![Type::Integer, Type::Boolean]));
     assert_pretty_roundtrip(Type::Array(Box::new(Type::Integer)));

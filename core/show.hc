@@ -1,5 +1,5 @@
 module show =
-  use core
+  use bundle
 
   trait Show: self =
     let show : self -> String

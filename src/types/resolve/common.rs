@@ -25,6 +25,7 @@ fn format_trait_argument(type_: &Type) -> String {
     match type_ {
         Type::Unit
         | Type::Integer
+        | Type::Natural
         | Type::Real
         | Type::Boolean
         | Type::String
@@ -53,7 +54,7 @@ mod tests {
         assert_eq!(format_trait_ref(&no_args), "demo::Eq");
         assert_eq!(
             format_trait_ref(&with_args),
-            "demo::Eq integer ([] boolean)"
+            "demo::Eq Integer ([] Boolean)"
         );
     }
 
@@ -66,7 +67,7 @@ mod tests {
 
         assert_eq!(
             format_trait_ref(&with_function_arg),
-            "demo::Show (integer -> boolean)"
+            "demo::Show (Integer -> Boolean)"
         );
     }
 }

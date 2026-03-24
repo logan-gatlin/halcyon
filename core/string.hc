@@ -1,5 +1,5 @@
 module string =
-  use core
+  use bundle
   use bundle::ops
   let empty = ""
   let concat = fn left right => left + right
