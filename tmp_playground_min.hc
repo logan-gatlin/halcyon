@@ -1,1 +1,0 @@
-do println "Hello world"
