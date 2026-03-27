@@ -26,6 +26,7 @@ import
   "default.hc",
   "show.hc",
   "test.hc",
+  "unwrap.hc",
   "hkt.hc",
   "io.hc",
   "process.hc",
@@ -40,6 +41,8 @@ import
   "natural.hc",
   "big-num.hc",
   "real.hc",
+  "parse.hc",
+  "append.hc",
   "function.hc",
   "time.hc",
   "prelude.hc"

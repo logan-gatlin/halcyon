@@ -291,6 +291,11 @@ fn elaborate_term(
                     &binding_type,
                     TypeMatchMode::Strict,
                 )
+                .or_else(|| {
+                    is_impl_method_path(context, &binding)
+                        .then(|| template_predicates_for_path(context, &binding, true))
+                        .flatten()
+                })
                 .unwrap_or_default();
                 let has_non_concrete = predicates
                     .iter()
@@ -1145,11 +1150,52 @@ fn is_trait_item_path(
     context: &ElaborationContext<'_>,
     path: &Path,
 ) -> bool {
+    trait_name_for_method_path(context, path).is_some()
+}
+
+fn is_impl_method_path(
+    context: &ElaborationContext<'_>,
+    path: &Path,
+) -> bool {
+    context
+        .symbols
+        .trait_impls()
+        .values()
+        .flat_map(|implementations| implementations.iter())
+        .any(|implementation| implementation.methods.values().any(|method_path| method_path == path))
+}
+
+fn trait_name_for_method_path<'a>(
+    context: &'a ElaborationContext<'_>,
+    path: &Path,
+) -> Option<&'a Path> {
     context
         .symbols
         .trait_defs()
-        .values()
-        .any(|def| def.methods.contains_key(path))
+        .iter()
+        .find(|(_, def)| def.methods.contains_key(path))
+        .map(|(trait_name, _)| trait_name)
+}
+
+fn reorder_trait_item_predicates(
+    context: &ElaborationContext<'_>,
+    path: &Path,
+    mut predicates: Vec<TraitConstraint>,
+) -> Vec<TraitConstraint> {
+    let Some(trait_name) = trait_name_for_method_path(context, path) else {
+        return predicates;
+    };
+    let Some(self_predicate_index) = predicates
+        .iter()
+        .position(|predicate| predicate.trait_name == *trait_name)
+    else {
+        return predicates;
+    };
+    if self_predicate_index != 0 {
+        let self_predicate = predicates.remove(self_predicate_index);
+        predicates.insert(0, self_predicate);
+    }
+    predicates
 }
 
 fn apply_explicit_arguments(
@@ -1201,6 +1247,7 @@ fn dictionary_args_for_path(
         TypeMatchMode::Relaxed,
         include_ground_predicates,
     )?;
+    let predicates = reorder_trait_item_predicates(context, path, predicates);
     let args = dictionary_args_for_predicates(&predicates, dict_env, context.symbols);
     tracing::debug!(
         path = %path,
@@ -1226,6 +1273,24 @@ fn dictionary_args_for_predicates(
         }
     }
     Some(args)
+}
+
+fn template_predicates_for_path(
+    context: &ElaborationContext<'_>,
+    path: &Path,
+    include_ground_predicates: bool,
+) -> Option<Vec<TraitConstraint>> {
+    let templates = path_predicate_templates(context, path)?;
+    let mut predicates = Vec::new();
+    for predicate in templates {
+        if !include_ground_predicates && predicate_is_ground(predicate) {
+            continue;
+        }
+        if !predicates.contains(predicate) {
+            predicates.push(predicate.clone());
+        }
+    }
+    Some(predicates)
 }
 
 fn build_dict_params(
@@ -1555,7 +1620,26 @@ fn substitute_type_vars_in_type(
                 arguments,
             })
         }
-        Type::StructConstraint { .. } | Type::MetaVar(_) | Type::ForAll { .. } => None,
+        Type::MetaVar(_) => Some(type_.clone()),
+        Type::ForAll { name, body } => {
+            substitute_type_vars_in_type(body, bindings)
+                .map(|body| Type::ForAll {
+                    name: name.clone(),
+                    body: Box::new(body),
+                })
+        }
+        Type::StructConstraint { fields, mode } => {
+            fields
+                .iter()
+                .map(|(name, type_)| {
+                    substitute_type_vars_in_type(type_, bindings).map(|type_| (name.clone(), type_))
+                })
+                .collect::<Option<IndexMap<_, _>>>()
+                .map(|fields| Type::StructConstraint {
+                    fields,
+                    mode: *mode,
+                })
+        }
         other => Some(other.clone()),
     }
 }
@@ -2606,6 +2690,19 @@ mod tests {
         assert!(term_has_local_wrapped_binding(result, "left_local#"));
         assert!(term_has_local_wrapped_binding(result, "right_local#"));
         assert!(term_has_refutable_group_guard_with_fallback(result));
+    }
+
+    #[test]
+    fn instantiate_predicates_keeps_meta_vars_in_predicate_arguments() {
+        let predicate = TraitConstraint {
+            trait_name: Path::new("demo", "Show"),
+            arguments: vec![Type::Array(Box::new(Type::MetaVar(7)))],
+        };
+
+        let instantiated = instantiate_predicates(&[predicate.clone()], &[])
+            .expect("predicate instantiation should keep meta vars");
+
+        assert_eq!(instantiated, vec![predicate]);
     }
 
     #[test]

@@ -173,29 +173,12 @@ module opt =
     | Some value => some_fn value
     | None => none_value
 
-  (*>
-  Extracts the value from an option, or uses a fallback.
-
-  - Arguments:
-    - `backup`: Fallback value.
-    - `opt`: Source option.
-  - Returns: Inner value for `Some`, otherwise `backup`.
-  *)
-  let unwrap_or = fn backup opt => match opt with
-    | Some a => a
-    | None => backup
-
-  (*>
-  Extracts the value from an option, or computes a fallback lazily.
-
-  - Arguments:
-    - `backup_fn`: Fallback thunk.
-    - `opt`: Source option.
-  - Returns: Inner value for `Some`, otherwise `backup_fn ()`.
-  *)
-  let unwrap_or_else = fn backup_fn opt => match opt with
-    | Some a => a
-    | None => backup_fn ()
+  --> @HIDDEN
+  impl bundle::unwrap::Unwrap Option, for a in a =
+    let unwrap_or_else = fn backup_fn opt => match opt with
+      | Some value => value
+      | None => backup_fn ()
+  end
 
   --> @HIDDEN
   impl bundle::Default for a in Option a =

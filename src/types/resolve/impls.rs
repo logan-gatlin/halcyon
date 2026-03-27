@@ -386,6 +386,7 @@ impl ImplProcessingContext<'_> {
             }
 
             let mut method_declared_predicates = Vec::new();
+            let mut expected_method_type = None;
             let inference_result = {
                 let _profile = crate::profiling::scope("resolve.impl.method_infer_term");
                 self.inference_context.infer_term(
@@ -427,6 +428,12 @@ impl ImplProcessingContext<'_> {
                             &impl_head_predicate,
                             &associated_type_assignments,
                         );
+                        let instantiated =
+                            instantiate_scheme_for_impl_check(
+                                self.inference_context,
+                                instantiated,
+                                method.span,
+                            );
                         tracing::debug!(
                             method = %canonical_trait_method,
                             instantiated = %instantiated.type_.pretty(),
@@ -436,11 +443,7 @@ impl ImplProcessingContext<'_> {
                             let _profile =
                                 crate::profiling::scope("resolve.impl.normalize_expected_type");
                             normalize_alias_applications(
-                                instantiate_forall_for_impl_check(
-                                    self.inference_context,
-                                    instantiated.type_.clone(),
-                                    method.span,
-                                ),
+                                instantiated.type_.clone(),
                                 &resolved_type_definitions,
                             )
                         };
@@ -483,6 +486,8 @@ impl ImplProcessingContext<'_> {
                                     ),
                                 },
                             );
+                        } else {
+                            expected_method_type = Some(expected_type.clone());
                         }
                         for predicate in instantiated.predicates {
                             if !method_declared_predicates.contains(&predicate) {
@@ -526,6 +531,10 @@ impl ImplProcessingContext<'_> {
             }
 
             typed_value = normalize_term_types(typed_value, self.inference_context.table_mut());
+            if let Some(expected_type) = expected_method_type.as_ref() {
+                typed_value =
+                    coerce_impl_method_term_types(typed_value, expected_type, self.symbols);
+            }
             let normalized_type = typed_value.type_.clone();
             if let Some(recursive_method_type) = recursive_impl_method_types.get(&method.impl_path)
                 && let Err(error) = self
@@ -556,10 +565,7 @@ impl ImplProcessingContext<'_> {
                 );
             }
 
-            let mut scheme_predicates = inferred_predicates;
-            scheme_predicates.retain(|predicate| {
-                !predicate_matches_impl_head(self.symbols, predicate, &impl_head_predicate)
-            });
+            let mut scheme_predicates = Vec::new();
             for predicate in method_declared_predicates {
                 if !scheme_predicates.contains(&predicate) {
                     scheme_predicates.push(predicate);
@@ -708,12 +714,15 @@ fn substitute_impl_associated_types_in_type(
         | Type::TypeVar(_)
         | Type::MetaVar(_) => type_,
         Type::ForAll { name, body } => {
+            let lifted_impl_head = shift_trait_ref_type_vars(impl_head, 1, 0);
+            let lifted_associated_types =
+                shift_associated_type_assignments(associated_types, 1, 0);
             Type::ForAll {
                 name,
                 body: Box::new(substitute_impl_associated_types_in_type(
                     *body,
-                    impl_head,
-                    associated_types,
+                    &lifted_impl_head,
+                    &lifted_associated_types,
                 )),
             }
         }
@@ -820,6 +829,43 @@ fn substitute_impl_associated_types_in_type(
     normalized
 }
 
+fn shift_trait_ref_type_vars(
+    trait_ref: &TraitRef,
+    amount: i32,
+    cutoff: u32,
+) -> TraitRef {
+    TraitRef {
+        trait_name: trait_ref.trait_name.clone(),
+        arguments: trait_ref
+            .arguments
+            .iter()
+            .map(|argument| {
+                argument
+                    .shift_type_vars(amount, cutoff)
+                    .unwrap_or_else(|| argument.clone())
+            })
+            .collect(),
+    }
+}
+
+fn shift_associated_type_assignments(
+    associated_types: &IndexMap<Path, Type>,
+    amount: i32,
+    cutoff: u32,
+) -> IndexMap<Path, Type> {
+    associated_types
+        .iter()
+        .map(|(path, assigned_type)| {
+            (
+                path.clone(),
+                assigned_type
+                    .shift_type_vars(amount, cutoff)
+                    .unwrap_or_else(|| assigned_type.clone()),
+            )
+        })
+        .collect()
+}
+
 fn instantiate_forall_for_impl_check(
     inference_context: &mut InferenceContext,
     type_: Type,
@@ -833,6 +879,20 @@ fn instantiate_forall_for_impl_check(
         }
         other => other,
     }
+}
+
+fn instantiate_scheme_for_impl_check(
+    inference_context: &mut InferenceContext,
+    scheme: TypeScheme,
+    span: Span,
+) -> TypeScheme {
+    inference_context
+        .instantiate_scheme(&scheme, span)
+        .map(|instance| TypeScheme {
+            type_: instance.type_,
+            predicates: instance.predicates,
+        })
+        .unwrap_or(scheme)
 }
 
 fn normalize_alias_applications(
@@ -1285,6 +1345,380 @@ fn format_unguarded_impl_method_cycle(
     names.join(" -> ")
 }
 
+fn coerce_impl_method_term_types(
+    term: Term<Type>,
+    expected_type: &Type,
+    symbols: &SymbolTable,
+) -> Term<Type> {
+    let replacements =
+        collect_structural_parameter_type_replacements(&term.type_, expected_type, symbols);
+    if replacements.is_empty() {
+        return term;
+    }
+    rewrite_term_types_with_replacements(term, &replacements)
+}
+
+fn collect_structural_parameter_type_replacements(
+    inferred: &Type,
+    expected: &Type,
+    symbols: &SymbolTable,
+) -> Vec<(Type, Type)> {
+    let mut replacements = Vec::new();
+    let mut left = inferred;
+    let mut right = expected;
+
+    while let (
+        Type::Function(left_parameter, left_result),
+        Type::Function(right_parameter, right_result),
+    ) = (left, right)
+    {
+        if matches!(left_parameter.as_ref(), Type::StructConstraint { .. })
+            && left_parameter != right_parameter
+            && allow_structural_parameter_coercion(right_parameter, symbols)
+        {
+            if let Some((_, existing_target)) = replacements
+                .iter()
+                .find(|(source, _)| source == left_parameter.as_ref())
+            {
+                if existing_target != right_parameter.as_ref() {
+                    return Vec::new();
+                }
+            } else {
+                replacements.push(((*left_parameter.clone()), (*right_parameter.clone())));
+            }
+        }
+        left = left_result;
+        right = right_result;
+    }
+
+    replacements
+}
+
+fn allow_structural_parameter_coercion(
+    type_: &Type,
+    symbols: &SymbolTable,
+) -> bool {
+    matches!(type_, Type::Struct { .. })
+        || match type_ {
+            Type::Named { name, .. } => {
+                symbols
+                    .type_definitions()
+                    .get(name)
+                    .map(|definition| peel_leading_foralls(&definition.body).1)
+                    .is_some_and(|body| matches!(body, Type::Struct { .. }))
+            }
+            Type::Apply { .. } => {
+                let (constructor, arguments) = split_applied_type(type_.clone());
+                let Type::Named { name, .. } = constructor else {
+                    return false;
+                };
+                symbols
+                    .type_definitions()
+                    .get(&name)
+                    .and_then(|definition| instantiate_forall_strict(&definition.body, &arguments))
+                    .map(|instantiated| peel_leading_foralls(&instantiated).1)
+                    .is_some_and(|body| matches!(body, Type::Struct { .. }))
+            }
+            _ => false,
+        }
+}
+
+fn rewrite_term_types_with_replacements(
+    term: Term<Type>,
+    replacements: &[(Type, Type)],
+) -> Term<Type> {
+    let Term {
+        comments,
+        kind,
+        span,
+        type_,
+    } = term;
+
+    let kind = match kind {
+        TermKind::Let {
+            assignee,
+            scope,
+            value,
+            then,
+            else_,
+        } => {
+            TermKind::Let {
+                assignee: rewrite_pattern_types_with_replacements(assignee, replacements),
+                scope,
+                value: Box::new(rewrite_term_types_with_replacements(*value, replacements)),
+                then: Box::new(rewrite_term_types_with_replacements(*then, replacements)),
+                else_: Box::new(rewrite_term_types_with_replacements(*else_, replacements)),
+            }
+        }
+        TermKind::Immediate(value) => TermKind::Immediate(value),
+        TermKind::Identifier(path) => TermKind::Identifier(path),
+        TermKind::Tuple(items) => {
+            TermKind::Tuple(
+                items
+                    .into_iter()
+                    .map(|item| rewrite_term_types_with_replacements(item, replacements))
+                    .collect(),
+            )
+        }
+        TermKind::Struct(fields) => {
+            TermKind::Struct(
+                fields
+                    .into_iter()
+                    .map(|(name, value)| {
+                        (
+                            name,
+                            rewrite_term_types_with_replacements(value, replacements),
+                        )
+                    })
+                    .collect(),
+            )
+        }
+        TermKind::Field { of, index } => {
+            TermKind::Field {
+                of: Box::new(rewrite_term_types_with_replacements(*of, replacements)),
+                index,
+            }
+        }
+        TermKind::Function {
+            parameter_name,
+            parameter_type,
+            captures,
+            body,
+        } => {
+            TermKind::Function {
+                parameter_name,
+                parameter_type,
+                captures: captures
+                    .into_iter()
+                    .map(|(path, type_)| {
+                        (path, rewrite_type_with_replacements(type_, replacements))
+                    })
+                    .collect(),
+                body: Box::new(rewrite_term_types_with_replacements(*body, replacements)),
+            }
+        }
+        TermKind::InlineWasm {
+            asserted_type,
+            definitions,
+            instructions,
+        } => {
+            TermKind::InlineWasm {
+                asserted_type,
+                definitions,
+                instructions,
+            }
+        }
+        TermKind::Call { callee, argument } => {
+            TermKind::Call {
+                callee: Box::new(rewrite_term_types_with_replacements(*callee, replacements)),
+                argument: Box::new(rewrite_term_types_with_replacements(
+                    *argument,
+                    replacements,
+                )),
+            }
+        }
+        TermKind::Semicolon(left, right) => {
+            TermKind::Semicolon(
+                Box::new(rewrite_term_types_with_replacements(*left, replacements)),
+                Box::new(rewrite_term_types_with_replacements(*right, replacements)),
+            )
+        }
+        TermKind::Unreachable => TermKind::Unreachable,
+    };
+
+    Term {
+        comments,
+        kind,
+        span,
+        type_: rewrite_type_with_replacements(type_, replacements),
+    }
+}
+
+fn rewrite_pattern_types_with_replacements(
+    pattern: Pattern<Type>,
+    replacements: &[(Type, Type)],
+) -> Pattern<Type> {
+    let Pattern {
+        comments,
+        kind,
+        span,
+        type_,
+    } = pattern;
+
+    let kind = match kind {
+        PatternKind::Hole => PatternKind::Hole,
+        PatternKind::Identifier(path) => PatternKind::Identifier(path),
+        PatternKind::ConstConstructor(path) => PatternKind::ConstConstructor(path),
+        PatternKind::Constructor(path, payload) => {
+            PatternKind::Constructor(
+                path,
+                Box::new(rewrite_pattern_types_with_replacements(
+                    *payload,
+                    replacements,
+                )),
+            )
+        }
+        PatternKind::Tuple(items) => {
+            PatternKind::Tuple(
+                items
+                    .into_iter()
+                    .map(|item| rewrite_pattern_types_with_replacements(item, replacements))
+                    .collect::<Vec<_>>()
+                    .into_boxed_slice(),
+            )
+        }
+        PatternKind::Array {
+            starting,
+            glob,
+            ending,
+        } => {
+            PatternKind::Array {
+                starting: starting
+                    .into_iter()
+                    .map(|item| rewrite_pattern_types_with_replacements(item, replacements))
+                    .collect::<Vec<_>>()
+                    .into_boxed_slice(),
+                glob,
+                ending: ending
+                    .into_iter()
+                    .map(|item| rewrite_pattern_types_with_replacements(item, replacements))
+                    .collect::<Vec<_>>()
+                    .into_boxed_slice(),
+            }
+        }
+        PatternKind::Struct(fields) => {
+            PatternKind::Struct(
+                fields
+                    .into_iter()
+                    .map(|(name, value)| {
+                        (
+                            name,
+                            rewrite_pattern_types_with_replacements(value, replacements),
+                        )
+                    })
+                    .collect(),
+            )
+        }
+        PatternKind::Immediate(value) => PatternKind::Immediate(value),
+        PatternKind::TypeHint(inner, type_expr) => {
+            PatternKind::TypeHint(
+                Box::new(rewrite_pattern_types_with_replacements(
+                    *inner,
+                    replacements,
+                )),
+                type_expr,
+            )
+        }
+    };
+
+    Pattern {
+        comments,
+        kind,
+        span,
+        type_: rewrite_type_with_replacements(type_, replacements),
+    }
+}
+
+fn rewrite_type_with_replacements(
+    type_: Type,
+    replacements: &[(Type, Type)],
+) -> Type {
+    if let Some((_, replacement)) = replacements.iter().find(|(source, _)| source == &type_) {
+        return replacement.clone();
+    }
+
+    match type_ {
+        Type::Unit
+        | Type::Integer
+        | Type::Natural
+        | Type::Real
+        | Type::Boolean
+        | Type::String
+        | Type::Glyph
+        | Type::TypeVar(_)
+        | Type::MetaVar(_) => type_,
+        Type::ForAll { name, body } => {
+            Type::ForAll {
+                name,
+                body: Box::new(rewrite_type_with_replacements(*body, replacements)),
+            }
+        }
+        Type::Named { name, body } => Type::Named { name, body },
+        Type::StructConstraint { fields, mode } => {
+            Type::StructConstraint {
+                fields: fields
+                    .into_iter()
+                    .map(|(field_name, field_type)| {
+                        (
+                            field_name,
+                            rewrite_type_with_replacements(field_type, replacements),
+                        )
+                    })
+                    .collect(),
+                mode,
+            }
+        }
+        Type::Struct { fields } => {
+            Type::Struct {
+                fields: fields
+                    .into_iter()
+                    .map(|(field_name, field_type)| {
+                        (
+                            field_name,
+                            rewrite_type_with_replacements(field_type, replacements),
+                        )
+                    })
+                    .collect(),
+            }
+        }
+        Type::Array(inner) => {
+            Type::Array(Box::new(rewrite_type_with_replacements(
+                *inner,
+                replacements,
+            )))
+        }
+        Type::Tuple(items) => {
+            Type::Tuple(
+                items
+                    .into_iter()
+                    .map(|item| rewrite_type_with_replacements(item, replacements))
+                    .collect(),
+            )
+        }
+        Type::Sum { variants } => {
+            Type::Sum {
+                variants: variants
+                    .into_iter()
+                    .map(|(variant_name, variant_type)| {
+                        (
+                            variant_name,
+                            rewrite_type_with_replacements(variant_type, replacements),
+                        )
+                    })
+                    .collect(),
+            }
+        }
+        Type::Function(parameter, result) => {
+            Type::func(
+                rewrite_type_with_replacements(*parameter, replacements),
+                rewrite_type_with_replacements(*result, replacements),
+            )
+        }
+        Type::Apply {
+            constructor,
+            arguments,
+        } => {
+            Type::Apply {
+                constructor: Box::new(rewrite_type_with_replacements(*constructor, replacements)),
+                arguments: arguments
+                    .into_iter()
+                    .map(|argument| rewrite_type_with_replacements(argument, replacements))
+                    .collect(),
+            }
+        }
+    }
+}
+
 fn type_contains_local_nominal_type(
     type_: &Type,
     module_name: &str,
@@ -1565,6 +1999,76 @@ mod tests {
         assert!(type_contains_local_nominal_type(&local, "demo"));
         assert!(type_contains_local_nominal_type(&nested, "demo"));
         assert!(!type_contains_local_nominal_type(&nested, "other"));
+    }
+
+    #[test]
+    fn collects_structural_parameter_replacement_for_named_struct_targets() {
+        let cat_path = Path::new("demo", "Cat");
+        let mut symbols = SymbolTable::new();
+        symbols.insert_type(
+            cat_path.clone(),
+            TypeDefinition {
+                parameters: 0,
+                parameter_kinds: Vec::new(),
+                body: Type::Struct {
+                    fields: [("name".to_string(), Type::String)].into_iter().collect(),
+                },
+                kind: TypeDefinitionKind::Named,
+            },
+        );
+
+        let inferred_parameter = Type::StructConstraint {
+            fields: [("name".to_string(), Type::String)].into_iter().collect(),
+            mode: crate::types::StructMatch::AtLeast,
+        };
+        let inferred = Type::func(inferred_parameter.clone(), Type::String);
+        let cat_type = Type::Named {
+            name: cat_path,
+            body: Box::new(Type::Unit),
+        };
+        let expected = Type::func(cat_type.clone(), Type::String);
+
+        let replacements =
+            collect_structural_parameter_type_replacements(&inferred, &expected, &symbols);
+
+        assert_eq!(replacements, vec![(inferred_parameter, cat_type)]);
+    }
+
+    #[test]
+    fn skips_structural_parameter_replacement_for_named_sum_targets() {
+        let big_nat_path = Path::new("demo", "BigNat");
+        let mut symbols = SymbolTable::new();
+        symbols.insert_type(
+            big_nat_path.clone(),
+            TypeDefinition {
+                parameters: 0,
+                parameter_kinds: Vec::new(),
+                body: Type::Sum {
+                    variants: [("Nat".to_string(), Type::Natural)].into_iter().collect(),
+                },
+                kind: TypeDefinitionKind::Named,
+            },
+        );
+
+        let inferred = Type::func(
+            Type::StructConstraint {
+                fields: [("value".to_string(), Type::Natural)].into_iter().collect(),
+                mode: crate::types::StructMatch::AtLeast,
+            },
+            Type::Natural,
+        );
+        let expected = Type::func(
+            Type::Named {
+                name: big_nat_path,
+                body: Box::new(Type::Unit),
+            },
+            Type::Natural,
+        );
+
+        let replacements =
+            collect_structural_parameter_type_replacements(&inferred, &expected, &symbols);
+
+        assert!(replacements.is_empty());
     }
 
     #[test]

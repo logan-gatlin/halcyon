@@ -1,7 +1,12 @@
-bundle demo
+bundle temperature
 
-let d_tup = (default, default)
-let (i1, i2): (Integer, Integer) = d_tup
+let farenheit_to_celcius =
+  fn temp => (temp - 32.0) / 1.8
 
-do show i1 |> println
-do show i2 |> println
+do readln "Enter a temperature in Farenheit: "
+      |> parse
+      +> farenheit_to_celcius
+      +> show
+      +> prepend "The tempareture in Celcius is: "
+      |> unwrap_or_else "Input must be a number"
+      |> println

@@ -35,6 +35,10 @@ module prelude =
   --> @HIDDEN
   trait ~Show = core::show::Show
   --> @HIDDEN
+  trait ~Parse = core::parse::Parse
+  --> @HIDDEN
+  trait ~Append = core::append::Append
+  --> @HIDDEN
   trait ~Applicative = core::hkt::Applicative
   --> @HIDDEN
   trait ~Monad = core::hkt::Monad
@@ -150,6 +154,12 @@ module prelude =
   --> @HIDDEN
   let show = bundle::show::show
   --> @HIDDEN
+  let parse = bundle::parse::parse
+  --> @HIDDEN
+  let append = bundle::append::append
+  --> @HIDDEN
+  let prepend = bundle::append::prepend
+  --> @HIDDEN
   let map = bundle::hkt::map
   --> @HIDDEN
   let flatten = bundle::hkt::flatten
@@ -161,4 +171,10 @@ module prelude =
   let any = bundle::hkt::any
   --> @HIDDEN
   let all = bundle::hkt::all
+  --> @HIDDEN
+  let unwrap_or_else = bundle::unwrap::unwrap_or_else
+  --> @HIDDEN
+  let unwrap_or = bundle::unwrap::unwrap_or
+  --> @HIDDEN
+  let unwrap = bundle::unwrap::unwrap
 end

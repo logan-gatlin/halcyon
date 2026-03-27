@@ -34,6 +34,7 @@ use super::{
     Type,
     TypeTransform,
     normalize_parameter_kinds,
+    sorted_unique_predicates,
 };
 
 /// Classification of global symbols stored in the symbol table.
@@ -691,7 +692,8 @@ impl SymbolTable {
             .predicates
             .into_iter()
             .map(|predicate| table.normalize_trait_ref(&predicate))
-            .collect();
+            .collect::<Vec<_>>();
+        let predicates = sorted_unique_predicates(&predicates);
 
         Ok(Some(MethodSpecialization {
             trait_name: trait_name.clone(),
@@ -2103,6 +2105,33 @@ mod tests {
                 Path::new("core", "show::Show"),
                 vec![Type::Integer]
             )]
+        );
+    }
+
+    #[test]
+    fn core_show_result_specialization_uses_canonical_predicate_order() {
+        let mut symbols = SymbolTable::new();
+        let mut logger = Logger::new();
+        let _ = compile_core_module(&mut symbols, &mut logger);
+
+        let method_path = Path::new("core", "show::show");
+        let result_string_integer = Type::Named {
+            name: Path::new("core", "result::Result"),
+            body: Box::new(Type::Unit),
+        }
+        .apply(vec![Type::String, Type::Integer]);
+
+        let specialization = symbols
+            .resolve_method_specialization(&method_path, &[result_string_integer])
+            .expect("resolution should succeed")
+            .expect("expected specialization");
+
+        assert_eq!(
+            specialization.predicates,
+            vec![
+                TraitRef::new(Path::new("core", "show::Show"), vec![Type::Integer]),
+                TraitRef::new(Path::new("core", "show::Show"), vec![Type::String]),
+            ]
         );
     }
 }

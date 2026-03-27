@@ -128,34 +128,6 @@ module result =
     | Err error => Some error
 
   (*>
-  Extracts the success value, or returns a backup.
-
-  - Arguments:
-    - `backup`: Fallback value.
-    - `result`: Source result.
-  - Returns: `Ok` value or `backup`.
-  *)
-  let unwrap_or = fn backup result => match result with
-    | Ok value => value
-    | Err _ => backup
-
-  (*>
-  Extracts the success value, or computes a fallback from the error.
-
-  - Arguments:
-    - `backup_fn`: Function from error to fallback value.
-    - `result`: Source result.
-  - Returns: `Ok` value or `backup_fn error`.
-
-  ```hc
-  let timeout = result::unwrap_or_else (fn _ => 30) parsed_timeout
-  ```
-  *)
-  let unwrap_or_else = fn backup_fn result => match result with
-    | Ok value => value
-    | Err error => backup_fn error
-
-  (*>
   Checks whether a result contains a specific success value.
 
   - Arguments:
@@ -210,6 +182,13 @@ module result =
   let error_option = fn result => match result with
     | Ok _ => None
     | Err error => Some error
+
+  --> @HIDDEN
+  impl bundle::unwrap::Unwrap for err in Result err, for a in a =
+    let unwrap_or_else = fn backup_fn result => match result with
+      | Ok value => value
+      | Err _ => backup_fn ()
+  end
 
   --> @HIDDEN
   impl bundle::Default for err ok in Result err ok where bundle::Default ok =

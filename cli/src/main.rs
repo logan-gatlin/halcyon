@@ -1566,6 +1566,16 @@ mod tests {
     }
 
     #[test]
+    fn demo_bundle_trait_impl_executes_without_failures() {
+        let root_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../src/test/demo.hc");
+        let root_path = root_path.to_string_lossy().to_string();
+        let linked =
+            compile_and_link_inputs(&[root_path], "app", DebugInfoOptions::none(), false, true)
+                .expect("demo bundle should compile successfully");
+        link_and_run(&[linked], "app", &[]).expect("demo bundle should execute without trap");
+    }
+
+    #[test]
     fn accepts_binary_and_source_inputs_in_sequence() {
         let mut logger = Logger::new();
         let mut symbols = SymbolTable::new();

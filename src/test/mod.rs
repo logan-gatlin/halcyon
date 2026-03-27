@@ -5,8 +5,8 @@
 
 use super::*;
 use crate::hc_core::{
-    CoreType,
     compile_core_module,
+    CoreType,
 };
 use crate::ir::Path;
 use crate::types::symbol_table::Symbol;
@@ -644,7 +644,7 @@ fn higher_kinded_annotation_rejects_constructor_kind_where_type_is_required() {
 #[test]
 fn core_monad_methods_dispatch_for_option_array_and_result() {
     init_tracing();
-    let source = "module demo =\n\tlet opt_map : core::opt::Option core::Integer = core::hkt::map (fn x => x + 1) (core::opt::Some 1)\n\tlet opt_flatten : core::opt::Option core::Integer = core::hkt::flatten (core::opt::Some (core::opt::Some 1))\n\tlet opt_bind : core::opt::Option core::Integer = core::hkt::flatten (core::hkt::map (fn x => core::opt::Some (x + 1)) (core::opt::Some 1))\n\tlet arr_map : [] core::Integer = core::hkt::map (fn x => x + 1) [1, 2, 3]\n\tlet res_bind : core::result::Result core::String core::Integer = core::hkt::flatten (core::hkt::map (fn x => core::result::Ok (x + 1)) (core::result::Ok 1))\nend\n";
+    let source = "module demo =\n\tlet opt_map : core::opt::Option core::Integer = core::hkt::map (core::opt::Some 1) (fn x => x + 1)\n\tlet opt_flatten : core::opt::Option core::Integer = core::hkt::flatten (core::opt::Some (core::opt::Some 1))\n\tlet opt_bind : core::opt::Option core::Integer = core::hkt::flatten (core::hkt::map (core::opt::Some 1) (fn x => core::opt::Some (x + 1)))\n\tlet arr_map : [] core::Integer = core::hkt::map [1, 2, 3] (fn x => x + 1)\n\tlet res_bind : core::result::Result core::String core::Integer = core::hkt::flatten (core::hkt::map (core::result::Ok 1) (fn x => core::result::Ok (x + 1)))\nend\n";
     let mut symbols = SymbolTable::new();
     let mut logger = Logger::new();
     let _core = compile_core_module(&mut symbols, &mut logger);
@@ -2023,11 +2023,9 @@ fn sum_type_does_not_publish_typename_constructor() {
     }
 
     assert_logger_is_ok(&logger, "sum constructors should still compile");
-    assert!(
-        !symbols
-            .constructors()
-            .contains(&Path::new("demo", "Option"))
-    );
+    assert!(!symbols
+        .constructors()
+        .contains(&Path::new("demo", "Option")));
     assert!(symbols.constructors().contains(&Path::new("demo", "Some")));
     assert!(symbols.constructors().contains(&Path::new("demo", "None")));
 }

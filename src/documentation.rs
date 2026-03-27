@@ -1,10 +1,10 @@
 use crate::ir::{
-    is_placeholder_type_constructor_path,
     Path,
     PatternKind,
     ScopeKind,
     Statement,
     TermKind,
+    is_placeholder_type_constructor_path,
 };
 use crate::types::{
     ResolvedModule,
@@ -372,6 +372,7 @@ fn render_entry(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Span;
     use crate::ir::{
         ImmediateValue,
         ImplMethod,
@@ -383,7 +384,6 @@ mod tests {
         TypeExprKind,
     };
     use crate::types::TraitRef;
-    use crate::Span;
     use indexmap::IndexMap;
 
     fn typed_unit_term() -> Term<Type> {

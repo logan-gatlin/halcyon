@@ -223,7 +223,7 @@ module array =
     | [] => bundle::hkt::new []
     | [value, ..tail] =>
       bundle::hkt::lift2
-        (fn mapped_value mapped_tail => [mapped_value] + mapped_tail)
+        (fn mapped_value mapped_tail => array::concat [mapped_value] mapped_tail)
         (f value)
         (array::traverse f tail)
 

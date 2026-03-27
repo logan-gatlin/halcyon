@@ -164,6 +164,77 @@ let test_show_trait = fn _ =>
   let _ = assert (show nested == "[Some(1), None]") "show nested array" in
   ()
 
+let test_parse_trait = fn _ =>
+  let parse_unit : String -> Option Unit = core::parse::parse in
+  let parse_boolean : String -> Option Boolean = core::parse::parse in
+  let parse_integer : String -> Option Integer = core::parse::parse in
+  let parse_natural : String -> Option Natural = core::parse::parse in
+  let parse_real : String -> Option Real = core::parse::parse in
+  let parse_string : String -> Option String = core::parse::parse in
+  let parse_glyph : String -> Option Glyph = core::parse::parse in
+  let _ = assert (parse_unit "()" == Some ()) "parse unit" in
+  let _ = assert (parse_unit "( )" == None) "parse unit rejects spaces" in
+  let _ = assert (parse_boolean "true" == Some true) "parse boolean true" in
+  let _ = assert (parse_boolean "false" == Some false) "parse boolean false" in
+  let _ = assert (parse_boolean "True" == None) "parse boolean invalid case" in
+  let _ = assert (parse_integer "42" == Some 42) "parse integer positive" in
+  let _ = assert (parse_integer "-42" == Some (-42)) "parse integer negative" in
+  let _ = assert (parse_integer "+7" == Some 7) "parse integer plus sign" in
+  let _ = assert (parse_integer "4x" == None) "parse integer invalid suffix" in
+  let _ = assert (parse_natural "42" == Some 42n) "parse natural positive" in
+  let _ = assert (parse_natural "-1" == None) "parse natural rejects sign" in
+  let _ = assert (parse_real "2" == Some 2.0) "parse real integer form" in
+  let _ = assert (parse_real "-0.25" == Some (-0.25)) "parse real decimal" in
+  let _ = assert (parse_real "1." == None) "parse real rejects trailing dot" in
+  let _ = assert
+    (match parse_real "nan" with
+      | Some value => core::real::is_nan value
+      | None => false)
+    "parse real nan"
+  in
+  let _ = assert
+    (match parse_real "inf" with
+      | Some value => core::real::is_infinite value and (value > 0.0)
+      | None => false)
+    "parse real inf"
+  in
+  let _ = assert
+    (match parse_real "-inf" with
+      | Some value => core::real::is_infinite value and (value < 0.0)
+      | None => false)
+    "parse real negative inf"
+  in
+  let _ = assert (parse_string "hello" == Some "hello") "parse string identity" in
+  let _ = assert (parse_glyph "a" == Some 'a') "parse glyph one char" in
+  let _ = assert (parse_glyph "" == None) "parse glyph empty" in
+  let _ = assert (parse_glyph "ab" == None) "parse glyph multi char" in
+  ()
+
+let test_append_trait = fn _ =>
+  let append_string : String -> String -> String = append in
+  let prepend_string : String -> String -> String = prepend in
+  let append_integer_array : Array Integer -> Array Integer -> Array Integer = append in
+  let prepend_integer_array : Array Integer -> Array Integer -> Array Integer = prepend in
+  let _ = assert (append_string "!" "hello" == "hello!") "append string suffix" in
+  let _ = assert (prepend_string "hello" "!" == "hello!") "prepend string prefix" in
+  let _ = assert (append_integer_array [3, 4] [1, 2] == [1, 2, 3, 4]) "append array suffix" in
+  let _ = assert (prepend_integer_array [1, 2] [3, 4] == [1, 2, 3, 4]) "prepend array prefix" in
+  let _ = assert (core::opt::map (prepend "pre-") (Some "fix") == Some "pre-fix") "prepend string partial application" in
+  ()
+
+let test_unwrap_trait = fn _ =>
+  let some_integer : Option Integer = Some 7 in
+  let no_integer : Option Integer = None in
+  let option_unwrap_or_else : (Unit -> Integer) -> Option Integer -> Integer = unwrap_or_else in
+  let option_unwrap_or : Integer -> Option Integer -> Integer = unwrap_or in
+  let option_unwrap : Option Integer -> Integer = unwrap in
+  let _ = assert (option_unwrap_or_else (fn _ => 0) some_integer == 7) "unwrap_or_else option some" in
+  let _ = assert (option_unwrap_or_else (fn _ => 0) no_integer == 0) "unwrap_or_else option none" in
+  let _ = assert (option_unwrap_or 4 some_integer == 7) "unwrap_or option some" in
+  let _ = assert (option_unwrap_or 4 no_integer == 4) "unwrap_or option none" in
+  let _ = assert (option_unwrap some_integer == 7) "unwrap option some" in
+  ()
+
 let run = fn _ =>
   let _ = test_integer_ops () in
   let _ = test_natural_ops () in
@@ -174,6 +245,9 @@ let run = fn _ =>
   let _ = test_result_and_default () in
   let _ = test_big_num_ops () in
   let _ = test_show_trait () in
+  let _ = test_parse_trait () in
+  let _ = test_append_trait () in
+  let _ = test_unwrap_trait () in
   ()
 
 let () = run ()

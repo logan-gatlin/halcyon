@@ -592,10 +592,9 @@ impl<'a> Encoder<'a> {
                 self.ref_cast_if_needed(&result_type);
             }
             TermKind::Tuple(items) => {
-                let types = items
-                    .iter()
-                    .map(|i| lower_type(&i.type_, symbols))
-                    .collect::<Box<[Type]>>();
+                let Type::Struct(types) = lower_type(&type_, symbols) else {
+                    unreachable!("expected tuple type during lowering")
+                };
                 items
                     .into_iter()
                     .for_each(|i| self.lower_ir(i, symbols, constructors));
