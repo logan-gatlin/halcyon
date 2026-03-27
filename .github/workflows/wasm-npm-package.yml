@@ -111,6 +111,10 @@ jobs:
       - name: Build CLI binary
         run: cargo build --release -p halcyon --target ${{ matrix.target }}
 
+      - name: Generate core module documentation
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        run: target/${{ matrix.target }}/release/${{ matrix.bin_name }} doc core/bundle.hc --no-core
+
       - name: Package CLI binary (Unix)
         if: runner.os != 'Windows'
         run: |
@@ -132,6 +136,13 @@ jobs:
           name: halcyon-cli-${{ matrix.target }}
           path: dist/*
 
+      - name: Upload core documentation artifact
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        uses: actions/upload-artifact@v4
+        with:
+          name: halcyon-core-docs
+          path: docs/core.json
+
   publish-release:
     needs:
       - resolve-version
@@ -152,6 +163,12 @@ jobs:
           pattern: halcyon-cli-*
           path: release-assets
           merge-multiple: true
+
+      - name: Download core documentation artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: halcyon-core-docs
+          path: release-assets
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
