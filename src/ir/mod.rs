@@ -248,12 +248,13 @@ fn lower_module_statements(
     module_scope: &mut ModuleScope,
     module_name: &str,
     wasm_type_defs: &mut IndexMap<String, WasmType>,
+    options: TermLoweringOptions,
     statements: &mut Vec<Statement<()>>,
     logger: &mut FileLogger,
     ast_statements: &[ast::Statement],
 ) -> Option<()> {
     for statement in ast_statements {
-        let comments = statement.leading_comment_text();
+        let comments = statement.leading_doc_comment_text();
         let statement = match statement {
             ast::Statement::Bundle(_) | ast::Statement::Import(_) => continue,
             ast::Statement::Let(let_statement) => {
@@ -290,6 +291,7 @@ fn lower_module_statements(
                             value: term(
                                 module_scope,
                                 wasm_type_defs,
+                                options,
                                 logger,
                                 let_statement.value()?,
                             )?
@@ -313,8 +315,14 @@ fn lower_module_statements(
                             span: do_statement.span(),
                             type_: (),
                         },
-                        value: term(module_scope, wasm_type_defs, logger, do_statement.value()?)?
-                            .into(),
+                        value: term(
+                            module_scope,
+                            wasm_type_defs,
+                            options,
+                            logger,
+                            do_statement.value()?,
+                        )?
+                        .into(),
                         scope: ScopeKind::Global,
                         then: Term::unit().into(),
                         else_: Term::unreachable().into(),
@@ -496,7 +504,13 @@ fn lower_module_statements(
                         Some(ImplMethod {
                             trait_method,
                             impl_path,
-                            value: term(&mut impl_scope, wasm_type_defs, logger, method.value()?)?,
+                            value: term(
+                                &mut impl_scope,
+                                wasm_type_defs,
+                                options,
+                                logger,
+                                method.value()?,
+                            )?,
                             span: method.span(),
                         })
                     })
@@ -535,6 +549,7 @@ fn lower_module_statements(
                     module_scope,
                     module_name,
                     wasm_type_defs,
+                    options,
                     statements,
                     logger,
                     &nested_module.statements(),
@@ -588,6 +603,27 @@ pub fn bundle_statements_with_prelude(
         logger,
         prelude,
         &mut wasm_type_defs,
+        TermLoweringOptions::default(),
+    )
+}
+
+#[tracing::instrument(skip_all, fields(bundle = %bundle_name))]
+pub fn bundle_statements_with_prelude_for_docs(
+    bundle_name: String,
+    ast_statements: &[ast::Statement],
+    logger: &mut FileLogger,
+    prelude: &[(Path, NameSpace)],
+) -> Option<Module<()>> {
+    let mut wasm_type_defs: IndexMap<String, WasmType> = IndexMap::new();
+    bundle_statements_with_prelude_and_wasm_types(
+        bundle_name,
+        ast_statements,
+        logger,
+        prelude,
+        &mut wasm_type_defs,
+        TermLoweringOptions {
+            parse_inline_wasm: false,
+        },
     )
 }
 
@@ -598,6 +634,7 @@ pub fn bundle_statements_with_prelude_and_wasm_types(
     logger: &mut FileLogger,
     prelude: &[(Path, NameSpace)],
     wasm_type_defs: &mut IndexMap<String, WasmType>,
+    options: TermLoweringOptions,
 ) -> Option<Module<()>> {
     let mut salt = 0;
     bundle_statements_with_prelude_and_wasm_types_and_salt(
@@ -607,6 +644,7 @@ pub fn bundle_statements_with_prelude_and_wasm_types(
         prelude,
         wasm_type_defs,
         &mut salt,
+        options,
     )
 }
 
@@ -624,6 +662,7 @@ pub fn bundle_statements_with_prelude_indexed(
         logger,
         prelude,
         &mut wasm_type_defs,
+        TermLoweringOptions::default(),
     )
 }
 
@@ -634,6 +673,7 @@ pub fn bundle_statements_with_prelude_and_wasm_types_indexed(
     logger: &mut FileLogger,
     prelude: &[(Path, NameSpace)],
     wasm_type_defs: &mut IndexMap<String, WasmType>,
+    options: TermLoweringOptions,
 ) -> Option<(Module<()>, NameIndex)> {
     let mut salt = 0;
     bundle_statements_with_prelude_and_wasm_types_and_salt_indexed(
@@ -643,6 +683,7 @@ pub fn bundle_statements_with_prelude_and_wasm_types_indexed(
         prelude,
         wasm_type_defs,
         &mut salt,
+        options,
     )
 }
 
@@ -654,6 +695,7 @@ pub fn bundle_statements_with_prelude_and_wasm_types_and_salt(
     prelude: &[(Path, NameSpace)],
     wasm_type_defs: &mut IndexMap<String, WasmType>,
     salt: &mut usize,
+    options: TermLoweringOptions,
 ) -> Option<Module<()>> {
     bundle_statements_with_prelude_and_wasm_types_and_salt_indexed(
         bundle_name,
@@ -662,6 +704,7 @@ pub fn bundle_statements_with_prelude_and_wasm_types_and_salt(
         prelude,
         wasm_type_defs,
         salt,
+        options,
     )
     .map(|(module, _)| module)
 }
@@ -674,6 +717,7 @@ pub fn bundle_statements_with_prelude_and_wasm_types_and_salt_indexed(
     prelude: &[(Path, NameSpace)],
     wasm_type_defs: &mut IndexMap<String, WasmType>,
     salt: &mut usize,
+    options: TermLoweringOptions,
 ) -> Option<(Module<()>, NameIndex)> {
     let _profile_total = crate::profiling::scope("ir.bundle_statements.total");
     let mut module_scope = ModuleScope::with_salt(bundle_name.clone(), *salt);
@@ -688,6 +732,7 @@ pub fn bundle_statements_with_prelude_and_wasm_types_and_salt_indexed(
             &mut module_scope,
             &bundle_name,
             wasm_type_defs,
+            options,
             &mut lowered_statements,
             logger,
             ast_statements,
@@ -858,6 +903,7 @@ where
                             self.module_scope,
                             self.module_name,
                             self.wasm_type_defs,
+                            TermLoweringOptions::default(),
                             self.lowered_statements,
                             file_logger,
                             std::slice::from_ref(statement),

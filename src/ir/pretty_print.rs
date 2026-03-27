@@ -1141,6 +1141,17 @@ impl Printer {
                 format!("({items})")
             }
             TypeExprKind::Instantiation(path, args) => {
+                if is_placeholder_type_constructor_path(path) {
+                    if args.is_empty() {
+                        return "_".to_string();
+                    }
+                    let args = args
+                        .iter()
+                        .map(|arg| self.wrap_type_expr(&self.format_type_expr(arg)))
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    return format!("_ {args}");
+                }
                 let is_core = path.major == "core";
                 if is_core && path.minor == "Unit" && args.is_empty() {
                     return "()".to_string();

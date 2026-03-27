@@ -1,4 +1,5 @@
 use crate::ir::{
+    is_placeholder_type_constructor_path,
     Path,
     PatternKind,
     ScopeKind,
@@ -11,6 +12,7 @@ use crate::types::{
     Type,
     TypeScheme,
 };
+use std::collections::HashSet;
 
 /// The kind of definition a [`Documentation`] entry describes.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,12 +55,21 @@ pub fn generate(
     let ResolvedModule {
         module, schemes, ..
     } = resolved;
+    let mut impl_method_paths = HashSet::new();
+    for statement in module.statements.iter() {
+        if let Statement::Impl { methods, .. } = statement {
+            impl_method_paths.extend(methods.iter().map(|method| method.impl_path.clone()));
+        }
+    }
     module
         .statements
         .iter()
         .flat_map(|statement| {
             match statement {
                 Statement::Term(term) => {
+                    if is_hidden_doc(&term.comments) {
+                        return Vec::new();
+                    }
                     let TermKind::Let {
                         assignee,
                         scope: ScopeKind::Global,
@@ -69,6 +80,7 @@ pub fn generate(
                     };
                     collect_pattern_paths(assignee)
                         .into_iter()
+                        .filter(|path| !impl_method_paths.contains(path))
                         .filter_map(|path| {
                             let scheme = schemes.get(&path)?;
                             Some(Documentation {
@@ -81,6 +93,9 @@ pub fn generate(
                         .collect()
                 }
                 Statement::ConstructorAlias { comments, path, .. } => {
+                    if is_hidden_doc(comments) {
+                        return Vec::new();
+                    }
                     let Some(type_) = schemes.get(path).cloned() else {
                         return Vec::new();
                     };
@@ -92,6 +107,9 @@ pub fn generate(
                     }]
                 }
                 Statement::Type { comments, path, .. } => {
+                    if is_hidden_doc(comments) {
+                        return Vec::new();
+                    }
                     let type_ = symbols
                         .type_definitions()
                         .get(path)
@@ -104,13 +122,10 @@ pub fn generate(
                         type_,
                     }]
                 }
-                Statement::Trait {
-                    comments,
-                    path,
-                    methods,
-                    ..
-                } => {
-                    let mut docs = Vec::with_capacity(1 + methods.len());
+                Statement::Trait { comments, path, .. } => {
+                    if is_hidden_doc(comments) {
+                        return Vec::new();
+                    }
                     let trait_type = symbols
                         .trait_defs()
                         .get(path)
@@ -120,29 +135,21 @@ pub fn generate(
                             TypeScheme::new(Type::Tuple(method_types))
                         })
                         .unwrap_or_else(|| TypeScheme::new(Type::Unit));
-                    docs.push(Documentation {
+                    vec![Documentation {
                         kind: StatementKind::Trait,
                         name: path.clone(),
                         comments: comments.clone(),
                         type_: trait_type,
-                    });
-                    for method in methods.iter() {
-                        if let Some(scheme) = schemes.get(&method.path) {
-                            docs.push(Documentation {
-                                kind: StatementKind::Term,
-                                name: method.path.clone(),
-                                comments: String::new(),
-                                type_: scheme.clone(),
-                            });
-                        }
-                    }
-                    docs
+                    }]
                 }
                 Statement::TraitAlias {
                     comments,
                     path,
                     target,
                 } => {
+                    if is_hidden_doc(comments) {
+                        return Vec::new();
+                    }
                     let type_ = symbols
                         .trait_definition(target)
                         .map(|def| {
@@ -167,6 +174,9 @@ pub fn generate(
                     arguments,
                     ..
                 } => {
+                    if is_hidden_doc(comments) {
+                        return Vec::new();
+                    }
                     let name = impl_name(trait_path, arguments);
                     let type_ = symbols
                         .trait_definition(trait_path)
@@ -190,6 +200,10 @@ pub fn generate(
             }
         })
         .collect()
+}
+
+fn is_hidden_doc(comments: &str) -> bool {
+    comments.contains("@HIDDEN")
 }
 
 /// Recursively collect all `Identifier` paths bound by a pattern.
@@ -230,6 +244,17 @@ fn impl_name(
 
 fn type_expr_name(kind: &crate::ir::TypeExprKind) -> String {
     match kind {
+        crate::ir::TypeExprKind::Instantiation(path, args)
+            if is_placeholder_type_constructor_path(path) && args.is_empty() =>
+        {
+            "_".to_string()
+        }
+        crate::ir::TypeExprKind::Instantiation(path, args)
+            if is_placeholder_type_constructor_path(path) =>
+        {
+            let arg_strs: Vec<_> = args.iter().map(|a| type_expr_name(&a.kind)).collect();
+            format!("(_ {})", arg_strs.join(" "))
+        }
         crate::ir::TypeExprKind::Instantiation(path, args) if args.is_empty() => path.minor.clone(),
         crate::ir::TypeExprKind::Instantiation(path, args) => {
             let arg_strs: Vec<_> = args.iter().map(|a| type_expr_name(&a.kind)).collect();
@@ -347,7 +372,74 @@ fn render_entry(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ir::{
+        ImmediateValue,
+        ImplMethod,
+        Module,
+        Pattern,
+        Term,
+        TraitMethodDecl,
+        TypeExpr,
+        TypeExprKind,
+    };
     use crate::types::TraitRef;
+    use crate::Span;
+    use indexmap::IndexMap;
+
+    fn typed_unit_term() -> Term<Type> {
+        Term {
+            comments: String::new(),
+            kind: TermKind::Immediate(ImmediateValue::Unit),
+            span: Span::Generated,
+            type_: Type::Unit,
+        }
+    }
+
+    fn typed_unreachable_term() -> Term<Type> {
+        Term {
+            comments: String::new(),
+            kind: TermKind::Unreachable,
+            span: Span::Generated,
+            type_: Type::Unit,
+        }
+    }
+
+    fn global_binding(
+        path: Path,
+        comments: &str,
+    ) -> Statement<Type> {
+        Statement::Term(Term {
+            comments: comments.to_string(),
+            kind: TermKind::Let {
+                assignee: Pattern {
+                    comments: String::new(),
+                    kind: PatternKind::Identifier(path),
+                    span: Span::Generated,
+                    type_: Type::Unit,
+                },
+                scope: ScopeKind::Global,
+                value: Box::new(typed_unit_term()),
+                then: Box::new(typed_unit_term()),
+                else_: Box::new(typed_unreachable_term()),
+            },
+            span: Span::Generated,
+            type_: Type::Unit,
+        })
+    }
+
+    fn resolved_module_with(
+        statements: Vec<Statement<Type>>,
+        schemes: IndexMap<Path, TypeScheme>,
+    ) -> ResolvedModule {
+        ResolvedModule {
+            module: Module {
+                name: "demo".to_string(),
+                statements: statements.into_boxed_slice(),
+            },
+            schemes,
+            evidence_requirements: IndexMap::new(),
+        }
+    }
 
     #[test]
     fn rendered_signatures_use_where_clause_for_predicates() {
@@ -379,5 +471,119 @@ mod tests {
             json.contains("for a in a -> a where demo::Eq a"),
             "json signatures should render where-clause constraints"
         );
+    }
+
+    #[test]
+    fn generate_skips_impl_method_bindings() {
+        let impl_method_path = Path::new("demo", "show#1");
+        let visible_path = Path::new("demo", "visible");
+
+        let statements = vec![
+            Statement::Impl {
+                comments: String::new(),
+                trait_path: Path::new("demo", "Show"),
+                arguments: Box::default(),
+                associated_types: Box::default(),
+                methods: vec![ImplMethod {
+                    trait_method: Path::new("demo", "show"),
+                    impl_path: impl_method_path.clone(),
+                    value: typed_unit_term(),
+                    span: Span::Generated,
+                }]
+                .into_boxed_slice(),
+            },
+            global_binding(impl_method_path.clone(), ""),
+            global_binding(visible_path.clone(), ""),
+        ];
+        let schemes = vec![
+            (impl_method_path.clone(), TypeScheme::new(Type::Unit)),
+            (visible_path.clone(), TypeScheme::new(Type::Unit)),
+        ]
+        .into_iter()
+        .collect();
+        let resolved = resolved_module_with(statements, schemes);
+
+        let docs = generate(&resolved, &SymbolTable::new());
+
+        assert!(
+            docs.iter().any(|doc| {
+                doc.kind == StatementKind::Impl && doc.name == Path::new("demo", "Show")
+            }),
+            "impl declarations should still be documented"
+        );
+        assert!(
+            docs.iter().any(|doc| doc.name == visible_path),
+            "normal global bindings should still be documented"
+        );
+        assert!(
+            !docs
+                .iter()
+                .any(|doc| { doc.kind == StatementKind::Term && doc.name == impl_method_path }),
+            "generated impl method bindings should not be documented as terms"
+        );
+    }
+
+    #[test]
+    fn generate_skips_items_marked_hidden() {
+        let visible_path = Path::new("demo", "visible");
+        let hidden_path = Path::new("demo", "hidden");
+        let statements = vec![
+            global_binding(visible_path.clone(), "visible"),
+            global_binding(hidden_path.clone(), "internal @HIDDEN"),
+        ];
+        let schemes = vec![
+            (visible_path.clone(), TypeScheme::new(Type::Unit)),
+            (hidden_path.clone(), TypeScheme::new(Type::Unit)),
+        ]
+        .into_iter()
+        .collect();
+        let resolved = resolved_module_with(statements, schemes);
+
+        let docs = generate(&resolved, &SymbolTable::new());
+
+        assert!(
+            docs.iter().any(|doc| doc.name == visible_path),
+            "visible items should be documented"
+        );
+        assert!(
+            !docs.iter().any(|doc| doc.name == hidden_path),
+            "items tagged with @HIDDEN should not be documented"
+        );
+    }
+
+    #[test]
+    fn generate_does_not_emit_trait_method_entries() {
+        let trait_path = Path::new("demo", "Eq");
+        let method_path = Path::new("demo", "eq");
+        let statements = vec![Statement::Trait {
+            comments: "trait docs".to_string(),
+            path: trait_path.clone(),
+            parameters: Box::default(),
+            associated_types: Box::default(),
+            methods: vec![TraitMethodDecl {
+                path: method_path.clone(),
+                type_expr: TypeExpr {
+                    comments: String::new(),
+                    kind: TypeExprKind::Placeholder,
+                    span: Span::Generated,
+                },
+                span: Span::Generated,
+            }]
+            .into_boxed_slice(),
+        }];
+        let schemes = vec![(method_path, TypeScheme::new(Type::Unit))]
+            .into_iter()
+            .collect();
+        let resolved = resolved_module_with(statements, schemes);
+
+        let docs = generate(&resolved, &SymbolTable::new());
+
+        assert_eq!(
+            docs.len(),
+            1,
+            "trait methods should not be emitted separately"
+        );
+        assert_eq!(docs[0].kind, StatementKind::Trait);
+        assert_eq!(docs[0].name, trait_path);
     }
 }

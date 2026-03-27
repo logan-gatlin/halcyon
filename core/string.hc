@@ -1,11 +1,38 @@
 module string =
   use bundle
   use bundle::ops
+
+  (*>
+  Empty string value.
+
+  - Arguments: none.
+  - Returns: `""`.
+  *)
   let empty = ""
+
+  (*>
+  Concatenates two strings.
+
+  - Arguments:
+    - `left`: Prefix string.
+    - `right`: Suffix string.
+  - Returns: `left + right`.
+  *)
   let concat = fn left right => left + right
 
-  -- Parameter order: replace value needle replacement.
-  -- Replaces all non-overlapping occurrences of `needle`; empty `needle` keeps `value` unchanged.
+  (*>
+  Replaces all non-overlapping `needle` occurrences in `value`.
+
+  - Arguments:
+    - `value`: Source text.
+    - `needle`: Substring to search for.
+    - `replacement`: Substring to insert for each match.
+  - Returns: Updated string. If `needle` is empty, returns `value` unchanged.
+
+  ```hc
+  let out = string::replace "banana" "na" "xo"
+  ```
+  *)
   let replace : String -> String -> String -> String =
     fn value needle replacement => (wasm : String) => (
       (local $result $string)
@@ -182,8 +209,18 @@ module string =
       get $result
     )
 
-  -- Parameter order: split value delimiter.
-  -- Splits `value` on each non-overlapping `delimiter`; empty `delimiter` returns [value].
+  (*>
+  Splits `value` on each non-overlapping `delimiter`.
+
+  - Arguments:
+    - `value`: Source text.
+    - `delimiter`: Separator string.
+  - Returns: Array of segments. If `delimiter` is empty, returns `[value]`.
+
+  ```hc
+  let parts = string::split "a--b--c" "--"
+  ```
+  *)
   let split : String -> String -> Array String =
     fn value delimiter => (wasm : Array String) => (
       (local $result (array any))
@@ -392,9 +429,31 @@ module string =
       get $result
     )
 
+  (*>
+  Checks whether a string is empty.
+
+  - Arguments:
+    - `value`: String to inspect.
+  - Returns: `true` when `value == ""`.
+  *)
   let is_empty = fn value => value == ""
+
+  (*>
+  Checks whether a string is non-empty.
+
+  - Arguments:
+    - `value`: String to inspect.
+  - Returns: `true` when `value != ""`.
+  *)
   let non_empty = fn value => value != ""
 
+  (*>
+  Escapes control characters and quotes for display.
+
+  - Arguments:
+    - `value`: Raw string.
+  - Returns: Escaped string content without surrounding quotes.
+  *)
   let escape = fn value =>
     let escaped_backslash = replace value "\\" "\\\\" in
     let escaped_quote = replace escaped_backslash "\"" "\\\"" in
@@ -404,12 +463,25 @@ module string =
     let escaped_backspace = replace escaped_tab "\b" "\\b" in
     replace escaped_backspace "\0" "\\0"
 
+  (*>
+  Produces a quoted, escaped string literal representation.
+
+  - Arguments:
+    - `value`: Raw string.
+  - Returns: String wrapped in double quotes with escape sequences.
+
+  ```hc
+  let rendered = string::quote "a\nb"
+  ```
+  *)
   let quote = fn value => "\"" + (escape value) + "\""
 
+  --> @HIDDEN
   impl bundle::Default bundle::String =
     let default = ""
   end
 
+  --> @HIDDEN
   impl bundle::show::Show bundle::String =
     let show = fn value => quote value
   end

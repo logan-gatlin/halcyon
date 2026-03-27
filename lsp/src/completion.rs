@@ -247,4 +247,32 @@ mod tests {
         let unique = triggers.iter().collect::<HashSet<_>>();
         assert_eq!(unique.len(), triggers.len());
     }
+
+    #[test]
+    fn completion_context_handles_unicode_before_qualified_symbol() {
+        let context = completion_context_at(
+            "\u{1F600} foo::bar",
+            Position {
+                line: 0,
+                character: 11,
+            },
+        )
+        .unwrap_or_default();
+
+        assert_eq!(context.qualifier.as_deref(), Some("foo"));
+        assert_eq!(context.prefix, "bar");
+    }
+
+    #[test]
+    fn completion_context_rejects_mid_surrogate_cursor_positions() {
+        let context = completion_context_at(
+            "\u{1F600}",
+            Position {
+                line: 0,
+                character: 1,
+            },
+        );
+
+        assert!(context.is_none());
+    }
 }

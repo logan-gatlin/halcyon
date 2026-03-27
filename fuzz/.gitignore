@@ -1,0 +1,14 @@
+# cargo-fuzz build and run artifacts
+/target/
+/artifacts/
+/coverage/
+/Cargo.lock
+
+# Generated corpus entries; keep seed inputs checked in
+/corpus/**
+!/corpus/**/
+!/corpus/**/seed*
+
+# Coverage/profiling byproducts
+*.profraw
+*.profdata

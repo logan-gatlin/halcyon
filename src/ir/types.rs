@@ -21,6 +21,21 @@ pub enum TypeExprKind {
     Placeholder,
 }
 
+const PLACEHOLDER_TYPE_CONSTRUCTOR_MAJOR: &str = "[placeholder-type-constructor]";
+const PLACEHOLDER_TYPE_CONSTRUCTOR_MINOR: &str = "_";
+
+pub(crate) fn placeholder_type_constructor_path() -> Path {
+    Path::new(
+        PLACEHOLDER_TYPE_CONSTRUCTOR_MAJOR,
+        PLACEHOLDER_TYPE_CONSTRUCTOR_MINOR,
+    )
+}
+
+pub(crate) fn is_placeholder_type_constructor_path(path: &Path) -> bool {
+    path.major == PLACEHOLDER_TYPE_CONSTRUCTOR_MAJOR
+        && path.minor == PLACEHOLDER_TYPE_CONSTRUCTOR_MINOR
+}
+
 #[derive(Debug, Clone)]
 pub struct TypeExprConstraint {
     pub trait_name: Path,
@@ -256,7 +271,12 @@ pub fn type_expr(
                             scope.query_path(resolved, NameSpace::Type)
                         }
                         ast::TypeExpr::Ident(ident) => {
-                            scope.query_string(ident.name_text_spanned()?, NameSpace::Type)
+                            let name = ident.name_text_spanned()?;
+                            if name.inner == "_" {
+                                placeholder_type_constructor_path()
+                            } else {
+                                scope.query_string(name, NameSpace::Type)
+                            }
                         }
                         ast::TypeExpr::Function(..)
                         | ast::TypeExpr::Application(..)

@@ -2187,6 +2187,33 @@ fn leading_comment_text_concatenated() {
     assert_eq!(text, "-- line 1\n-- line 2");
 }
 
+#[test]
+fn leading_doc_comment_text_strips_delimiters() {
+    let src = "module M =\n  --> line 1\n  (*> line 2 *)\n  let x = 1\nend";
+    let sf = parse_source_file(src);
+    let stmts = sf.modules()[0].statements();
+    let text = stmts[0].leading_doc_comment_text();
+    assert_eq!(text, "line 1\nline 2");
+}
+
+#[test]
+fn leading_doc_comment_text_uses_consecutive_suffix() {
+    let src = "module M =\n  --> detached\n  -- separator\n  --> attached\n  let x = 1\nend";
+    let sf = parse_source_file(src);
+    let stmts = sf.modules()[0].statements();
+    let text = stmts[0].leading_doc_comment_text();
+    assert_eq!(text, "attached");
+}
+
+#[test]
+fn leading_doc_comment_text_ignores_regular_comments() {
+    let src = "module M =\n  -- regular\n  (* regular *)\n  let x = 1\nend";
+    let sf = parse_source_file(src);
+    let stmts = sf.modules()[0].statements();
+    let text = stmts[0].leading_doc_comment_text();
+    assert!(text.is_empty());
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // Forall type annotation tests
 // ═══════════════════════════════════════════════════════════════════════

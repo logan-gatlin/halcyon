@@ -1379,6 +1379,20 @@ fn forward_module_path_term_reference_is_rejected() {
 }
 
 #[test]
+fn unresolved_placeholder_type_constructor_reports_specific_error() {
+    let source = "module demo =\n\ttype ~Const: a = a\n\tlet _: Const _ = \"\"\n\tlet _: _ String = \"\"\nend\n";
+    let mut symbols = SymbolTable::new();
+    let mut logger = Logger::new();
+    let _core = compile_core_module(&mut symbols, &mut logger);
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let _ = compile_source(source, &mut file_logger, &mut symbols);
+    assert!(file_logger_has_error_message(
+        &file_logger,
+        "Could not infer placeholder type constructor"
+    ));
+}
+
+#[test]
 fn nested_module_terms_are_inlined_into_toplevel_module() {
     let source = "module demo =\n\tmodule math =\n\t\tlet add-one = fn x => x + 1\n\tend\n\tlet value : core::Integer = math::add-one 41\nend\n";
     let mut symbols = SymbolTable::new();

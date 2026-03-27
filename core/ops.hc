@@ -1,35 +1,68 @@
 module ops =
   use bundle
+
+  (*>
+  Implements the `[==]` operator for a type.
+  The `[!=]` operator is implemented for all types that implement `Equal`.
+  The `[<=]` and `[>=]` operators are implemented for all types which implement both `Equal` and `Compare`
+  *)
   trait Equal : a =
     let [==] : a -> a -> Boolean
   end
 
+  (*>
+  Implements the `[<]` and `[>]` operators for a type.
+  The `[<=]` and `[>=]` operators are implemented for all types which implement both `Equal` and `Compare`
+  *)
   trait Compare : a =
     let [<] : a -> a -> Boolean
     let [>] : a -> a -> Boolean
   end
 
+  (*>
+  Implements the `[+]` operator for a type.
+  *)
   trait Add : a =
     let [+] : a -> a -> a
   end
 
+  (*>
+  Implements the `[-]` (`a - b`) and `[~]` (`-a`) operators for a type.
+  These are typically defined as subtraction and negation respectively.
+  *)
   trait Subtract : a =
     let [-] : a -> a -> a
     let [~] : a -> a
   end
 
+  (*>
+  Implements the `[*]` operator for a type.
+  This is typically defined as multiplication.
+  *)
   trait Multiply : a =
     let [*] : a -> a -> a
   end
 
+  (*>
+  Implements the `[/]` operator for a type.
+  This is typically defined as division.
+  *)
   trait Divide : a =
     let [/] : a -> a -> a
   end
 
+  (*>
+  Implements the `[mod]` operator for a type.
+  This is typically defined as the modulus operation.
+  *)
   trait Remainder : a =
     let [mod] : a -> a -> a
   end
 
+  (*>
+  Defines the `[and]`, `[or]`, `[xor]`, and `[not]` operators for a type.
+  These are typically defined as bitwise operations.
+  *)
   trait Bitwise : a =
     let [and] : a -> a -> a
     let [or] : a -> a -> a
@@ -38,6 +71,7 @@ module ops =
   end
 
 
+  --> @HIDDEN
   impl Equal () =
     let [==] = fn _ _ => (wasm : Boolean) => (
       i32.const 1
@@ -45,6 +79,7 @@ module ops =
     )
   end
 
+  --> @HIDDEN
   impl Compare () =
     let [<] = fn _ _ => (wasm : Boolean) => (
       i32.const 0
@@ -57,6 +92,7 @@ module ops =
     )
   end
 
+  --> @HIDDEN
   impl Equal Integer =
     let [==] = fn left right => (wasm : Boolean) => (
       get left
@@ -68,6 +104,7 @@ module ops =
     )
   end
 
+  --> @HIDDEN
   impl Compare Integer =
     let [<] = fn left right => (wasm : Boolean) => (
       get left
@@ -88,6 +125,7 @@ module ops =
     )
   end
 
+  --> @HIDDEN
   impl Add Integer =
     let [+] = fn left right => (wasm : Integer) => (
       get left
@@ -99,6 +137,7 @@ module ops =
     )
   end
 
+  --> @HIDDEN
   impl Subtract Integer =
     let [-] = fn left right => (wasm : Integer) => (
       get left
@@ -118,6 +157,7 @@ module ops =
     )
   end
 
+  --> @HIDDEN
   impl Multiply Integer =
     let [*] = fn left right => (wasm : Integer) => (
       get left
@@ -129,6 +169,7 @@ module ops =
     )
   end
 
+  --> @HIDDEN
   impl Divide Integer =
     let [/] = fn left right => (wasm : Integer) => (
       get left
@@ -140,6 +181,7 @@ module ops =
     )
   end
 
+  --> @HIDDEN
   impl Remainder Integer =
     let [mod] = fn left right => (wasm : Integer) => (
       get left
@@ -151,6 +193,7 @@ module ops =
     )
   end
 
+  --> @HIDDEN
   impl Bitwise Integer =
     let [and] = fn left right => (wasm : Integer) => (
       get left
@@ -190,6 +233,7 @@ module ops =
     )
   end
 
+  --> @HIDDEN
   impl Equal Natural =
     let [==] = fn left right => (wasm : Boolean) => (
       get left
@@ -201,6 +245,7 @@ module ops =
     )
   end
 
+  --> @HIDDEN
   impl Compare Natural =
     let [<] = fn left right => (wasm : Boolean) => (
       get left
@@ -221,6 +266,7 @@ module ops =
     )
   end
 
+  --> @HIDDEN
   impl Add Natural =
     let [+] = fn left right => (wasm : Natural) => (
       get left
@@ -232,6 +278,7 @@ module ops =
     )
   end
 
+  --> @HIDDEN
   impl Subtract Natural =
     let [-] = fn left right => (wasm : Natural) => (
       (local $result i64)
@@ -261,6 +308,7 @@ module ops =
     )
   end
 
+  --> @HIDDEN
   impl Multiply Natural =
     let [*] = fn left right => (wasm : Natural) => (
       get left
@@ -272,6 +320,7 @@ module ops =
     )
   end
 
+  --> @HIDDEN
   impl Divide Natural =
     let [/] = fn left right => (wasm : Natural) => (
       get left
@@ -283,6 +332,7 @@ module ops =
     )
   end
 
+  --> @HIDDEN
   impl Remainder Natural =
     let [mod] = fn left right => (wasm : Natural) => (
       get left
@@ -294,6 +344,7 @@ module ops =
     )
   end
 
+  --> @HIDDEN
   impl Equal Real =
     let [==] = fn left right => (wasm : Boolean) => (
       get left
@@ -305,6 +356,7 @@ module ops =
     )
   end
 
+  --> @HIDDEN
   impl Compare Real =
     let [<] = fn left right => (wasm : Boolean) => (
       get left
@@ -325,6 +377,7 @@ module ops =
     )
   end
 
+  --> @HIDDEN
   impl Add Real =
     let [+] = fn left right => (wasm : Real) => (
       get left
@@ -336,6 +389,7 @@ module ops =
     )
   end
 
+  --> @HIDDEN
   impl Subtract Real =
     let [-] = fn left right => (wasm : Real) => (
       get left
@@ -355,6 +409,7 @@ module ops =
     )
   end
 
+  --> @HIDDEN
   impl Multiply Real =
     let [*] = fn left right => (wasm : Real) => (
       get left
@@ -366,6 +421,7 @@ module ops =
     )
   end
 
+  --> @HIDDEN
   impl Divide Real =
     let [/] = fn left right => (wasm : Real) => (
       get left
@@ -377,6 +433,7 @@ module ops =
     )
   end
 
+  --> @HIDDEN
   impl Equal Boolean =
     let [==] = fn left right => (wasm : Boolean) => (
       get left
@@ -388,6 +445,7 @@ module ops =
     )
   end
 
+  --> @HIDDEN
   impl Compare Boolean =
     let [<] = fn left right => (wasm : Boolean) => (
       get left
@@ -408,6 +466,7 @@ module ops =
     )
   end
 
+  --> @HIDDEN
   impl Bitwise Boolean =
     let [and] = fn left right => (wasm : Boolean) => (
       get left
@@ -445,8 +504,12 @@ module ops =
     )
   end
 
+  (*>
+  Equivalent to `not (a == b)`
+  *)
   let [!=] = fn left right => not (left == right)
 
+  --> @HIDDEN
   impl Equal Glyph =
     let [==] = fn left right => (wasm : Boolean) => (
       get left
@@ -458,6 +521,7 @@ module ops =
     )
   end
 
+  --> @HIDDEN
   impl Compare Glyph =
     let [<] = fn left right => (wasm : Boolean) => (
       get left
@@ -478,6 +542,7 @@ module ops =
     )
   end
 
+  --> @HIDDEN
   impl Add String =
     let [+] = fn left right => (wasm : String) => (
       (local $left_len i32)
@@ -516,6 +581,7 @@ module ops =
     )
   end
 
+  --> @HIDDEN
   impl Equal String =
     let [==] = fn left right => (wasm : Boolean) => (
       (local $left_len i32)
@@ -623,6 +689,7 @@ module ops =
     )
   end
 
+  --> @HIDDEN
   impl Compare String =
     let [<] = fn left right => (wasm : Boolean) => (
       (local $left_len i32)
@@ -835,15 +902,80 @@ module ops =
     )
   end
 
-  let [>>] = fn first second value => second (first value)
-  let [<<] = fn first second value => first (second value)
+  (*>
+  Function composition operator (`g . f`).
+  Defined as `fn a b c => b (a c)`
+  *)
+  let [>>] = fn a b c => b (a c)
+
+  (*>
+  Reverse function composition operator (`f . g`).
+  Defined as `fn a b c => a (b c)`
+  *)
+  let [<<] = fn a b c => a (b c)
+
+  (*>
+  Function pipe operator.
+  Calls the function to the right with the argument on the left.
+
+  ```hc
+  do show 42 |> println
+  ```
+  *)
   let [|>] = fn value f => f value
+
+  (*>
+  Sequence operator that keeps the right value, igores the left value.
+  *)
   let [;] = fn _ kept => kept
 
-  let [<=] = fn left right => if left < right then true else left == right
-  let [>=] = fn left right => if left > right then true else left == right
+  (*>
+  Less-than-or-equal-to operator.
+  Defined as `(a < b) or (a == b)`
+  *)
+  let [<=] = fn left right => (left < right) or (left == right)
+
+  (*>
+  Greater-than-or-equal-to operator.
+  Defined as `(a > b) or (a == b)`
+  *)
+  let [>=] = fn left right => (left > right) or (left == right)
+
+  (*>
+  Returns the smaller of two values.
+  If neither value is smaller than the other, return the second value.
+  *)
   let min = fn left right => if left < right then left else right
+
+  (*>
+  Returns the larger of two comparable values.
+  If neither value is larger than the other, return the second value.
+  *)
   let max = fn left right => if left > right then left else right
-  let clamp = fn lower upper value => min upper (max lower value)
-  let between = fn lower upper value => (value >= lower) and (value <= upper)
+
+  (*>
+  Restricts `value` to the inclusive range `[lower, upper]`.
+
+  - Arguments:
+    - `low`: Minimum allowed value.
+    - `high`: Maximum allowed value.
+    - `value`: Value to clamp.
+  - Returns: `value` clamped into range.
+
+  ```hc
+  let percent = ops::clamp 0 100 raw_percent
+  ```
+  *)
+  let clamp = fn low high value => min high (max low value)
+
+  (*>
+  Checks whether a value is within an inclusive range.
+
+  - Arguments:
+    - `low`: Lower bound.
+    - `high`: Upper bound.
+    - `value`: Value to test.
+  - Returns: `true` when `lower <= value <= upper`.
+  *)
+  let between = fn low high value => (value >= low) and (value <= high)
 end

@@ -97,6 +97,35 @@ pub trait HasLeadingComments: AstNode {
             .collect::<Vec<_>>()
             .join("\n")
     }
+
+    /// The text of consecutive leading doc comments immediately preceding
+    /// this node, with comment delimiters removed.
+    fn leading_doc_comment_text(&self) -> String {
+        let mut doc_comments = self
+            .leading_comments()
+            .iter()
+            .rev()
+            .take_while(|comment| is_doc_comment_text(comment.text().trim_end()))
+            .filter_map(|comment| normalize_doc_comment_text(comment.text().trim_end()))
+            .collect::<Vec<_>>();
+        doc_comments.reverse();
+        doc_comments.join("\n")
+    }
+}
+
+fn is_doc_comment_text(text: &str) -> bool {
+    text.starts_with("-->") || text.starts_with("(*>")
+}
+
+fn normalize_doc_comment_text(text: &str) -> Option<String> {
+    if let Some(rest) = text.strip_prefix("-->") {
+        return Some(rest.trim_start().to_string());
+    }
+    if let Some(rest) = text.strip_prefix("(*>") {
+        let body = rest.strip_suffix("*)").unwrap_or(rest);
+        return Some(body.trim().to_string());
+    }
+    None
 }
 
 // ── Private helpers ──────────────────────────────────────────────────

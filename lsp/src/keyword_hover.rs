@@ -315,4 +315,34 @@ mod tests {
 
         assert!(hover.is_none());
     }
+
+    #[test]
+    fn hover_for_keyword_handles_unicode_prefix_offsets() {
+        let hover = hover_for_keyword(
+            "\u{1F600} let value = 1",
+            Position {
+                line: 0,
+                character: 4,
+            },
+        )
+        .expect("expected hover info for keyword after emoji");
+
+        let range = hover.range.expect("keyword hover should include a range");
+        assert_eq!(range.start.line, 0);
+        assert_eq!(range.start.character, 3);
+        assert_eq!(range.end.character, 6);
+    }
+
+    #[test]
+    fn hover_for_keyword_rejects_mid_surrogate_cursor_positions() {
+        let hover = hover_for_keyword(
+            "\u{1F600}",
+            Position {
+                line: 0,
+                character: 1,
+            },
+        );
+
+        assert!(hover.is_none());
+    }
 }

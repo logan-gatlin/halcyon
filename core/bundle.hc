@@ -1,5 +1,14 @@
 bundle core
 
+-- Core documentation guidelines:
+-- * Use doc comments (`-->` or `(*> ... *)`) immediately above public declarations.
+-- * Keep doc comments consecutive; only the trailing consecutive doc block is attached.
+-- * For term docs, include `- Arguments:` and `- Returns:` sections.
+-- * Add fenced `hc` examples for non-trivial behavior.
+-- * Use (but don't over-use) markdown formatting for emphasis
+-- * Mark internal declarations with `--> @HIDDEN` to omit them from generated docs.
+-- * Use regular comments (`--` or `(* ... *)`) for maintainer-only notes.
+
 wasm => (
   (type $integer (struct i64))
   (type $natural (struct i64))

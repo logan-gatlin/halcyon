@@ -399,6 +399,29 @@ pub(super) fn log_type_error(
                     let right = formatter.normalize_type(&right);
                     let left_display = left.pretty();
                     let right_display = right.pretty();
+                    if context.is_some_and(|context| context.contains("annotation"))
+                        && let Some(annotation) =
+                            placeholder_constructor_mismatch_annotation(&left, &right)
+                    {
+                        let mut builder = logger
+                            .error("Could not infer placeholder type constructor")
+                            .primary(
+                                format!(
+                                    "Could not infer the constructor for `{annotation}` from this context."
+                                ),
+                                span,
+                            )
+                            .note(format!("found: `{left_display}`"))
+                            .note(format!("required: `{right_display}`"))
+                            .note(
+                                "Add an explicit constructor in the annotation (for example `Option String`).",
+                            );
+                        if let Some(context) = context {
+                            builder = builder.note(format!("While {context}."));
+                        }
+                        builder.done();
+                        return;
+                    }
                     let mut builder = logger
                         .error("Type mismatch")
                         .primary(
@@ -468,6 +491,43 @@ fn mismatch_detail_note(
         }
         _ => None,
     }
+}
+
+fn placeholder_constructor_mismatch_annotation(
+    left: &Type,
+    right: &Type,
+) -> Option<String> {
+    placeholder_constructor_annotation(left).or_else(|| placeholder_constructor_annotation(right))
+}
+
+fn placeholder_constructor_annotation(type_: &Type) -> Option<String> {
+    let Type::Apply {
+        constructor,
+        arguments,
+    } = type_
+    else {
+        return None;
+    };
+    if !matches!(constructor.as_ref(), Type::MetaVar(_)) {
+        return None;
+    }
+    let args = arguments
+        .iter()
+        .map(|arg| {
+            let pretty = arg.pretty();
+            if matches!(arg, Type::ForAll { .. } | Type::Function(_, _)) {
+                format!("({pretty})")
+            } else {
+                pretty
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    Some(if args.is_empty() {
+        "_".to_string()
+    } else {
+        format!("_ {args}")
+    })
 }
 
 fn struct_field_difference_note(

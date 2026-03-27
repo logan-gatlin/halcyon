@@ -207,6 +207,19 @@ fn severity_from_str(raw: &str) -> Option<DiagnosticSeverity> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lsp_types::notification::PublishDiagnostics;
+    use std::time::{
+        SystemTime,
+        UNIX_EPOCH,
+    };
+
+    fn unique_temp_dir(prefix: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or(0);
+        std::env::temp_dir().join(format!("{prefix}-{}-{nanos}", std::process::id()))
+    }
 
     #[test]
     fn convert_diagnostic_includes_primary_label_message_and_notes() {
@@ -298,5 +311,134 @@ mod tests {
             related[0].message, "alternative candidate",
             "secondary label message should be preserved"
         );
+    }
+
+    #[test]
+    fn publish_bundle_diagnostics_clears_stale_uris() {
+        let root = unique_temp_dir("halcyon-lsp-diagnostics");
+        std::fs::create_dir_all(&root).expect("temp directory should be created");
+
+        let current_path = root.join("bundle.hc");
+        std::fs::write(&current_path, "bundle demo\n").expect("source file should be written");
+        let stale_path = root.join("stale.hc");
+        std::fs::write(&stale_path, "bundle demo\n").expect("stale source file should be written");
+
+        let current_uri = path_to_uri(&current_path).expect("current path should convert to URI");
+        let stale_uri = path_to_uri(&stale_path).expect("stale path should convert to URI");
+        let source_files = vec![AnalysisSourceFile {
+            id: 1,
+            path: current_path.clone(),
+            source: "bundle demo\n".to_string(),
+        }]
+        .into_boxed_slice();
+
+        let (server_connection, client_connection) = Connection::memory();
+        let published = publish_bundle_diagnostics(
+            &server_connection,
+            &source_files,
+            &[],
+            &HashMap::new(),
+            &HashSet::from([stale_uri.clone()]),
+        )
+        .expect("diagnostics should publish");
+
+        assert!(published.contains(&current_uri));
+        assert!(!published.contains(&stale_uri));
+
+        let published_params = client_connection
+            .receiver
+            .try_iter()
+            .filter_map(|message| {
+                let Message::Notification(notification) = message else {
+                    return None;
+                };
+                if notification.method != PublishDiagnostics::METHOD {
+                    return None;
+                }
+                serde_json::from_value::<PublishDiagnosticsParams>(notification.params).ok()
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            published_params.len(),
+            2,
+            "current and stale files should both publish"
+        );
+        assert!(
+            published_params
+                .iter()
+                .any(|params| { params.uri == current_uri && params.diagnostics.is_empty() })
+        );
+        assert!(published_params.iter().any(|params| {
+            params.uri == stale_uri && params.diagnostics.is_empty() && params.version.is_none()
+        }));
+
+        std::fs::remove_dir_all(&root).expect("temp directory should be removed");
+    }
+
+    #[test]
+    fn convert_diagnostic_falls_back_to_first_available_label_with_source() {
+        let available_path = PathBuf::from("/tmp/demo-available.hc");
+        let mut source_lookup = HashMap::new();
+        source_lookup.insert(available_path.clone(), "let value = 1\n");
+
+        let diagnostic = halcyon_lib::SerializedDiagnostic {
+            severity: "warning".to_string(),
+            code: None,
+            message: "Fallback label".to_string(),
+            labels: vec![
+                halcyon_lib::SerializedDiagnosticLabel {
+                    style: "primary".to_string(),
+                    file_name: "/tmp/missing.hc".to_string(),
+                    message: "missing primary".to_string(),
+                    range_start: 0,
+                    range_end: 1,
+                    start: halcyon_lib::SerializedDiagnosticLocation { line: 1, column: 1 },
+                    end: halcyon_lib::SerializedDiagnosticLocation { line: 1, column: 2 },
+                },
+                halcyon_lib::SerializedDiagnosticLabel {
+                    style: "secondary".to_string(),
+                    file_name: available_path.to_string_lossy().to_string(),
+                    message: "available secondary".to_string(),
+                    range_start: 4,
+                    range_end: 9,
+                    start: halcyon_lib::SerializedDiagnosticLocation { line: 1, column: 5 },
+                    end: halcyon_lib::SerializedDiagnosticLocation {
+                        line: 1,
+                        column: 10,
+                    },
+                },
+            ],
+            notes: Vec::new(),
+        };
+
+        let (path, converted) = convert_diagnostic(&diagnostic, &source_lookup)
+            .expect("diagnostic should fall back to first available label");
+        assert_eq!(path, available_path);
+        assert!(
+            converted.message.contains("available secondary"),
+            "selected anchor label message should be appended"
+        );
+    }
+
+    #[test]
+    fn convert_diagnostic_returns_none_when_no_labels_have_source() {
+        let diagnostic = halcyon_lib::SerializedDiagnostic {
+            severity: "warning".to_string(),
+            code: None,
+            message: "No available labels".to_string(),
+            labels: vec![halcyon_lib::SerializedDiagnosticLabel {
+                style: "primary".to_string(),
+                file_name: "/tmp/nowhere.hc".to_string(),
+                message: "missing file".to_string(),
+                range_start: 0,
+                range_end: 1,
+                start: halcyon_lib::SerializedDiagnosticLocation { line: 1, column: 1 },
+                end: halcyon_lib::SerializedDiagnosticLocation { line: 1, column: 2 },
+            }],
+            notes: Vec::new(),
+        };
+
+        assert!(convert_diagnostic(&diagnostic, &HashMap::new()).is_none());
     }
 }

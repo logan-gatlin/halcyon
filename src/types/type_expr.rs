@@ -11,6 +11,7 @@ use crate::ir::{
     TypeExpr,
     TypeExprConstraint,
     TypeExprKind,
+    is_placeholder_type_constructor_path,
 };
 
 use super::instantiation::instantiate_forall_strict;
@@ -386,6 +387,24 @@ fn lower_instantiation(
         })
         .collect::<Vec<_>>();
 
+    if is_placeholder_type_constructor_path(path) {
+        return match lower_placeholder(span) {
+            Some(constructor) => {
+                LoweredTypeExpr {
+                    type_: constructor.apply(arguments),
+                    errors,
+                }
+            }
+            None => {
+                errors.push(TypeExprLowerError::PlaceholderNotAllowed { span });
+                LoweredTypeExpr {
+                    type_: Type::Unit,
+                    errors,
+                }
+            }
+        };
+    }
+
     let lowered_type = match lookup_symbol(path) {
         TypeExprSymbol::TypeParameter(index) => Type::v(index).apply(arguments),
         TypeExprSymbol::Definition(definition) => {
@@ -453,6 +472,7 @@ mod tests {
         TypeExpr,
         TypeExprConstraint,
         TypeExprKind,
+        placeholder_type_constructor_path,
     };
     use crate::types::Kind;
     use crate::types::symbol_table::Symbol;
@@ -1013,6 +1033,58 @@ mod tests {
         let lowered = lower_type_expr(&placeholder, &mut |_| TypeExprSymbol::Unknown, &mut |_| {
             None
         });
+        assert_eq!(lowered.type_, Type::Unit);
+        assert!(matches!(
+            lowered.errors.as_slice(),
+            [TypeExprLowerError::PlaceholderNotAllowed { .. }]
+        ));
+    }
+
+    #[test]
+    fn placeholder_constructors_use_callback_or_report_error() {
+        let integer = CoreType::Integer.path();
+        let placeholder_constructor = expr(TypeExprKind::Instantiation(
+            placeholder_type_constructor_path(),
+            [expr(TypeExprKind::Instantiation(
+                integer.clone(),
+                [].into(),
+            ))]
+            .into(),
+        ));
+        let constructor = Type::Named {
+            name: Path::new("demo", "Container"),
+            body: Box::new(Type::Unit),
+        };
+        let lowered = lower_type_expr(
+            &placeholder_constructor,
+            &mut |path| {
+                if path == &integer {
+                    TypeExprSymbol::Definition(Type::Integer.def(0))
+                } else {
+                    TypeExprSymbol::Unknown
+                }
+            },
+            &mut |_| Some(constructor.clone()),
+        );
+
+        assert_eq!(
+            lowered.type_,
+            constructor.clone().apply(vec![Type::Integer])
+        );
+        assert!(lowered.errors.is_empty());
+
+        let lowered = lower_type_expr(
+            &placeholder_constructor,
+            &mut |path| {
+                if path == &integer {
+                    TypeExprSymbol::Definition(Type::Integer.def(0))
+                } else {
+                    TypeExprSymbol::Unknown
+                }
+            },
+            &mut |_| None,
+        );
+
         assert_eq!(lowered.type_, Type::Unit);
         assert!(matches!(
             lowered.errors.as_slice(),

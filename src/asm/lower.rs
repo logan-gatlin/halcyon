@@ -37,7 +37,7 @@ pub fn lower_type(
             Type::Struct(fields.values().map(|v| lower_type(v, symbols)).collect())
         }
         Array(_) => Type::Array(Type::Any.into()),
-        Tuple(items) => Type::Struct(items.iter().map(|item| lower_type(item, symbols)).collect()),
+        Tuple(items) => Type::Struct(items.iter().map(|_| Type::Any).collect()),
         Sum { .. } => Type::Struct([Type::I32, Type::Any].into()),
         Function(..) => Type::closure_type(),
         Apply {

@@ -46,6 +46,7 @@ use lsp_server::{
     Message,
     Notification,
     Request,
+    RequestId,
     Response,
     ResponseError,
 };
@@ -98,6 +99,7 @@ use lsp_types::{
     Uri,
     WorkspaceEdit,
 };
+use serde::de::DeserializeOwned;
 
 use crate::completion::{
     completion_context_at,
@@ -179,6 +181,44 @@ fn completion_response(items: Vec<CompletionItem>) -> CompletionResponse {
     })
 }
 
+fn parse_request_or_invalid_response<T>(
+    request: Request,
+    connection: &Connection,
+) -> Result<Option<(RequestId, T)>, Box<dyn std::error::Error>>
+where
+    T: DeserializeOwned,
+{
+    let method = request.method.clone();
+    let request_id = request.id.clone();
+    match parse_request::<T>(request) {
+        Ok(parsed) => Ok(Some(parsed)),
+        Err(error) => {
+            send_response::<serde_json::Value>(
+                request_id,
+                Err(response_error(format!(
+                    "Invalid params for `{method}`: {error}"
+                ))),
+                connection,
+            )?;
+            Ok(None)
+        }
+    }
+}
+
+fn parse_notification_or_skip<T>(notification: Notification) -> Option<T>
+where
+    T: DeserializeOwned,
+{
+    let method = notification.method.clone();
+    match parse_notification::<T>(notification) {
+        Ok(params) => Some(params),
+        Err(error) => {
+            eprintln!("Ignoring malformed notification `{method}`: {error}");
+            None
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct OpenDocument {
     version: i32,
@@ -235,34 +275,52 @@ impl Server {
 
         match request.method.as_str() {
             Completion::METHOD => {
-                let (id, params) = parse_request::<CompletionParams>(request)?;
-                let result = self.completion(params, connection);
-                send_response(id, result, connection)?;
+                if let Some((id, params)) =
+                    parse_request_or_invalid_response::<CompletionParams>(request, connection)?
+                {
+                    let result = self.completion(params, connection);
+                    send_response(id, result, connection)?;
+                }
             }
             CodeActionRequest::METHOD => {
-                let (id, params) = parse_request::<CodeActionParams>(request)?;
-                let result = self.code_action(params, connection);
-                send_response(id, result, connection)?;
+                if let Some((id, params)) =
+                    parse_request_or_invalid_response::<CodeActionParams>(request, connection)?
+                {
+                    let result = self.code_action(params, connection);
+                    send_response(id, result, connection)?;
+                }
             }
             HoverRequest::METHOD => {
-                let (id, params) = parse_request::<HoverParams>(request)?;
-                let result = self.hover(params, connection);
-                send_response(id, result, connection)?;
+                if let Some((id, params)) =
+                    parse_request_or_invalid_response::<HoverParams>(request, connection)?
+                {
+                    let result = self.hover(params, connection);
+                    send_response(id, result, connection)?;
+                }
             }
             GotoDefinition::METHOD => {
-                let (id, params) = parse_request::<GotoDefinitionParams>(request)?;
-                let result = self.goto_definition(params, connection);
-                send_response(id, result, connection)?;
+                if let Some((id, params)) =
+                    parse_request_or_invalid_response::<GotoDefinitionParams>(request, connection)?
+                {
+                    let result = self.goto_definition(params, connection);
+                    send_response(id, result, connection)?;
+                }
             }
             References::METHOD => {
-                let (id, params) = parse_request::<ReferenceParams>(request)?;
-                let result = self.references(params, connection);
-                send_response(id, result, connection)?;
+                if let Some((id, params)) =
+                    parse_request_or_invalid_response::<ReferenceParams>(request, connection)?
+                {
+                    let result = self.references(params, connection);
+                    send_response(id, result, connection)?;
+                }
             }
             Rename::METHOD => {
-                let (id, params) = parse_request::<RenameParams>(request)?;
-                let result = self.rename(params, connection);
-                send_response(id, result, connection)?;
+                if let Some((id, params)) =
+                    parse_request_or_invalid_response::<RenameParams>(request, connection)?
+                {
+                    let result = self.rename(params, connection);
+                    send_response(id, result, connection)?;
+                }
             }
             _ => {
                 let response = Response {
@@ -290,16 +348,25 @@ impl Server {
 
         match notification.method.as_str() {
             DidOpenTextDocument::METHOD => {
-                let params = parse_notification::<DidOpenTextDocumentParams>(notification)?;
-                self.did_open(params, connection)?;
+                if let Some(params) =
+                    parse_notification_or_skip::<DidOpenTextDocumentParams>(notification)
+                {
+                    self.did_open(params, connection)?;
+                }
             }
             DidChangeTextDocument::METHOD => {
-                let params = parse_notification::<DidChangeTextDocumentParams>(notification)?;
-                self.did_change(params, connection)?;
+                if let Some(params) =
+                    parse_notification_or_skip::<DidChangeTextDocumentParams>(notification)
+                {
+                    self.did_change(params, connection)?;
+                }
             }
             DidCloseTextDocument::METHOD => {
-                let params = parse_notification::<DidCloseTextDocumentParams>(notification)?;
-                self.did_close(params, connection)?;
+                if let Some(params) =
+                    parse_notification_or_skip::<DidCloseTextDocumentParams>(notification)
+                {
+                    self.did_close(params, connection)?;
+                }
             }
             _ => {}
         }
@@ -550,6 +617,7 @@ impl Server {
             .typed
             .as_ref()
             .is_some_and(|typed| typed.generation != bundle.generation);
+        let doc_comment = hover_doc_comment_for_symbol(&bundle.frontend, &symbol);
 
         let mut markdown =
             format!("**Path**: `{fully_qualified_path}`\n\n**Namespace**: `{namespace}`");
@@ -572,6 +640,10 @@ impl Server {
         }
         if stale_note {
             markdown.push_str("\n\n_Using last completed typecheck snapshot._");
+        }
+        if let Some(doc_comment) = doc_comment {
+            markdown.push_str("\n\n**Docs**\n\n");
+            markdown.push_str(&doc_comment);
         }
 
         Ok(Some(Hover {
@@ -1210,6 +1282,175 @@ fn is_declared_trait_method(
     })
 }
 
+fn hover_doc_comment_for_symbol(
+    frontend: &FrontendBundleAnalysis,
+    symbol: &halcyon_lib::ir::ScopedPath,
+) -> Option<String> {
+    let module = frontend.module.as_ref()?;
+    module
+        .statements
+        .iter()
+        .find_map(|statement| statement_doc_comment(statement, symbol))
+}
+
+fn statement_doc_comment(
+    statement: &halcyon_lib::ir::Statement<()>,
+    symbol: &halcyon_lib::ir::ScopedPath,
+) -> Option<String> {
+    match statement {
+        halcyon_lib::ir::Statement::Term(term) => {
+            let halcyon_lib::ir::TermKind::Let {
+                assignee,
+                scope: halcyon_lib::ir::ScopeKind::Global,
+                ..
+            } = &term.kind
+            else {
+                return None;
+            };
+            if symbol.namespace != halcyon_lib::ir::NameSpace::Term {
+                return None;
+            }
+            let mut paths = Vec::new();
+            collect_pattern_paths_for_docs(assignee, &mut paths);
+            if paths.into_iter().any(|path| path == symbol.path) {
+                normalized_doc_comment(&term.comments)
+            } else {
+                None
+            }
+        }
+        halcyon_lib::ir::Statement::ConstructorAlias { comments, path, .. } => {
+            if path != &symbol.path {
+                return None;
+            }
+            if !matches!(
+                symbol.namespace,
+                halcyon_lib::ir::NameSpace::Term | halcyon_lib::ir::NameSpace::Constructor
+            ) {
+                return None;
+            }
+            normalized_doc_comment(comments)
+        }
+        halcyon_lib::ir::Statement::Type {
+            comments,
+            path,
+            def,
+            ..
+        } => {
+            if symbol.namespace == halcyon_lib::ir::NameSpace::Type && path == &symbol.path {
+                return normalized_doc_comment(comments);
+            }
+            if !matches!(
+                symbol.namespace,
+                halcyon_lib::ir::NameSpace::Term | halcyon_lib::ir::NameSpace::Constructor
+            ) {
+                return None;
+            }
+            let matches_constructor = match def.kind() {
+                halcyon_lib::ir::TypeDefKind::Struct(_) | halcyon_lib::ir::TypeDefKind::Expr(_) => {
+                    symbol.path == *path
+                }
+                halcyon_lib::ir::TypeDefKind::Sum(variants) => {
+                    variants
+                        .keys()
+                        .any(|variant| symbol.path == path.sibling(variant))
+                }
+            };
+            if matches_constructor {
+                normalized_doc_comment(comments)
+            } else {
+                None
+            }
+        }
+        halcyon_lib::ir::Statement::Trait {
+            comments,
+            path,
+            associated_types,
+            methods,
+            ..
+        } => {
+            if symbol.namespace == halcyon_lib::ir::NameSpace::Trait && path == &symbol.path {
+                return normalized_doc_comment(comments);
+            }
+            if symbol.namespace == halcyon_lib::ir::NameSpace::Type
+                && associated_types.iter().any(|item| item.path == symbol.path)
+            {
+                return normalized_doc_comment(comments);
+            }
+            if symbol.namespace == halcyon_lib::ir::NameSpace::Term
+                && methods.iter().any(|method| method.path == symbol.path)
+            {
+                return normalized_doc_comment(comments);
+            }
+            None
+        }
+        halcyon_lib::ir::Statement::TraitAlias { comments, path, .. } => {
+            if symbol.namespace == halcyon_lib::ir::NameSpace::Trait && path == &symbol.path {
+                normalized_doc_comment(comments)
+            } else {
+                None
+            }
+        }
+        halcyon_lib::ir::Statement::Impl {
+            comments, methods, ..
+        } => {
+            if symbol.namespace == halcyon_lib::ir::NameSpace::Term
+                && methods.iter().any(|method| method.impl_path == symbol.path)
+            {
+                normalized_doc_comment(comments)
+            } else {
+                None
+            }
+        }
+        halcyon_lib::ir::Statement::Wasm(_) => None,
+    }
+}
+
+fn normalized_doc_comment(comments: &str) -> Option<String> {
+    let trimmed = comments.trim();
+    if trimmed.is_empty() || trimmed.contains("@HIDDEN") {
+        return None;
+    }
+    Some(trimmed.to_string())
+}
+
+fn collect_pattern_paths_for_docs(
+    pattern: &halcyon_lib::ir::Pattern<()>,
+    paths: &mut Vec<halcyon_lib::ir::Path>,
+) {
+    match &pattern.kind {
+        halcyon_lib::ir::PatternKind::Identifier(path) => paths.push(path.clone()),
+        halcyon_lib::ir::PatternKind::Tuple(patterns) => {
+            for pattern in patterns {
+                collect_pattern_paths_for_docs(pattern, paths);
+            }
+        }
+        halcyon_lib::ir::PatternKind::Constructor(_, inner)
+        | halcyon_lib::ir::PatternKind::TypeHint(inner, _) => {
+            collect_pattern_paths_for_docs(inner, paths);
+        }
+        halcyon_lib::ir::PatternKind::Struct(fields) => {
+            for pattern in fields.values() {
+                collect_pattern_paths_for_docs(pattern, paths);
+            }
+        }
+        halcyon_lib::ir::PatternKind::Array {
+            starting,
+            glob,
+            ending,
+        } => {
+            for pattern in starting.iter().chain(ending.iter()) {
+                collect_pattern_paths_for_docs(pattern, paths);
+            }
+            if let halcyon_lib::ir::Glob::Named(path) = glob {
+                paths.push(path.clone());
+            }
+        }
+        halcyon_lib::ir::PatternKind::Hole
+        | halcyon_lib::ir::PatternKind::ConstConstructor(_)
+        | halcyon_lib::ir::PatternKind::Immediate(_) => {}
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum NamingStyle {
     Snake,
@@ -1636,8 +1877,21 @@ mod tests {
     use lsp_types::notification::PublishDiagnostics;
     use lsp_types::{
         CodeActionContext,
+        CompletionResponse,
         Diagnostic,
+        Hover,
+        HoverContents,
+        PartialResultParams,
         PublishDiagnosticsParams,
+        TextDocumentIdentifier,
+        TextDocumentItem,
+        TextDocumentPositionParams,
+        WorkDoneProgressParams,
+    };
+    use serde_json::json;
+    use std::time::{
+        SystemTime,
+        UNIX_EPOCH,
     };
 
     fn placeholder_type_expr() -> halcyon_lib::ir::TypeExpr {
@@ -1664,6 +1918,461 @@ mod tests {
             panic!("expected source to parse");
         };
         collect_naming_candidates(source_file)
+    }
+
+    struct TempWorkspace {
+        root_dir: PathBuf,
+        bundle_path: PathBuf,
+        bundle_uri: Uri,
+        source: String,
+    }
+
+    impl TempWorkspace {
+        fn new(source: &str) -> Self {
+            let nanos = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|duration| duration.as_nanos())
+                .unwrap_or(0);
+            let root_dir = std::env::temp_dir().join(format!(
+                "halcyon-lsp-server-tests-{}-{nanos}",
+                std::process::id()
+            ));
+            std::fs::create_dir_all(&root_dir).expect("temp workspace should be created");
+            let bundle_path = root_dir.join("bundle.hc");
+            std::fs::write(&bundle_path, source)
+                .expect("temp bundle source should be written to disk");
+            let bundle_uri = path_to_uri(&bundle_path).expect("bundle path should convert to URI");
+            Self {
+                root_dir,
+                bundle_path,
+                bundle_uri,
+                source: source.to_string(),
+            }
+        }
+    }
+
+    impl Drop for TempWorkspace {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.root_dir);
+        }
+    }
+
+    fn request_with_json(
+        id: i32,
+        method: &str,
+        params: serde_json::Value,
+    ) -> Request {
+        Request {
+            id: RequestId::from(id),
+            method: method.to_string(),
+            params,
+        }
+    }
+
+    fn take_response(
+        connection: &Connection,
+        id: i32,
+    ) -> Response {
+        connection
+            .receiver
+            .try_iter()
+            .find_map(|message| {
+                let Message::Response(response) = message else {
+                    return None;
+                };
+                (response.id == RequestId::from(id)).then_some(response)
+            })
+            .unwrap_or_else(|| panic!("expected response for request id {id}"))
+    }
+
+    fn open_workspace_document(
+        server: &mut Server,
+        connection: &Connection,
+        workspace: &TempWorkspace,
+    ) {
+        open_document(
+            server,
+            connection,
+            workspace.bundle_uri.clone(),
+            workspace.source.clone(),
+        );
+    }
+
+    fn open_document(
+        server: &mut Server,
+        connection: &Connection,
+        uri: Uri,
+        source: String,
+    ) {
+        server
+            .handle_notification(
+                Notification::new(
+                    DidOpenTextDocument::METHOD.to_string(),
+                    DidOpenTextDocumentParams {
+                        text_document: TextDocumentItem {
+                            uri,
+                            language_id: "halcyon".to_string(),
+                            version: 1,
+                            text: source,
+                        },
+                    },
+                ),
+                connection,
+            )
+            .expect("didOpen notification should be handled");
+    }
+
+    struct SymbolCoverageFixture {
+        workspace: TempWorkspace,
+        other_path: PathBuf,
+        other_uri: Uri,
+        root_source: String,
+        other_source: String,
+    }
+
+    impl SymbolCoverageFixture {
+        fn new() -> Self {
+            let root_source = [
+                "bundle demo",
+                "import \"other.hc\"",
+                "",
+                "let module_decl = item_module",
+                "let module_use_root = item_module",
+                "let type_decl = ItemType",
+                "let type_use_root = ItemType",
+                "let constructor_decl = ItemCtor",
+                "let constructor_use_root = ItemCtor",
+                "let trait_decl = ItemTrait",
+                "let trait_use_root = ItemTrait",
+                "let term_decl = item_term",
+                "let term_use_root = item_term",
+                "let wasm_decl = item_wasm",
+                "let wasm_use_root = item_wasm",
+                "",
+            ]
+            .join("\n");
+
+            let other_source = [
+                "let module_use_other = item_module",
+                "let type_use_other = ItemType",
+                "let constructor_use_other = ItemCtor",
+                "let trait_use_other = ItemTrait",
+                "let term_use_other = item_term",
+                "let wasm_use_other = item_wasm",
+                "",
+            ]
+            .join("\n");
+
+            let workspace = TempWorkspace::new(&root_source);
+            let other_path = workspace.root_dir.join("other.hc");
+            std::fs::write(&other_path, &other_source)
+                .expect("secondary fixture file should be written");
+            let other_uri =
+                path_to_uri(&other_path).expect("secondary file path should convert to URI");
+
+            Self {
+                workspace,
+                other_path,
+                other_uri,
+                root_source,
+                other_source,
+            }
+        }
+
+        fn nth_offset(
+            source: &str,
+            token: &str,
+            occurrence: usize,
+        ) -> usize {
+            let mut start = 0usize;
+            for index in 0..=occurrence {
+                let relative = source[start..]
+                    .find(token)
+                    .unwrap_or_else(|| panic!("missing occurrence #{index} for token `{token}`"));
+                let absolute = start + relative;
+                if index == occurrence {
+                    return absolute;
+                }
+                start = absolute + token.len();
+            }
+            unreachable!("loop always returns on requested occurrence")
+        }
+
+        fn source_span(
+            source: &str,
+            token: &str,
+            occurrence: usize,
+            file_id: usize,
+        ) -> Span {
+            Span::Source {
+                start: Self::nth_offset(source, token, occurrence),
+                width: token.len(),
+                file_id: Some(file_id),
+            }
+        }
+
+        fn seed_server(
+            &self,
+            server: &mut Server,
+        ) {
+            let root_path = normalize_path(&self.workspace.bundle_path);
+            let other_path = normalize_path(&self.other_path);
+
+            let source_files = vec![
+                AnalysisSourceFile {
+                    id: 1,
+                    path: root_path.clone(),
+                    source: self.root_source.clone(),
+                },
+                AnalysisSourceFile {
+                    id: 2,
+                    path: other_path,
+                    source: self.other_source.clone(),
+                },
+            ]
+            .into_boxed_slice();
+
+            let symbol = |minor: &str, namespace: halcyon_lib::ir::NameSpace| {
+                halcyon_lib::ir::ScopedPath {
+                    path: halcyon_lib::ir::Path::new("demo", minor),
+                    namespace,
+                }
+            };
+
+            let definitions = HashMap::from([
+                (
+                    symbol("item_module", halcyon_lib::ir::NameSpace::Module),
+                    vec![Self::source_span(&self.root_source, "item_module", 0, 1)]
+                        .into_boxed_slice(),
+                ),
+                (
+                    symbol("ItemType", halcyon_lib::ir::NameSpace::Type),
+                    vec![Self::source_span(&self.root_source, "ItemType", 0, 1)].into_boxed_slice(),
+                ),
+                (
+                    symbol("ItemCtor", halcyon_lib::ir::NameSpace::Constructor),
+                    vec![Self::source_span(&self.root_source, "ItemCtor", 0, 1)].into_boxed_slice(),
+                ),
+                (
+                    symbol("ItemTrait", halcyon_lib::ir::NameSpace::Trait),
+                    vec![Self::source_span(&self.root_source, "ItemTrait", 0, 1)]
+                        .into_boxed_slice(),
+                ),
+                (
+                    symbol("item_term", halcyon_lib::ir::NameSpace::Term),
+                    vec![Self::source_span(&self.root_source, "item_term", 0, 1)]
+                        .into_boxed_slice(),
+                ),
+                (
+                    symbol("item_wasm", halcyon_lib::ir::NameSpace::Wasm),
+                    vec![Self::source_span(&self.root_source, "item_wasm", 0, 1)]
+                        .into_boxed_slice(),
+                ),
+            ]);
+
+            let usages = HashMap::from([
+                (
+                    symbol("item_module", halcyon_lib::ir::NameSpace::Module),
+                    vec![
+                        Self::source_span(&self.root_source, "item_module", 1, 1),
+                        Self::source_span(&self.other_source, "item_module", 0, 2),
+                    ]
+                    .into_boxed_slice(),
+                ),
+                (
+                    symbol("ItemType", halcyon_lib::ir::NameSpace::Type),
+                    vec![
+                        Self::source_span(&self.root_source, "ItemType", 1, 1),
+                        Self::source_span(&self.other_source, "ItemType", 0, 2),
+                    ]
+                    .into_boxed_slice(),
+                ),
+                (
+                    symbol("ItemCtor", halcyon_lib::ir::NameSpace::Constructor),
+                    vec![
+                        Self::source_span(&self.root_source, "ItemCtor", 1, 1),
+                        Self::source_span(&self.other_source, "ItemCtor", 0, 2),
+                    ]
+                    .into_boxed_slice(),
+                ),
+                (
+                    symbol("ItemTrait", halcyon_lib::ir::NameSpace::Trait),
+                    vec![
+                        Self::source_span(&self.root_source, "ItemTrait", 1, 1),
+                        Self::source_span(&self.other_source, "ItemTrait", 0, 2),
+                    ]
+                    .into_boxed_slice(),
+                ),
+                (
+                    symbol("item_term", halcyon_lib::ir::NameSpace::Term),
+                    vec![
+                        Self::source_span(&self.root_source, "item_term", 1, 1),
+                        Self::source_span(&self.other_source, "item_term", 0, 2),
+                    ]
+                    .into_boxed_slice(),
+                ),
+                (
+                    symbol("item_wasm", halcyon_lib::ir::NameSpace::Wasm),
+                    vec![
+                        Self::source_span(&self.root_source, "item_wasm", 1, 1),
+                        Self::source_span(&self.other_source, "item_wasm", 0, 2),
+                    ]
+                    .into_boxed_slice(),
+                ),
+            ]);
+
+            server.bundles.insert(
+                root_path.clone(),
+                BundleState {
+                    frontend: FrontendBundleAnalysis {
+                        root_path,
+                        bundle_name: "demo".to_string(),
+                        source_files,
+                        diagnostics: Vec::new().into_boxed_slice(),
+                        name_index: Some(halcyon_lib::ir::NameIndex {
+                            definitions,
+                            usages,
+                        }),
+                        module: None,
+                    },
+                    typed: None,
+                    generation: 1,
+                    published_uris: HashSet::new(),
+                },
+            );
+        }
+    }
+
+    fn position_for_token(
+        source: &str,
+        context: &str,
+        token: &str,
+    ) -> Position {
+        let context_start = source
+            .find(context)
+            .unwrap_or_else(|| panic!("missing context `{context}`"));
+        let token_offset = context
+            .find(token)
+            .unwrap_or_else(|| panic!("missing token `{token}` in context `{context}`"));
+        let position = byte_offset_to_utf16_position(source, context_start + token_offset);
+        Position {
+            line: position.line,
+            character: position.character,
+        }
+    }
+
+    fn request_hover(
+        server: &mut Server,
+        server_connection: &Connection,
+        client_connection: &Connection,
+        request_id: i32,
+        uri: &Uri,
+        position: Position,
+    ) -> Hover {
+        let params = HoverParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri: uri.clone() },
+                position,
+            },
+            work_done_progress_params: WorkDoneProgressParams::default(),
+        };
+        server
+            .handle_request(
+                request_with_json(
+                    request_id,
+                    HoverRequest::METHOD,
+                    serde_json::to_value(params).expect("hover params should serialize"),
+                ),
+                server_connection,
+            )
+            .expect("hover request should be handled");
+
+        let response = take_response(client_connection, request_id);
+        assert!(response.error.is_none(), "hover request should not fail");
+        let payload = response
+            .result
+            .expect("hover request should return a result payload");
+        let hover: Option<Hover> =
+            serde_json::from_value(payload).expect("hover payload should deserialize");
+        hover.expect("hover request should resolve a symbol")
+    }
+
+    fn hover_markdown(hover: Hover) -> String {
+        let HoverContents::Markup(markup) = hover.contents else {
+            panic!("hover response should be markdown");
+        };
+        markup.value
+    }
+
+    fn request_rename(
+        server: &mut Server,
+        server_connection: &Connection,
+        client_connection: &Connection,
+        request_id: i32,
+        uri: &Uri,
+        position: Position,
+        new_name: &str,
+    ) -> WorkspaceEdit {
+        let params = RenameParams {
+            text_document_position: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri: uri.clone() },
+                position,
+            },
+            new_name: new_name.to_string(),
+            work_done_progress_params: WorkDoneProgressParams::default(),
+        };
+        server
+            .handle_request(
+                request_with_json(
+                    request_id,
+                    Rename::METHOD,
+                    serde_json::to_value(params).expect("rename params should serialize"),
+                ),
+                server_connection,
+            )
+            .expect("rename request should be handled");
+
+        let response = take_response(client_connection, request_id);
+        assert!(response.error.is_none(), "rename request should not fail");
+        let payload = response
+            .result
+            .expect("rename request should return a result payload");
+        let edit: Option<WorkspaceEdit> =
+            serde_json::from_value(payload).expect("rename payload should deserialize");
+        edit.expect("rename request should return workspace edits")
+    }
+
+    fn assert_rename_updates_both_files(
+        edit: WorkspaceEdit,
+        root_uri: &Uri,
+        other_uri: &Uri,
+        expected_name: &str,
+    ) {
+        let changes = edit
+            .changes
+            .expect("rename workspace edit should include text changes");
+        let root_edits = changes
+            .get(root_uri)
+            .expect("root file should receive rename edits");
+        let other_edits = changes
+            .get(other_uri)
+            .expect("secondary file should receive rename edits");
+
+        assert!(
+            !root_edits.is_empty(),
+            "root file should have at least one edit"
+        );
+        assert!(
+            !other_edits.is_empty(),
+            "secondary file should have at least one edit"
+        );
+        assert!(
+            root_edits
+                .iter()
+                .chain(other_edits.iter())
+                .all(|edit| edit.new_text == expected_name),
+            "rename should only emit replacement text `{expected_name}`"
+        );
     }
 
     #[test]
@@ -1869,6 +2578,7 @@ mod tests {
                     comments: String::new(),
                     path: trait_path.clone(),
                     parameters: Vec::new().into_boxed_slice(),
+                    associated_types: Vec::new().into_boxed_slice(),
                     methods: vec![halcyon_lib::ir::TraitMethodDecl {
                         path: trait_method.clone(),
                         type_expr: placeholder_type_expr(),
@@ -1880,6 +2590,7 @@ mod tests {
                     comments: String::new(),
                     trait_path,
                     arguments: Vec::new().into_boxed_slice(),
+                    associated_types: Vec::new().into_boxed_slice(),
                     methods: vec![halcyon_lib::ir::ImplMethod {
                         trait_method: trait_method.clone(),
                         impl_path: impl_method.clone(),
@@ -1914,6 +2625,7 @@ mod tests {
                     comments: String::new(),
                     path: trait_path.clone(),
                     parameters: Vec::new().into_boxed_slice(),
+                    associated_types: Vec::new().into_boxed_slice(),
                     methods: vec![halcyon_lib::ir::TraitMethodDecl {
                         path: trait_method.clone(),
                         type_expr: placeholder_type_expr(),
@@ -1925,6 +2637,7 @@ mod tests {
                     comments: String::new(),
                     trait_path,
                     arguments: Vec::new().into_boxed_slice(),
+                    associated_types: Vec::new().into_boxed_slice(),
                     methods: vec![halcyon_lib::ir::ImplMethod {
                         trait_method: trait_method.clone(),
                         impl_path: impl_method.clone(),
@@ -1977,6 +2690,7 @@ mod tests {
                     comments: String::new(),
                     path: trait_path.clone(),
                     parameters: Vec::new().into_boxed_slice(),
+                    associated_types: Vec::new().into_boxed_slice(),
                     methods: vec![halcyon_lib::ir::TraitMethodDecl {
                         path: trait_method.clone(),
                         type_expr: placeholder_type_expr(),
@@ -1988,6 +2702,7 @@ mod tests {
                     comments: String::new(),
                     trait_path: trait_path.clone(),
                     arguments: Vec::new().into_boxed_slice(),
+                    associated_types: Vec::new().into_boxed_slice(),
                     methods: vec![halcyon_lib::ir::ImplMethod {
                         trait_method: trait_method.clone(),
                         impl_path: impl_method_a.clone(),
@@ -2000,6 +2715,7 @@ mod tests {
                     comments: String::new(),
                     trait_path,
                     arguments: Vec::new().into_boxed_slice(),
+                    associated_types: Vec::new().into_boxed_slice(),
                     methods: vec![halcyon_lib::ir::ImplMethod {
                         trait_method: trait_method.clone(),
                         impl_path: impl_method_b.clone(),
@@ -2061,6 +2777,7 @@ mod tests {
                 comments: String::new(),
                 trait_path: halcyon_lib::ir::Path::new("core", "hkt::Monad"),
                 arguments: Vec::new().into_boxed_slice(),
+                associated_types: Vec::new().into_boxed_slice(),
                 methods: vec![halcyon_lib::ir::ImplMethod {
                     trait_method,
                     impl_path: impl_method.clone(),
@@ -2079,6 +2796,571 @@ mod tests {
 
         let mapped = rename_symbol_for_trait_item(&frontend, &symbol);
         assert_eq!(mapped.path, symbol.path);
+    }
+
+    #[test]
+    fn handle_request_returns_invalid_params_for_malformed_payloads() {
+        let (server_connection, client_connection) = Connection::memory();
+        let mut server = Server::new();
+
+        server
+            .handle_request(
+                request_with_json(1, Completion::METHOD, json!({ "invalid": true })),
+                &server_connection,
+            )
+            .expect("malformed request should not crash handler");
+
+        let response = take_response(&client_connection, 1);
+        let error = response
+            .error
+            .expect("invalid params request should return an error response");
+        assert_eq!(error.code, ErrorCode::InvalidParams as i32);
+        assert!(
+            error
+                .message
+                .contains("Invalid params for `textDocument/completion`")
+        );
+    }
+
+    #[test]
+    fn handle_notification_skips_malformed_payloads_and_keeps_serving() {
+        let (server_connection, client_connection) = Connection::memory();
+        let mut server = Server::new();
+
+        server
+            .handle_notification(
+                Notification::new(
+                    DidOpenTextDocument::METHOD.to_string(),
+                    json!({ "invalid": true }),
+                ),
+                &server_connection,
+            )
+            .expect("malformed notification should be ignored");
+
+        server
+            .handle_request(
+                request_with_json(2, "demo/unknown", serde_json::Value::Null),
+                &server_connection,
+            )
+            .expect("server should continue handling later requests");
+
+        let response = take_response(&client_connection, 2);
+        let error = response
+            .error
+            .expect("unknown methods should return method-not-found response");
+        assert_eq!(error.code, ErrorCode::MethodNotFound as i32);
+    }
+
+    #[test]
+    fn completion_request_returns_keyword_items_through_request_handler() {
+        let (server_connection, client_connection) = Connection::memory();
+        let mut server = Server::new();
+        let workspace = TempWorkspace::new("bundle demo\nlet answer = 1\nlet probe = le\n");
+        open_workspace_document(&mut server, &server_connection, &workspace);
+
+        let params = CompletionParams {
+            text_document_position: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier {
+                    uri: workspace.bundle_uri.clone(),
+                },
+                position: Position {
+                    line: 2,
+                    character: 14,
+                },
+            },
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            partial_result_params: PartialResultParams::default(),
+            context: None,
+        };
+        server
+            .handle_request(
+                request_with_json(
+                    3,
+                    Completion::METHOD,
+                    serde_json::to_value(params).expect("completion params should serialize"),
+                ),
+                &server_connection,
+            )
+            .expect("completion request should be handled");
+
+        let response = take_response(&client_connection, 3);
+        let payload = response
+            .result
+            .expect("completion request should return a result payload");
+        let completion: Option<CompletionResponse> =
+            serde_json::from_value(payload).expect("completion payload should deserialize");
+        let Some(CompletionResponse::List(list)) = completion else {
+            panic!("completion response should use completion list");
+        };
+
+        assert!(
+            list.items.iter().any(|item| item.label == "let"),
+            "keyword completion should include `let`"
+        );
+    }
+
+    #[test]
+    fn rename_request_returns_workspace_edits_for_local_symbols() {
+        let (server_connection, client_connection) = Connection::memory();
+        let mut server = Server::new();
+        let workspace = TempWorkspace::new("bundle demo\nlet value = 1\nlet alias = value\n");
+        open_workspace_document(&mut server, &server_connection, &workspace);
+
+        let params = RenameParams {
+            text_document_position: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier {
+                    uri: workspace.bundle_uri.clone(),
+                },
+                position: Position {
+                    line: 2,
+                    character: 13,
+                },
+            },
+            new_name: "renamed".to_string(),
+            work_done_progress_params: WorkDoneProgressParams::default(),
+        };
+        server
+            .handle_request(
+                request_with_json(
+                    4,
+                    Rename::METHOD,
+                    serde_json::to_value(params).expect("rename params should serialize"),
+                ),
+                &server_connection,
+            )
+            .expect("rename request should be handled");
+
+        let response = take_response(&client_connection, 4);
+        let payload = response
+            .result
+            .expect("rename request should return a result payload");
+        let edit: Option<WorkspaceEdit> =
+            serde_json::from_value(payload).expect("rename payload should deserialize");
+        let Some(edit) = edit else {
+            panic!("rename request should produce workspace edits");
+        };
+        let changes = edit
+            .changes
+            .expect("rename workspace edit should include text changes");
+        let text_edits = changes
+            .get(&workspace.bundle_uri)
+            .expect("bundle document should receive rename edits");
+
+        assert!(
+            text_edits.len() >= 2,
+            "rename should update declaration and at least one usage"
+        );
+        assert!(text_edits.iter().all(|edit| edit.new_text == "renamed"));
+    }
+
+    #[test]
+    fn hover_covers_symbol_kinds_within_and_across_files() {
+        let (server_connection, client_connection) = Connection::memory();
+        let mut server = Server::new();
+        let fixture = SymbolCoverageFixture::new();
+        fixture.seed_server(&mut server);
+
+        let root_uri = fixture.workspace.bundle_uri.clone();
+        let root_source = fixture.root_source.clone();
+        let other_uri = fixture.other_uri.clone();
+        let other_source = fixture.other_source.clone();
+
+        let mut request_id = 500;
+        let mut assert_hover_contains =
+            |uri: &Uri,
+             position: Position,
+             expected_path_fragment: &str,
+             expected_namespace: &str| {
+                request_id += 1;
+                let markdown = hover_markdown(request_hover(
+                    &mut server,
+                    &server_connection,
+                    &client_connection,
+                    request_id,
+                    uri,
+                    position,
+                ));
+                assert!(
+                    markdown.contains(expected_path_fragment),
+                    "hover should contain path fragment `{expected_path_fragment}`, got: {markdown}"
+                );
+                assert!(
+                    markdown.contains(&format!("**Namespace**: `{expected_namespace}`")),
+                    "hover should contain namespace `{expected_namespace}`, got: {markdown}"
+                );
+            };
+
+        assert_hover_contains(
+            &root_uri,
+            position_for_token(&root_source, "let module_decl = item_module", "item_module"),
+            "**Path**: `demo::item_module`",
+            "module",
+        );
+        assert_hover_contains(
+            &other_uri,
+            position_for_token(
+                &other_source,
+                "let module_use_other = item_module",
+                "item_module",
+            ),
+            "**Path**: `demo::item_module`",
+            "module",
+        );
+
+        assert_hover_contains(
+            &root_uri,
+            position_for_token(&root_source, "let type_decl = ItemType", "ItemType"),
+            "**Path**: `demo::ItemType`",
+            "type",
+        );
+        assert_hover_contains(
+            &other_uri,
+            position_for_token(&other_source, "let type_use_other = ItemType", "ItemType"),
+            "**Path**: `demo::ItemType`",
+            "type",
+        );
+
+        assert_hover_contains(
+            &root_uri,
+            position_for_token(&root_source, "let constructor_decl = ItemCtor", "ItemCtor"),
+            "**Path**: `demo::ItemCtor`",
+            "constructor",
+        );
+        assert_hover_contains(
+            &other_uri,
+            position_for_token(
+                &other_source,
+                "let constructor_use_other = ItemCtor",
+                "ItemCtor",
+            ),
+            "**Path**: `demo::ItemCtor`",
+            "constructor",
+        );
+
+        assert_hover_contains(
+            &root_uri,
+            position_for_token(&root_source, "let trait_decl = ItemTrait", "ItemTrait"),
+            "**Path**: `demo::ItemTrait`",
+            "trait",
+        );
+        assert_hover_contains(
+            &other_uri,
+            position_for_token(
+                &other_source,
+                "let trait_use_other = ItemTrait",
+                "ItemTrait",
+            ),
+            "**Path**: `demo::ItemTrait`",
+            "trait",
+        );
+
+        assert_hover_contains(
+            &root_uri,
+            position_for_token(&root_source, "let term_decl = item_term", "item_term"),
+            "**Path**: `demo::item_term`",
+            "term",
+        );
+        assert_hover_contains(
+            &other_uri,
+            position_for_token(&other_source, "let term_use_other = item_term", "item_term"),
+            "**Path**: `demo::item_term`",
+            "term",
+        );
+
+        assert_hover_contains(
+            &root_uri,
+            position_for_token(&root_source, "let wasm_decl = item_wasm", "item_wasm"),
+            "**Path**: `demo::item_wasm`",
+            "wasm",
+        );
+        assert_hover_contains(
+            &other_uri,
+            position_for_token(&other_source, "let wasm_use_other = item_wasm", "item_wasm"),
+            "**Path**: `demo::item_wasm`",
+            "wasm",
+        );
+    }
+
+    #[test]
+    fn hover_includes_doc_comments_for_declarations_and_cross_file_usages() {
+        let (server_connection, client_connection) = Connection::memory();
+        let mut server = Server::new();
+
+        let root_source = [
+            "bundle demo",
+            "import \"other.hc\"",
+            "",
+            "--> Root trait docs.",
+            "trait LocalTrait : a =",
+            "  let trait_item : a -> a",
+            "end",
+            "",
+            "--> Root type docs.",
+            "type LocalType =",
+            "  | LocalCtor",
+            "",
+            "--> Root term docs.",
+            "let root_term = other_term",
+            "",
+            "--> Hidden docs.",
+            "--> @HIDDEN",
+            "let hidden_term = 1",
+            "",
+        ]
+        .join("\n");
+        let other_source = ["--> Other term docs.", "let other_term = LocalCtor", ""].join("\n");
+
+        let workspace = TempWorkspace::new(&root_source);
+        let other_path = workspace.root_dir.join("other.hc");
+        std::fs::write(&other_path, &other_source)
+            .expect("secondary source file should be written");
+        let other_uri =
+            path_to_uri(&other_path).expect("secondary source path should convert to URI");
+
+        open_workspace_document(&mut server, &server_connection, &workspace);
+        open_document(
+            &mut server,
+            &server_connection,
+            other_uri.clone(),
+            other_source.clone(),
+        );
+
+        let root_term_hover = hover_markdown(request_hover(
+            &mut server,
+            &server_connection,
+            &client_connection,
+            700,
+            &workspace.bundle_uri,
+            position_for_token(&root_source, "let root_term = other_term", "root_term"),
+        ));
+        assert!(root_term_hover.contains("**Docs**"));
+        assert!(root_term_hover.contains("Root term docs."));
+
+        let cross_file_hover = hover_markdown(request_hover(
+            &mut server,
+            &server_connection,
+            &client_connection,
+            701,
+            &workspace.bundle_uri,
+            position_for_token(&root_source, "let root_term = other_term", "other_term"),
+        ));
+        assert!(cross_file_hover.contains("Other term docs."));
+
+        let constructor_hover = hover_markdown(request_hover(
+            &mut server,
+            &server_connection,
+            &client_connection,
+            702,
+            &workspace.bundle_uri,
+            position_for_token(&root_source, "| LocalCtor", "LocalCtor"),
+        ));
+        assert!(constructor_hover.contains("Root type docs."));
+
+        let trait_hover = hover_markdown(request_hover(
+            &mut server,
+            &server_connection,
+            &client_connection,
+            703,
+            &workspace.bundle_uri,
+            position_for_token(&root_source, "trait LocalTrait : a =", "LocalTrait"),
+        ));
+        assert!(trait_hover.contains("Root trait docs."));
+
+        let hidden_hover = hover_markdown(request_hover(
+            &mut server,
+            &server_connection,
+            &client_connection,
+            704,
+            &workspace.bundle_uri,
+            position_for_token(&root_source, "let hidden_term = 1", "hidden_term"),
+        ));
+        assert!(!hidden_hover.contains("Hidden docs."));
+    }
+
+    #[test]
+    fn rename_covers_symbol_kinds_across_and_within_files() {
+        let (server_connection, client_connection) = Connection::memory();
+        let mut server = Server::new();
+        let fixture = SymbolCoverageFixture::new();
+        fixture.seed_server(&mut server);
+
+        let root_uri = fixture.workspace.bundle_uri.clone();
+        let root_source = fixture.root_source.clone();
+        let other_uri = fixture.other_uri.clone();
+        let other_source = fixture.other_source.clone();
+
+        let mut request_id = 600;
+
+        request_id += 1;
+        let module_edit = request_rename(
+            &mut server,
+            &server_connection,
+            &client_connection,
+            request_id,
+            &other_uri,
+            position_for_token(
+                &other_source,
+                "let module_use_other = item_module",
+                "item_module",
+            ),
+            "renamed_module",
+        );
+        assert_rename_updates_both_files(module_edit, &root_uri, &other_uri, "renamed_module");
+
+        request_id += 1;
+        let type_edit = request_rename(
+            &mut server,
+            &server_connection,
+            &client_connection,
+            request_id,
+            &root_uri,
+            position_for_token(&root_source, "let type_decl = ItemType", "ItemType"),
+            "RenamedType",
+        );
+        assert_rename_updates_both_files(type_edit, &root_uri, &other_uri, "RenamedType");
+
+        request_id += 1;
+        let constructor_edit = request_rename(
+            &mut server,
+            &server_connection,
+            &client_connection,
+            request_id,
+            &other_uri,
+            position_for_token(
+                &other_source,
+                "let constructor_use_other = ItemCtor",
+                "ItemCtor",
+            ),
+            "RenamedCtor",
+        );
+        assert_rename_updates_both_files(constructor_edit, &root_uri, &other_uri, "RenamedCtor");
+
+        request_id += 1;
+        let trait_edit = request_rename(
+            &mut server,
+            &server_connection,
+            &client_connection,
+            request_id,
+            &other_uri,
+            position_for_token(
+                &other_source,
+                "let trait_use_other = ItemTrait",
+                "ItemTrait",
+            ),
+            "RenamedTrait",
+        );
+        assert_rename_updates_both_files(trait_edit, &root_uri, &other_uri, "RenamedTrait");
+
+        request_id += 1;
+        let term_edit = request_rename(
+            &mut server,
+            &server_connection,
+            &client_connection,
+            request_id,
+            &other_uri,
+            position_for_token(&other_source, "let term_use_other = item_term", "item_term"),
+            "renamed_term",
+        );
+        assert_rename_updates_both_files(term_edit, &root_uri, &other_uri, "renamed_term");
+
+        request_id += 1;
+        let wasm_edit = request_rename(
+            &mut server,
+            &server_connection,
+            &client_connection,
+            request_id,
+            &other_uri,
+            position_for_token(&other_source, "let wasm_use_other = item_wasm", "item_wasm"),
+            "renamed_wasm",
+        );
+        assert_rename_updates_both_files(wasm_edit, &root_uri, &other_uri, "renamed_wasm");
+    }
+
+    #[test]
+    fn drain_typecheck_results_drops_stale_generations() {
+        let (server_connection, _client_connection) = Connection::memory();
+        let mut server = Server::new();
+        let workspace = TempWorkspace::new("bundle demo\nlet value = 1\n");
+
+        let source_files = vec![AnalysisSourceFile {
+            id: 1,
+            path: workspace.bundle_path.clone(),
+            source: workspace.source.clone(),
+        }]
+        .into_boxed_slice();
+        let root_path = workspace.bundle_path.clone();
+
+        server.bundles.insert(
+            root_path.clone(),
+            BundleState {
+                frontend: FrontendBundleAnalysis {
+                    root_path: root_path.clone(),
+                    bundle_name: "demo".to_string(),
+                    source_files: source_files.clone(),
+                    diagnostics: Vec::new().into_boxed_slice(),
+                    name_index: None,
+                    module: None,
+                },
+                typed: None,
+                generation: 2,
+                published_uris: HashSet::new(),
+            },
+        );
+
+        let make_analysis = |message: &str| {
+            BundleAnalysis {
+                root_path: root_path.clone(),
+                bundle_name: "demo".to_string(),
+                source_files: source_files.clone(),
+                diagnostics: vec![halcyon_lib::SerializedDiagnostic {
+                    severity: "warning".to_string(),
+                    code: None,
+                    message: message.to_string(),
+                    labels: vec![halcyon_lib::SerializedDiagnosticLabel {
+                        style: "primary".to_string(),
+                        file_name: workspace.bundle_path.to_string_lossy().to_string(),
+                        message: message.to_string(),
+                        range_start: 0,
+                        range_end: 6,
+                        start: halcyon_lib::SerializedDiagnosticLocation { line: 1, column: 1 },
+                        end: halcyon_lib::SerializedDiagnosticLocation { line: 1, column: 7 },
+                    }],
+                    notes: Vec::new(),
+                }]
+                .into_boxed_slice(),
+                symbols: server.base_symbols.clone(),
+                name_index: None,
+            }
+        };
+
+        server
+            .typecheck_result_sender
+            .send(TypecheckResult {
+                root_path: root_path.clone(),
+                generation: 2,
+                analysis: Ok(make_analysis("latest")),
+            })
+            .expect("latest typecheck result should queue");
+        server
+            .typecheck_result_sender
+            .send(TypecheckResult {
+                root_path: root_path.clone(),
+                generation: 1,
+                analysis: Ok(make_analysis("stale")),
+            })
+            .expect("stale typecheck result should queue");
+        server
+            .drain_typecheck_results(&server_connection)
+            .expect("draining typecheck results should succeed");
+
+        let typed = server
+            .bundles
+            .get(&root_path)
+            .and_then(|bundle| bundle.typed.as_ref())
+            .expect("latest typed snapshot should be retained");
+
+        assert_eq!(typed.generation, 2);
+        assert!(typed.analysis.diagnostics[0].message.contains("latest"));
     }
 
     #[test]

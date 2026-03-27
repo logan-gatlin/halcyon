@@ -1215,7 +1215,6 @@ fn dictionary_args_for_predicates(
     dict_env: &DictEnv,
     symbols: &SymbolTable,
 ) -> Option<Vec<Term<Type>>> {
-    let predicates = sorted_unique_predicates(predicates);
     let mut args = Vec::new();
     for predicate in predicates {
         if let Some(binding) = find_dict_binding(dict_env, &predicate) {
@@ -1466,6 +1465,7 @@ fn instantiate_predicates_for_templates(
             .cloned()
             .collect()
     };
+    let templates = sorted_unique_predicates(&templates);
     if templates.is_empty() {
         return Some(Vec::new());
     }
@@ -2370,6 +2370,74 @@ mod tests {
         }
     }
 
+    fn term_call_arg_count_for(
+        term: &Term<Type>,
+        name: &str,
+    ) -> Option<usize> {
+        fn call_chain_arg_count(
+            term: &Term<Type>,
+            name: &str,
+        ) -> Option<usize> {
+            let mut current = term;
+            let mut count = 0;
+            loop {
+                match &current.kind {
+                    TermKind::Call { callee, .. } => {
+                        count += 1;
+                        current = callee;
+                    }
+                    TermKind::Identifier(path) if path.minor == name => return Some(count),
+                    _ => return None,
+                }
+            }
+        }
+
+        call_chain_arg_count(term, name).or_else(|| {
+            match &term.kind {
+                TermKind::Let {
+                    value, then, else_, ..
+                } => {
+                    term_call_arg_count_for(value, name)
+                        .or_else(|| term_call_arg_count_for(then, name))
+                        .or_else(|| term_call_arg_count_for(else_, name))
+                }
+                TermKind::Tuple(items) => {
+                    items
+                        .iter()
+                        .find_map(|item| term_call_arg_count_for(item, name))
+                }
+                TermKind::Struct(fields) => {
+                    fields
+                        .values()
+                        .find_map(|value| term_call_arg_count_for(value, name))
+                }
+                TermKind::Field { of, .. } => term_call_arg_count_for(of, name),
+                TermKind::Function { body, .. } => term_call_arg_count_for(body, name),
+                TermKind::Call { callee, argument } => {
+                    term_call_arg_count_for(callee, name)
+                        .or_else(|| term_call_arg_count_for(argument, name))
+                }
+                TermKind::Semicolon(left, right) => {
+                    term_call_arg_count_for(left, name)
+                        .or_else(|| term_call_arg_count_for(right, name))
+                }
+                _ => None,
+            }
+        })
+    }
+
+    fn module_call_arg_count_for(
+        module: &Module<Type>,
+        name: &str,
+    ) -> Option<usize> {
+        module.statements.iter().find_map(|statement| {
+            let Statement::Term(term) = statement else {
+                return None;
+            };
+            term_call_arg_count_for(term, name)
+        })
+    }
+
     #[test]
     fn resolve_stage_has_no_dictionary_rewrite() {
         let source = "module demo =\n\tlet double = fn x => x + x\n\tlet result = double 3\nend\n";
@@ -2517,6 +2585,17 @@ mod tests {
             panic!("expected dictionary-wrapper function for grouped binding");
         };
         assert!(parameter_name.inner.minor.starts_with("[dict]"));
+    }
+
+    #[test]
+    fn grouped_binding_type_hint_keeps_distinct_dictionary_slots() {
+        let source = "module demo =\n\tlet d_tup = (core::default, core::default)\n\tlet (i1, i2): (core::Integer, core::Integer) = d_tup\nend\n";
+        let (elaborated, _symbols) = elaborate_source(source);
+
+        assert_eq!(
+            module_call_arg_count_for(&elaborated.module, "d_tup"),
+            Some(2)
+        );
     }
 
     #[test]

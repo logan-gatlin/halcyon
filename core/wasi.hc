@@ -29,6 +29,7 @@ module wasi =
       (func $sock_shutdown (param i32 i32) (result i32)))
   )
 
+  --> @HIDDEN
   let write_stdout : String -> Boolean =
     fn (value : String) => (wasm : Boolean) => (
       (local $str $string)
@@ -87,6 +88,7 @@ module wasi =
       struct.new $word
     )
 
+  --> @HIDDEN
   let write_stderr : String -> Boolean =
     fn (value : String) => (wasm : Boolean) => (
       (local $str $string)
@@ -145,12 +147,13 @@ module wasi =
       struct.new $word
     )
 
-  let read : Unit -> Integer = fn _ => (wasm : Integer) => (
+  --> @HIDDEN
+  let read : Unit -> Glyph = fn _ => (wasm : Glyph) => (
     (local $error_code i32)
     (local $bytes_read i32)
-    (local $result i64)
+    (local $result i32)
 
-    i64.const -1
+    i32.const 65535
     set $result
 
     i32.const 0
@@ -182,17 +185,15 @@ module wasi =
       if
         i32.const 16
         i32.load
-        i32.const 255
-        i32.and
-        i64.extend_i32_u
         set $result
       end
     end
 
     get $result
-    struct.new $integer
+    struct.new $word
   )
 
+  --> @HIDDEN
   let readln : Unit -> String = fn _ => (wasm : String) => (
     (local $result $string)
     (local $next $string)
@@ -281,6 +282,7 @@ module wasi =
     get $result
   )
 
+  --> @HIDDEN
   let fd_close : Integer -> Boolean = fn fd => (wasm : Boolean) => (
     get fd
     struct.get $integer 0
@@ -291,6 +293,7 @@ module wasi =
     struct.new $word
   )
 
+  --> @HIDDEN
   let sock_accept : Integer -> Integer -> Integer = fn fd flags => (wasm : Integer) => (
     (local $error_code i32)
     (local $accepted_fd i32)
@@ -326,6 +329,7 @@ module wasi =
     struct.new $integer
   )
 
+  --> @HIDDEN
   let sock_recv : Integer -> Integer = fn fd => (wasm : Integer) => (
     (local $error_code i32)
     (local $bytes_read i32)
@@ -378,6 +382,7 @@ module wasi =
     struct.new $integer
   )
 
+  --> @HIDDEN
   let sock_send : Integer -> String -> Integer = fn fd value => (wasm : Integer) => (
     (local $str $string)
     (local $len i32)
@@ -458,6 +463,7 @@ module wasi =
     struct.new $integer
   )
 
+  --> @HIDDEN
   let sock_shutdown : Integer -> Integer -> Boolean = fn fd how => (wasm : Boolean) => (
     get fd
     struct.get $integer 0
@@ -471,6 +477,7 @@ module wasi =
     struct.new $word
   )
 
+  --> @HIDDEN
   let arguments : Unit -> Array String = fn _ => (wasm : Array String) => (
     (local $count i32)
     (local $argv_ptr i32)
@@ -620,6 +627,7 @@ module wasi =
     get $result
   )
 
+  --> @HIDDEN
   let exit : Integer -> (for a in a) = fn i => (wasm : ()) => (
     get i
     struct.get $integer 0
@@ -628,6 +636,7 @@ module wasi =
     struct.new $unit
   ); bundle::intrinsics::unreachable ()
 
+  --> @HIDDEN
   let args_count : Unit -> Integer = fn _ =>
     let error_code = (wasm : Integer) => (
       i32.const 64
@@ -649,6 +658,7 @@ module wasi =
         struct.new $integer
       )
 
+  --> @HIDDEN
   let args_buffer_size : Unit -> Integer = fn _ =>
     let error_code = (wasm : Integer) => (
       i32.const 64
@@ -670,6 +680,7 @@ module wasi =
         struct.new $integer
       )
 
+  --> @HIDDEN
   let monotonic_nanos : Unit -> Integer = fn _ =>
     let error_code = (wasm : Integer) => (
       i32.const 1
@@ -691,6 +702,7 @@ module wasi =
         struct.new $integer
       )
 
+  --> @HIDDEN
   let realtime_nanos : Unit -> Integer = fn _ =>
     let error_code = (wasm : Integer) => (
       i32.const 0

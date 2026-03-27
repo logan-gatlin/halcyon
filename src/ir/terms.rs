@@ -106,6 +106,19 @@ impl Term<()> {
 
 pub type UntypedTerm = Term<()>;
 
+#[derive(Debug, Clone, Copy)]
+pub struct TermLoweringOptions {
+    pub parse_inline_wasm: bool,
+}
+
+impl Default for TermLoweringOptions {
+    fn default() -> Self {
+        Self {
+            parse_inline_wasm: true,
+        }
+    }
+}
+
 pub fn immediate(
     logger: &mut FileLogger,
     lit: ast::Literal,
@@ -253,6 +266,7 @@ fn mk(
 fn curry(
     scope: &mut impl Scope,
     wasm_type_defs: &IndexMap<String, WasmType>,
+    options: TermLoweringOptions,
     logger: &mut FileLogger,
     mut params: impl Iterator<Item = ast::Param>,
     body: ast::Expr,
@@ -268,7 +282,15 @@ fn curry(
             };
             let mut inner_scope = scope.nest_function_scope();
             let path = inner_scope.define(param_name, NameSpace::Term);
-            let body = curry(&mut inner_scope, wasm_type_defs, logger, params, body, span)?;
+            let body = curry(
+                &mut inner_scope,
+                wasm_type_defs,
+                options,
+                logger,
+                params,
+                body,
+                span,
+            )?;
             Some(mk(
                 TermKind::Function {
                     parameter_name: path.with_span(param_span),
@@ -283,13 +305,14 @@ fn curry(
                 span,
             ))
         }
-        None => term(scope, wasm_type_defs, logger, body),
+        None => term(scope, wasm_type_defs, options, logger, body),
     }
 }
 
 fn array_term(
     scope: &mut impl Scope,
     wasm_type_defs: &IndexMap<String, WasmType>,
+    options: TermLoweringOptions,
     logger: &mut FileLogger,
     array_expr: ast::ArrayExpr,
 ) -> Option<UntypedTerm> {
@@ -302,7 +325,7 @@ fn array_term(
             ast::ArraySplat::cast(child.clone()).map(|node| node.with_file_id(array_expr.file_id()))
         {
             let concat_path = CoreSymbol::ArrayConcat.path();
-            let elem = term(scope, wasm_type_defs, logger, splat.expr()?)?;
+            let elem = term(scope, wasm_type_defs, options, logger, splat.expr()?)?;
             let elem_span = elem.span;
             let existing = current;
             current = mk(
@@ -323,7 +346,7 @@ fn array_term(
             ast::Expr::cast(child).map(|node| node.with_file_id(array_expr.file_id()))
         {
             let push_path = CoreSymbol::ArrayPush.path();
-            let elem = term(scope, wasm_type_defs, logger, expr)?;
+            let elem = term(scope, wasm_type_defs, options, logger, expr)?;
             let elem_span = elem.span;
             current = mk(
                 TermKind::Call {
@@ -347,6 +370,7 @@ fn array_term(
 pub fn term(
     scope: &mut impl Scope,
     wasm_type_defs: &IndexMap<String, WasmType>,
+    options: TermLoweringOptions,
     logger: &mut FileLogger,
     expr: ast::Expr,
 ) -> Option<UntypedTerm> {
@@ -355,8 +379,20 @@ pub fn term(
         ast::Expr::Let(let_expr) => {
             let mut inner_scope = scope.nest_scope();
             let pat = pattern(&mut inner_scope, logger, let_expr.pattern()?)?;
-            let value = term(&mut inner_scope, wasm_type_defs, logger, let_expr.value()?)?;
-            let body = term(&mut inner_scope, wasm_type_defs, logger, let_expr.body()?)?;
+            let value = term(
+                &mut inner_scope,
+                wasm_type_defs,
+                options,
+                logger,
+                let_expr.value()?,
+            )?;
+            let body = term(
+                &mut inner_scope,
+                wasm_type_defs,
+                options,
+                logger,
+                let_expr.body()?,
+            )?;
             mk(
                 TermKind::Let {
                     assignee: pat,
@@ -376,7 +412,7 @@ pub fn term(
                     use_expr.alias_name_spanned(),
                     use_expr.span(),
                 )?;
-                term(scope, wasm_type_defs, logger, use_expr.body()?)
+                term(scope, wasm_type_defs, options, logger, use_expr.body()?)
             })();
             scope.pop_use_scope();
             lowered?
@@ -389,7 +425,7 @@ pub fn term(
                 let mut inner_scope = scope.nest_function_scope();
                 let param_name = "<parameter>".to_string().with_span(Span::Generated);
                 let path = inner_scope.define(param_name, NameSpace::Term);
-                let body = term(&mut inner_scope, wasm_type_defs, logger, body)?;
+                let body = term(&mut inner_scope, wasm_type_defs, options, logger, body)?;
                 mk(
                     TermKind::Function {
                         parameter_name: path.with_span(Span::Generated),
@@ -411,6 +447,7 @@ pub fn term(
                 curry(
                     scope,
                     wasm_type_defs,
+                    options,
                     logger,
                     params.into_iter(),
                     body,
@@ -430,7 +467,7 @@ pub fn term(
             for arm in arms.into_iter().rev() {
                 let mut arm_scope = inner_scope.nest_scope();
                 let pat = pattern(&mut arm_scope, logger, arm.pattern()?)?;
-                let body = term(&mut arm_scope, wasm_type_defs, logger, arm.body()?)?;
+                let body = term(&mut arm_scope, wasm_type_defs, options, logger, arm.body()?)?;
                 let arm_span = pat.span;
                 current = mk(
                     TermKind::Let {
@@ -459,9 +496,21 @@ pub fn term(
             )
         }
         ast::Expr::If(if_expr) => {
-            let condition = term(scope, wasm_type_defs, logger, if_expr.condition()?)?;
-            let then_branch = term(scope, wasm_type_defs, logger, if_expr.then_branch()?)?;
-            let else_branch = term(scope, wasm_type_defs, logger, if_expr.else_branch()?)?;
+            let condition = term(scope, wasm_type_defs, options, logger, if_expr.condition()?)?;
+            let then_branch = term(
+                scope,
+                wasm_type_defs,
+                options,
+                logger,
+                if_expr.then_branch()?,
+            )?;
+            let else_branch = term(
+                scope,
+                wasm_type_defs,
+                options,
+                logger,
+                if_expr.else_branch()?,
+            )?;
             mk(
                 TermKind::Let {
                     assignee: Pattern {
@@ -479,7 +528,13 @@ pub fn term(
             )
         }
         ast::Expr::Match(match_expr) => {
-            let scrutinee = term(scope, wasm_type_defs, logger, match_expr.scrutinee()?)?;
+            let scrutinee = term(
+                scope,
+                wasm_type_defs,
+                options,
+                logger,
+                match_expr.scrutinee()?,
+            )?;
             let scrutinee_span = scrutinee.span;
             let mut outer_scope = scope.nest_scope();
             let scrutinee_name = "<scrutinee>".to_string().with_span(scrutinee_span);
@@ -490,7 +545,7 @@ pub fn term(
             for arm in arms.into_iter().rev() {
                 let mut arm_scope = outer_scope.nest_scope();
                 let pat = pattern(&mut arm_scope, logger, arm.pattern()?)?;
-                let body = term(&mut arm_scope, wasm_type_defs, logger, arm.body()?)?;
+                let body = term(&mut arm_scope, wasm_type_defs, options, logger, arm.body()?)?;
                 let arm_span = pat.span;
                 current = mk(
                     TermKind::Let {
@@ -522,30 +577,41 @@ pub fn term(
         }
         ast::Expr::InlineWasm(inline_wasm_expr) => {
             let asserted_type = type_expr(scope, logger, inline_wasm_expr.asserted_type()?)?;
-            let inline_wasm = {
-                let mut inline_scope = scope.nest_scope();
-                wasm::build_inline_expression(
-                    &inline_wasm_expr.instructions()?,
-                    wasm_type_defs,
-                    logger,
-                    &mut inline_scope,
+            if options.parse_inline_wasm {
+                let inline_wasm = {
+                    let mut inline_scope = scope.nest_scope();
+                    wasm::build_inline_expression(
+                        &inline_wasm_expr.instructions()?,
+                        wasm_type_defs,
+                        logger,
+                        &mut inline_scope,
+                    )
+                };
+                mk(
+                    TermKind::InlineWasm {
+                        asserted_type,
+                        definitions: inline_wasm.definitions,
+                        instructions: inline_wasm.instructions,
+                    },
+                    span,
                 )
-            };
-            mk(
-                TermKind::InlineWasm {
-                    asserted_type,
-                    definitions: inline_wasm.definitions,
-                    instructions: inline_wasm.instructions,
-                },
-                span,
-            )
+            } else {
+                mk(
+                    TermKind::InlineWasm {
+                        asserted_type,
+                        definitions: IndexMap::new(),
+                        instructions: Vec::new().into_boxed_slice(),
+                    },
+                    span,
+                )
+            }
         }
         ast::Expr::Binary(binary_expr) => {
             let op_token = binary_expr.op_token()?;
             let op_kind = op_token.kind();
             if op_kind == SyntaxKind::SEMICOLON {
-                let lhs = term(scope, wasm_type_defs, logger, binary_expr.lhs()?)?;
-                let rhs = term(scope, wasm_type_defs, logger, binary_expr.rhs()?)?;
+                let lhs = term(scope, wasm_type_defs, options, logger, binary_expr.lhs()?)?;
+                let rhs = term(scope, wasm_type_defs, options, logger, binary_expr.rhs()?)?;
                 mk(TermKind::Semicolon(lhs.into(), rhs.into()), span)
             } else {
                 let op_span: Span = Span::from(op_token.text_range()).with_file_id(logger.id());
@@ -553,8 +619,8 @@ pub fn term(
                     binary_op_name(op_kind)?.to_string().with_span(op_span),
                     NameSpace::Term,
                 );
-                let lhs = term(scope, wasm_type_defs, logger, binary_expr.lhs()?)?;
-                let rhs = term(scope, wasm_type_defs, logger, binary_expr.rhs()?)?;
+                let lhs = term(scope, wasm_type_defs, options, logger, binary_expr.lhs()?)?;
+                let rhs = term(scope, wasm_type_defs, options, logger, binary_expr.rhs()?)?;
                 mk(
                     TermKind::Call {
                         callee: mk(
@@ -580,7 +646,13 @@ pub fn term(
                     .with_span(op_span),
                 NameSpace::Term,
             );
-            let operand = term(scope, wasm_type_defs, logger, unary_expr.operand()?)?;
+            let operand = term(
+                scope,
+                wasm_type_defs,
+                options,
+                logger,
+                unary_expr.operand()?,
+            )?;
             mk(
                 TermKind::Call {
                     callee: mk(TermKind::Identifier(op_path), op_span).into(),
@@ -590,8 +662,8 @@ pub fn term(
             )
         }
         ast::Expr::Call(call_expr) => {
-            let callee = term(scope, wasm_type_defs, logger, call_expr.callee()?)?;
-            let argument = term(scope, wasm_type_defs, logger, call_expr.arg()?)?;
+            let callee = term(scope, wasm_type_defs, options, logger, call_expr.callee()?)?;
+            let argument = term(scope, wasm_type_defs, options, logger, call_expr.arg()?)?;
             mk(
                 TermKind::Call {
                     callee: callee.into(),
@@ -601,7 +673,7 @@ pub fn term(
             )
         }
         ast::Expr::Field(field_expr) => {
-            let base = term(scope, wasm_type_defs, logger, field_expr.base()?)?;
+            let base = term(scope, wasm_type_defs, options, logger, field_expr.base()?)?;
             let field_name = field_expr.field_name_spanned()?;
             mk(
                 TermKind::Field {
@@ -617,17 +689,17 @@ pub fn term(
                 let items = paren_expr
                     .inner_exprs()
                     .into_iter()
-                    .map(|e| term(scope, wasm_type_defs, logger, e))
+                    .map(|e| term(scope, wasm_type_defs, options, logger, e))
                     .collect::<Option<Vec<_>>>()?;
                 mk(TermKind::Tuple(items), span)
             } else {
                 // Grouping: single inner expression
                 let inner = paren_expr.inner_exprs().into_iter().next()?;
-                return term(scope, wasm_type_defs, logger, inner);
+                return term(scope, wasm_type_defs, options, logger, inner);
             }
         }
         ast::Expr::Array(array_expr) => {
-            return array_term(scope, wasm_type_defs, logger, array_expr);
+            return array_term(scope, wasm_type_defs, options, logger, array_expr);
         }
         ast::Expr::Struct(struct_expr) => {
             let mut fields = IndexMap::new();
@@ -650,7 +722,7 @@ pub fn term(
                     }
                     None => return None,
                 };
-                let value = term(scope, wasm_type_defs, logger, value_expr)?;
+                let value = term(scope, wasm_type_defs, options, logger, value_expr)?;
                 fields.insert(name, value);
             }
             mk(TermKind::Struct(fields), span)

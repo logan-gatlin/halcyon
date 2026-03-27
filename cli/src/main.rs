@@ -14,6 +14,7 @@ use halcyon_lib::bindings::{
     GenerateBindingsOptions,
     generate_js_bindings,
 };
+use halcyon_lib::hc_core::register_core_primitive_types;
 use halcyon_lib::parse::ast::{
     self,
     AstNode,
@@ -83,11 +84,13 @@ impl<'a> Command<'a> {
     fn execute(self) -> Result<(), Box<dyn std::error::Error>> {
         match self {
             Self::Build(paths) => {
+                let (options, input_paths) = parse_compile_command_options(paths);
                 let linked = compile_and_link_inputs(
-                    paths,
+                    &input_paths,
                     "app",
                     command_debug_info_options(),
                     command_validation_enabled(),
+                    options.include_core,
                 )?;
                 std::fs::create_dir_all("target")?;
                 linked.save_wasm_to_file("target")?;
@@ -99,18 +102,21 @@ impl<'a> Command<'a> {
                 input_paths,
                 command_args,
             } => {
+                let (options, input_paths) = parse_compile_command_options(input_paths);
                 let linked = compile_and_link_inputs(
-                    input_paths,
+                    &input_paths,
                     "app",
                     command_debug_info_options(),
                     command_validation_enabled(),
+                    options.include_core,
                 )?;
                 let entrypoint_arg = input_paths.last().map_or("app", String::as_str);
                 link_and_run(std::slice::from_ref(&linked), entrypoint_arg, command_args)
             }
             Self::Doc(paths) => {
-                let root_path = single_root_path(paths, "doc")?;
-                generate_docs(root_path)
+                let (options, input_paths) = parse_compile_command_options(paths);
+                let root_path = single_root_path(&input_paths, "doc")?;
+                generate_docs(root_path, options.include_core)
             }
             Self::Cache(args) => execute_cache_command(args),
             Self::Help => {
@@ -126,21 +132,26 @@ fn print_usage() {
     eprintln!();
     eprintln!("Commands:");
     eprintln!(
-        "  build <input>...    Compile source/binary inputs and emit one linked .wasm in target/"
+        "  build [--no-core] <input>...    Compile source/binary inputs and emit one linked .wasm in target/"
     );
     eprintln!(
         "  bindings <input>... Compile source/binary inputs and emit JS/TS bindings in target/"
     );
     eprintln!(
-        "  run <input>... [-- <arg>...]  Compile source/binary inputs and run the linked program"
+        "  run [--no-core] <input>... [-- <arg>...]  Compile source/binary inputs and run the linked program"
     );
     eprintln!(
         "                                Inputs are linked and initialized in the exact order provided."
     );
     eprintln!("                                Use `--` to pass argv to the program.");
-    eprintln!("  doc <bundle-root>    Generate JSON documentation in docs/");
+    eprintln!("  doc [--no-core] <bundle-root>    Generate JSON documentation in docs/");
     eprintln!("  cache warm [--debug-info] [<bundle-root>...]  Warm project-local cache");
     eprintln!("  cache clear          Remove project-local compiler cache");
+    eprintln!();
+    eprintln!("Flags:");
+    eprintln!(
+        "  --no-core                Skip implicit core build/link; still registers primitive core types"
+    );
     eprintln!();
     eprintln!("Environment:");
     eprintln!(
@@ -583,6 +594,32 @@ fn split_run_inputs_and_args(args: &[String]) -> (&[String], &[String]) {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+struct CompileCommandOptions {
+    include_core: bool,
+}
+
+impl Default for CompileCommandOptions {
+    fn default() -> Self {
+        Self { include_core: true }
+    }
+}
+
+fn parse_compile_command_options(args: &[String]) -> (CompileCommandOptions, Vec<String>) {
+    let mut options = CompileCommandOptions::default();
+    let mut input_paths = Vec::new();
+
+    for arg in args {
+        if arg == "--no-core" {
+            options.include_core = false;
+        } else {
+            input_paths.push(arg.clone());
+        }
+    }
+
+    (options, input_paths)
+}
+
 #[derive(Default)]
 struct ImportTraversalState {
     visited: HashSet<PathBuf>,
@@ -959,17 +996,25 @@ fn lower_and_resolve_fragments(
     symbols: &mut SymbolTable,
 ) -> Vec<types::ResolvedModule> {
     let mut resolved_fragments = Vec::new();
+    let mut wasm_type_defs = Default::default();
+    let mut salt = 0;
+    let docs_options = ir::TermLoweringOptions {
+        parse_inline_wasm: false,
+    };
     for fragment in fragments {
         let mut file_logger = logger.new_file(
             fragment.file_path.to_string_lossy(),
             fragment.source.clone(),
         );
         let prelude = name_resolution_prelude(symbols);
-        if let Some(ir_module) = ir::bundle_statements_with_prelude(
+        if let Some(ir_module) = ir::bundle_statements_with_prelude_and_wasm_types_and_salt(
             bundle_name.to_string(),
             &fragment.statements,
             &mut file_logger,
             &prelude,
+            &mut wasm_type_defs,
+            &mut salt,
+            docs_options,
         ) {
             let resolved = types::resolve_module_with_symbols_and_schemes(
                 symbols,
@@ -1232,18 +1277,25 @@ fn collect_input_artifacts(
     input_paths: &[String],
     debug_info: DebugInfoOptions,
     validate: bool,
+    include_core: bool,
 ) -> Result<Vec<Artifact>, Box<dyn std::error::Error>> {
     let _profile_total = halcyon_lib::profiling::scope("cli.collect_input_artifacts.total");
     let mut logger = Logger::new();
     let mut symbols = SymbolTable::new();
-    let core = {
-        let _profile = halcyon_lib::profiling::scope("cli.collect_input_artifacts.core");
-        let compiled = compile_core_artifact(&mut symbols, &mut logger, debug_info)?;
-        if validate {
-            validate_artifact(compiled, &mut logger)
-        } else {
-            compiled
-        }
+    let core = if include_core {
+        Some({
+            let _profile = halcyon_lib::profiling::scope("cli.collect_input_artifacts.core");
+            let compiled = compile_core_artifact(&mut symbols, &mut logger, debug_info)?;
+            if validate {
+                validate_artifact(compiled, &mut logger)
+            } else {
+                compiled
+            }
+        })
+    } else {
+        let _profile = halcyon_lib::profiling::scope("cli.collect_input_artifacts.core_primitives");
+        register_core_primitive_types(&mut symbols);
+        None
     };
 
     if !logger.is_ok() {
@@ -1290,7 +1342,10 @@ fn collect_input_artifacts(
         return Err("Compilation failed".into());
     }
 
-    if !includes_core {
+    if include_core
+        && !includes_core
+        && let Some(core) = core
+    {
         artifacts.insert(0, core);
     }
 
@@ -1302,12 +1357,13 @@ fn compile_and_link_inputs(
     linked_module_name: &str,
     debug_info: DebugInfoOptions,
     validate: bool,
+    include_core: bool,
 ) -> Result<Artifact, Box<dyn std::error::Error>> {
     let _profile_total = halcyon_lib::profiling::scope("cli.compile_and_link.total");
     let input_paths = ensure_inputs(input_paths, "build/run")?;
     let artifacts = {
         let _profile = halcyon_lib::profiling::scope("cli.compile_and_link.collect_artifacts");
-        collect_input_artifacts(input_paths, debug_info, validate)?
+        collect_input_artifacts(input_paths, debug_info, validate, include_core)?
     };
     let mut logger = Logger::new();
     let mut link_logger = logger.linking_logger();
@@ -1340,6 +1396,7 @@ fn generate_bindings(input_paths: &[String]) -> Result<(), Box<dyn std::error::E
         "app",
         command_debug_info_options(),
         command_validation_enabled(),
+        true,
     )?;
 
     let generated = generate_js_bindings(
@@ -1413,14 +1470,21 @@ fn link_and_run(
     Ok(())
 }
 
-fn generate_docs(root_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn generate_docs(
+    root_path: &str,
+    include_core: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut logger = Logger::new();
     let mut symbols = SymbolTable::new();
     let mut state = ImportTraversalState::default();
     let mut fragments = Vec::new();
     let mut bundle_name = None;
 
-    let _ = compile_core_artifact(&mut symbols, &mut logger, DebugInfoOptions::none())?;
+    if include_core {
+        let _ = compile_core_artifact(&mut symbols, &mut logger, DebugInfoOptions::none())?;
+    } else {
+        register_core_primitive_types(&mut symbols);
+    }
 
     collect_bundle_fragments_with_imports(
         Path::new(root_path),
@@ -1494,8 +1558,9 @@ mod tests {
     fn core_bundle_tests_execute_without_failures() {
         let root_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../core/tests.hc");
         let root_path = root_path.to_string_lossy().to_string();
-        let linked = compile_and_link_inputs(&[root_path], "app", DebugInfoOptions::none(), false)
-            .expect("core test bundle should compile successfully");
+        let linked =
+            compile_and_link_inputs(&[root_path], "app", DebugInfoOptions::none(), false, true)
+                .expect("core test bundle should compile successfully");
         link_and_run(&[linked], "app", &[])
             .expect("core test bundle should execute without failures");
     }
@@ -1534,6 +1599,7 @@ mod tests {
             "app",
             DebugInfoOptions::none(),
             false,
+            true,
         )
         .expect("mixed binary+source inputs should compile and link");
 
@@ -1594,5 +1660,54 @@ mod tests {
             }
             _ => panic!("expected bindings command"),
         }
+    }
+
+    #[test]
+    fn compile_command_options_parser_extracts_no_core_flag() {
+        let args = vec!["--no-core".to_string(), "src/test/demo.hc".to_string()];
+        let (options, paths) = parse_compile_command_options(&args);
+        assert!(!options.include_core);
+        assert_eq!(paths, ["src/test/demo.hc"]);
+    }
+
+    #[test]
+    fn no_core_mode_still_registers_core_primitive_types() {
+        let source = b"bundle demo\nlet value : core::Integer = 1\n";
+        let source_path =
+            write_temp_file("no_core_primitives.hc", source).expect("source should be written");
+
+        let artifacts = collect_input_artifacts(
+            &[source_path.to_string_lossy().to_string()],
+            DebugInfoOptions::none(),
+            false,
+            false,
+        )
+        .expect("no-core mode should compile primitive core types");
+
+        assert_eq!(artifacts.len(), 1);
+        assert_eq!(artifacts[0].module_name, "demo");
+    }
+
+    #[test]
+    fn docs_lowering_skips_inline_wasm_validation() {
+        let source = "bundle demo\nlet value : core::Integer = (wasm : core::Integer) => (struct.new $missing)\n";
+        let mut logger = Logger::new();
+        let mut file_logger = logger.new_file("demo.hc", source);
+        let source_file = parse::parse(source, &mut file_logger).expect("source should parse");
+        logger.consume_file(file_logger);
+
+        let fragment = BundleSourceFragment {
+            file_path: PathBuf::from("demo.hc"),
+            source: source.to_string(),
+            statements: source_file.statements(),
+        };
+
+        let mut symbols = SymbolTable::new();
+        register_core_primitive_types(&mut symbols);
+
+        let resolved = lower_and_resolve_fragments(&[fragment], "demo", &mut logger, &mut symbols);
+
+        assert!(logger.is_ok());
+        assert_eq!(resolved.len(), 1);
     }
 }

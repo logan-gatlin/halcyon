@@ -1,7 +1,7 @@
 bundle demo
 
-type Point = (Real, Real)
+let d_tup = (default, default)
+let (i1, i2): (Integer, Integer) = d_tup
 
-type Point2 = Point
-
-let p = Point2 (1.0, 2.0)
+do show i1 |> println
+do show i2 |> println

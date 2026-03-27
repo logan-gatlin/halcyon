@@ -232,7 +232,7 @@ pub fn compile_core_module_with_debug_info(
     artifact
 }
 
-fn register_core_primitive_types(symbols: &mut SymbolTable) {
+pub fn register_core_primitive_types(symbols: &mut SymbolTable) {
     all::<CoreType>().for_each(|symbol| {
         symbols.insert(symbol);
     });
