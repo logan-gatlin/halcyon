@@ -3,7 +3,7 @@ members = [".", "cli", "lsp"]
 
 [package]
 name = "halcyon-lib"
-version = "2026.3.4"
+version = "2026.3.5"
 authors = ["Logan Gatlin <logan@gatlintc.com>"]
 edition = "2024"
 description = "Compiler backend for the Halcyon programming language"

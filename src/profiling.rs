@@ -55,9 +55,11 @@ impl Drop for PhaseScope {
 }
 
 pub fn scope(name: &'static str) -> Option<PhaseScope> {
-    profiling_enabled().then_some(PhaseScope {
-        name,
-        started_at: Instant::now(),
+    profiling_enabled().then(|| {
+        PhaseScope {
+            name,
+            started_at: Instant::now(),
+        }
     })
 }
 
