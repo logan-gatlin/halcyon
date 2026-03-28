@@ -1198,6 +1198,7 @@ impl ExhaustivenessChecker<'_> {
 
         match type_ {
             Type::Unit => MatchType::Unit,
+            Type::Error => MatchType::Opaque,
             Type::Integer => MatchType::Integer,
             Type::Natural => MatchType::Natural,
             Type::Real => MatchType::Real,

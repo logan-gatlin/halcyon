@@ -90,6 +90,7 @@ enum WireStructMatch {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 enum WireSemanticType {
     Unit,
+    Error,
     Integer,
     Natural,
     Real,
@@ -439,6 +440,7 @@ impl WireSemanticType {
     fn from(type_: &SemanticType) -> Self {
         match type_ {
             SemanticType::Unit => Self::Unit,
+            SemanticType::Error => Self::Error,
             SemanticType::Integer => Self::Integer,
             SemanticType::Natural => Self::Natural,
             SemanticType::Real => Self::Real,
@@ -508,6 +510,7 @@ impl WireSemanticType {
     fn into_semantic_type(self) -> SemanticType {
         match self {
             Self::Unit => SemanticType::Unit,
+            Self::Error => SemanticType::Error,
             Self::Integer => SemanticType::Integer,
             Self::Natural => SemanticType::Natural,
             Self::Real => SemanticType::Real,

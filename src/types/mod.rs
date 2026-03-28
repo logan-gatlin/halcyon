@@ -38,6 +38,8 @@ pub enum Type {
     /// The empty type ()
     #[default]
     Unit,
+    /// Sentinel type used for invalid/recovered typing states.
+    Error,
     /// Signed 64 bit integer
     Integer,
     /// Non-negative 64 bit integer
@@ -104,6 +106,7 @@ impl PartialEq for Type {
         let right = strip_empty_apply_layers(other);
         match (left, right) {
             (Unit, Unit)
+            | (Error, Error)
             | (Integer, Integer)
             | (Natural, Natural)
             | (Real, Real)
@@ -206,6 +209,7 @@ pub(crate) fn for_each_child_type(
         }
         Type::Named { body, .. } if include_named_body => visit(body),
         Type::Named { .. }
+        | Type::Error
         | Type::Unit
         | Type::Integer
         | Type::Natural
@@ -316,6 +320,7 @@ pub(crate) trait TypeTransform {
     ) -> Option<Type> {
         match type_ {
             Type::Unit
+            | Type::Error
             | Type::Integer
             | Type::Natural
             | Type::Real
@@ -529,7 +534,7 @@ impl Type {
     /// Lift this type into a scheme with attached trait predicates.
     pub fn scheme_with_predicates(
         self,
-        predicates: Vec<TraitConstraint>,
+        predicates: Vec<TraitRef>,
     ) -> TypeScheme {
         TypeScheme::with_predicates(self, predicates)
     }
@@ -609,6 +614,7 @@ impl Type {
 
         let (binding_power, pretty) = match self {
             Type::Unit => (TYPE_ATOM_BP, "()".to_string()),
+            Type::Error => (TYPE_ATOM_BP, "<error>".to_string()),
             Type::Integer => (TYPE_ATOM_BP, "Integer".to_string()),
             Type::Natural => (TYPE_ATOM_BP, "Natural".to_string()),
             Type::Real => (TYPE_ATOM_BP, "Real".to_string()),
@@ -773,6 +779,7 @@ impl Type {
         matches!(
             self,
             Type::Unit
+                | Type::Error
                 | Type::Integer
                 | Type::Natural
                 | Type::Real
@@ -946,11 +953,11 @@ mod kind;
 mod predicate;
 mod type_expr;
 
-pub mod infer;
-pub mod resolve;
-pub mod symbol_table;
-pub mod traits;
-pub mod unify;
+mod infer;
+mod resolve;
+mod symbol_table;
+mod traits;
+mod unify;
 
 pub use kind::Kind;
 
@@ -969,13 +976,14 @@ pub(crate) use predicate::{
 
 pub use symbol_table::{
     MethodSpecialization,
+    Symbol,
+    SymbolKind,
     SymbolTable,
     TypeDefinition,
     TypeDefinitionKind,
 };
 
 pub use traits::{
-    TraitConstraint,
     TraitDef,
     TraitError,
     TraitImpl,
@@ -987,9 +995,8 @@ pub(crate) use traits::ordered_trait_methods;
 
 pub use resolve::{
     ResolvedModule,
-    resolve_module,
-    resolve_module_with_symbols,
-    resolve_module_with_symbols_and_schemes,
+    resolve,
+    resolve_with_symbols,
 };
 
 #[cfg(test)]

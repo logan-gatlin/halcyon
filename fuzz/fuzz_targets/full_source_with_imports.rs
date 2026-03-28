@@ -8,9 +8,9 @@ use libfuzzer_sys::arbitrary::Unstructured;
 use libfuzzer_sys::fuzz_target;
 
 use halcyon_lib::{
-    CompileOptions,
-    Logger,
     linking,
+    Compiler,
+    SourceCompileOptions,
 };
 
 use common::{
@@ -47,27 +47,23 @@ fuzz_target!(|data: &[u8]| {
     }
     root_source.push_str(&root_tail);
 
-    let mut symbols = core_symbols();
-    let mut logger = Logger::new();
-    let artifacts = halcyon_lib::compile_source_with_options(
+    let mut compiler = Compiler::with_symbols(core_symbols());
+    let compiled = compiler.compile_source(
         "root.hc",
         &root_source,
-        &mut logger,
-        &mut symbols,
-        CompileOptions {
-            demo_mode: false,
-            use_core: false,
-            emit_source_map: false,
-            emit_dwarf: false,
-            resolve_import: |path| {
-                if let Some(source) = import_sources.get(path.as_str()) {
-                    return Some(source.clone());
-                }
-                let normalized = path.strip_prefix("./").unwrap_or(path.as_str());
-                import_sources.get(normalized).cloned()
-            },
+        SourceCompileOptions::bundle().with_debug_info(halcyon_lib::asm::DebugInfoOptions::none()),
+        &mut |path: &str| {
+            if let Some(source) = import_sources.get(path) {
+                return Some(source.clone());
+            }
+            let normalized = path.strip_prefix("./").unwrap_or(path);
+            import_sources.get(normalized).cloned()
         },
     );
+    let artifacts = compiled
+        .output
+        .unwrap_or_else(|| Vec::new().into_boxed_slice());
+    let mut logger = compiled.logger;
 
     for artifact in artifacts.iter() {
         let _ = wasmparser::validate(&artifact.binary);

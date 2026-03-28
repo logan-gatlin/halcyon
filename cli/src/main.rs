@@ -25,13 +25,13 @@ use halcyon_lib::{
     Artifact,
     COMPILER_VERSION_STRING,
     CORE_BUNDLE_NAME,
-    CompileOptions,
+    Compiler,
     Logger,
+    SourceCompileOptions,
     Span,
     WASM_MAGIC_NUMBER,
     WithContext,
     compile_core_module_with_debug_info,
-    compile_source_with_options,
     documentation,
     ir,
     linking,
@@ -364,7 +364,6 @@ fn load_cached_artifact(
     Some((
         Artifact {
             module_name: payload.artifact.module_name,
-            ir_module: None,
             binary: payload.artifact.binary,
             source_map: payload.artifact.source_map,
         },
@@ -996,31 +995,22 @@ fn lower_and_resolve_fragments(
     symbols: &mut SymbolTable,
 ) -> Vec<types::ResolvedModule> {
     let mut resolved_fragments = Vec::new();
-    let mut wasm_type_defs = Default::default();
-    let mut salt = 0;
-    let docs_options = ir::TermLoweringOptions {
-        parse_inline_wasm: false,
-    };
     for fragment in fragments {
         let mut file_logger = logger.new_file(
             fragment.file_path.to_string_lossy(),
             fragment.source.clone(),
         );
         let prelude = name_resolution_prelude(symbols);
-        if let Some(ir_module) = ir::bundle_statements_with_prelude_and_wasm_types_and_salt(
+        if let Some(lowered) = ir::lower_statements(
             bundle_name.to_string(),
             &fragment.statements,
             &mut file_logger,
-            &prelude,
-            &mut wasm_type_defs,
-            &mut salt,
-            docs_options,
+            ir::LoweringOptions {
+                prelude: &prelude,
+                inline_wasm_mode: ir::InlineWasmMode::Skip,
+            },
         ) {
-            let resolved = types::resolve_module_with_symbols_and_schemes(
-                symbols,
-                ir_module,
-                &mut file_logger,
-            );
+            let resolved = types::resolve_with_symbols(symbols, lowered.module, &mut file_logger);
             resolved_fragments.push(resolved);
         } else if file_logger.is_ok() {
             file_logger
@@ -1086,10 +1076,7 @@ fn compile_core_artifact(
         logger,
         |symbols, logger| {
             Ok(compile_core_module_with_debug_info(
-                symbols,
-                logger,
-                debug_info.emit_source_map,
-                debug_info.emit_dwarf,
+                symbols, logger, debug_info,
             ))
         },
     )
@@ -1105,25 +1092,25 @@ fn compile_source_bundle_uncached(
         .map_err(|error| format!("{}: {error}", root_path.display()))?;
     let source_name = root_path.to_string_lossy().to_string();
 
-    let mut artifacts = compile_source_with_options(
+    let mut compiler = Compiler::with_symbols(symbols.clone());
+    let compiled = compiler.compile_source(
         &source_name,
         &source,
-        logger,
-        symbols,
-        CompileOptions {
-            demo_mode: false,
-            use_core: false,
-            emit_source_map: debug_info.emit_source_map,
-            emit_dwarf: debug_info.emit_dwarf,
-            resolve_import: |path| std::fs::read_to_string(Path::new(&path)).ok(),
-        },
-    )
-    .into_vec();
+        SourceCompileOptions::bundle().with_debug_info(debug_info),
+        &mut |path: &str| std::fs::read_to_string(Path::new(path)).ok(),
+    );
+    *symbols = compiler.into_symbols();
+    let artifacts = compiled.output;
+    logger.consume_logger(compiled.logger);
 
     if !logger.is_ok() {
         logger.print_logs();
         return Err("Compilation failed".into());
     }
+
+    let Some(mut artifacts) = artifacts.map(|artifacts| artifacts.into_vec()) else {
+        return Err("Compilation failed".into());
+    };
 
     let Some(bundle_artifact) = artifacts.pop() else {
         return Err("Compilation produced no artifacts".into());
@@ -1266,7 +1253,6 @@ fn load_binary_artifact(
 
     Ok(Artifact {
         module_name: lowered_module.name,
-        ir_module: None,
         binary,
         source_map: None,
     })
@@ -1566,13 +1552,17 @@ mod tests {
     }
 
     #[test]
-    fn demo_bundle_trait_impl_executes_without_failures() {
-        let root_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../src/test/demo.hc");
+    fn demo_bundle_reports_type_errors_instead_of_trapping() {
+        let invalid_source = b"bundle demo\nlet broken = if true then 1 else \"oops\"\n";
+        let root_path = write_temp_file("demo-type-error.hc", invalid_source)
+            .expect("type-error source should be written to temp dir");
         let root_path = root_path.to_string_lossy().to_string();
-        let linked =
-            compile_and_link_inputs(&[root_path], "app", DebugInfoOptions::none(), false, true)
-                .expect("demo bundle should compile successfully");
-        link_and_run(&[linked], "app", &[]).expect("demo bundle should execute without trap");
+        let compiled =
+            compile_and_link_inputs(&[root_path], "app", DebugInfoOptions::none(), false, true);
+        assert!(
+            compiled.is_err(),
+            "type-invalid source should report compile-time errors"
+        );
     }
 
     #[test]
@@ -1580,7 +1570,11 @@ mod tests {
         let mut logger = Logger::new();
         let mut symbols = SymbolTable::new();
         let _ = validate_artifact(
-            compile_core_module_with_debug_info(&mut symbols, &mut logger, false, false),
+            compile_core_module_with_debug_info(
+                &mut symbols,
+                &mut logger,
+                DebugInfoOptions::none(),
+            ),
             &mut logger,
         );
 

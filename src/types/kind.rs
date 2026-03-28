@@ -3,7 +3,7 @@
 use crate::ir::Path;
 
 use super::{
-    TraitConstraint,
+    TraitRef,
     Type,
     TypeScheme,
 };
@@ -324,6 +324,7 @@ pub(crate) fn infer_type_kind(
 ) -> Result<InferredKind, KindError> {
     match type_ {
         Type::Unit
+        | Type::Error
         | Type::Integer
         | Type::Natural
         | Type::Real
@@ -395,7 +396,7 @@ pub(crate) fn infer_type_kind(
 }
 
 fn check_predicate_kind(
-    predicate: &TraitConstraint,
+    predicate: &TraitRef,
     table: &mut KindInferenceTable,
     bound_kinds: &mut Vec<InferredKind>,
     lookup_type_kind: &impl Fn(&Path) -> Option<Kind>,
@@ -491,7 +492,7 @@ mod tests {
     fn predicate_kind_mismatch_is_reported() {
         let scheme = TypeScheme::with_predicates(
             Type::Integer,
-            vec![TraitConstraint {
+            vec![TraitRef {
                 trait_name: Path::new("demo", "Monad"),
                 arguments: vec![Type::Integer],
             }],

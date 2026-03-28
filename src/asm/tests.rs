@@ -5,7 +5,7 @@ use super::*;
 use crate::hc_core::compile_core_module;
 use crate::types::{
     SymbolTable,
-    resolve_module_with_symbols_and_schemes,
+    resolve_with_symbols,
 };
 use crate::{
     Logger,
@@ -30,12 +30,15 @@ fn compile_modules(
         .map(|m| m.modules())
         .unwrap_or_default()
         .into_iter()
-        .flat_map(|m| crate::ir::module(m, &mut file_logger))
+        .flat_map(|m| {
+            crate::ir::lower_module(m, &mut file_logger, crate::ir::LoweringOptions::default())
+                .map(|lowered| lowered.module)
+        })
         .collect::<Vec<_>>();
 
     let resolved_modules = modules
         .into_iter()
-        .map(|m| resolve_module_with_symbols_and_schemes(&mut symbols, m, &mut file_logger))
+        .map(|m| resolve_with_symbols(&mut symbols, m, &mut file_logger))
         .collect::<Vec<_>>();
     let elaborated_modules = resolved_modules
         .into_iter()

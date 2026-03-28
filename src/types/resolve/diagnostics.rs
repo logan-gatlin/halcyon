@@ -14,6 +14,7 @@ use crate::{
 };
 
 use super::super::infer::TypeError;
+use super::super::kind::SchemeKindError;
 use super::super::type_expr::TypeExprLowerError;
 use super::super::{
     MetaVarId,
@@ -222,6 +223,46 @@ pub(super) fn log_trait_error(
     }
 }
 
+pub(super) fn log_scheme_predicate_kind_error(
+    logger: &mut FileLogger,
+    span: Span,
+    error: &SchemeKindError,
+) -> bool {
+    match error {
+        SchemeKindError::PredicateArityMismatch {
+            trait_name,
+            expected,
+            found,
+        } => {
+            logger
+                .error("Invalid trait constraint application")
+                .primary(
+                    format!("`{trait_name}` expects {expected} type arguments but got {found}."),
+                    span,
+                )
+                .done();
+            true
+        }
+        SchemeKindError::PredicateKindMismatch {
+            trait_name,
+            expected,
+            found,
+        } => {
+            logger
+                .error("Invalid trait constraint kind")
+                .primary(
+                    format!(
+                        "`{trait_name}` expects kind `{expected}` but this argument has kind `{found}`."
+                    ),
+                    span,
+                )
+                .done();
+            true
+        }
+        SchemeKindError::Kind(_) => false,
+    }
+}
+
 fn format_trait_item_list(items: &[Path]) -> String {
     items
         .iter()
@@ -286,20 +327,6 @@ pub(super) fn log_type_error(
                 .error("Trait constraints are not allowed in this type")
                 .primary(
                     "`where` constraints are only valid in quantified type annotations that produce schemes.",
-                    span,
-                )
-                .done();
-        }
-        TypeError::InvalidTraitApplication {
-            name,
-            expected,
-            found,
-            span,
-        } => {
-            logger
-                .error("Invalid trait application")
-                .primary(
-                    format!("`{name}` expects {expected} type arguments but got {found}."),
                     span,
                 )
                 .done();

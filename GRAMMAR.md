@@ -188,7 +188,8 @@ Recursion rules:
 - The first token of each instruction is an opcode identifier (for example `get`, `call`, `struct.new`, `i32.add`).
 
 ## Lexical Elements
-- **Literals:** integers (`123`, `0xEF`), reals (`1.0`), strings (`"text"`), glyphs (`'c'`), booleans (`true`, `false`), unit (`()`).
+- **Literals:** integers (`123`, `0xEF`), reals (`1.0`), strings (`"text"`), format strings (`` `hi {}` ``), glyphs (`'c'`), booleans (`true`, `false`), unit (`()`).
+- **Format strings:** placeholders use `{}`; literal braces are escaped with `{{` and `}}`.
 - **Comments:** `-- line comment`, `(* block comment *)`.
 - **Identifiers:** bare names (`foo`) or bracketed operators (`[+]`, `[ + ]`, `[not]`).
 - **Paths:** `("root" "::" <ident> ("::" <ident>)*) | (<ident> "::" <ident> ("::" <ident>)*)` (each segment may use a bracketed operator identifier).

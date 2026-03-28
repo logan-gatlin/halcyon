@@ -5,9 +5,9 @@ mod common;
 use libfuzzer_sys::fuzz_target;
 
 use halcyon_lib::{
-    CompileOptions,
-    Logger,
     linking,
+    Compiler,
+    SourceCompileOptions,
 };
 
 use common::{
@@ -18,22 +18,18 @@ use common::{
 fuzz_target!(|data: &[u8]| {
     let source = bounded_source(data, 16_384);
 
-    let mut symbols = core_symbols();
-    let mut logger = Logger::new();
-
-    let artifacts = halcyon_lib::compile_source_with_options(
+    let mut compiler = Compiler::with_symbols(core_symbols());
+    let mut resolver = halcyon_lib::NoImports;
+    let compiled = compiler.compile_source(
         "fuzz.hc",
         &source,
-        &mut logger,
-        &mut symbols,
-        CompileOptions {
-            demo_mode: true,
-            use_core: false,
-            emit_source_map: false,
-            emit_dwarf: false,
-            resolve_import: |_| None,
-        },
+        SourceCompileOptions::demo().with_debug_info(halcyon_lib::asm::DebugInfoOptions::none()),
+        &mut resolver,
     );
+    let artifacts = compiled
+        .output
+        .unwrap_or_else(|| Vec::new().into_boxed_slice());
+    let mut logger = compiled.logger;
 
     for artifact in artifacts.iter() {
         let _ = wasmparser::validate(&artifact.binary);

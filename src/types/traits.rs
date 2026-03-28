@@ -27,14 +27,35 @@ impl TraitRef {
             arguments,
         }
     }
-}
 
-pub type TraitConstraint = TraitRef;
+    pub fn canonical_trait_name(
+        &self,
+        canonicalize: impl Fn(&Path) -> Option<Path>,
+    ) -> Path {
+        canonicalize(&self.trait_name).unwrap_or_else(|| self.trait_name.clone())
+    }
+
+    pub fn canonicalize_trait_name_in_place(
+        &mut self,
+        canonicalize: impl Fn(&Path) -> Option<Path>,
+    ) {
+        self.trait_name = self.canonical_trait_name(canonicalize);
+    }
+
+    pub fn with_canonical_trait_name(
+        &self,
+        canonicalize: impl Fn(&Path) -> Option<Path>,
+    ) -> Self {
+        let mut canonical = self.clone();
+        canonical.canonicalize_trait_name_in_place(canonicalize);
+        canonical
+    }
+}
 
 /// A type scheme with attached trait predicates.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TypeScheme {
-    pub predicates: Vec<TraitConstraint>,
+    pub predicates: Vec<TraitRef>,
     pub type_: Type,
 }
 
@@ -48,7 +69,7 @@ impl TypeScheme {
 
     pub fn with_predicates(
         type_: Type,
-        predicates: Vec<TraitConstraint>,
+        predicates: Vec<TraitRef>,
     ) -> Self {
         Self { predicates, type_ }
     }
@@ -141,7 +162,7 @@ pub(crate) fn ordered_trait_methods(trait_definition: &TraitDef) -> Vec<(Path, T
     methods
 }
 
-fn format_trait_constraint(constraint: &TraitConstraint) -> String {
+fn format_trait_constraint(constraint: &TraitRef) -> String {
     if constraint.arguments.is_empty() {
         return constraint.trait_name.to_string();
     }
@@ -178,7 +199,7 @@ fn format_trait_constraint_argument(type_: &Type) -> String {
 pub struct TraitImpl {
     pub parameters: usize,
     pub head: TraitRef,
-    pub predicates: Vec<TraitConstraint>,
+    pub predicates: Vec<TraitRef>,
     pub associated_types: IndexMap<Path, Type>,
     pub methods: IndexMap<Path, Path>,
 }
@@ -199,10 +220,10 @@ pub enum TraitError {
         right: TraitRef,
     },
     AmbiguousInstance {
-        predicate: TraitConstraint,
+        predicate: TraitRef,
     },
     RecursivePredicate {
-        predicate: TraitConstraint,
+        predicate: TraitRef,
     },
     InvalidInstance {
         trait_name: Path,
@@ -230,7 +251,7 @@ pub enum TraitError {
         found: Kind,
     },
     NoInstance {
-        predicate: TraitConstraint,
+        predicate: TraitRef,
     },
 }
 

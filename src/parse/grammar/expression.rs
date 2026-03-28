@@ -148,6 +148,7 @@ fn can_start_atom(kind: SyntaxKind) -> bool {
             | SyntaxKind::NATURAL
             | SyntaxKind::REAL
             | SyntaxKind::STRING
+            | SyntaxKind::FORMAT_STRING
             | SyntaxKind::GLYPH
             | SyntaxKind::TRUE_KW
             | SyntaxKind::FALSE_KW
@@ -174,6 +175,7 @@ fn primary(p: &mut Parser<'_, '_>) -> bool {
                 | SyntaxKind::NATURAL
                 | SyntaxKind::REAL
                 | SyntaxKind::STRING
+                | SyntaxKind::FORMAT_STRING
                 | SyntaxKind::GLYPH
                 | SyntaxKind::TRUE_KW
                 | SyntaxKind::FALSE_KW => {

@@ -169,6 +169,32 @@ impl Logger {
     ) {
         self.diagnostics.extend(logger.diagnostics);
     }
+
+    pub fn consume_logger(
+        &mut self,
+        other: Logger,
+    ) {
+        let mut file_id_map = std::collections::HashMap::new();
+        for (other_file_id, file_name, file_contents) in other.file_records {
+            if other_file_id == other.linking_id {
+                file_id_map.insert(other_file_id, self.linking_id);
+                continue;
+            }
+
+            let merged_file = self.new_file(file_name, file_contents);
+            file_id_map.insert(other_file_id, merged_file.id());
+        }
+
+        for mut diagnostic in other.diagnostics {
+            for label in &mut diagnostic.labels {
+                if let Some(mapped_file_id) = file_id_map.get(&label.file_id).copied() {
+                    label.file_id = mapped_file_id;
+                }
+            }
+            self.diagnostics.push(diagnostic);
+        }
+    }
+
     pub fn new_file(
         &mut self,
         file_name: impl Into<String>,

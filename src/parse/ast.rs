@@ -1225,6 +1225,7 @@ impl BinaryExpr {
                     | SyntaxKind::NATURAL
                     | SyntaxKind::REAL
                     | SyntaxKind::STRING
+                    | SyntaxKind::FORMAT_STRING
                     | SyntaxKind::GLYPH
                     | SyntaxKind::TRUE_KW
                     | SyntaxKind::FALSE_KW

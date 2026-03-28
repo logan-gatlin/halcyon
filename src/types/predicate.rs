@@ -1,18 +1,18 @@
 //! Shared predicate helpers for resolve and elaboration.
 
 use super::{
-    TraitConstraint,
+    TraitRef,
     Type,
     for_each_child_type,
 };
 
 /// Return `true` when a predicate has no type/meta variables.
-pub(crate) fn predicate_is_ground(predicate: &TraitConstraint) -> bool {
+pub(crate) fn predicate_is_ground(predicate: &TraitRef) -> bool {
     predicate.arguments.iter().all(is_ground_type)
 }
 
 /// Deterministic key used to order predicates.
-pub(crate) fn predicate_sort_key(predicate: &TraitConstraint) -> String {
+pub(crate) fn predicate_sort_key(predicate: &TraitRef) -> String {
     let args = predicate
         .arguments
         .iter()
@@ -33,7 +33,7 @@ pub(crate) fn predicate_sort_key(predicate: &TraitConstraint) -> String {
 }
 
 /// Stable sorted + deduplicated predicate list.
-pub(crate) fn sorted_unique_predicates(predicates: &[TraitConstraint]) -> Vec<TraitConstraint> {
+pub(crate) fn sorted_unique_predicates(predicates: &[TraitRef]) -> Vec<TraitRef> {
     let mut sorted = predicates.to_vec();
     sorted.sort_by_key(predicate_sort_key);
     sorted.dedup();
@@ -74,9 +74,9 @@ mod tests {
 
     #[test]
     fn predicate_is_ground_detects_variables_and_nested_ground_types() {
-        let non_ground_type_var = TraitConstraint::new(Path::new("demo", "Eq"), vec![Type::v(0)]);
-        let non_ground_meta = TraitConstraint::new(Path::new("demo", "Eq"), vec![Type::MetaVar(0)]);
-        let ground = TraitConstraint::new(
+        let non_ground_type_var = TraitRef::new(Path::new("demo", "Eq"), vec![Type::v(0)]);
+        let non_ground_meta = TraitRef::new(Path::new("demo", "Eq"), vec![Type::MetaVar(0)]);
+        let ground = TraitRef::new(
             Path::new("demo", "Eq"),
             vec![Type::Tuple(vec![
                 Type::Integer,
@@ -103,11 +103,11 @@ mod tests {
                 .for_all(1),
             ),
         };
-        let ground = TraitConstraint::new(
+        let ground = TraitRef::new(
             Path::new("demo", "Show"),
             vec![generic_box.clone().apply(vec![Type::Integer])],
         );
-        let non_ground = TraitConstraint::new(
+        let non_ground = TraitRef::new(
             Path::new("demo", "Show"),
             vec![generic_box.apply(vec![Type::MetaVar(0)])],
         );
@@ -118,8 +118,8 @@ mod tests {
 
     #[test]
     fn sorted_unique_predicates_orders_and_deduplicates() {
-        let show_int = TraitConstraint::new(Path::new("demo", "Show"), vec![Type::Integer]);
-        let show_bool = TraitConstraint::new(Path::new("demo", "Show"), vec![Type::Boolean]);
+        let show_int = TraitRef::new(Path::new("demo", "Show"), vec![Type::Integer]);
+        let show_bool = TraitRef::new(Path::new("demo", "Show"), vec![Type::Boolean]);
         let sorted =
             sorted_unique_predicates(&[show_int.clone(), show_bool.clone(), show_int.clone()]);
 

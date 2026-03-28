@@ -13,7 +13,6 @@ use super::instantiation::instantiate_forall_strict;
 use super::{
     MetaVarId,
     StructMatch,
-    TraitConstraint,
     TraitRef,
     Type,
     for_each_child_type,
@@ -132,6 +131,7 @@ impl UnificationTable {
         let pruned = self.prune(type_);
         match pruned {
             Type::Unit
+            | Type::Error
             | Type::Integer
             | Type::Natural
             | Type::Real
@@ -220,8 +220,8 @@ impl UnificationTable {
     /// Normalize a list of trait predicates.
     pub fn normalize_predicates(
         &mut self,
-        predicates: &[TraitConstraint],
-    ) -> Vec<TraitConstraint> {
+        predicates: &[TraitRef],
+    ) -> Vec<TraitRef> {
         predicates
             .iter()
             .map(|predicate| self.normalize_trait_ref(predicate))

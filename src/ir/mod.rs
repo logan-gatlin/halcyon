@@ -135,6 +135,51 @@ impl<T> Module<T> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum InlineWasmMode {
+    #[default]
+    Parse,
+    Skip,
+}
+
+impl InlineWasmMode {
+    fn term_lowering_options(self) -> TermLoweringOptions {
+        TermLoweringOptions {
+            parse_inline_wasm: matches!(self, Self::Parse),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct LoweringOptions<'a> {
+    pub prelude: &'a [(Path, NameSpace)],
+    pub inline_wasm_mode: InlineWasmMode,
+}
+
+impl Default for LoweringOptions<'_> {
+    fn default() -> Self {
+        Self {
+            prelude: &[],
+            inline_wasm_mode: InlineWasmMode::Parse,
+        }
+    }
+}
+
+impl<'a> LoweringOptions<'a> {
+    pub fn with_prelude(prelude: &'a [(Path, NameSpace)]) -> Self {
+        Self {
+            prelude,
+            ..Self::default()
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct LoweredBundle {
+    pub module: Module<()>,
+    pub name_index: NameIndex,
+}
+
 fn define_named_type_constructors(
     scope: &mut ModuleScope,
     logger: &mut FileLogger,
@@ -244,547 +289,405 @@ fn enter_nested_module_scope(
     module_scope.register_implicit_open_use(&[crate::CORE_BUNDLE_NAME, "prelude"]);
 }
 
-fn lower_module_statements(
-    module_scope: &mut ModuleScope,
-    module_name: &str,
-    wasm_type_defs: &mut IndexMap<String, WasmType>,
+struct StatementLoweringContext<'a> {
+    module_scope: &'a mut ModuleScope,
+    module_name: &'a str,
+    wasm_type_defs: &'a mut IndexMap<String, WasmType>,
     options: TermLoweringOptions,
-    statements: &mut Vec<Statement<()>>,
-    logger: &mut FileLogger,
-    ast_statements: &[ast::Statement],
-) -> Option<()> {
-    for statement in ast_statements {
-        let comments = statement.leading_doc_comment_text();
-        let statement = match statement {
-            ast::Statement::Bundle(_) | ast::Statement::Import(_) => continue,
-            ast::Statement::Let(let_statement) => {
-                if let_statement.is_pattern_alias() {
-                    let alias_name = let_statement.alias_name_spanned()?;
-                    lint_pascal_case_name(
-                        logger,
-                        "Constructor alias",
-                        &alias_name.inner,
-                        alias_name.span,
-                    );
-                    let term_path = module_scope.define(alias_name.clone(), NameSpace::Term);
-                    let constructor_path = module_scope.define(alias_name, NameSpace::Constructor);
-                    assert_eq!(
-                        term_path, constructor_path,
-                        "constructor alias paths must match across term and constructor namespaces"
-                    );
-                    let target = resolve_path_or_ident(
-                        module_scope,
-                        let_statement.alias_target()?,
-                        NameSpace::Constructor,
-                    )?;
-                    Statement::ConstructorAlias {
-                        comments,
-                        path: constructor_path,
-                        target,
-                        span: let_statement.span(),
+    statements: &'a mut Vec<Statement<()>>,
+    logger: &'a mut FileLogger,
+}
+
+impl StatementLoweringContext<'_> {
+    fn lower_statements(
+        &mut self,
+        ast_statements: &[ast::Statement],
+    ) -> Option<()> {
+        for statement in ast_statements {
+            let comments = statement.leading_doc_comment_text();
+            let statement = match statement {
+                ast::Statement::Bundle(_) | ast::Statement::Import(_) => continue,
+                ast::Statement::Let(let_statement) => {
+                    if let_statement.is_pattern_alias() {
+                        let alias_name = let_statement.alias_name_spanned()?;
+                        lint_pascal_case_name(
+                            self.logger,
+                            "Constructor alias",
+                            &alias_name.inner,
+                            alias_name.span,
+                        );
+                        let term_path = self
+                            .module_scope
+                            .define(alias_name.clone(), NameSpace::Term);
+                        let constructor_path =
+                            self.module_scope.define(alias_name, NameSpace::Constructor);
+                        assert_eq!(
+                            term_path, constructor_path,
+                            "constructor alias paths must match across term and constructor namespaces"
+                        );
+                        let target = resolve_path_or_ident(
+                            self.module_scope,
+                            let_statement.alias_target()?,
+                            NameSpace::Constructor,
+                        )?;
+                        Statement::ConstructorAlias {
+                            comments,
+                            path: constructor_path,
+                            target,
+                            span: let_statement.span(),
+                        }
+                    } else {
+                        Statement::Term(Term {
+                            comments,
+                            kind: TermKind::Let {
+                                assignee: pattern(
+                                    self.module_scope,
+                                    self.logger,
+                                    let_statement.pattern()?,
+                                )?,
+                                value: term(
+                                    self.module_scope,
+                                    self.wasm_type_defs,
+                                    self.options,
+                                    self.logger,
+                                    let_statement.value()?,
+                                )?
+                                .into(),
+                                scope: ScopeKind::Global,
+                                then: Term::unit().into(),
+                                else_: Term::unreachable().into(),
+                            },
+                            span: let_statement.span(),
+                            type_: (),
+                        })
                     }
-                } else {
+                }
+                ast::Statement::Do(do_statement) => {
                     Statement::Term(Term {
                         comments,
                         kind: TermKind::Let {
-                            assignee: pattern(module_scope, logger, let_statement.pattern()?)?,
+                            assignee: Pattern {
+                                comments: String::new(),
+                                kind: PatternKind::Hole,
+                                span: do_statement.span(),
+                                type_: (),
+                            },
                             value: term(
-                                module_scope,
-                                wasm_type_defs,
-                                options,
-                                logger,
-                                let_statement.value()?,
+                                self.module_scope,
+                                self.wasm_type_defs,
+                                self.options,
+                                self.logger,
+                                do_statement.value()?,
                             )?
                             .into(),
                             scope: ScopeKind::Global,
                             then: Term::unit().into(),
                             else_: Term::unreachable().into(),
                         },
-                        span: let_statement.span(),
+                        span: do_statement.span(),
                         type_: (),
                     })
                 }
-            }
-            ast::Statement::Do(do_statement) => {
-                Statement::Term(Term {
-                    comments,
-                    kind: TermKind::Let {
-                        assignee: Pattern {
-                            comments: String::new(),
-                            kind: PatternKind::Hole,
-                            span: do_statement.span(),
-                            type_: (),
-                        },
-                        value: term(
-                            module_scope,
-                            wasm_type_defs,
-                            options,
-                            logger,
-                            do_statement.value()?,
-                        )?
-                        .into(),
-                        scope: ScopeKind::Global,
-                        then: Term::unit().into(),
-                        else_: Term::unreachable().into(),
-                    },
-                    span: do_statement.span(),
-                    type_: (),
-                })
-            }
-            ast::Statement::Type(type_statement) => {
-                let type_name = type_statement.name_text_spanned()?;
-                lint_pascal_case_name(logger, "Type", &type_name.inner, type_name.span);
-                let path = module_scope.define(type_name.clone(), NameSpace::Type);
-                let type_def = type_statement.type_def()?;
-                let kind = if type_statement.is_alias() {
-                    TypeDeclKind::Alias
-                } else {
-                    TypeDeclKind::Named
-                };
-                if kind == TypeDeclKind::Named {
-                    define_named_type_constructors(
-                        module_scope,
-                        logger,
-                        &type_def,
-                        type_name.clone(),
-                    )?;
-                }
-                let mut parameter_scope = module_scope.nest_scope();
-                Statement::Type {
-                    comments,
-                    path,
-                    parameters: type_statement
-                        .type_params()
-                        .into_iter()
-                        .map(|param| parameter_scope.define(param, NameSpace::Type))
-                        .collect(),
-                    def: typedef(&mut parameter_scope, logger, type_def)?,
-                    kind,
-                }
-            }
-            ast::Statement::Trait(trait_statement) => {
-                let trait_name = trait_statement.name_text_spanned()?;
-                lint_pascal_case_name(logger, "Trait", &trait_name.inner, trait_name.span);
-                let path = module_scope.define(trait_name, NameSpace::Trait);
-                if trait_statement.is_alias() {
-                    let target = resolve_path_or_ident(
-                        module_scope,
-                        trait_statement.alias_target()?,
-                        NameSpace::Trait,
-                    )?;
-                    for target_associated_type in
-                        module_scope.direct_children(&target, NameSpace::Type)
-                    {
-                        let Some((_, associated_type_name)) =
-                            target_associated_type.minor.rsplit_once(Path::DELIMETER)
-                        else {
-                            continue;
-                        };
-                        module_scope.define_path(
-                            path.child(associated_type_name),
-                            NameSpace::Type,
-                            trait_statement.span(),
-                        );
+                ast::Statement::Type(type_statement) => {
+                    let type_name = type_statement.name_text_spanned()?;
+                    lint_pascal_case_name(self.logger, "Type", &type_name.inner, type_name.span);
+                    let path = self.module_scope.define(type_name.clone(), NameSpace::Type);
+                    let type_def = type_statement.type_def()?;
+                    let kind = if type_statement.is_alias() {
+                        TypeDeclKind::Alias
+                    } else {
+                        TypeDeclKind::Named
+                    };
+                    if kind == TypeDeclKind::Named {
+                        define_named_type_constructors(
+                            self.module_scope,
+                            self.logger,
+                            &type_def,
+                            type_name.clone(),
+                        )?;
                     }
-                    Statement::TraitAlias {
+                    let mut parameter_scope = self.module_scope.nest_scope();
+                    Statement::Type {
                         comments,
                         path,
-                        target,
+                        parameters: type_statement
+                            .type_params()
+                            .into_iter()
+                            .map(|param| parameter_scope.define(param, NameSpace::Type))
+                            .collect(),
+                        def: typedef(&mut parameter_scope, self.logger, type_def)?,
+                        kind,
                     }
-                } else {
-                    let associated_types = trait_statement
+                }
+                ast::Statement::Trait(trait_statement) => {
+                    let trait_name = trait_statement.name_text_spanned()?;
+                    lint_pascal_case_name(self.logger, "Trait", &trait_name.inner, trait_name.span);
+                    let path = self.module_scope.define(trait_name, NameSpace::Trait);
+                    if trait_statement.is_alias() {
+                        let target = resolve_path_or_ident(
+                            self.module_scope,
+                            trait_statement.alias_target()?,
+                            NameSpace::Trait,
+                        )?;
+                        for target_associated_type in
+                            self.module_scope.direct_children(&target, NameSpace::Type)
+                        {
+                            let Some((_, associated_type_name)) =
+                                target_associated_type.minor.rsplit_once(Path::DELIMETER)
+                            else {
+                                continue;
+                            };
+                            self.module_scope.define_path(
+                                path.child(associated_type_name),
+                                NameSpace::Type,
+                                trait_statement.span(),
+                            );
+                        }
+                        Statement::TraitAlias {
+                            comments,
+                            path,
+                            target,
+                        }
+                    } else {
+                        let associated_types = trait_statement
+                            .associated_types()
+                            .into_iter()
+                            .map(|associated_type| {
+                                let associated_type_name = associated_type.name_text_spanned()?;
+                                lint_pascal_case_name(
+                                    self.logger,
+                                    "Associated type",
+                                    &associated_type_name.inner,
+                                    associated_type_name.span,
+                                );
+                                let associated_type_path = path.child(&associated_type_name.inner);
+                                self.module_scope.define_path(
+                                    associated_type_path.clone(),
+                                    NameSpace::Type,
+                                    associated_type_name.span,
+                                );
+                                Some(TraitTypeDecl {
+                                    path: associated_type_path,
+                                    span: associated_type.span(),
+                                })
+                            })
+                            .collect::<Option<Box<[_]>>>()?;
+                        let method_nodes = trait_statement.methods();
+                        let method_paths = method_nodes
+                            .into_iter()
+                            .map(|method| {
+                                let method_name = method.name_text_spanned()?;
+                                lint_snake_case_name(
+                                    self.logger,
+                                    "Trait item",
+                                    &method_name.inner,
+                                    method_name.span,
+                                );
+                                Some((
+                                    self.module_scope.define(method_name, NameSpace::Term),
+                                    method,
+                                ))
+                            })
+                            .collect::<Option<Vec<_>>>()?;
+
+                        let mut parameter_scope = self.module_scope.nest_scope();
+                        let parameters = trait_statement
+                            .trait_params()
+                            .into_iter()
+                            .map(|param| parameter_scope.define(param, NameSpace::Type))
+                            .collect::<Box<[_]>>();
+                        let methods = method_paths
+                            .into_iter()
+                            .map(|(method_path, method)| {
+                                Some(TraitMethodDecl {
+                                    path: method_path,
+                                    type_expr: type_expr(
+                                        &mut parameter_scope,
+                                        self.logger,
+                                        method.ty()?,
+                                    )?,
+                                    span: method.span(),
+                                })
+                            })
+                            .collect::<Option<Box<[_]>>>()?;
+                        Statement::Trait {
+                            comments,
+                            path,
+                            parameters,
+                            associated_types,
+                            methods,
+                        }
+                    }
+                }
+                ast::Statement::Impl(impl_statement) => {
+                    let trait_path = resolve_path_or_ident(
+                        self.module_scope,
+                        impl_statement.trait_name()?,
+                        NameSpace::Trait,
+                    )?;
+
+                    let arguments = impl_statement
+                        .type_args()
+                        .into_iter()
+                        .map(|arg| type_expr(self.module_scope, self.logger, arg))
+                        .collect::<Option<Box<[_]>>>()?;
+
+                    let associated_types = impl_statement
                         .associated_types()
                         .into_iter()
                         .map(|associated_type| {
                             let associated_type_name = associated_type.name_text_spanned()?;
                             lint_pascal_case_name(
-                                logger,
+                                self.logger,
                                 "Associated type",
                                 &associated_type_name.inner,
                                 associated_type_name.span,
                             );
-                            let associated_type_path = path.child(&associated_type_name.inner);
-                            module_scope.define_path(
-                                associated_type_path.clone(),
-                                NameSpace::Type,
-                                associated_type_name.span,
-                            );
-                            Some(TraitTypeDecl {
-                                path: associated_type_path,
+                            Some(ImplTypeDef {
+                                name: associated_type_name,
+                                type_expr: type_expr(
+                                    self.module_scope,
+                                    self.logger,
+                                    associated_type.ty()?,
+                                )?,
                                 span: associated_type.span(),
                             })
                         })
                         .collect::<Option<Box<[_]>>>()?;
-                    let method_nodes = trait_statement.methods();
-                    let method_paths = method_nodes
+
+                    let mut impl_scope = self.module_scope.nest_scope();
+                    let methods = impl_statement
+                        .methods()
                         .into_iter()
                         .map(|method| {
                             let method_name = method.name_text_spanned()?;
                             lint_snake_case_name(
-                                logger,
+                                self.logger,
                                 "Trait item",
                                 &method_name.inner,
                                 method_name.span,
                             );
-                            Some((module_scope.define(method_name, NameSpace::Term), method))
-                        })
-                        .collect::<Option<Vec<_>>>()?;
-
-                    let mut parameter_scope = module_scope.nest_scope();
-                    let parameters = trait_statement
-                        .trait_params()
-                        .into_iter()
-                        .map(|param| parameter_scope.define(param, NameSpace::Type))
-                        .collect::<Box<[_]>>();
-                    let methods = method_paths
-                        .into_iter()
-                        .map(|(method_path, method)| {
-                            Some(TraitMethodDecl {
-                                path: method_path,
-                                type_expr: type_expr(&mut parameter_scope, logger, method.ty()?)?,
+                            let trait_method = trait_path.sibling(&method_name.inner);
+                            let impl_path = impl_scope.define(method_name, NameSpace::Term);
+                            Some(ImplMethod {
+                                trait_method,
+                                impl_path,
+                                value: term(
+                                    &mut impl_scope,
+                                    self.wasm_type_defs,
+                                    self.options,
+                                    self.logger,
+                                    method.value()?,
+                                )?,
                                 span: method.span(),
                             })
                         })
                         .collect::<Option<Box<[_]>>>()?;
-                    Statement::Trait {
+
+                    Statement::Impl {
                         comments,
-                        path,
-                        parameters,
+                        trait_path,
+                        arguments,
                         associated_types,
                         methods,
                     }
                 }
-            }
-            ast::Statement::Impl(impl_statement) => {
-                let trait_path = resolve_path_or_ident(
-                    module_scope,
-                    impl_statement.trait_name()?,
-                    NameSpace::Trait,
-                )?;
-
-                let arguments = impl_statement
-                    .type_args()
-                    .into_iter()
-                    .map(|arg| type_expr(module_scope, logger, arg))
-                    .collect::<Option<Box<[_]>>>()?;
-
-                let associated_types = impl_statement
-                    .associated_types()
-                    .into_iter()
-                    .map(|associated_type| {
-                        let associated_type_name = associated_type.name_text_spanned()?;
-                        lint_pascal_case_name(
-                            logger,
-                            "Associated type",
-                            &associated_type_name.inner,
-                            associated_type_name.span,
-                        );
-                        Some(ImplTypeDef {
-                            name: associated_type_name,
-                            type_expr: type_expr(module_scope, logger, associated_type.ty()?)?,
-                            span: associated_type.span(),
-                        })
-                    })
-                    .collect::<Option<Box<[_]>>>()?;
-
-                let mut impl_scope = module_scope.nest_scope();
-                let methods = impl_statement
-                    .methods()
-                    .into_iter()
-                    .map(|method| {
-                        let method_name = method.name_text_spanned()?;
-                        lint_snake_case_name(
-                            logger,
-                            "Trait item",
-                            &method_name.inner,
-                            method_name.span,
-                        );
-                        let trait_method = trait_path.sibling(&method_name.inner);
-                        let impl_path = impl_scope.define(method_name, NameSpace::Term);
-                        Some(ImplMethod {
-                            trait_method,
-                            impl_path,
-                            value: term(
-                                &mut impl_scope,
-                                wasm_type_defs,
-                                options,
-                                logger,
-                                method.value()?,
-                            )?,
-                            span: method.span(),
-                        })
-                    })
-                    .collect::<Option<Box<[_]>>>()?;
-
-                Statement::Impl {
-                    comments,
-                    trait_path,
-                    arguments,
-                    associated_types,
-                    methods,
+                ast::Statement::Wasm(wasm_statement) => {
+                    Statement::Wasm(wasm::build_toplevel(
+                        &wasm_statement.sexpr()?,
+                        self.module_name,
+                        self.wasm_type_defs,
+                        self.logger,
+                        self.module_scope,
+                    ))
                 }
-            }
-            ast::Statement::Wasm(wasm_statement) => {
-                Statement::Wasm(wasm::build_toplevel(
-                    &wasm_statement.sexpr()?,
-                    module_name,
-                    wasm_type_defs,
-                    logger,
-                    module_scope,
-                ))
-            }
-            ast::Statement::Use(use_statement) => {
-                module_scope.register_use(
-                    use_statement.target()?,
-                    use_statement.alias_name_spanned(),
-                    use_statement.span(),
-                )?;
-                continue;
-            }
-            ast::Statement::Module(nested_module) => {
-                let nested_module_name = nested_module.name_text_spanned()?;
-                module_scope.define(nested_module_name.clone(), NameSpace::Module);
-                enter_nested_module_scope(module_scope, logger, nested_module_name);
-                let lowered = lower_module_statements(
-                    module_scope,
-                    module_name,
-                    wasm_type_defs,
-                    options,
-                    statements,
-                    logger,
-                    &nested_module.statements(),
-                );
-                module_scope.leave_module();
-                lowered?;
-                continue;
-            }
-        };
-        statements.push(statement);
+                ast::Statement::Use(use_statement) => {
+                    self.module_scope.register_use(
+                        use_statement.target()?,
+                        use_statement.alias_name_spanned(),
+                        use_statement.span(),
+                    )?;
+                    continue;
+                }
+                ast::Statement::Module(nested_module) => {
+                    let nested_module_name = nested_module.name_text_spanned()?;
+                    self.module_scope
+                        .define(nested_module_name.clone(), NameSpace::Module);
+                    enter_nested_module_scope(self.module_scope, self.logger, nested_module_name);
+                    let lowered = self.lower_statements(&nested_module.statements());
+                    self.module_scope.leave_module();
+                    lowered?;
+                    continue;
+                }
+            };
+            self.statements.push(statement);
+        }
+        Some(())
     }
-    Some(())
 }
 
-pub fn module(
+pub fn lower_module(
     module_node: ast::Module,
     logger: &mut FileLogger,
-) -> Option<Module<()>> {
-    module_with_prelude(module_node, logger, &[])
-}
-
-pub fn bundle_statements(
-    bundle_name: String,
-    statements: &[ast::Statement],
-    logger: &mut FileLogger,
-) -> Option<Module<()>> {
-    bundle_statements_with_prelude(bundle_name, statements, logger, &[])
-}
-
-pub fn module_with_prelude(
-    module_node: ast::Module,
-    logger: &mut FileLogger,
-    prelude: &[(Path, NameSpace)],
-) -> Option<Module<()>> {
+    options: LoweringOptions<'_>,
+) -> Option<LoweredBundle> {
     let name = module_node.name_text_spanned()?;
     lint_kebab_case_name(logger, "Module", &name.inner, name.span);
-    bundle_statements_with_prelude(name.inner, &module_node.statements(), logger, prelude)
+    lower_statements(name.inner, &module_node.statements(), logger, options)
 }
 
 #[tracing::instrument(skip_all, fields(bundle = %bundle_name))]
-pub fn bundle_statements_with_prelude(
+pub fn lower_statements(
     bundle_name: String,
     ast_statements: &[ast::Statement],
     logger: &mut FileLogger,
-    prelude: &[(Path, NameSpace)],
-) -> Option<Module<()>> {
-    let mut wasm_type_defs: IndexMap<String, WasmType> = IndexMap::new();
-    bundle_statements_with_prelude_and_wasm_types(
-        bundle_name,
-        ast_statements,
-        logger,
-        prelude,
-        &mut wasm_type_defs,
-        TermLoweringOptions::default(),
-    )
-}
-
-#[tracing::instrument(skip_all, fields(bundle = %bundle_name))]
-pub fn bundle_statements_with_prelude_for_docs(
-    bundle_name: String,
-    ast_statements: &[ast::Statement],
-    logger: &mut FileLogger,
-    prelude: &[(Path, NameSpace)],
-) -> Option<Module<()>> {
-    let mut wasm_type_defs: IndexMap<String, WasmType> = IndexMap::new();
-    bundle_statements_with_prelude_and_wasm_types(
-        bundle_name,
-        ast_statements,
-        logger,
-        prelude,
-        &mut wasm_type_defs,
-        TermLoweringOptions {
-            parse_inline_wasm: false,
-        },
-    )
-}
-
-#[tracing::instrument(skip_all, fields(bundle = %bundle_name))]
-pub fn bundle_statements_with_prelude_and_wasm_types(
-    bundle_name: String,
-    ast_statements: &[ast::Statement],
-    logger: &mut FileLogger,
-    prelude: &[(Path, NameSpace)],
-    wasm_type_defs: &mut IndexMap<String, WasmType>,
-    options: TermLoweringOptions,
-) -> Option<Module<()>> {
-    let mut salt = 0;
-    bundle_statements_with_prelude_and_wasm_types_and_salt(
-        bundle_name,
-        ast_statements,
-        logger,
-        prelude,
-        wasm_type_defs,
-        &mut salt,
-        options,
-    )
-}
-
-#[tracing::instrument(skip_all, fields(bundle = %bundle_name))]
-pub fn bundle_statements_with_prelude_indexed(
-    bundle_name: String,
-    ast_statements: &[ast::Statement],
-    logger: &mut FileLogger,
-    prelude: &[(Path, NameSpace)],
-) -> Option<(Module<()>, NameIndex)> {
-    let mut wasm_type_defs: IndexMap<String, WasmType> = IndexMap::new();
-    bundle_statements_with_prelude_and_wasm_types_indexed(
-        bundle_name,
-        ast_statements,
-        logger,
-        prelude,
-        &mut wasm_type_defs,
-        TermLoweringOptions::default(),
-    )
-}
-
-#[tracing::instrument(skip_all, fields(bundle = %bundle_name))]
-pub fn bundle_statements_with_prelude_and_wasm_types_indexed(
-    bundle_name: String,
-    ast_statements: &[ast::Statement],
-    logger: &mut FileLogger,
-    prelude: &[(Path, NameSpace)],
-    wasm_type_defs: &mut IndexMap<String, WasmType>,
-    options: TermLoweringOptions,
-) -> Option<(Module<()>, NameIndex)> {
-    let mut salt = 0;
-    bundle_statements_with_prelude_and_wasm_types_and_salt_indexed(
-        bundle_name,
-        ast_statements,
-        logger,
-        prelude,
-        wasm_type_defs,
-        &mut salt,
-        options,
-    )
-}
-
-#[tracing::instrument(skip_all, fields(bundle = %bundle_name))]
-pub fn bundle_statements_with_prelude_and_wasm_types_and_salt(
-    bundle_name: String,
-    ast_statements: &[ast::Statement],
-    logger: &mut FileLogger,
-    prelude: &[(Path, NameSpace)],
-    wasm_type_defs: &mut IndexMap<String, WasmType>,
-    salt: &mut usize,
-    options: TermLoweringOptions,
-) -> Option<Module<()>> {
-    bundle_statements_with_prelude_and_wasm_types_and_salt_indexed(
-        bundle_name,
-        ast_statements,
-        logger,
-        prelude,
-        wasm_type_defs,
-        salt,
-        options,
-    )
-    .map(|(module, _)| module)
-}
-
-#[tracing::instrument(skip_all, fields(bundle = %bundle_name))]
-pub fn bundle_statements_with_prelude_and_wasm_types_and_salt_indexed(
-    bundle_name: String,
-    ast_statements: &[ast::Statement],
-    logger: &mut FileLogger,
-    prelude: &[(Path, NameSpace)],
-    wasm_type_defs: &mut IndexMap<String, WasmType>,
-    salt: &mut usize,
-    options: TermLoweringOptions,
-) -> Option<(Module<()>, NameIndex)> {
+    options: LoweringOptions<'_>,
+) -> Option<LoweredBundle> {
     let _profile_total = crate::profiling::scope("ir.bundle_statements.total");
-    let mut module_scope = ModuleScope::with_salt(bundle_name.clone(), *salt);
-    for (path, namespace) in prelude {
+    let mut module_scope = ModuleScope::new(bundle_name.clone());
+    for (path, namespace) in options.prelude {
         module_scope.predefine(path.clone(), *namespace);
     }
     module_scope.register_implicit_open_use(&[crate::CORE_BUNDLE_NAME, "prelude"]);
+
+    let mut wasm_type_defs: IndexMap<String, WasmType> = IndexMap::new();
     let mut lowered_statements = Vec::new();
     {
         let _profile = crate::profiling::scope("ir.bundle_statements.lower_statements");
-        lower_module_statements(
-            &mut module_scope,
-            &bundle_name,
-            wasm_type_defs,
-            options,
-            &mut lowered_statements,
+        let mut lowering = StatementLoweringContext {
+            module_scope: &mut module_scope,
+            module_name: &bundle_name,
+            wasm_type_defs: &mut wasm_type_defs,
+            options: options.inline_wasm_mode.term_lowering_options(),
+            statements: &mut lowered_statements,
             logger,
-            ast_statements,
-        )?;
+        };
+        lowering.lower_statements(ast_statements)?;
     }
-    *salt = module_scope.salt();
+
     {
         let _profile = crate::profiling::scope("ir.bundle_statements.report_name_errors");
         module_scope.report_name_resolution_errors(logger);
     }
-    let name_index = module_scope.name_index();
-    Some((
-        Module {
+
+    Some(LoweredBundle {
+        module: Module {
             name: bundle_name,
             statements: lowered_statements.into_boxed_slice(),
         },
-        name_index,
-    ))
+        name_index: module_scope.name_index(),
+    })
 }
 
 #[tracing::instrument(skip_all, fields(bundle = %bundle_name))]
-pub fn bundle_source_file_with_imports_and_prelude<R>(
+pub fn lower_source_file_with_imports<R>(
     bundle_name: String,
     source_file: ast::SourceFile,
     root_file_logger: FileLogger,
     logger: &mut crate::Logger,
-    prelude: &[(Path, NameSpace)],
+    options: LoweringOptions<'_>,
     resolve_import_source: &mut R,
-) -> Option<Module<()>>
-where
-    R: FnMut(String) -> Option<String>,
-{
-    bundle_source_file_with_imports_and_prelude_indexed(
-        bundle_name,
-        source_file,
-        root_file_logger,
-        logger,
-        prelude,
-        resolve_import_source,
-    )
-    .map(|(module, _)| module)
-}
-
-#[tracing::instrument(skip_all, fields(bundle = %bundle_name))]
-pub fn bundle_source_file_with_imports_and_prelude_indexed<R>(
-    bundle_name: String,
-    source_file: ast::SourceFile,
-    root_file_logger: FileLogger,
-    logger: &mut crate::Logger,
-    prelude: &[(Path, NameSpace)],
-    resolve_import_source: &mut R,
-) -> Option<(Module<()>, NameIndex)>
+) -> Option<LoweredBundle>
 where
     R: FnMut(String) -> Option<String>,
 {
@@ -815,6 +718,7 @@ where
         module_name: &'a str,
         wasm_type_defs: &'a mut IndexMap<String, WasmType>,
         lowered_statements: &'a mut Vec<Statement<()>>,
+        options: TermLoweringOptions,
         resolve_import: &'a mut R,
         first_bundle_declaration_file: &'a mut Option<String>,
     }
@@ -899,15 +803,15 @@ where
                         lowered?;
                     }
                     _ => {
-                        lower_module_statements(
-                            self.module_scope,
-                            self.module_name,
-                            self.wasm_type_defs,
-                            TermLoweringOptions::default(),
-                            self.lowered_statements,
-                            file_logger,
-                            std::slice::from_ref(statement),
-                        )?;
+                        let mut lowering = StatementLoweringContext {
+                            module_scope: self.module_scope,
+                            module_name: self.module_name,
+                            wasm_type_defs: self.wasm_type_defs,
+                            options: self.options,
+                            statements: self.lowered_statements,
+                            logger: file_logger,
+                        };
+                        lowering.lower_statements(std::slice::from_ref(statement))?;
                     }
                 }
             }
@@ -920,7 +824,7 @@ where
     let mut imported_paths = std::collections::HashSet::new();
     let mut first_bundle_declaration_file = None;
     let mut module_scope = ModuleScope::new(bundle_name.clone());
-    for (path, namespace) in prelude {
+    for (path, namespace) in options.prelude {
         module_scope.predefine(path.clone(), *namespace);
     }
     module_scope.register_implicit_open_use(&[crate::CORE_BUNDLE_NAME, "prelude"]);
@@ -976,6 +880,7 @@ where
             module_name: &bundle_name,
             wasm_type_defs: &mut wasm_type_defs,
             lowered_statements: &mut lowered_statements,
+            options: options.inline_wasm_mode.term_lowering_options(),
             resolve_import: &mut resolve_import,
             first_bundle_declaration_file: &mut first_bundle_declaration_file,
         };
@@ -993,12 +898,11 @@ where
         logger.consume_file(file_logger);
     }
 
-    let name_index = module_scope.name_index();
-    Some((
-        Module {
+    Some(LoweredBundle {
+        module: Module {
             name: bundle_name,
             statements: lowered_statements.into_boxed_slice(),
         },
-        name_index,
-    ))
+        name_index: module_scope.name_index(),
+    })
 }

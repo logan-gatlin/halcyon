@@ -15,8 +15,14 @@ fn core_binary() -> &'static [u8] {
         .get_or_init(|| {
             let mut logger = Logger::new();
             let mut symbols = SymbolTable::new();
-            let artifact =
-                compile_core_module_with_debug_info(&mut symbols, &mut logger, false, false);
+            let artifact = compile_core_module_with_debug_info(
+                &mut symbols,
+                &mut logger,
+                crate::asm::DebugInfoOptions::none(),
+            );
+            if !logger.is_ok() {
+                logger.print_logs();
+            }
             assert!(
                 logger.is_ok(),
                 "core module should compile in bindings tests"

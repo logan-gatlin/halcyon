@@ -243,6 +243,24 @@ pub fn tokenize(
             continue;
         }
 
+        if current == '`' {
+            if let Some(format_string) = parse_delimited(&mut iter, '`') {
+                if bake_string(start, iter.logger, &format_string).is_some() {
+                    iter.push(SyntaxKind::FORMAT_STRING, start);
+                } else {
+                    iter.push(SyntaxKind::TOKEN_ERROR, start);
+                }
+            } else {
+                let span = Span::new(start, 1);
+                iter.logger
+                    .error("Missing closing backtick (`)")
+                    .primary("Opening ` here is not closed", span)
+                    .done();
+                iter.push(SyntaxKind::TOKEN_ERROR, start);
+            }
+            continue;
+        }
+
         if current.is_ascii_digit() {
             let mut buffer: Vec<u8> = vec![];
             let base = if let Some(next_char) = next_char
@@ -591,6 +609,112 @@ fn decode_escaped_literal_body(body: &str) -> Result<String, EscapeDecodeError> 
 pub fn decode_quoted_string_literal(text: &str) -> Option<String> {
     let inner = text.strip_prefix('"')?.strip_suffix('"')?;
     decode_escaped_literal_body(inner).ok()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FormatStringSegment {
+    Text(String),
+    Placeholder,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FormatStringDecodeErrorKind {
+    InvalidEscape,
+    UnescapedOpeningBrace,
+    UnescapedClosingBrace,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FormatStringDecodeError {
+    pub kind: FormatStringDecodeErrorKind,
+    pub offset: usize,
+    pub width: usize,
+}
+
+pub fn decode_quoted_format_string_literal(
+    text: &str
+) -> Result<Vec<FormatStringSegment>, FormatStringDecodeError> {
+    let inner = text
+        .strip_prefix('`')
+        .and_then(|text| text.strip_suffix('`'));
+    let Some(inner) = inner else {
+        return Err(FormatStringDecodeError {
+            kind: FormatStringDecodeErrorKind::InvalidEscape,
+            offset: 0,
+            width: text.len().max(1),
+        });
+    };
+
+    let decoded = decode_escaped_literal_body(inner).map_err(|error| {
+        FormatStringDecodeError {
+            kind: FormatStringDecodeErrorKind::InvalidEscape,
+            offset: error.offset,
+            width: error.width.max(1),
+        }
+    })?;
+
+    parse_format_string_segments(&decoded)
+}
+
+fn parse_format_string_segments(
+    text: &str
+) -> Result<Vec<FormatStringSegment>, FormatStringDecodeError> {
+    let mut segments = Vec::new();
+    let mut current_text = String::new();
+    let mut chars = text.char_indices().peekable();
+
+    while let Some((offset, ch)) = chars.next() {
+        match ch {
+            '{' => {
+                if let Some((_, next)) = chars.peek()
+                    && *next == '{'
+                {
+                    chars.next();
+                    current_text.push('{');
+                    continue;
+                }
+
+                if let Some((_, next)) = chars.peek()
+                    && *next == '}'
+                {
+                    chars.next();
+                    if !current_text.is_empty() {
+                        segments.push(FormatStringSegment::Text(std::mem::take(&mut current_text)));
+                    }
+                    segments.push(FormatStringSegment::Placeholder);
+                    continue;
+                }
+
+                return Err(FormatStringDecodeError {
+                    kind: FormatStringDecodeErrorKind::UnescapedOpeningBrace,
+                    offset,
+                    width: 1,
+                });
+            }
+            '}' => {
+                if let Some((_, next)) = chars.peek()
+                    && *next == '}'
+                {
+                    chars.next();
+                    current_text.push('}');
+                    continue;
+                }
+
+                return Err(FormatStringDecodeError {
+                    kind: FormatStringDecodeErrorKind::UnescapedClosingBrace,
+                    offset,
+                    width: 1,
+                });
+            }
+            _ => current_text.push(ch),
+        }
+    }
+
+    if !current_text.is_empty() {
+        segments.push(FormatStringSegment::Text(current_text));
+    }
+
+    Ok(segments)
 }
 
 pub fn decode_quoted_glyph_literal(text: &str) -> Option<char> {

@@ -111,7 +111,11 @@ pub fn core_symbols() -> SymbolTable {
         .get_or_init(|| {
             let mut symbols = SymbolTable::new();
             let mut logger = Logger::new();
-            let _ = compile_core_module_with_debug_info(&mut symbols, &mut logger, false, false);
+            let _ = compile_core_module_with_debug_info(
+                &mut symbols,
+                &mut logger,
+                halcyon_lib::asm::DebugInfoOptions::none(),
+            );
             symbols
         })
         .clone()

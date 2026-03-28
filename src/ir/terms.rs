@@ -7,8 +7,10 @@ use crate::hc_core::{
     CoreType,
 };
 use crate::parse::ast::AstNode;
-use crate::types::Type;
-use crate::types::symbol_table::Symbol;
+use crate::types::{
+    Symbol,
+    Type,
+};
 use crate::{
     WithContext,
     WithSpan,
@@ -215,6 +217,179 @@ pub fn immediate(
         SyntaxKind::FALSE_KW => ImmediateValue::Boolean(false),
         _ => return None,
     })
+}
+
+fn format_string_parameter_name(index: usize) -> String {
+    format!("<format_string_parameter_{index}>")
+}
+
+fn string_concat_term(
+    left: UntypedTerm,
+    right: UntypedTerm,
+    span: Span,
+) -> UntypedTerm {
+    let concat = Path::core("string::concat");
+    mk(
+        TermKind::Call {
+            callee: mk(
+                TermKind::Call {
+                    callee: mk(TermKind::Identifier(concat), span).into(),
+                    argument: left.into(),
+                },
+                span,
+            )
+            .into(),
+            argument: right.into(),
+        },
+        span,
+    )
+}
+
+fn show_term(
+    value: UntypedTerm,
+    span: Span,
+) -> UntypedTerm {
+    let show = Path::core("show::show");
+    mk(
+        TermKind::Call {
+            callee: mk(TermKind::Identifier(show), span).into(),
+            argument: value.into(),
+        },
+        span,
+    )
+}
+
+fn format_string_body(
+    scope: &mut impl Scope,
+    segments: &[crate::parse::lexer::FormatStringSegment],
+    span: Span,
+) -> UntypedTerm {
+    let mut placeholder_index = 0;
+    let mut parts = Vec::new();
+    for segment in segments {
+        match segment {
+            crate::parse::lexer::FormatStringSegment::Text(text) => {
+                if !text.is_empty() {
+                    parts.push(mk(
+                        TermKind::Immediate(ImmediateValue::String(text.clone())),
+                        span,
+                    ));
+                }
+            }
+            crate::parse::lexer::FormatStringSegment::Placeholder => {
+                let path = scope.query_string(
+                    format_string_parameter_name(placeholder_index).with_span(span),
+                    NameSpace::Term,
+                );
+                placeholder_index += 1;
+                parts.push(show_term(mk(TermKind::Identifier(path), span), span));
+            }
+        }
+    }
+
+    let mut parts = parts.into_iter();
+    match parts.next() {
+        Some(first) => parts.fold(first, |left, right| string_concat_term(left, right, span)),
+        None => {
+            mk(
+                TermKind::Immediate(ImmediateValue::String(String::new())),
+                span,
+            )
+        }
+    }
+}
+
+fn curried_format_string(
+    scope: &mut impl Scope,
+    segments: &[crate::parse::lexer::FormatStringSegment],
+    placeholder_count: usize,
+    parameter_index: usize,
+    span: Span,
+) -> Option<UntypedTerm> {
+    if parameter_index == placeholder_count {
+        return Some(format_string_body(scope, segments, span));
+    }
+
+    let mut inner_scope = scope.nest_function_scope();
+    let parameter = inner_scope.define(
+        format_string_parameter_name(parameter_index).with_span(span),
+        NameSpace::Term,
+    );
+    let body = curried_format_string(
+        &mut inner_scope,
+        segments,
+        placeholder_count,
+        parameter_index + 1,
+        span,
+    )?;
+    Some(mk(
+        TermKind::Function {
+            parameter_name: parameter.with_span(span),
+            parameter_type: None,
+            captures: inner_scope
+                .into_captures()
+                .into_iter()
+                .map(|capture| (capture, ()))
+                .collect(),
+            body: body.into(),
+        },
+        span,
+    ))
+}
+
+fn format_string_term(
+    scope: &mut impl Scope,
+    logger: &mut FileLogger,
+    literal: ast::Literal,
+    span: Span,
+) -> Option<UntypedTerm> {
+    let token = literal.token()?;
+    let token_span: Span = Span::from(token.text_range()).with_file_id(logger.id());
+    let segments = match crate::parse::lexer::decode_quoted_format_string_literal(token.text()) {
+        Ok(segments) => segments,
+        Err(error) => {
+            let message = match error.kind {
+                crate::parse::lexer::FormatStringDecodeErrorKind::InvalidEscape => {
+                    "This format string contains an invalid escape sequence."
+                }
+                crate::parse::lexer::FormatStringDecodeErrorKind::UnescapedOpeningBrace => {
+                    "Use `{}` for placeholders and `{{` for a literal `{`."
+                }
+                crate::parse::lexer::FormatStringDecodeErrorKind::UnescapedClosingBrace => {
+                    "Use `}}` for a literal `}`."
+                }
+            };
+            logger
+                .error("Invalid format string")
+                .primary(message, token_span)
+                .done();
+            return None;
+        }
+    };
+
+    let placeholder_count = segments
+        .iter()
+        .filter(|segment| {
+            matches!(
+                segment,
+                crate::parse::lexer::FormatStringSegment::Placeholder
+            )
+        })
+        .count();
+
+    if placeholder_count == 0 {
+        let value = segments
+            .into_iter()
+            .fold(String::new(), |mut text, segment| {
+                if let crate::parse::lexer::FormatStringSegment::Text(segment) = segment {
+                    text.push_str(&segment);
+                }
+                text
+            });
+        return Some(mk(TermKind::Immediate(ImmediateValue::String(value)), span));
+    }
+
+    curried_format_string(scope, &segments, placeholder_count, 0, span)
 }
 
 fn binary_op_name(kind: SyntaxKind) -> Option<&'static str> {
@@ -727,7 +902,16 @@ pub fn term(
             }
             mk(TermKind::Struct(fields), span)
         }
-        ast::Expr::Literal(literal) => mk(TermKind::Immediate(immediate(logger, literal)?), span),
+        ast::Expr::Literal(literal) => {
+            let is_format_string = literal
+                .token()
+                .is_some_and(|token| token.kind() == SyntaxKind::FORMAT_STRING);
+            if is_format_string {
+                format_string_term(scope, logger, literal, span)?
+            } else {
+                mk(TermKind::Immediate(immediate(logger, literal)?), span)
+            }
+        }
         ast::Expr::Ident(ident_expr) => {
             let name = ident_expr.name_text_spanned()?;
             let path = scope.query_string(name, NameSpace::Term);

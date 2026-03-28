@@ -58,6 +58,7 @@ pub enum SyntaxKind {
 
     IDENT,
     STRING,
+    FORMAT_STRING,
     GLYPH,
     INTEGER,
     NATURAL,
@@ -256,6 +257,7 @@ impl std::fmt::Display for SyntaxKind {
                 PIPE => "|",
                 IDENT => "identifier",
                 STRING => "string",
+                FORMAT_STRING => "format string",
                 GLYPH => "glyph",
                 INTEGER => "integer",
                 NATURAL => "natural",

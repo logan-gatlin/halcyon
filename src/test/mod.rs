@@ -5,12 +5,12 @@
 
 use super::*;
 use crate::hc_core::{
-    compile_core_module,
     CoreType,
+    compile_core_module,
 };
 use crate::ir::Path;
-use crate::types::symbol_table::Symbol;
 use crate::types::{
+    Symbol,
     SymbolTable,
     Type,
 };
@@ -104,22 +104,19 @@ fn file_logger_count_message(
 fn compile_source_with_options_resolves_imports_during_ir_generation() {
     let source = "bundle demo\nimport \"dep\"\nlet value : core::Integer = core::default\n";
     let dep_source = "let imported_value : core::Integer = core::default\n";
-    let mut symbols = SymbolTable::new();
-    let mut logger = Logger::new();
-
-    let artifacts = compile_source_with_options(
+    let mut compiler = Compiler::new();
+    let compiled = compiler.compile_source(
         "demo.hc",
         source,
-        &mut logger,
-        &mut symbols,
-        CompileOptions {
-            demo_mode: false,
-            use_core: true,
-            emit_source_map: true,
-            emit_dwarf: true,
-            resolve_import: |path| path.ends_with("dep").then(|| dep_source.to_string()),
-        },
+        SourceCompileOptions::bundle()
+            .with_core(true)
+            .with_debug_info(asm::DebugInfoOptions::all()),
+        &mut |path: &str| path.ends_with("dep").then(|| dep_source.to_string()),
     );
+    let logger = compiled.logger;
+    let artifacts = compiled
+        .output
+        .unwrap_or_else(|| Vec::new().into_boxed_slice());
 
     assert_logger_is_ok(&logger, "compilation with imported source should succeed");
     assert!(
@@ -133,22 +130,16 @@ fn compile_source_with_options_reports_duplicate_imports() {
     let source =
         "bundle demo\nimport \"dep\", \"dep\"\nlet value : core::Integer = core::default\n";
     let dep_source = "let imported_value : core::Integer = core::default\n";
-    let mut symbols = SymbolTable::new();
-    let mut logger = Logger::new();
-
-    let _ = compile_source_with_options(
+    let mut compiler = Compiler::new();
+    let compiled = compiler.compile_source(
         "demo.hc",
         source,
-        &mut logger,
-        &mut symbols,
-        CompileOptions {
-            demo_mode: false,
-            use_core: true,
-            emit_source_map: true,
-            emit_dwarf: true,
-            resolve_import: |path| path.ends_with("dep").then(|| dep_source.to_string()),
-        },
+        SourceCompileOptions::bundle()
+            .with_core(true)
+            .with_debug_info(asm::DebugInfoOptions::all()),
+        &mut |path: &str| path.ends_with("dep").then(|| dep_source.to_string()),
     );
+    let logger = compiled.logger;
 
     assert!(
         logger_has_error_message(&logger, "Duplicate import"),
@@ -167,22 +158,19 @@ module app =
 end
 ";
     let dep_source = "let imported_value : core::Integer = core::default\n";
-    let mut symbols = SymbolTable::new();
-    let mut logger = Logger::new();
-
-    let artifacts = compile_source_with_options(
+    let mut compiler = Compiler::new();
+    let compiled = compiler.compile_source(
         "demo.hc",
         source,
-        &mut logger,
-        &mut symbols,
-        CompileOptions {
-            demo_mode: false,
-            use_core: true,
-            emit_source_map: true,
-            emit_dwarf: true,
-            resolve_import: |path| path.ends_with("dep").then(|| dep_source.to_string()),
-        },
+        SourceCompileOptions::bundle()
+            .with_core(true)
+            .with_debug_info(asm::DebugInfoOptions::all()),
+        &mut |path: &str| path.ends_with("dep").then(|| dep_source.to_string()),
     );
+    let logger = compiled.logger;
+    let artifacts = compiled
+        .output
+        .unwrap_or_else(|| Vec::new().into_boxed_slice());
 
     assert_logger_is_ok(
         &logger,
@@ -197,22 +185,14 @@ end
 #[test]
 fn compile_source_with_options_reports_bundle_not_first_in_root() {
     let source = "let value = 1\nbundle demo\n";
-    let mut symbols = SymbolTable::new();
-    let mut logger = Logger::new();
-
-    let _ = compile_source_with_options(
+    let mut compiler = Compiler::new();
+    let compiled = compiler.compile_source(
         "demo.hc",
         source,
-        &mut logger,
-        &mut symbols,
-        CompileOptions {
-            demo_mode: false,
-            use_core: false,
-            emit_source_map: true,
-            emit_dwarf: true,
-            resolve_import: |_| None,
-        },
+        SourceCompileOptions::bundle().with_debug_info(asm::DebugInfoOptions::all()),
+        &mut NoImports,
     );
+    let logger = compiled.logger;
 
     assert!(
         logger_has_error_message(&logger, "Missing bundle declaration"),
@@ -224,22 +204,16 @@ fn compile_source_with_options_reports_bundle_not_first_in_root() {
 fn compile_source_with_options_reports_duplicate_bundle_declarations_globally() {
     let source = "bundle demo\nimport \"dep\"\nlet value : core::Integer = core::default\n";
     let dep_source = "bundle dep\nlet imported_value : core::Integer = core::default\n";
-    let mut symbols = SymbolTable::new();
-    let mut logger = Logger::new();
-
-    let _ = compile_source_with_options(
+    let mut compiler = Compiler::new();
+    let compiled = compiler.compile_source(
         "demo.hc",
         source,
-        &mut logger,
-        &mut symbols,
-        CompileOptions {
-            demo_mode: false,
-            use_core: true,
-            emit_source_map: true,
-            emit_dwarf: true,
-            resolve_import: |path| path.ends_with("dep").then(|| dep_source.to_string()),
-        },
+        SourceCompileOptions::bundle()
+            .with_core(true)
+            .with_debug_info(asm::DebugInfoOptions::all()),
+        &mut |path: &str| path.ends_with("dep").then(|| dep_source.to_string()),
     );
+    let logger = compiled.logger;
 
     assert!(
         logger_has_error_message(&logger, "Duplicate bundle declaration"),
@@ -251,22 +225,14 @@ fn compile_source_with_options_reports_duplicate_bundle_declarations_globally() 
 fn compile_source_with_options_reports_type_errors_in_import_file() {
     let source = "bundle demo\nimport \"dep\"\nlet value = 1\n";
     let dep_source = "let broken = if true then 1 else \"oops\"\n";
-    let mut symbols = SymbolTable::new();
-    let mut logger = Logger::new();
-
-    let _ = compile_source_with_options(
+    let mut compiler = Compiler::new();
+    let compiled = compiler.compile_source(
         "demo.hc",
         source,
-        &mut logger,
-        &mut symbols,
-        CompileOptions {
-            demo_mode: false,
-            use_core: false,
-            emit_source_map: true,
-            emit_dwarf: true,
-            resolve_import: |path| path.ends_with("dep").then(|| dep_source.to_string()),
-        },
+        SourceCompileOptions::bundle().with_debug_info(asm::DebugInfoOptions::all()),
+        &mut |path: &str| path.ends_with("dep").then(|| dep_source.to_string()),
     );
+    let logger = compiled.logger;
 
     assert!(
         logger_has_error_label_in_file(&logger, "Type mismatch", "dep"),
@@ -285,10 +251,13 @@ fn demo_reports_missing_trait_instance() {
         .map(|source_file| source_file.modules())
         .unwrap_or_default()
         .into_iter()
-        .flat_map(|module| ir::module(module, &mut file_logger))
+        .flat_map(|module| {
+            ir::lower_module(module, &mut file_logger, ir::LoweringOptions::default())
+                .map(|lowered| lowered.module)
+        })
         .collect::<Vec<_>>();
     for module in modules {
-        let _ = types::resolve_module_with_symbols(&mut symbols, module, &mut file_logger);
+        let _ = types::resolve_with_symbols(&mut symbols, module, &mut file_logger);
     }
     logger.consume_file(file_logger);
     assert!(!logger.is_ok(), "Compilation should fail");
@@ -785,7 +754,10 @@ fn reports_duplicate_global_term_definition() {
     let _ = parse::parse(source, &mut file_logger)
         .into_iter()
         .flat_map(|source_file| source_file.modules())
-        .flat_map(|module| ir::module(module, &mut file_logger))
+        .flat_map(|module| {
+            ir::lower_module(module, &mut file_logger, ir::LoweringOptions::default())
+                .map(|lowered| lowered.module)
+        })
         .collect::<Vec<_>>();
     logger.consume_file(file_logger);
     assert!(!logger.is_ok(), "IR construction should fail");
@@ -799,7 +771,10 @@ fn reports_duplicate_constructor_definition_during_ir_construction() {
     let _ = parse::parse(source, &mut file_logger)
         .into_iter()
         .flat_map(|source_file| source_file.modules())
-        .flat_map(|module| ir::module(module, &mut file_logger))
+        .flat_map(|module| {
+            ir::lower_module(module, &mut file_logger, ir::LoweringOptions::default())
+                .map(|lowered| lowered.module)
+        })
         .collect::<Vec<_>>();
     logger.consume_file(file_logger);
     assert!(!logger.is_ok(), "IR construction should fail");
@@ -896,7 +871,10 @@ fn bracketed_operator_name_is_canonicalized_in_ir() {
     let mut file_logger = logger.new_file("demo.hc", source);
     let module = parse::parse(source, &mut file_logger)
         .and_then(|source_file| source_file.modules().into_iter().next())
-        .and_then(|module| ir::module(module, &mut file_logger))
+        .and_then(|module| {
+            ir::lower_module(module, &mut file_logger, ir::LoweringOptions::default())
+                .map(|lowered| lowered.module)
+        })
         .expect("expected module");
     logger.consume_file(file_logger);
     assert_logger_is_ok(&logger, "IR construction should succeed");
@@ -926,7 +904,10 @@ fn infix_operator_uses_standard_name_resolution() {
     let mut file_logger = logger.new_file("demo.hc", source);
     let module = parse::parse(source, &mut file_logger)
         .and_then(|source_file| source_file.modules().into_iter().next())
-        .and_then(|module| ir::module(module, &mut file_logger))
+        .and_then(|module| {
+            ir::lower_module(module, &mut file_logger, ir::LoweringOptions::default())
+                .map(|lowered| lowered.module)
+        })
         .expect("expected module");
     logger.consume_file(file_logger);
     assert_logger_is_ok(&logger, "IR construction should succeed");
@@ -963,7 +944,10 @@ fn nested_function_captures_propagate_to_intermediate_lambdas() {
     let mut file_logger = logger.new_file("demo.hc", source);
     let module = parse::parse(source, &mut file_logger)
         .and_then(|source_file| source_file.modules().into_iter().next())
-        .and_then(|module| ir::module(module, &mut file_logger))
+        .and_then(|module| {
+            ir::lower_module(module, &mut file_logger, ir::LoweringOptions::default())
+                .map(|lowered| lowered.module)
+        })
         .expect("expected module");
     logger.consume_file(file_logger);
     assert_logger_is_ok(&logger, "IR construction should succeed");
@@ -1031,7 +1015,10 @@ fn zero_argument_function_lowers_with_implicit_unit_parameter_type() {
     let mut file_logger = logger.new_file("demo.hc", source);
     let module = parse::parse(source, &mut file_logger)
         .and_then(|source_file| source_file.modules().into_iter().next())
-        .and_then(|module| ir::module(module, &mut file_logger))
+        .and_then(|module| {
+            ir::lower_module(module, &mut file_logger, ir::LoweringOptions::default())
+                .map(|lowered| lowered.module)
+        })
         .expect("expected module");
     logger.consume_file(file_logger);
     assert_logger_is_ok(&logger, "IR construction should succeed");
@@ -1068,7 +1055,10 @@ fn let_expression_binding_is_recursive_during_ir_lowering() {
     let mut file_logger = logger.new_file("demo.hc", source);
     let module = parse::parse(source, &mut file_logger)
         .and_then(|source_file| source_file.modules().into_iter().next())
-        .and_then(|module| ir::module(module, &mut file_logger))
+        .and_then(|module| {
+            ir::lower_module(module, &mut file_logger, ir::LoweringOptions::default())
+                .map(|lowered| lowered.module)
+        })
         .expect("expected module");
     logger.consume_file(file_logger);
     assert_logger_is_ok(&logger, "IR construction should succeed");
@@ -1115,7 +1105,10 @@ fn plus_operator_resolves_through_prelude_aliases() {
     let mut file_logger = logger.new_file("demo.hc", source);
     let module = parse::parse(source, &mut file_logger)
         .and_then(|source_file| source_file.modules().into_iter().next())
-        .and_then(|module| ir::module(module, &mut file_logger))
+        .and_then(|module| {
+            ir::lower_module(module, &mut file_logger, ir::LoweringOptions::default())
+                .map(|lowered| lowered.module)
+        })
         .expect("expected module");
     logger.consume_file(file_logger);
     assert_logger_is_ok(&logger, "IR construction should succeed");
@@ -1151,7 +1144,10 @@ fn semicolon_syntax_remains_non_overridable() {
     let mut file_logger = logger.new_file("demo.hc", source);
     let module = parse::parse(source, &mut file_logger)
         .and_then(|source_file| source_file.modules().into_iter().next())
-        .and_then(|module| ir::module(module, &mut file_logger))
+        .and_then(|module| {
+            ir::lower_module(module, &mut file_logger, ir::LoweringOptions::default())
+                .map(|lowered| lowered.module)
+        })
         .expect("expected module");
     logger.consume_file(file_logger);
     assert_logger_is_ok(&logger, "IR construction should succeed");
@@ -1168,6 +1164,159 @@ fn semicolon_syntax_remains_non_overridable() {
         panic!("expected global let statement");
     };
     assert!(matches!(value.kind, ir::TermKind::Semicolon(_, _)));
+}
+
+#[test]
+fn format_string_without_placeholders_lowers_to_immediate_string() {
+    let source = "module demo =\n\tlet value = `hello`\nend\n";
+    let mut logger = Logger::new();
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let module = parse::parse(source, &mut file_logger)
+        .and_then(|source_file| source_file.modules().into_iter().next())
+        .and_then(|module| {
+            ir::lower_module(module, &mut file_logger, ir::LoweringOptions::default())
+                .map(|lowered| lowered.module)
+        })
+        .expect("expected module");
+    logger.consume_file(file_logger);
+    assert_logger_is_ok(&logger, "IR construction should succeed");
+
+    let Some(ir::Statement::Term(term)) = module.statements.first() else {
+        panic!("expected first statement to be a term");
+    };
+    let ir::TermKind::Let {
+        value,
+        scope: ir::ScopeKind::Global,
+        ..
+    } = &term.kind
+    else {
+        panic!("expected global let statement");
+    };
+    let ir::TermKind::Immediate(ir::ImmediateValue::String(value)) = &value.kind else {
+        panic!("expected immediate string lowering");
+    };
+    assert_eq!(value, "hello");
+}
+
+#[test]
+fn format_string_with_placeholders_lowers_to_curried_show_function() {
+    fn term_contains_identifier(
+        term: &ir::Term<()>,
+        target: &Path,
+    ) -> bool {
+        match &term.kind {
+            ir::TermKind::Identifier(path) => path == target,
+            ir::TermKind::Let {
+                value, then, else_, ..
+            } => {
+                term_contains_identifier(value, target)
+                    || term_contains_identifier(then, target)
+                    || term_contains_identifier(else_, target)
+            }
+            ir::TermKind::Tuple(items) => {
+                items
+                    .iter()
+                    .any(|item| term_contains_identifier(item, target))
+            }
+            ir::TermKind::Struct(fields) => {
+                fields
+                    .values()
+                    .any(|value| term_contains_identifier(value, target))
+            }
+            ir::TermKind::Field { of, .. } => term_contains_identifier(of, target),
+            ir::TermKind::Function { body, .. } => term_contains_identifier(body, target),
+            ir::TermKind::Call { callee, argument } => {
+                term_contains_identifier(callee, target)
+                    || term_contains_identifier(argument, target)
+            }
+            ir::TermKind::Semicolon(left, right) => {
+                term_contains_identifier(left, target) || term_contains_identifier(right, target)
+            }
+            ir::TermKind::Immediate(_)
+            | ir::TermKind::InlineWasm { .. }
+            | ir::TermKind::Unreachable => false,
+        }
+    }
+
+    let source = "module demo =\n\tlet formatter = `hello {} {}`\nend\n";
+    let mut logger = Logger::new();
+    let mut file_logger = logger.new_file("demo.hc", source);
+    let module = parse::parse(source, &mut file_logger)
+        .and_then(|source_file| source_file.modules().into_iter().next())
+        .and_then(|module| {
+            ir::lower_module(module, &mut file_logger, ir::LoweringOptions::default())
+                .map(|lowered| lowered.module)
+        })
+        .expect("expected module");
+    logger.consume_file(file_logger);
+    assert_logger_is_ok(&logger, "IR construction should succeed");
+
+    let Some(ir::Statement::Term(term)) = module.statements.first() else {
+        panic!("expected first statement to be a term");
+    };
+    let ir::TermKind::Let {
+        value,
+        scope: ir::ScopeKind::Global,
+        ..
+    } = &term.kind
+    else {
+        panic!("expected global let statement");
+    };
+    let ir::TermKind::Function {
+        parameter_name: first,
+        parameter_type: None,
+        body: second_fn,
+        ..
+    } = &value.kind
+    else {
+        panic!("expected first curried parameter");
+    };
+
+    let ir::TermKind::Function {
+        parameter_name: second,
+        parameter_type: None,
+        body,
+        ..
+    } = &second_fn.kind
+    else {
+        panic!("expected second curried parameter");
+    };
+    assert!(
+        term_contains_identifier(body, &first.inner),
+        "formatted body should reference first placeholder parameter"
+    );
+    assert!(
+        term_contains_identifier(body, &second.inner),
+        "formatted body should reference second placeholder parameter"
+    );
+    assert!(
+        term_contains_identifier(body, &Path::new("core", "show::show")),
+        "formatted body should convert placeholders through core::show::show"
+    );
+}
+
+#[test]
+fn format_string_reports_invalid_braces_during_ir_lowering() {
+    let source = "module demo =\n\tlet value = `hello {`\nend\n";
+    let mut err_logger = Logger::new();
+    let mut err_file_logger = err_logger.new_file("demo.hc", source);
+    let lowered = parse::parse(source, &mut err_file_logger)
+        .and_then(|source_file| source_file.modules().into_iter().next())
+        .and_then(|module| {
+            ir::lower_module(module, &mut err_file_logger, ir::LoweringOptions::default())
+                .map(|lowered| lowered.module)
+        });
+
+    assert!(
+        lowered.is_none(),
+        "invalid format strings should fail IR lowering"
+    );
+    assert!(
+        file_logger_has_error_message(&err_file_logger, "Invalid format string"),
+        "invalid format strings should report a clear diagnostic"
+    );
+
+    err_logger.consume_file(err_file_logger);
 }
 
 #[test]
@@ -1201,7 +1350,10 @@ fn do_statement_lowers_like_let_underscore() {
     let mut file_logger = logger.new_file("demo.hc", source);
     let module = parse::parse(source, &mut file_logger)
         .and_then(|source_file| source_file.modules().into_iter().next())
-        .and_then(|module| ir::module(module, &mut file_logger))
+        .and_then(|module| {
+            ir::lower_module(module, &mut file_logger, ir::LoweringOptions::default())
+                .map(|lowered| lowered.module)
+        })
         .expect("expected module");
     logger.consume_file(file_logger);
     assert_logger_is_ok(&logger, "IR construction should succeed");
@@ -1858,7 +2010,10 @@ end
         .map(|source_file| source_file.modules())
         .unwrap_or_default()
         .into_iter()
-        .flat_map(|module| ir::module(module, &mut file_logger))
+        .flat_map(|module| {
+            ir::lower_module(module, &mut file_logger, ir::LoweringOptions::default())
+                .map(|lowered| lowered.module)
+        })
         .collect::<Vec<_>>();
     assert!(!modules.is_empty(), "should produce at least one module");
     let is_ok = file_logger.is_ok();
@@ -2023,9 +2178,11 @@ fn sum_type_does_not_publish_typename_constructor() {
     }
 
     assert_logger_is_ok(&logger, "sum constructors should still compile");
-    assert!(!symbols
-        .constructors()
-        .contains(&Path::new("demo", "Option")));
+    assert!(
+        !symbols
+            .constructors()
+            .contains(&Path::new("demo", "Option"))
+    );
     assert!(symbols.constructors().contains(&Path::new("demo", "Some")));
     assert!(symbols.constructors().contains(&Path::new("demo", "None")));
 }

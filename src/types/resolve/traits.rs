@@ -18,7 +18,10 @@ use super::super::{
     normalize_parameter_kinds,
 };
 use super::common::format_trait_ref;
-use super::diagnostics::log_trait_error;
+use super::diagnostics::{
+    log_scheme_predicate_kind_error,
+    log_trait_error,
+};
 use super::type_defs::{
     param_index_map,
     type_expr_to_scheme_in_def,
@@ -33,8 +36,8 @@ use super::{
     Span,
     Statement,
     SymbolTable,
-    TraitConstraint,
     TraitDef,
+    TraitRef,
     TypeDefinition,
     TypeScheme,
 };
@@ -190,54 +193,27 @@ fn log_trait_scheme_kind_error(
     span: Span,
     error: SchemeKindError,
 ) {
-    match error {
-        SchemeKindError::Kind(kind_error) => {
-            let message = match kind_error {
-                KindError::Mismatch { left, right } => {
-                    format!(
-                        "`{method_path}` in trait `{trait_path}` has incompatible kinds `{left}` and `{right}`."
-                    )
-                }
-                KindError::Occurs { in_kind, .. } => {
-                    format!(
-                        "`{method_path}` in trait `{trait_path}` has recursive kind `{in_kind}`."
-                    )
-                }
-            };
-            logger
-                .error("Invalid trait method kind")
-                .primary(message, span)
-                .done();
-        }
-        SchemeKindError::PredicateArityMismatch {
-            trait_name,
-            expected,
-            found,
-        } => {
-            logger
-                .error("Invalid trait constraint application")
-                .primary(
-                    format!("`{trait_name}` expects {expected} type arguments but got {found}."),
-                    span,
-                )
-                .done();
-        }
-        SchemeKindError::PredicateKindMismatch {
-            trait_name,
-            expected,
-            found,
-        } => {
-            logger
-                .error("Invalid trait constraint kind")
-                .primary(
-                    format!(
-                        "`{trait_name}` expects kind `{expected}` but this argument has kind `{found}`."
-                    ),
-                    span,
-                )
-                .done();
-        }
+    if log_scheme_predicate_kind_error(logger, span, &error) {
+        return;
     }
+
+    let SchemeKindError::Kind(kind_error) = error else {
+        return;
+    };
+    let message = match kind_error {
+        KindError::Mismatch { left, right } => {
+            format!(
+                "`{method_path}` in trait `{trait_path}` has incompatible kinds `{left}` and `{right}`."
+            )
+        }
+        KindError::Occurs { in_kind, .. } => {
+            format!("`{method_path}` in trait `{trait_path}` has recursive kind `{in_kind}`.")
+        }
+    };
+    logger
+        .error("Invalid trait method kind")
+        .primary(message, span)
+        .done();
 }
 
 /// Register trait definitions and publish trait method schemes into term symbols.
@@ -306,7 +282,7 @@ pub(super) fn solve_predicates(
     inference_context: &mut InferenceContext,
     symbols: &SymbolTable,
     span: Span,
-    predicates: &[TraitConstraint],
+    predicates: &[TraitRef],
 ) {
     solve_predicates_with_assumptions(logger, inference_context, symbols, span, predicates, &[]);
 }
@@ -318,8 +294,8 @@ pub(super) fn solve_predicates_with_assumptions(
     inference_context: &mut InferenceContext,
     symbols: &SymbolTable,
     span: Span,
-    predicates: &[TraitConstraint],
-    assumptions: &[TraitConstraint],
+    predicates: &[TraitRef],
+    assumptions: &[TraitRef],
 ) {
     if predicates.is_empty() {
         return;
@@ -408,7 +384,10 @@ mod tests {
         let mut file_logger = logger.new_file("test.hc", source);
         let module = parse::parse(source, &mut file_logger)
             .and_then(|source_file| source_file.modules().into_iter().next())
-            .and_then(|module| ir::module(module, &mut file_logger))
+            .and_then(|module| {
+                ir::lower_module(module, &mut file_logger, ir::LoweringOptions::default())
+                    .map(|lowered| lowered.module)
+            })
             .expect("source should lower to module");
         module.statements.into_vec()
     }

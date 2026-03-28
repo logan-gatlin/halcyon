@@ -34,10 +34,12 @@ use super::super::kind::{
 };
 use super::super::unify::UnificationTable;
 use super::super::{
+    TypeTransform,
     normalize_parameter_kinds,
     split_applied_type,
 };
 use super::diagnostics::{
+    log_scheme_predicate_kind_error,
     log_trait_error,
     log_type_error,
 };
@@ -60,7 +62,6 @@ use super::{
     SymbolTable,
     Term,
     TermKind,
-    TraitConstraint,
     TraitError,
     TraitImpl,
     TraitRef,
@@ -365,23 +366,16 @@ impl ImplProcessingContext<'_> {
                             })
                     })
                     .unwrap_or_else(|| TypeScheme::new(normalized_type.clone()));
-                self.type_environment
-                    .insert(method.impl_path.clone(), scheme.clone());
-                self.schemes.insert(method.impl_path.clone(), scheme);
-
-                method_map.insert(canonical_trait_method.clone(), method.impl_path.clone());
-                generated_terms.push(build_impl_method_binding(
-                    method.impl_path.clone(),
+                self.publish_impl_method(
+                    &mut method_map,
+                    &mut generated_terms,
+                    &mut typed_methods,
+                    canonical_trait_method,
+                    method.impl_path,
                     method.span,
-                    normalized_type,
-                    typed_value.clone(),
-                ));
-                typed_methods.push(ImplMethod {
-                    trait_method: canonical_trait_method,
-                    impl_path: method.impl_path,
-                    value: typed_value,
-                    span: method.span,
-                });
+                    typed_value,
+                    scheme,
+                );
                 continue;
             }
 
@@ -428,12 +422,11 @@ impl ImplProcessingContext<'_> {
                             &impl_head_predicate,
                             &associated_type_assignments,
                         );
-                        let instantiated =
-                            instantiate_scheme_for_impl_check(
-                                self.inference_context,
-                                instantiated,
-                                method.span,
-                            );
+                        let instantiated = instantiate_scheme_for_impl_check(
+                            self.inference_context,
+                            instantiated,
+                            method.span,
+                        );
                         tracing::debug!(
                             method = %canonical_trait_method,
                             instantiated = %instantiated.type_.pretty(),
@@ -582,23 +575,16 @@ impl ImplProcessingContext<'_> {
                 0,
                 scheme_predicates,
             );
-            self.type_environment
-                .insert(method.impl_path.clone(), scheme.clone());
-            self.schemes.insert(method.impl_path.clone(), scheme);
-
-            method_map.insert(canonical_trait_method.clone(), method.impl_path.clone());
-            generated_terms.push(build_impl_method_binding(
-                method.impl_path.clone(),
+            self.publish_impl_method(
+                &mut method_map,
+                &mut generated_terms,
+                &mut typed_methods,
+                canonical_trait_method,
+                method.impl_path,
                 method.span,
-                normalized_type,
-                typed_value.clone(),
-            ));
-            typed_methods.push(ImplMethod {
-                trait_method: canonical_trait_method,
-                impl_path: method.impl_path,
-                value: typed_value,
-                span: method.span,
-            });
+                typed_value,
+                scheme,
+            );
         }
 
         let impl_span = typed_methods
@@ -634,6 +620,36 @@ impl ImplProcessingContext<'_> {
             },
             generated_terms,
         )
+    }
+
+    fn publish_impl_method(
+        &mut self,
+        method_map: &mut IndexMap<Path, Path>,
+        generated_terms: &mut Vec<Term<Type>>,
+        typed_methods: &mut Vec<ImplMethod<Type>>,
+        trait_method: Path,
+        impl_path: Path,
+        span: Span,
+        value: Term<Type>,
+        scheme: TypeScheme,
+    ) {
+        let normalized_type = value.type_.clone();
+        self.type_environment
+            .insert(impl_path.clone(), scheme.clone());
+        self.schemes.insert(impl_path.clone(), scheme);
+        method_map.insert(trait_method.clone(), impl_path.clone());
+        generated_terms.push(build_impl_method_binding(
+            impl_path.clone(),
+            span,
+            normalized_type,
+            value.clone(),
+        ));
+        typed_methods.push(ImplMethod {
+            trait_method,
+            impl_path,
+            value,
+            span,
+        });
     }
 }
 
@@ -705,6 +721,7 @@ fn substitute_impl_associated_types_in_type(
 ) -> Type {
     let normalized = match type_ {
         Type::Unit
+        | Type::Error
         | Type::Integer
         | Type::Natural
         | Type::Real
@@ -715,8 +732,7 @@ fn substitute_impl_associated_types_in_type(
         | Type::MetaVar(_) => type_,
         Type::ForAll { name, body } => {
             let lifted_impl_head = shift_trait_ref_type_vars(impl_head, 1, 0);
-            let lifted_associated_types =
-                shift_associated_type_assignments(associated_types, 1, 0);
+            let lifted_associated_types = shift_associated_type_assignments(associated_types, 1, 0);
             Type::ForAll {
                 name,
                 body: Box::new(substitute_impl_associated_types_in_type(
@@ -888,134 +904,81 @@ fn instantiate_scheme_for_impl_check(
 ) -> TypeScheme {
     inference_context
         .instantiate_scheme(&scheme, span)
-        .map(|instance| TypeScheme {
-            type_: instance.type_,
-            predicates: instance.predicates,
+        .map(|instance| {
+            TypeScheme {
+                type_: instance.type_,
+                predicates: instance.predicates,
+            }
         })
         .unwrap_or(scheme)
+}
+
+struct AliasApplicationNormalizer<'a> {
+    type_definitions: &'a IndexMap<Path, TypeDefinition>,
+}
+
+impl AliasApplicationNormalizer<'_> {
+    fn normalize_root(
+        &mut self,
+        type_: Type,
+    ) -> Option<Type> {
+        let (base, arguments) = split_applied_type(type_);
+        let Type::Named { name, body } = base else {
+            return Some(base.apply(arguments));
+        };
+
+        let fallback = Type::Named {
+            name: name.clone(),
+            body: body.clone(),
+        }
+        .apply(arguments.clone());
+        let Some(definition) = self.type_definitions.get(&name) else {
+            return Some(fallback);
+        };
+        if definition.kind != TypeDefinitionKind::Alias || arguments.len() != definition.parameters
+        {
+            return Some(fallback);
+        }
+
+        instantiate_forall_strict(&body, &arguments)
+            .and_then(|expanded| self.transform(&expanded))
+            .or(Some(fallback))
+    }
+}
+
+impl TypeTransform for AliasApplicationNormalizer<'_> {
+    fn named(
+        &mut self,
+        name: &Path,
+        body: &Type,
+    ) -> Option<Type> {
+        self.normalize_root(Type::Named {
+            name: name.clone(),
+            body: Box::new(body.clone()),
+        })
+    }
+
+    fn apply(
+        &mut self,
+        constructor: &Type,
+        arguments: &[Type],
+    ) -> Option<Type> {
+        let constructor = self.transform(constructor)?;
+        let arguments = arguments
+            .iter()
+            .map(|argument| self.transform(argument))
+            .collect::<Option<Vec<_>>>()?;
+        self.normalize_root(constructor.apply(arguments))
+    }
 }
 
 fn normalize_alias_applications(
     type_: Type,
     type_definitions: &IndexMap<Path, TypeDefinition>,
 ) -> Type {
-    let normalized = match type_ {
-        Type::Unit
-        | Type::Integer
-        | Type::Natural
-        | Type::Real
-        | Type::Boolean
-        | Type::String
-        | Type::Glyph
-        | Type::TypeVar(_)
-        | Type::MetaVar(_) => type_,
-        Type::ForAll { name, body } => {
-            Type::ForAll {
-                name,
-                body: Box::new(normalize_alias_applications(*body, type_definitions)),
-            }
-        }
-        Type::Named { name, body } => Type::Named { name, body },
-        Type::StructConstraint { fields, mode } => {
-            Type::StructConstraint {
-                fields: fields
-                    .into_iter()
-                    .map(|(name, field_type)| {
-                        (
-                            name,
-                            normalize_alias_applications(field_type, type_definitions),
-                        )
-                    })
-                    .collect(),
-                mode,
-            }
-        }
-        Type::Struct { fields } => {
-            Type::Struct {
-                fields: fields
-                    .into_iter()
-                    .map(|(name, field_type)| {
-                        (
-                            name,
-                            normalize_alias_applications(field_type, type_definitions),
-                        )
-                    })
-                    .collect(),
-            }
-        }
-        Type::Array(inner) => {
-            Type::Array(Box::new(normalize_alias_applications(
-                *inner,
-                type_definitions,
-            )))
-        }
-        Type::Tuple(items) => {
-            Type::Tuple(
-                items
-                    .into_iter()
-                    .map(|item| normalize_alias_applications(item, type_definitions))
-                    .collect(),
-            )
-        }
-        Type::Sum { variants } => {
-            Type::Sum {
-                variants: variants
-                    .into_iter()
-                    .map(|(name, variant_type)| {
-                        (
-                            name,
-                            normalize_alias_applications(variant_type, type_definitions),
-                        )
-                    })
-                    .collect(),
-            }
-        }
-        Type::Function(parameter, result) => {
-            Type::func(
-                normalize_alias_applications(*parameter, type_definitions),
-                normalize_alias_applications(*result, type_definitions),
-            )
-        }
-        Type::Apply {
-            constructor,
-            arguments,
-        } => {
-            Type::Apply {
-                constructor: Box::new(normalize_alias_applications(*constructor, type_definitions)),
-                arguments: arguments
-                    .into_iter()
-                    .map(|argument| normalize_alias_applications(argument, type_definitions))
-                    .collect(),
-            }
-        }
-    };
-    normalize_alias_application_root(normalized, type_definitions)
-}
-
-fn normalize_alias_application_root(
-    type_: Type,
-    type_definitions: &IndexMap<Path, TypeDefinition>,
-) -> Type {
-    let (base, arguments) = split_applied_type(type_);
-    let Type::Named { name, body } = base else {
-        return apply_arguments(base, arguments);
-    };
-    let Some(definition) = type_definitions.get(&name) else {
-        return apply_arguments(Type::Named { name, body }, arguments);
-    };
-    if definition.kind != TypeDefinitionKind::Alias || arguments.len() != definition.parameters {
-        return apply_arguments(Type::Named { name, body }, arguments);
-    }
-    instantiate_forall_strict(&body, &arguments)
-        .map(|expanded| normalize_alias_applications(expanded, type_definitions))
-        .unwrap_or_else(|| apply_arguments(Type::Named { name, body }, arguments))
-}
-
-fn apply_arguments(
-    constructor: Type,
-    arguments: Vec<Type>,
-) -> Type {
-    constructor.apply(arguments)
+    AliasApplicationNormalizer { type_definitions }
+        .transform(&type_)
+        .unwrap_or(type_)
 }
 
 /// Shift impl-head arguments so De Bruijn indices line up after peeling foralls.
@@ -1031,11 +994,11 @@ fn normalize_impl_head_argument(
 }
 
 fn normalize_impl_head_predicates(
-    predicates: &[TraitConstraint],
+    predicates: &[TraitRef],
     forall_count: usize,
     parameter_offset: usize,
     total_parameters: usize,
-) -> Vec<TraitConstraint> {
+) -> Vec<TraitRef> {
     let params_after = total_parameters.saturating_sub(parameter_offset + forall_count);
     predicates
         .iter()
@@ -1058,20 +1021,16 @@ fn normalize_impl_head_predicates(
 
 fn predicate_matches_impl_head(
     symbols: &SymbolTable,
-    predicate: &TraitConstraint,
+    predicate: &TraitRef,
     impl_head: &TraitRef,
 ) -> bool {
     let mut table = UnificationTable::default();
     let mut normalized_predicate = table.normalize_trait_ref(predicate);
     let mut normalized_head = table.normalize_trait_ref(impl_head);
-    if let Some(canonical_trait_name) =
-        symbols.canonical_trait_path(&normalized_predicate.trait_name)
-    {
-        normalized_predicate.trait_name = canonical_trait_name;
-    }
-    if let Some(canonical_trait_name) = symbols.canonical_trait_path(&normalized_head.trait_name) {
-        normalized_head.trait_name = canonical_trait_name;
-    }
+    normalized_predicate
+        .canonicalize_trait_name_in_place(|trait_name| symbols.canonical_trait_path(trait_name));
+    normalized_head
+        .canonicalize_trait_name_in_place(|trait_name| symbols.canonical_trait_path(trait_name));
     if normalized_predicate.trait_name != normalized_head.trait_name
         || normalized_predicate.arguments.len() != normalized_head.arguments.len()
     {
@@ -1629,6 +1588,7 @@ fn rewrite_type_with_replacements(
 
     match type_ {
         Type::Unit
+        | Type::Error
         | Type::Integer
         | Type::Natural
         | Type::Real
@@ -1762,6 +1722,7 @@ fn type_contains_local_nominal_type(
                 .any(|item| type_contains_local_nominal_type(item, module_name))
         }
         Type::Unit
+        | Type::Error
         | Type::Integer
         | Type::Natural
         | Type::Real
@@ -1779,52 +1740,27 @@ fn log_impl_argument_kind_error(
     span: Span,
     error: SchemeKindError,
 ) {
-    match error {
-        SchemeKindError::Kind(kind_error) => {
-            let message = match kind_error {
-                KindError::Mismatch { left, right } => {
-                    format!(
-                        "Trait argument for `{trait_name}` has incompatible kinds `{left}` and `{right}`."
-                    )
-                }
-                KindError::Occurs { in_kind, .. } => {
-                    format!("Trait argument for `{trait_name}` has recursive kind `{in_kind}`.")
-                }
-            };
-            logger
-                .error("Invalid trait argument kind")
-                .primary(message, span)
-                .done();
-        }
-        SchemeKindError::PredicateArityMismatch {
-            trait_name,
-            expected,
-            found,
-        } => {
-            logger
-                .error("Invalid trait constraint application")
-                .primary(
-                    format!("`{trait_name}` expects {expected} type arguments but got {found}."),
-                    span,
-                )
-                .done();
-        }
-        SchemeKindError::PredicateKindMismatch {
-            trait_name,
-            expected,
-            found,
-        } => {
-            logger
-                .error("Invalid trait constraint kind")
-                .primary(
-                    format!(
-                        "`{trait_name}` expects kind `{expected}` but this argument has kind `{found}`."
-                    ),
-                    span,
-                )
-                .done();
-        }
+    if log_scheme_predicate_kind_error(logger, span, &error) {
+        return;
     }
+
+    let SchemeKindError::Kind(kind_error) = error else {
+        return;
+    };
+    let message = match kind_error {
+        KindError::Mismatch { left, right } => {
+            format!(
+                "Trait argument for `{trait_name}` has incompatible kinds `{left}` and `{right}`."
+            )
+        }
+        KindError::Occurs { in_kind, .. } => {
+            format!("Trait argument for `{trait_name}` has recursive kind `{in_kind}`.")
+        }
+    };
+    logger
+        .error("Invalid trait argument kind")
+        .primary(message, span)
+        .done();
 }
 
 /// Build a generated top-level binding that materializes an impl item.

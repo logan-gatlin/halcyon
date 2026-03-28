@@ -34,6 +34,7 @@ import
   "glyph.hc",
   "opt.hc",
   "result.hc",
+  "fs.hc",
   "array.hc",
   "bool.hc",
   "string.hc",

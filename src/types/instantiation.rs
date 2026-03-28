@@ -1,7 +1,6 @@
 //! Utilities for instantiating `Type::ForAll` binders and trait predicates.
 
 use super::{
-    TraitConstraint,
     TraitRef,
     Type,
 };
@@ -59,9 +58,9 @@ pub(crate) fn instantiate_type_vars(
 
 /// Instantiate every predicate argument with `arguments`.
 pub(crate) fn instantiate_predicates(
-    predicates: &[TraitConstraint],
+    predicates: &[TraitRef],
     arguments: &[Type],
-) -> Option<Vec<TraitConstraint>> {
+) -> Option<Vec<TraitRef>> {
     predicates
         .iter()
         .map(|predicate| {

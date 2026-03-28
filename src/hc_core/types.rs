@@ -1,9 +1,7 @@
 use crate::ir::Path;
-use crate::types::symbol_table::{
+use crate::types::{
     Symbol,
     SymbolKind,
-};
-use crate::types::{
     Type,
     TypeDefinition,
 };

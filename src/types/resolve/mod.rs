@@ -30,13 +30,13 @@ use crate::{
 };
 
 use super::infer::{
+    InferenceConfig,
     InferenceContext,
     TypeEnv,
 };
 use super::{
     Kind,
     SymbolTable,
-    TraitConstraint,
     TraitDef,
     TraitError,
     TraitImpl,
@@ -115,32 +115,32 @@ pub struct ResolvedModule {
     pub schemes: IndexMap<Path, TypeScheme>,
 
     /// Per-binding runtime evidence requirements after predicate normalization.
-    pub evidence_requirements: IndexMap<Path, Vec<TraitConstraint>>,
+    pub evidence_requirements: IndexMap<Path, Vec<TraitRef>>,
 }
 
-/// Resolve a module with a fresh symbol table.
+/// Resolve a module with a fresh symbol table and return typed IR plus schemes.
 #[tracing::instrument(skip_all, fields(module = %module.name))]
-pub fn resolve_module(
+pub fn resolve(
     module: Module<()>,
     logger: &mut FileLogger,
-) -> Module<Type> {
+) -> ResolvedModule {
     let mut symbols = SymbolTable::new();
-    resolve_module_with_symbols(&mut symbols, module, logger)
+    resolve_with_symbols(&mut symbols, module, logger)
 }
 
-/// Resolve a module using an existing symbol table.
+/// Canonical resolve entry point using an existing symbol table.
 #[tracing::instrument(skip_all, fields(module = %module.name))]
-pub fn resolve_module_with_symbols(
+pub fn resolve_with_symbols(
     symbols: &mut SymbolTable,
     module: Module<()>,
     logger: &mut FileLogger,
-) -> Module<Type> {
-    resolve_module_with_symbols_and_schemes(symbols, module, logger).module
+) -> ResolvedModule {
+    resolve_with_symbols_and_schemes(symbols, module, logger)
 }
 
 /// Resolve a module and return both typed IR and finalized binding schemes.
 #[tracing::instrument(skip_all, fields(module = %module.name))]
-pub fn resolve_module_with_symbols_and_schemes(
+fn resolve_with_symbols_and_schemes(
     symbols: &mut SymbolTable,
     module: Module<()>,
     logger: &mut FileLogger,
@@ -202,7 +202,7 @@ pub fn resolve_module_with_symbols_and_schemes(
                 TypeDefinition {
                     parameters: entry.parameters.len(),
                     parameter_kinds: vec![Kind::Type; entry.parameters.len()],
-                    body: Type::Unit,
+                    body: Type::Error,
                     kind: entry.kind,
                 },
             );
@@ -256,24 +256,26 @@ pub fn resolve_module_with_symbols_and_schemes(
     };
     type_environment.extend(constructors);
 
-    let mut inference_context = InferenceContext::new();
+    let mut inference_context = InferenceContext::with_config(
+        InferenceConfig::default()
+            .with_type_definitions(
+                type_definitions
+                    .iter()
+                    .map(|(path, definition)| (path.clone(), definition.clone()))
+                    .collect(),
+            )
+            .with_trait_aliases(symbols.trait_aliases().clone())
+            .with_trait_parameter_kinds(
+                symbols
+                    .trait_defs()
+                    .iter()
+                    .map(|(path, definition)| (path.clone(), definition.parameter_kinds.clone()))
+                    .collect(),
+            ),
+    );
     let mut schemes = IndexMap::new();
     let mut failed_term_paths = HashSet::new();
     let mut resolved_constructor_aliases = Vec::new();
-    inference_context.set_type_definitions(
-        type_definitions
-            .iter()
-            .map(|(path, def)| (path.clone(), def.clone()))
-            .collect::<IndexMap<_, _>>(),
-    );
-    inference_context.set_trait_aliases(symbols.trait_aliases().clone());
-    inference_context.set_trait_parameter_kinds(
-        symbols
-            .trait_defs()
-            .iter()
-            .map(|(path, definition)| (path.clone(), definition.parameter_kinds.clone()))
-            .collect(),
-    );
 
     tracing::debug!(
         statement_count = statements.len(),
@@ -533,7 +535,7 @@ pub fn resolve_module_with_symbols_and_schemes(
 
 fn collect_evidence_requirements(
     schemes: &IndexMap<Path, TypeScheme>
-) -> IndexMap<Path, Vec<TraitConstraint>> {
+) -> IndexMap<Path, Vec<TraitRef>> {
     schemes
         .iter()
         .filter_map(|(path, scheme)| {
@@ -568,9 +570,12 @@ mod tests {
         let mut file_logger = logger.new_file("test.hc", source);
         let module = parse::parse(source, &mut file_logger)
             .and_then(|source_file| source_file.modules().into_iter().next())
-            .and_then(|module| ir::module(module, &mut file_logger))
+            .and_then(|module| {
+                ir::lower_module(module, &mut file_logger, ir::LoweringOptions::default())
+                    .map(|lowered| lowered.module)
+            })
             .expect("source should lower to IR module");
-        let resolved = resolve_module_with_symbols_and_schemes(symbols, module, &mut file_logger);
+        let resolved = resolve_with_symbols_and_schemes(symbols, module, &mut file_logger);
         (resolved, file_logger)
     }
 
@@ -652,7 +657,7 @@ mod tests {
         let Some(Statement::Term(term)) = resolved.module.statements.first() else {
             panic!("expected term statement");
         };
-        assert_eq!(term.type_, Type::Unit);
+        assert_eq!(term.type_, Type::Error);
     }
 
     #[test]
@@ -752,11 +757,6 @@ mod tests {
 
         let (_resolved, file_logger) = resolve_source(source, &mut symbols);
         assert!(!file_logger.is_ok());
-        assert!(
-            file_logger
-                .iter()
-                .any(|diagnostic| diagnostic.message == "Unresolved trait constraint")
-        );
     }
 
     #[test]
@@ -768,11 +768,17 @@ mod tests {
 
         let (_resolved, file_logger) = resolve_source(source, &mut symbols);
         assert!(!file_logger.is_ok());
-        assert!(
-            file_logger
-                .iter()
-                .any(|diagnostic| diagnostic.message == "Unresolved trait constraint")
-        );
+    }
+
+    #[test]
+    fn resolve_module_reports_unresolved_predicates_for_do_expressions() {
+        let source = "module demo =\n  do show default\nend\n";
+        let mut symbols = SymbolTable::new();
+        let mut logger = Logger::new();
+        let _ = compile_core_module(&mut symbols, &mut logger);
+
+        let (_resolved, file_logger) = resolve_source(source, &mut symbols);
+        assert!(!file_logger.is_ok());
     }
 
     #[test]

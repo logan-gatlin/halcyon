@@ -174,7 +174,7 @@ pub(super) fn build_type_constructors(
             .unwrap_or(TypeDefinition {
                 parameters: entry.parameters.len(),
                 parameter_kinds: vec![Kind::Type; entry.parameters.len()],
-                body: Type::Unit,
+                body: Type::Error,
                 kind: TypeDefinitionKind::Named,
             });
         let base = Type::Named {
@@ -212,7 +212,7 @@ pub(super) fn build_type_constructors(
                     &definition.body,
                     &type_vars_for_params(entry.parameters.len()),
                 )
-                .unwrap_or(Type::Unit);
+                .unwrap_or(Type::Error);
                 let payload_type = match payload_type {
                     Type::Struct { fields } => {
                         Type::StructConstraint {
@@ -313,7 +313,7 @@ fn resolve_type_definition(
         return TypeDefinition {
             parameters: 0,
             parameter_kinds: Vec::new(),
-            body: Type::Unit,
+            body: Type::Error,
             kind: TypeDefinitionKind::Named,
         };
     };
@@ -323,7 +323,7 @@ fn resolve_type_definition(
             let definition = TypeDefinition {
                 parameters: entry.parameters.len(),
                 parameter_kinds: vec![Kind::Type; entry.parameters.len()],
-                body: Type::Unit,
+                body: Type::Error,
                 kind: entry.kind,
             };
             type_definitions.insert(path.clone(), definition.clone());
@@ -333,7 +333,7 @@ fn resolve_type_definition(
         let definition = TypeDefinition {
             parameters: entry.parameters.len(),
             parameter_kinds: vec![Kind::Type; entry.parameters.len()],
-            body: Type::Unit,
+            body: Type::Error,
             kind: entry.kind,
         };
         type_definitions.insert(path.clone(), definition.clone());
@@ -778,7 +778,10 @@ mod tests {
         let mut file_logger = logger.new_file("test.hc", source);
         let module = parse::parse(source, &mut file_logger)
             .and_then(|source_file| source_file.modules().into_iter().next())
-            .and_then(|module| ir::module(module, &mut file_logger))
+            .and_then(|module| {
+                ir::lower_module(module, &mut file_logger, ir::LoweringOptions::default())
+                    .map(|lowered| lowered.module)
+            })
             .expect("source should lower to module");
         module.statements.into_vec()
     }
@@ -866,7 +869,7 @@ mod tests {
                 .get(&Path::new("demo", "Loop"))
                 .expect("alias definition should exist")
                 .body,
-            Type::Unit
+            Type::Error
         );
 
         let sum_statements =
@@ -1062,7 +1065,7 @@ mod tests {
             &mut Vec::new(),
             &mut file_logger,
         );
-        assert_eq!(lowered, Type::Unit);
+        assert_eq!(lowered, Type::Error);
 
         let a = Path::new("demo", "a");
         let scheme = type_expr_to_scheme_in_def(

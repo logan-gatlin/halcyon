@@ -111,28 +111,26 @@ pub fn compile_core_module(
     symbols: &mut SymbolTable,
     logger: &mut crate::Logger,
 ) -> Artifact {
-    compile_core_module_with_debug_info(symbols, logger, true, true)
+    compile_core_module_with_debug_info(symbols, logger, crate::asm::DebugInfoOptions::all())
 }
 
 #[tracing::instrument(skip_all)]
 pub fn compile_core_module_with_debug_info(
     symbols: &mut SymbolTable,
     logger: &mut crate::Logger,
-    emit_source_map: bool,
-    emit_dwarf: bool,
+    debug_info: crate::asm::DebugInfoOptions,
 ) -> Artifact {
     let _profile_total = crate::profiling::scope("core.compile.total");
 
     #[cfg(test)]
     let test_cache_key = CoreTestCacheKey {
-        emit_source_map,
-        emit_dwarf,
+        emit_source_map: debug_info.emit_source_map,
+        emit_dwarf: debug_info.emit_dwarf,
     };
 
     fn empty_core_artifact() -> Artifact {
         Artifact {
             module_name: CORE_MODULE_NAME.to_string(),
-            ir_module: None,
             binary: Vec::new(),
             source_map: None,
         }
@@ -188,11 +186,10 @@ pub fn compile_core_module_with_debug_info(
             &root_source,
             logger,
             symbols,
-            crate::CompileOptions {
-                demo_mode: false,
-                use_core: false,
-                emit_source_map,
-                emit_dwarf,
+            crate::CompilePipelineOptions {
+                allow_implicit_bundle: false,
+                include_core: false,
+                debug_info,
                 resolve_import: |path| {
                     let normalized_path = path.replace('\\', "/");
                     let relative_path = normalized_path

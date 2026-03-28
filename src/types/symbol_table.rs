@@ -21,7 +21,6 @@ use super::kind::{
     infer_type_kind,
 };
 use super::traits::{
-    TraitConstraint,
     TraitDef,
     TraitError,
     TraitImpl,
@@ -212,7 +211,7 @@ pub struct MethodSpecialization {
     pub impl_method_path: Path,
 
     /// Context predicates required by the selected impl.
-    pub predicates: Vec<TraitConstraint>,
+    pub predicates: Vec<TraitRef>,
 }
 
 impl SymbolTable {
@@ -276,6 +275,30 @@ impl SymbolTable {
             .get(&predicate.trait_name)
             .map(|index| index.candidate_indices(predicate))
             .unwrap_or_else(|| (0..candidates.len()).collect())
+    }
+
+    fn normalize_trait_ref_with_canonical_name(
+        &self,
+        table: &mut UnificationTable,
+        trait_ref: &TraitRef,
+    ) -> TraitRef {
+        let mut normalized = table.normalize_trait_ref(trait_ref);
+        normalized
+            .canonicalize_trait_name_in_place(|trait_name| self.canonical_trait_path(trait_name));
+        normalized
+    }
+
+    fn normalize_canonical_trait_ref(
+        &self,
+        table: &mut UnificationTable,
+        trait_ref: &TraitRef,
+    ) -> Result<TraitRef, TraitError> {
+        let mut normalized = table.normalize_trait_ref(trait_ref);
+        let canonical_trait_name = self
+            .canonical_trait_path(&normalized.trait_name)
+            .ok_or_else(|| TraitError::UnknownTrait(normalized.trait_name.clone()))?;
+        normalized.trait_name = canonical_trait_name;
+        Ok(normalized)
     }
 
     /// Insert any symbol kind and return the previous value if present.
@@ -569,8 +592,8 @@ impl SymbolTable {
     pub fn resolve_predicates(
         &self,
         table: &mut UnificationTable,
-        predicates: &[TraitConstraint],
-    ) -> Result<Vec<TraitConstraint>, TraitError> {
+        predicates: &[TraitRef],
+    ) -> Result<Vec<TraitRef>, TraitError> {
         self.resolve_predicates_with_assumptions(table, predicates, &[])
     }
 
@@ -578,13 +601,13 @@ impl SymbolTable {
     pub fn resolve_predicates_with_assumptions(
         &self,
         table: &mut UnificationTable,
-        predicates: &[TraitConstraint],
-        assumptions: &[TraitConstraint],
-    ) -> Result<Vec<TraitConstraint>, TraitError> {
+        predicates: &[TraitRef],
+        assumptions: &[TraitRef],
+    ) -> Result<Vec<TraitRef>, TraitError> {
         let _profile_total = crate::profiling::scope("symbols.resolve_predicates.total");
         let mut unresolved = Vec::new();
         let mut stack = Vec::new();
-        let mut memo = HashMap::<Vec<u8>, Result<Vec<TraitConstraint>, TraitError>>::new();
+        let mut memo = HashMap::<Vec<u8>, Result<Vec<TraitRef>, TraitError>>::new();
         for predicate in predicates {
             for remaining in
                 self.resolve_predicate(table, predicate, assumptions, &mut stack, &mut memo)?
@@ -602,7 +625,7 @@ impl SymbolTable {
     pub fn resolve_predicates_strict(
         &self,
         table: &mut UnificationTable,
-        predicates: &[TraitConstraint],
+        predicates: &[TraitRef],
     ) -> Result<(), TraitError> {
         let unresolved = self.resolve_predicates(table, predicates)?;
         if let Some(predicate) = unresolved.into_iter().next() {
@@ -615,14 +638,10 @@ impl SymbolTable {
     /// Select a unique implementation matching `predicate`.
     pub fn select_impl(
         &self,
-        predicate: &TraitConstraint,
+        predicate: &TraitRef,
     ) -> Result<Option<TraitImpl>, TraitError> {
         let mut table = UnificationTable::default();
-        let mut normalized = table.normalize_trait_ref(predicate);
-        let canonical_trait_name = self
-            .canonical_trait_path(&normalized.trait_name)
-            .ok_or_else(|| TraitError::UnknownTrait(normalized.trait_name.clone()))?;
-        normalized.trait_name = canonical_trait_name;
+        let normalized = self.normalize_canonical_trait_ref(&mut table, predicate)?;
         let trait_definition = self
             .trait_defs
             .get(&normalized.trait_name)
@@ -750,20 +769,16 @@ impl SymbolTable {
     fn predicate_matches_assumptions(
         &self,
         table: &mut UnificationTable,
-        predicate: &TraitConstraint,
-        assumptions: &[TraitConstraint],
+        predicate: &TraitRef,
+        assumptions: &[TraitRef],
     ) -> bool {
         let _profile = crate::profiling::scope("symbols.predicate_matches_assumptions");
         for assumption in assumptions {
             let mut local_table = table.clone();
-            let mut normalized_predicate = local_table.normalize_trait_ref(predicate);
-            if let Some(canonical) = self.canonical_trait_path(&normalized_predicate.trait_name) {
-                normalized_predicate.trait_name = canonical;
-            }
-            let mut normalized_assumption = local_table.normalize_trait_ref(assumption);
-            if let Some(canonical) = self.canonical_trait_path(&normalized_assumption.trait_name) {
-                normalized_assumption.trait_name = canonical;
-            }
+            let normalized_predicate =
+                self.normalize_trait_ref_with_canonical_name(&mut local_table, predicate);
+            let normalized_assumption =
+                self.normalize_trait_ref_with_canonical_name(&mut local_table, assumption);
             if matches_trait_ref(
                 &mut local_table,
                 &normalized_predicate,
@@ -780,20 +795,16 @@ impl SymbolTable {
     fn resolve_predicate(
         &self,
         table: &mut UnificationTable,
-        predicate: &TraitConstraint,
-        assumptions: &[TraitConstraint],
-        stack: &mut Vec<TraitConstraint>,
-        memo: &mut HashMap<Vec<u8>, Result<Vec<TraitConstraint>, TraitError>>,
-    ) -> Result<Vec<TraitConstraint>, TraitError> {
+        predicate: &TraitRef,
+        assumptions: &[TraitRef],
+        stack: &mut Vec<TraitRef>,
+        memo: &mut HashMap<Vec<u8>, Result<Vec<TraitRef>, TraitError>>,
+    ) -> Result<Vec<TraitRef>, TraitError> {
         let _profile_total = crate::profiling::scope("symbols.resolve_predicate.total");
         if self.predicate_matches_assumptions(table, predicate, assumptions) {
             return Ok(Vec::new());
         }
-        let mut normalized = table.normalize_trait_ref(predicate);
-        let canonical_trait_name = self
-            .canonical_trait_path(&normalized.trait_name)
-            .ok_or_else(|| TraitError::UnknownTrait(normalized.trait_name.clone()))?;
-        normalized.trait_name = canonical_trait_name;
+        let normalized = self.normalize_canonical_trait_ref(table, predicate)?;
         let trait_definition = self
             .trait_defs
             .get(&normalized.trait_name)
@@ -807,7 +818,7 @@ impl SymbolTable {
         }
         if stack
             .iter()
-            .any(|entry| table.normalize_trait_ref(entry) == normalized)
+            .any(|entry| self.normalize_trait_ref_with_canonical_name(table, entry) == normalized)
         {
             return Err(TraitError::RecursivePredicate {
                 predicate: normalized,
@@ -823,7 +834,7 @@ impl SymbolTable {
 
         stack.push(normalized.clone());
 
-        let mut matched: Option<(UnificationTable, Vec<TraitConstraint>)> = None;
+        let mut matched: Option<(UnificationTable, Vec<TraitRef>)> = None;
         let mut ambiguous = false;
         if let Some(candidates) = self.trait_impls.get(&normalized.trait_name) {
             {
@@ -849,7 +860,7 @@ impl SymbolTable {
                                 Ok(None)
                             }
                         })
-                        .collect::<Vec<Result<Option<(UnificationTable, Vec<TraitConstraint>)>, TraitError>>>()
+                        .collect::<Vec<Result<Option<(UnificationTable, Vec<TraitRef>)>, TraitError>>>()
                 } else {
                     selected_candidates
                         .iter()
@@ -865,7 +876,7 @@ impl SymbolTable {
                                 Ok(None)
                             }
                         })
-                        .collect::<Vec<Result<Option<(UnificationTable, Vec<TraitConstraint>)>, TraitError>>>()
+                        .collect::<Vec<Result<Option<(UnificationTable, Vec<TraitRef>)>, TraitError>>>()
                 };
 
                 for candidate_result in candidate_results {
@@ -979,6 +990,7 @@ impl TypeHeadKey {
 fn type_head_key(type_: &Type) -> Option<TypeHeadKey> {
     match type_ {
         Type::Unit => Some(TypeHeadKey::Unit),
+        Type::Error => None,
         Type::Integer => Some(TypeHeadKey::Integer),
         Type::Natural => Some(TypeHeadKey::Natural),
         Type::Real => Some(TypeHeadKey::Real),
@@ -1053,6 +1065,7 @@ fn impl_head_may_match_predicate(
 fn type_is_ground_for_memo(type_: &Type) -> bool {
     match type_ {
         Type::Unit
+        | Type::Error
         | Type::Integer
         | Type::Natural
         | Type::Real
@@ -1082,8 +1095,8 @@ fn trait_ref_is_ground_for_memo(trait_ref: &TraitRef) -> bool {
 }
 
 fn predicate_solver_memo_key(
-    predicate: &TraitConstraint,
-    assumptions: &[TraitConstraint],
+    predicate: &TraitRef,
+    assumptions: &[TraitRef],
 ) -> Option<Vec<u8>> {
     if !trait_ref_is_ground_for_memo(predicate)
         || assumptions
@@ -1098,7 +1111,7 @@ fn predicate_solver_memo_key(
 
 struct InstantiatedTraitImpl {
     head: TraitRef,
-    predicates: Vec<TraitConstraint>,
+    predicates: Vec<TraitRef>,
     associated_types: IndexMap<Path, Type>,
 }
 
@@ -1147,9 +1160,9 @@ fn substitute_type_vars_in_trait_ref(
 
 /// Substitute impl parameters in a predicate list.
 fn substitute_type_vars_in_predicates(
-    predicates: &[TraitConstraint],
+    predicates: &[TraitRef],
     replacements: &[Type],
-) -> Result<Vec<TraitConstraint>, TraitError> {
+) -> Result<Vec<TraitRef>, TraitError> {
     predicates
         .iter()
         .map(|predicate| substitute_type_vars_in_trait_ref(predicate, replacements))
@@ -1375,8 +1388,8 @@ fn validate_impl_associated_type_kinds(
 
 /// Push `predicate` only if it is not already present.
 fn push_unique(
-    predicates: &mut Vec<TraitConstraint>,
-    predicate: TraitConstraint,
+    predicates: &mut Vec<TraitRef>,
+    predicate: TraitRef,
 ) {
     if !predicates.contains(&predicate) {
         predicates.push(predicate);

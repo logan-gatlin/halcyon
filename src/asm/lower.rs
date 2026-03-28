@@ -23,6 +23,7 @@ pub fn lower_type(
     use SemanticType::*;
     match type_ {
         Unit => Type::Struct([].into()),
+        Error => Type::Any,
         Integer | Natural => Type::Struct([Type::I64].into()),
         Real => Type::Struct([Type::F64].into()),
         Glyph | Boolean => Type::Struct([Type::I32].into()),

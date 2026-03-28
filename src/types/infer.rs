@@ -15,7 +15,6 @@ use indexmap::IndexMap;
 use crate::Span;
 use crate::ir::{
     Glob,
-    ImmediateValue,
     Path,
     Pattern,
     PatternKind,
@@ -45,7 +44,6 @@ use super::{
     Kind,
     MetaVarId,
     StructMatch,
-    TraitConstraint,
     TraitRef,
     Type,
     TypeDefinition,
@@ -53,6 +51,7 @@ use super::{
     TypeTransform,
     for_each_child_type,
     for_each_pattern_binding,
+    predicate_is_ground,
 };
 
 use super::unify::{
@@ -78,13 +77,6 @@ pub enum TypeError {
     InvalidPlaceholderType { span: Span },
     /// Trait constraints were written where only plain types are allowed.
     TraitConstraintsNotAllowed { span: Span },
-    /// Trait constraint application arity mismatch.
-    InvalidTraitApplication {
-        name: Path,
-        expected: usize,
-        found: usize,
-        span: Span,
-    },
     /// Kind mismatch.
     KindMismatch {
         expected: Kind,
@@ -99,7 +91,7 @@ pub enum TypeError {
     HigherRankAnnotationRequired { parameter: Path, span: Span },
     /// Explicit `for all` annotation omitted required trait constraints.
     PolymorphicAnnotationMissingConstraints {
-        predicates: Vec<TraitConstraint>,
+        predicates: Vec<TraitRef>,
         span: Span,
     },
     /// Pattern set does not cover every possible value.
@@ -110,22 +102,6 @@ pub enum TypeError {
         span: Span,
         context: Option<&'static str>,
     },
-}
-
-fn unify_with_context(
-    unification_table: &mut UnificationTable,
-    left: &Type,
-    right: &Type,
-    span: Span,
-    context: &'static str,
-) -> Result<(), TypeError> {
-    unification_table.unify(left, right).map_err(|error| {
-        TypeError::Unification {
-            error,
-            span,
-            context: Some(context),
-        }
-    })
 }
 
 #[cfg(test)]
@@ -577,6 +553,35 @@ mod tests {
 
         assert_eq!(typed.term.type_, Type::Integer);
         assert_eq!(typed.predicates, vec![condition_predicate]);
+    }
+
+    #[test]
+    fn hole_let_preserves_value_predicates() {
+        let mut ctx = InferenceContext::new();
+        let mut env = TypeEnv::new();
+        let mut schemes = IndexMap::new();
+        let value = Path::new("demo", "value");
+        let value_predicate = TraitRef::new(Path::new("demo", "Show"), vec![Type::Integer]);
+
+        env.insert(
+            value.clone(),
+            Type::Integer.scheme_with_predicates(vec![value_predicate.clone()]),
+        );
+
+        let hole_let = term(TermKind::Let {
+            assignee: pattern(PatternKind::Hole),
+            scope: ScopeKind::Local,
+            value: term(TermKind::Identifier(value)).into(),
+            then: term(TermKind::Immediate(ImmediateValue::Unit)).into(),
+            else_: term(TermKind::Unreachable).into(),
+        });
+
+        let typed = ctx
+            .infer_term(&mut env, &hole_let, &mut schemes)
+            .expect("hole let should infer");
+
+        assert_eq!(typed.term.type_, Type::Unit);
+        assert_eq!(typed.predicates, vec![value_predicate]);
     }
 
     #[test]
@@ -1597,11 +1602,10 @@ fn ensure_forall_annotation_is_compatible_with_inferred(
 }
 
 fn predicate_key(
-    predicate: &TraitConstraint,
+    predicate: &TraitRef,
     canonical_trait_name: impl Fn(&Path) -> Option<Path>,
 ) -> String {
-    let trait_name =
-        canonical_trait_name(&predicate.trait_name).unwrap_or_else(|| predicate.trait_name.clone());
+    let trait_name = predicate.canonical_trait_name(canonical_trait_name);
     let args = predicate
         .arguments
         .iter()
@@ -1617,11 +1621,12 @@ fn predicate_key(
 
 fn inferred_predicates_covered_by_annotation(
     context: &InferenceContext,
-    inferred: &[TraitConstraint],
-    annotation: &[TraitConstraint],
+    inferred: &[TraitRef],
+    annotation: &[TraitRef],
 ) -> bool {
     let mut inferred_keys = inferred
         .iter()
+        .filter(|predicate| !predicate_is_ground(predicate))
         .map(|predicate| {
             predicate_key(predicate, |trait_name| {
                 context.canonical_trait_name(trait_name)
@@ -1633,6 +1638,7 @@ fn inferred_predicates_covered_by_annotation(
 
     let mut annotation_keys = annotation
         .iter()
+        .filter(|predicate| !predicate_is_ground(predicate))
         .map(|predicate| {
             predicate_key(predicate, |trait_name| {
                 context.canonical_trait_name(trait_name)
@@ -1729,6 +1735,40 @@ impl TypeEnv {
     }
 }
 
+/// Initialization payload for an [`InferenceContext`].
+#[derive(Debug, Clone, Default)]
+pub struct InferenceConfig {
+    pub type_definitions: IndexMap<Path, TypeDefinition>,
+    pub trait_aliases: IndexMap<Path, Path>,
+    pub trait_parameter_kinds: IndexMap<Path, Vec<Kind>>,
+}
+
+impl InferenceConfig {
+    pub fn with_type_definitions(
+        mut self,
+        type_definitions: IndexMap<Path, TypeDefinition>,
+    ) -> Self {
+        self.type_definitions = type_definitions;
+        self
+    }
+
+    pub fn with_trait_aliases(
+        mut self,
+        trait_aliases: IndexMap<Path, Path>,
+    ) -> Self {
+        self.trait_aliases = trait_aliases;
+        self
+    }
+
+    pub fn with_trait_parameter_kinds(
+        mut self,
+        trait_parameter_kinds: IndexMap<Path, Vec<Kind>>,
+    ) -> Self {
+        self.trait_parameter_kinds = trait_parameter_kinds;
+        self
+    }
+}
+
 /// Inference state: unification table, level tracking, and known types.
 #[derive(Debug, Default)]
 pub struct InferenceContext {
@@ -1745,19 +1785,19 @@ pub struct InferenceContext {
 #[derive(Debug, Clone)]
 pub struct SchemeInstance {
     pub type_: Type,
-    pub predicates: Vec<TraitConstraint>,
+    pub predicates: Vec<TraitRef>,
 }
 
 /// Result of inference for a term, including remaining predicates.
 #[derive(Debug, Clone)]
 pub struct InferenceOutput {
     pub term: Term<Type>,
-    pub predicates: Vec<TraitConstraint>,
+    pub predicates: Vec<TraitRef>,
 }
 
 struct InferredTermCollection {
     items: Box<[Term<Type>]>,
-    predicates: Vec<TraitConstraint>,
+    predicates: Vec<TraitRef>,
 }
 
 struct InferredPatternCollection {
@@ -1766,6 +1806,23 @@ struct InferredPatternCollection {
 }
 
 impl InferenceContext {
+    /// Build a new context initialized from [`InferenceConfig`].
+    pub fn with_config(config: InferenceConfig) -> Self {
+        let mut context = Self::new();
+        context.apply_config(config);
+        context
+    }
+
+    /// Replace symbol-derived inference inputs in a single step.
+    pub fn apply_config(
+        &mut self,
+        config: InferenceConfig,
+    ) {
+        self.type_definitions = config.type_definitions;
+        self.trait_aliases = config.trait_aliases;
+        self.trait_parameter_kinds = config.trait_parameter_kinds;
+    }
+
     /// Create a fresh inference context.
     pub fn new() -> Self {
         Self::default()
@@ -1786,13 +1843,6 @@ impl InferenceContext {
         self.trait_aliases = aliases;
     }
 
-    pub fn set_trait_parameter_kinds(
-        &mut self,
-        kinds: IndexMap<Path, Vec<Kind>>,
-    ) {
-        self.trait_parameter_kinds = kinds;
-    }
-
     pub fn canonical_trait_name(
         &self,
         trait_name: &Path,
@@ -1808,14 +1858,25 @@ impl InferenceContext {
         Some(current)
     }
 
-    /// Borrow the unification table.
-    pub fn table(&self) -> &UnificationTable {
-        &self.table
-    }
-
     /// Mutably borrow the unification table.
     pub fn table_mut(&mut self) -> &mut UnificationTable {
         &mut self.table
+    }
+
+    fn unify_with_context(
+        &mut self,
+        left: &Type,
+        right: &Type,
+        span: Span,
+        context: &'static str,
+    ) -> Result<(), TypeError> {
+        self.table.unify(left, right).map_err(|error| {
+            TypeError::Unification {
+                error,
+                span,
+                context: Some(context),
+            }
+        })
     }
 
     /// Allocate a fresh inference metavariable at the current level.
@@ -1948,20 +2009,12 @@ impl InferenceContext {
         Ok(SchemeInstance { type_, predicates })
     }
 
-    pub fn generalize_at(
-        &mut self,
-        type_: &Type,
-        level: u32,
-    ) -> TypeScheme {
-        self.generalize_with_predicates(type_, level, Vec::new())
-    }
-
     /// Generalize all metavariables above `level` into `for all` binders.
     pub fn generalize_with_predicates(
         &mut self,
         type_: &Type,
         level: u32,
-        predicates: Vec<TraitConstraint>,
+        predicates: Vec<TraitRef>,
     ) -> TypeScheme {
         let normalized_type = self.table.normalize(type_);
         let normalized_predicates = self.table.normalize_predicates(&predicates);
@@ -2160,8 +2213,7 @@ pub fn infer_term(
             let parameter_type = ctx.fresh_meta();
             let result_type = ctx.fresh_meta();
             let function_type = Type::func(parameter_type.clone(), result_type.clone());
-            unify_with_context(
-                &mut ctx.table,
+            ctx.unify_with_context(
                 &typed_callee.term.type_,
                 &function_type,
                 callee.span,
@@ -2284,8 +2336,7 @@ pub fn infer_term(
             )?;
             for (path, binding_type) in bindings.iter() {
                 if let Some(recursive_type) = recursive_bindings.get(path) {
-                    unify_with_context(
-                        &mut ctx.table,
+                    ctx.unify_with_context(
                         recursive_type,
                         binding_type,
                         assignee.span,
@@ -2295,10 +2346,7 @@ pub fn infer_term(
             }
             ctx.level = outer_level;
 
-            let include_value_predicates = matches!(
-                typed_pattern.kind,
-                PatternKind::Immediate(ImmediateValue::Boolean(true))
-            );
+            let include_value_predicates = bindings.is_empty();
             let top_level_hint_binding_path =
                 top_level_type_hint_identifier_path(&typed_pattern).cloned();
             let generalized = bindings
@@ -2339,8 +2387,7 @@ pub fn infer_term(
                 else_type = %ctx.table.normalize(&typed_else.term.type_).pretty(),
                 "let branch unification",
             );
-            unify_with_context(
-                &mut ctx.table,
+            ctx.unify_with_context(
                 &typed_then.term.type_,
                 &typed_else.term.type_,
                 term.span,
@@ -2370,8 +2417,7 @@ pub fn infer_term(
         TermKind::Semicolon(left, right) => {
             let typed_left = infer_term(ctx, env, left, schemes)?;
             let typed_right = infer_term(ctx, env, right, schemes)?;
-            unify_with_context(
-                &mut ctx.table,
+            ctx.unify_with_context(
                 &typed_left.term.type_,
                 &Type::Unit,
                 typed_left.term.span,
@@ -2428,20 +2474,21 @@ fn check_term(
         return check_function_term(
             inference_context,
             type_environment,
-            term,
-            parameter_name,
-            parameter_type.as_ref(),
-            captures,
-            body,
-            expected_parameter,
-            expected_result,
             schemes,
+            FunctionCheckInput {
+                term,
+                parameter_name,
+                parameter_type_expr: parameter_type.as_ref(),
+                captures,
+                body,
+                expected_parameter,
+                expected_result,
+            },
         );
     }
 
     let mut inferred = infer_term(inference_context, type_environment, term, schemes)?;
-    unify_with_context(
-        &mut inference_context.table,
+    inference_context.unify_with_context(
         &inferred.term.type_,
         &expected,
         term.span,
@@ -2454,25 +2501,37 @@ fn check_term(
     Ok(inferred)
 }
 
-#[allow(clippy::too_many_arguments)]
+struct FunctionCheckInput<'a> {
+    term: &'a Term<()>,
+    parameter_name: &'a crate::Spanned<Path>,
+    parameter_type_expr: Option<&'a TypeExpr>,
+    captures: &'a [(Path, ())],
+    body: &'a Term<()>,
+    expected_parameter: &'a Type,
+    expected_result: &'a Type,
+}
+
 /// Specialized checker for function terms under an expected function type.
 fn check_function_term(
     inference_context: &mut InferenceContext,
     type_environment: &mut TypeEnv,
-    term: &Term<()>,
-    parameter_name: &crate::Spanned<Path>,
-    parameter_type_expr: Option<&TypeExpr>,
-    captures: &[(Path, ())],
-    body: &Term<()>,
-    expected_parameter: &Type,
-    expected_result: &Type,
     schemes: &mut IndexMap<Path, TypeScheme>,
+    input: FunctionCheckInput<'_>,
 ) -> Result<InferenceOutput, TypeError> {
+    let FunctionCheckInput {
+        term,
+        parameter_name,
+        parameter_type_expr,
+        captures,
+        body,
+        expected_parameter,
+        expected_result,
+    } = input;
+
     let parameter_type = match parameter_type_expr {
         Some(type_expr) => {
             let annotated = type_expr_to_type(inference_context, type_expr)?;
-            unify_with_context(
-                &mut inference_context.table,
+            inference_context.unify_with_context(
                 &annotated,
                 expected_parameter,
                 type_expr.span,
@@ -2515,8 +2574,7 @@ fn check_function_term(
         .collect::<Result<Vec<_>, TypeError>>()?;
     let expected_type = Type::func(expected_parameter.clone(), expected_result.clone());
     let value_type = Type::func(parameter_type, typed_body.term.type_.clone());
-    unify_with_context(
-        &mut inference_context.table,
+    inference_context.unify_with_context(
         &value_type,
         &expected_type,
         term.span,
@@ -2570,8 +2628,7 @@ fn infer_pattern(
         }
         PatternKind::Immediate(value) => {
             let type_ = value.type_of();
-            unify_with_context(
-                &mut ctx.table,
+            ctx.unify_with_context(
                 expected,
                 &type_,
                 pattern.span,
@@ -2590,8 +2647,7 @@ fn infer_pattern(
                 types: item_types,
             } = infer_pattern_items(ctx, env, items, bindings)?;
             let tuple_type = Type::Tuple(item_types);
-            unify_with_context(
-                &mut ctx.table,
+            ctx.unify_with_context(
                 expected,
                 &tuple_type,
                 pattern.span,
@@ -2611,8 +2667,7 @@ fn infer_pattern(
         } => {
             let element_type = ctx.fresh_meta();
             let array_type = Type::Array(Box::new(element_type.clone()));
-            unify_with_context(
-                &mut ctx.table,
+            ctx.unify_with_context(
                 expected,
                 &array_type,
                 pattern.span,
@@ -2655,8 +2710,7 @@ fn infer_pattern(
                 fields: field_types,
                 mode: StructMatch::Exact,
             };
-            unify_with_context(
-                &mut ctx.table,
+            ctx.unify_with_context(
                 expected,
                 &struct_type,
                 pattern.span,
@@ -2677,8 +2731,7 @@ fn infer_pattern(
                 }
             })?;
             let type_ = ctx.instantiate(scheme, pattern.span)?;
-            unify_with_context(
-                &mut ctx.table,
+            ctx.unify_with_context(
                 expected,
                 &type_,
                 pattern.span,
@@ -2715,8 +2768,7 @@ fn infer_pattern(
                     });
                 }
             };
-            unify_with_context(
-                &mut ctx.table,
+            ctx.unify_with_context(
                 expected,
                 &result_type,
                 pattern.span,
@@ -2777,8 +2829,7 @@ fn infer_pattern(
                 }
                 (other, _) => other,
             };
-            unify_with_context(
-                &mut ctx.table,
+            ctx.unify_with_context(
                 expected,
                 &hint_type,
                 type_expr.span,
@@ -2809,8 +2860,7 @@ fn field_access_type(
         fields,
         mode: StructMatch::AtLeast,
     };
-    unify_with_context(
-        &mut ctx.table,
+    ctx.unify_with_context(
         type_,
         &constraint,
         span,
@@ -2983,9 +3033,9 @@ impl TypeTransform for MetaVarToTypeVarSubstitution<'_> {
 }
 
 fn replace_meta_vars_in_predicates(
-    predicates: &[TraitConstraint],
+    predicates: &[TraitRef],
     meta_var_to_type_var: &HashMap<MetaVarId, u32>,
-) -> Vec<TraitConstraint> {
+) -> Vec<TraitRef> {
     let mut replacer = MetaVarToTypeVarSubstitution {
         meta_var_to_type_var,
     };
@@ -3006,7 +3056,7 @@ fn replace_meta_vars_in_predicates(
 
 fn required_outer_type_var_binders(
     type_: &Type,
-    predicates: &[TraitConstraint],
+    predicates: &[TraitRef],
 ) -> usize {
     let type_max = max_free_type_var_index(type_, 0);
     let predicate_depth = leading_forall_count(type_);
@@ -3080,6 +3130,7 @@ fn max_free_type_var_index(
                 .max()
         }
         Type::Unit
+        | Type::Error
         | Type::Integer
         | Type::Natural
         | Type::Real

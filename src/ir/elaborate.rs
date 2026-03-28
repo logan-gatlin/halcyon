@@ -14,7 +14,7 @@ use crate::ir::{
 use crate::types::{
     ResolvedModule,
     SymbolTable,
-    TraitConstraint,
+    TraitRef,
     Type,
     TypeScheme,
     ordered_trait_methods,
@@ -40,7 +40,7 @@ struct DictBinding {
 
 #[derive(Debug, Clone)]
 struct DictEntry {
-    predicate: TraitConstraint,
+    predicate: TraitRef,
     binding: DictBinding,
 }
 
@@ -49,19 +49,19 @@ type DictEnv = Vec<DictEntry>;
 struct ElaborationContext<'a> {
     symbols: &'a SymbolTable,
     scheme_env: &'a IndexMap<Path, TypeScheme>,
-    evidence_requirements: &'a IndexMap<Path, Vec<TraitConstraint>>,
+    evidence_requirements: &'a IndexMap<Path, Vec<TraitRef>>,
     module_name: &'a str,
     dict_types: IndexMap<Path, Type>,
     dict_salt: usize,
     grouped_binding_salt: usize,
-    grouped_binding_predicates: IndexMap<Path, Vec<TraitConstraint>>,
+    grouped_binding_predicates: IndexMap<Path, Vec<TraitRef>>,
 }
 
 impl<'a> ElaborationContext<'a> {
     fn new(
         symbols: &'a SymbolTable,
         scheme_env: &'a IndexMap<Path, TypeScheme>,
-        evidence_requirements: &'a IndexMap<Path, Vec<TraitConstraint>>,
+        evidence_requirements: &'a IndexMap<Path, Vec<TraitRef>>,
         module_name: &'a str,
     ) -> Self {
         Self {
@@ -447,7 +447,7 @@ fn elaborate_identifier(
 
 fn find_dict_binding<'a>(
     dict_env: &'a [DictEntry],
-    predicate: &TraitConstraint,
+    predicate: &TraitRef,
 ) -> Option<&'a DictBinding> {
     if let Some(entry) = dict_env.iter().find(|entry| entry.predicate == *predicate) {
         return Some(&entry.binding);
@@ -470,7 +470,7 @@ enum CanonicalVar {
     Meta(u32),
 }
 
-fn canonical_predicate_key(predicate: &TraitConstraint) -> String {
+fn canonical_predicate_key(predicate: &TraitRef) -> String {
     let mut vars = HashMap::<CanonicalVar, u32>::new();
     let mut next = 0u32;
     let args = predicate
@@ -491,6 +491,7 @@ fn canonical_type_key(
         Type::TypeVar(index) => canonical_var_key(CanonicalVar::Type(*index), vars, next),
         Type::MetaVar(index) => canonical_var_key(CanonicalVar::Meta(*index), vars, next),
         Type::Unit => "unit".to_string(),
+        Type::Error => "error".to_string(),
         Type::Integer => "integer".to_string(),
         Type::Natural => "natural".to_string(),
         Type::Real => "real".to_string(),
@@ -665,7 +666,7 @@ fn grouped_binding_has_non_concrete_predicates(
 fn grouped_binding_predicate_overrides(
     context: &ElaborationContext<'_>,
     binding_entries: &[(Path, Type)],
-) -> IndexMap<Path, Vec<TraitConstraint>> {
+) -> IndexMap<Path, Vec<TraitRef>> {
     let mut overrides = IndexMap::new();
     for (binding_path, _) in binding_entries {
         let Some(scheme) = context.scheme_env.get(binding_path) else {
@@ -1162,7 +1163,12 @@ fn is_impl_method_path(
         .trait_impls()
         .values()
         .flat_map(|implementations| implementations.iter())
-        .any(|implementation| implementation.methods.values().any(|method_path| method_path == path))
+        .any(|implementation| {
+            implementation
+                .methods
+                .values()
+                .any(|method_path| method_path == path)
+        })
 }
 
 fn trait_name_for_method_path<'a>(
@@ -1180,8 +1186,8 @@ fn trait_name_for_method_path<'a>(
 fn reorder_trait_item_predicates(
     context: &ElaborationContext<'_>,
     path: &Path,
-    mut predicates: Vec<TraitConstraint>,
-) -> Vec<TraitConstraint> {
+    mut predicates: Vec<TraitRef>,
+) -> Vec<TraitRef> {
     let Some(trait_name) = trait_name_for_method_path(context, path) else {
         return predicates;
     };
@@ -1258,16 +1264,16 @@ fn dictionary_args_for_path(
 }
 
 fn dictionary_args_for_predicates(
-    predicates: &[TraitConstraint],
+    predicates: &[TraitRef],
     dict_env: &DictEnv,
     symbols: &SymbolTable,
 ) -> Option<Vec<Term<Type>>> {
     let mut args = Vec::new();
     for predicate in predicates {
-        if let Some(binding) = find_dict_binding(dict_env, &predicate) {
+        if let Some(binding) = find_dict_binding(dict_env, predicate) {
             args.push(term_identifier(binding.path.clone(), binding.type_.clone()));
-        } else if predicate_is_ground(&predicate) {
-            args.push(dictionary_term_for_predicate(&predicate, symbols));
+        } else if predicate_is_ground(predicate) {
+            args.push(dictionary_term_for_predicate(predicate, symbols));
         } else {
             return None;
         }
@@ -1279,7 +1285,7 @@ fn template_predicates_for_path(
     context: &ElaborationContext<'_>,
     path: &Path,
     include_ground_predicates: bool,
-) -> Option<Vec<TraitConstraint>> {
+) -> Option<Vec<TraitRef>> {
     let templates = path_predicate_templates(context, path)?;
     let mut predicates = Vec::new();
     for predicate in templates {
@@ -1294,7 +1300,7 @@ fn template_predicates_for_path(
 }
 
 fn build_dict_params(
-    predicates: &[TraitConstraint],
+    predicates: &[TraitRef],
     module_name: &str,
     symbols: &SymbolTable,
     dict_types: &mut IndexMap<Path, Type>,
@@ -1318,7 +1324,7 @@ fn build_dict_params(
 
 fn dict_param_path(
     module_name: &str,
-    predicate: &TraitConstraint,
+    predicate: &TraitRef,
     dict_salt: &mut usize,
 ) -> Path {
     let key = predicate_sort_key(predicate);
@@ -1328,7 +1334,7 @@ fn dict_param_path(
 }
 
 fn dictionary_type_for_predicate(
-    predicate: &TraitConstraint,
+    predicate: &TraitRef,
     symbols: &SymbolTable,
 ) -> Option<Type> {
     let def = symbols.trait_definition(&predicate.trait_name)?;
@@ -1342,7 +1348,7 @@ fn dictionary_type_for_predicate(
 }
 
 fn dictionary_term_for_predicate(
-    predicate: &TraitConstraint,
+    predicate: &TraitRef,
     symbols: &SymbolTable,
 ) -> Term<Type> {
     let Some(def) = symbols.trait_definition(&predicate.trait_name) else {
@@ -1398,7 +1404,7 @@ fn dictionary_term_for_predicate(
 fn path_predicate_templates<'a>(
     context: &'a ElaborationContext<'_>,
     path: &Path,
-) -> Option<&'a [TraitConstraint]> {
+) -> Option<&'a [TraitRef]> {
     context
         .grouped_binding_predicates
         .get(path)
@@ -1418,7 +1424,7 @@ fn instantiated_predicates_for_path(
     path: &Path,
     concrete: &Type,
     match_mode: TypeMatchMode,
-) -> Option<Vec<TraitConstraint>> {
+) -> Option<Vec<TraitRef>> {
     instantiated_predicates_for_path_with_filter(context, path, concrete, match_mode, true)
 }
 
@@ -1428,7 +1434,7 @@ fn instantiated_predicates_for_path_with_filter(
     concrete: &Type,
     match_mode: TypeMatchMode,
     include_ground_predicates: bool,
-) -> Option<Vec<TraitConstraint>> {
+) -> Option<Vec<TraitRef>> {
     let scheme = context.scheme_env.get(path)?;
     let (scheme_body, var_count) = peel_forall(&scheme.type_);
     let mut bindings = vec![None; var_count];
@@ -1454,7 +1460,7 @@ fn instantiated_predicates_for_path_bindings(
     context: &ElaborationContext<'_>,
     path: &Path,
     bindings: &[Option<Type>],
-) -> Option<Vec<TraitConstraint>> {
+) -> Option<Vec<TraitRef>> {
     instantiated_predicates_for_path_bindings_with_type(context, path, bindings, None, true)
 }
 
@@ -1464,7 +1470,7 @@ fn instantiated_predicates_for_path_bindings_with_type(
     bindings: &[Option<Type>],
     concrete: Option<&Type>,
     include_ground_predicates: bool,
-) -> Option<Vec<TraitConstraint>> {
+) -> Option<Vec<TraitRef>> {
     if let Some(predicates) = context.grouped_binding_predicates.get(path)
         && !predicates.is_empty()
     {
@@ -1517,10 +1523,10 @@ fn instantiated_predicates_for_path_bindings_with_type(
 }
 
 fn instantiate_predicates_for_templates(
-    templates: &[TraitConstraint],
+    templates: &[TraitRef],
     bindings: &[Option<Type>],
     include_ground_predicates: bool,
-) -> Option<Vec<TraitConstraint>> {
+) -> Option<Vec<TraitRef>> {
     let templates = if include_ground_predicates {
         templates.to_vec()
     } else {
@@ -1538,9 +1544,9 @@ fn instantiate_predicates_for_templates(
 }
 
 fn instantiate_predicates(
-    predicates: &[TraitConstraint],
+    predicates: &[TraitRef],
     bindings: &[Option<Type>],
-) -> Option<Vec<TraitConstraint>> {
+) -> Option<Vec<TraitRef>> {
     predicates
         .iter()
         .map(|predicate| substitute_type_vars_in_trait_ref(predicate, bindings))
@@ -1548,15 +1554,15 @@ fn instantiate_predicates(
 }
 
 fn substitute_type_vars_in_trait_ref(
-    trait_ref: &TraitConstraint,
+    trait_ref: &TraitRef,
     bindings: &[Option<Type>],
-) -> Option<TraitConstraint> {
+) -> Option<TraitRef> {
     let arguments = trait_ref
         .arguments
         .iter()
         .map(|arg| substitute_type_vars_in_type(arg, bindings))
         .collect::<Option<Vec<_>>>()?;
-    Some(TraitConstraint {
+    Some(TraitRef {
         trait_name: trait_ref.trait_name.clone(),
         arguments,
     })
@@ -1622,11 +1628,12 @@ fn substitute_type_vars_in_type(
         }
         Type::MetaVar(_) => Some(type_.clone()),
         Type::ForAll { name, body } => {
-            substitute_type_vars_in_type(body, bindings)
-                .map(|body| Type::ForAll {
+            substitute_type_vars_in_type(body, bindings).map(|body| {
+                Type::ForAll {
                     name: name.clone(),
                     body: Box::new(body),
-                })
+                }
+            })
         }
         Type::StructConstraint { fields, mode } => {
             fields
@@ -1635,9 +1642,11 @@ fn substitute_type_vars_in_type(
                     substitute_type_vars_in_type(type_, bindings).map(|type_| (name.clone(), type_))
                 })
                 .collect::<Option<IndexMap<_, _>>>()
-                .map(|fields| Type::StructConstraint {
-                    fields,
-                    mode: *mode,
+                .map(|fields| {
+                    Type::StructConstraint {
+                        fields,
+                        mode: *mode,
+                    }
                 })
         }
         other => Some(other.clone()),
@@ -1915,6 +1924,7 @@ fn match_scheme_to_type_with_mode(
             }
         }
         Type::Unit => matches!(concrete, Type::Unit),
+        Type::Error => matches!(concrete, Type::Error),
         Type::Integer => matches!(concrete, Type::Integer),
         Type::Natural => matches!(concrete, Type::Natural),
         Type::Real => matches!(concrete, Type::Real),
@@ -2009,7 +2019,7 @@ mod tests {
 
     use crate::hc_core::compile_core_module;
     use crate::ir::ScopeKind;
-    use crate::types::resolve_module_with_symbols_and_schemes;
+    use crate::types::resolve_with_symbols;
     use crate::{
         Logger,
         parse,
@@ -2026,12 +2036,19 @@ mod tests {
             .map(|m| m.modules())
             .unwrap_or_default()
             .into_iter()
-            .flat_map(|m| crate::ir::module_with_prelude(m, &mut file_logger, &prelude))
+            .flat_map(|m| {
+                crate::ir::lower_module(
+                    m,
+                    &mut file_logger,
+                    crate::ir::LoweringOptions::with_prelude(&prelude),
+                )
+                .map(|lowered| lowered.module)
+            })
             .collect::<Vec<_>>();
 
         let resolved_modules = modules
             .into_iter()
-            .map(|m| resolve_module_with_symbols_and_schemes(&mut symbols, m, &mut file_logger))
+            .map(|m| resolve_with_symbols(&mut symbols, m, &mut file_logger))
             .collect::<Vec<_>>();
         let mut results = resolved_modules
             .into_iter()
@@ -2056,12 +2073,19 @@ mod tests {
             .map(|m| m.modules())
             .unwrap_or_default()
             .into_iter()
-            .flat_map(|m| crate::ir::module_with_prelude(m, &mut file_logger, &prelude))
+            .flat_map(|m| {
+                crate::ir::lower_module(
+                    m,
+                    &mut file_logger,
+                    crate::ir::LoweringOptions::with_prelude(&prelude),
+                )
+                .map(|lowered| lowered.module)
+            })
             .collect::<Vec<_>>();
 
         let mut resolved_modules = modules
             .into_iter()
-            .map(|m| resolve_module_with_symbols_and_schemes(&mut symbols, m, &mut file_logger))
+            .map(|m| resolve_with_symbols(&mut symbols, m, &mut file_logger))
             .collect::<Vec<_>>();
 
         logger.consume_file(file_logger);
@@ -2694,12 +2718,12 @@ mod tests {
 
     #[test]
     fn instantiate_predicates_keeps_meta_vars_in_predicate_arguments() {
-        let predicate = TraitConstraint {
+        let predicate = TraitRef {
             trait_name: Path::new("demo", "Show"),
             arguments: vec![Type::Array(Box::new(Type::MetaVar(7)))],
         };
 
-        let instantiated = instantiate_predicates(&[predicate.clone()], &[])
+        let instantiated = instantiate_predicates(std::slice::from_ref(&predicate), &[])
             .expect("predicate instantiation should keep meta vars");
 
         assert_eq!(instantiated, vec![predicate]);

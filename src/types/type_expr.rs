@@ -16,7 +16,6 @@ use crate::ir::{
 
 use super::instantiation::instantiate_forall_strict;
 use super::{
-    TraitConstraint,
     TraitRef,
     Type,
     TypeDefinition,
@@ -204,7 +203,7 @@ fn lower_type_expr_dyn(
                 }
             } else {
                 LoweredTypeExpr {
-                    type_: Type::Unit,
+                    type_: Type::Error,
                     errors: vec![TypeExprLowerError::PlaceholderNotAllowed { span: expr.span }],
                 }
             }
@@ -301,7 +300,7 @@ fn lower_trait_constraint(
     lookup_symbol: &mut dyn FnMut(&Path) -> TypeExprSymbol,
     lower_placeholder: &mut dyn FnMut(Span) -> Option<Type>,
     alias_lowering: AliasLowering,
-) -> (TraitConstraint, Vec<TypeExprLowerError>) {
+) -> (TraitRef, Vec<TypeExprLowerError>) {
     let mut errors = Vec::new();
     let arguments = constraint
         .arguments
@@ -398,7 +397,7 @@ fn lower_instantiation(
             None => {
                 errors.push(TypeExprLowerError::PlaceholderNotAllowed { span });
                 LoweredTypeExpr {
-                    type_: Type::Unit,
+                    type_: Type::Error,
                     errors,
                 }
             }
@@ -1033,7 +1032,7 @@ mod tests {
         let lowered = lower_type_expr(&placeholder, &mut |_| TypeExprSymbol::Unknown, &mut |_| {
             None
         });
-        assert_eq!(lowered.type_, Type::Unit);
+        assert_eq!(lowered.type_, Type::Error);
         assert!(matches!(
             lowered.errors.as_slice(),
             [TypeExprLowerError::PlaceholderNotAllowed { .. }]
@@ -1085,7 +1084,7 @@ mod tests {
             &mut |_| None,
         );
 
-        assert_eq!(lowered.type_, Type::Unit);
+        assert_eq!(lowered.type_, Type::Error);
         assert!(matches!(
             lowered.errors.as_slice(),
             [TypeExprLowerError::PlaceholderNotAllowed { .. }]

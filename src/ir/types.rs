@@ -1,5 +1,5 @@
 use crate::hc_core::CoreType;
-use crate::types::symbol_table::Symbol;
+use crate::types::Symbol;
 use crate::{
     Spanned,
     WithSpan,

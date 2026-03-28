@@ -140,7 +140,11 @@ pub fn find_nearest_bundle_root(path: &Path) -> Option<PathBuf> {
 pub fn build_core_symbols() -> types::SymbolTable {
     let mut logger = Logger::new();
     let mut symbols = types::SymbolTable::new();
-    let _ = crate::compile_core_module_with_debug_info(&mut symbols, &mut logger, false, false);
+    let _ = crate::compile_core_module_with_debug_info(
+        &mut symbols,
+        &mut logger,
+        crate::asm::DebugInfoOptions::none(),
+    );
     symbols
 }
 
@@ -221,20 +225,20 @@ where
         .and_then(|bundle| bundle.name_text())
         .unwrap_or_else(|| "_".to_string());
     let prelude = prelude_for_bundle(base_symbols, &bundle_name);
-    let lowered = ir::bundle_source_file_with_imports_and_prelude_indexed(
+    let lowered = ir::lower_source_file_with_imports(
         bundle_name.clone(),
         source_file,
         root_file_logger,
         &mut logger,
-        &prelude,
+        ir::LoweringOptions::with_prelude(&prelude),
         &mut |lookup_path| {
             let path = Path::new(lookup_path.as_str());
             resolve_source(path)
         },
     );
 
-    let (module, name_index) = if let Some((module, name_index)) = lowered {
-        (Some(module), Some(name_index))
+    let (module, name_index) = if let Some(lowered) = lowered {
+        (Some(lowered.module), Some(lowered.name_index))
     } else {
         (None, None)
     };
@@ -309,27 +313,23 @@ where
         .unwrap_or_else(|| "_".to_string());
 
     let prelude = prelude_for_bundle(&symbols, &bundle_name);
-    let lowered = ir::bundle_source_file_with_imports_and_prelude_indexed(
+    let lowered = ir::lower_source_file_with_imports(
         bundle_name.clone(),
         source_file,
         root_file_logger,
         &mut logger,
-        &prelude,
+        ir::LoweringOptions::with_prelude(&prelude),
         &mut |lookup_path| {
             let path = Path::new(lookup_path.as_str());
             resolve_source(path)
         },
     );
 
-    let name_index = if let Some((module, name_index)) = lowered {
+    let name_index = if let Some(lowered) = lowered {
         let mut typing_logger = logger.new_file(root_source_name, root_source);
-        let _ = types::resolve_module_with_symbols_and_schemes(
-            &mut symbols,
-            module,
-            &mut typing_logger,
-        );
+        let _ = types::resolve_with_symbols(&mut symbols, lowered.module, &mut typing_logger);
         logger.consume_file(typing_logger);
-        Some(name_index)
+        Some(lowered.name_index)
     } else {
         None
     };
@@ -552,12 +552,13 @@ end
         let mut file_logger = _logger.new_file("<module-rename.hc>", source.to_string());
         let source_file = crate::parse::parse(source, &mut file_logger)
             .expect("test source should parse for module usage indexing");
-        let (_, name_index) = ir::bundle_statements_with_prelude_indexed(
+        let name_index = ir::lower_statements(
             "demo".to_string(),
             &source_file.statements(),
             &mut file_logger,
-            &[],
+            ir::LoweringOptions::default(),
         )
+        .map(|lowered| lowered.name_index)
         .expect("IR lowering should succeed for module usage indexing test");
 
         let foo_symbol = ir::ScopedPath {

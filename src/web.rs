@@ -14,8 +14,11 @@ fn cached_core() -> Result<&'static CachedCore, Box<[crate::SerializedDiagnostic
     match CACHED_CORE.get_or_init(|| {
         let mut symbols = crate::types::SymbolTable::new();
         let mut logger = crate::Logger::new();
-        let artifact =
-            crate::compile_core_module_with_debug_info(&mut symbols, &mut logger, false, false);
+        let artifact = crate::compile_core_module_with_debug_info(
+            &mut symbols,
+            &mut logger,
+            crate::asm::DebugInfoOptions::none(),
+        );
         if !logger.is_ok() {
             return Err(logger.serialize().into_boxed_slice());
         }
@@ -32,33 +35,23 @@ pub fn compile_source_to_binary(
 ) -> Result<Box<[u8]>, Box<[crate::SerializedDiagnostic]>> {
     let cached_core = cached_core()?;
 
-    let mut symbols = cached_core.symbols.clone();
-    let mut logger = crate::Logger::new();
-    let mut artifacts = crate::compile_source_with_options(
+    let mut compiler = crate::Compiler::with_symbols(cached_core.symbols.clone());
+    let mut resolver = crate::NoImports;
+    let compiled = compiler.compile_source(
         "input.hc",
         source,
-        &mut logger,
-        &mut symbols,
-        crate::CompileOptions {
-            demo_mode: true,
-            use_core: false,
-            emit_source_map: false,
-            emit_dwarf: false,
-            resolve_import: |_| None,
-        },
-    )
-    .into_vec();
-
-    if !logger.is_ok() {
-        return Err(logger.serialize().into_boxed_slice());
-    }
+        crate::SourceCompileOptions::demo().with_debug_info(crate::asm::DebugInfoOptions::none()),
+        &mut resolver,
+    );
+    let Some(mut artifacts) = compiled.output.map(|artifacts| artifacts.into_vec()) else {
+        return Err(compiled.serialized_diagnostics());
+    };
 
     let mut all_artifacts = Vec::with_capacity(artifacts.len().saturating_add(1));
     all_artifacts.push(cached_core.artifact.clone());
     all_artifacts.append(&mut artifacts);
 
-    let mut linking_logger = logger.linking_logger();
-    let Some(linked) = crate::linking::link_artifacts(
+    let linked = compiler.link_artifacts(
         &all_artifacts,
         crate::linking::LinkOptions {
             module_name: "app".to_string(),
@@ -66,12 +59,10 @@ pub fn compile_source_to_binary(
             emit_dwarf: false,
             ..Default::default()
         },
-        &mut linking_logger,
-    ) else {
-        logger.consume_file(linking_logger);
-        return Err(logger.serialize().into_boxed_slice());
+    );
+    let Some(linked) = linked.output else {
+        return Err(linked.serialized_diagnostics());
     };
-    logger.consume_file(linking_logger);
 
     Ok(linked.binary.into_boxed_slice())
 }

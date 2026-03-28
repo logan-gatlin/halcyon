@@ -840,8 +840,7 @@ pub fn compile_module(
     debug_info: DebugInfoOptions,
 ) -> Artifact {
     let _profile_total = crate::profiling::scope("asm.compile_module.total");
-    let ir_module = elaborated.module.clone();
-    let module_name = ir_module.name.clone();
+    let module_name = elaborated.module.name.clone();
     let module = {
         let _profile = crate::profiling::scope("asm.compile_module.lower_module");
         lower_module(elaborated, symbols, source_catalog)
@@ -852,7 +851,6 @@ pub fn compile_module(
     };
     Artifact {
         module_name,
-        ir_module: Some(ir_module),
         binary: encoded.binary,
         source_map: encoded.source_map,
     }

@@ -17,7 +17,7 @@ pub(super) fn normalize_term_types(
 }
 
 pub(super) fn fallback_term(term: &Term<()>) -> Term<Type> {
-    remap_term_types(term, &mut |_| Type::Unit)
+    remap_term_types(term, &mut |_| Type::Error)
 }
 
 // Shared recursive rebuild for both normalization and fallback recovery so the
@@ -215,7 +215,7 @@ mod tests {
     }
 
     #[test]
-    fn fallback_term_maps_all_types_to_unit_and_preserves_shape() {
+    fn fallback_term_maps_all_types_to_error_and_preserves_shape() {
         let input = untyped_term(TermKind::Let {
             assignee: untyped_pattern(PatternKind::Array {
                 starting: [untyped_pattern(PatternKind::Identifier(Path::new(
@@ -243,7 +243,7 @@ mod tests {
         });
 
         let recovered = fallback_term(&input);
-        assert_eq!(recovered.type_, Type::Unit);
+        assert_eq!(recovered.type_, Type::Error);
 
         let TermKind::Let {
             assignee,
@@ -255,17 +255,17 @@ mod tests {
         else {
             panic!("expected let term");
         };
-        assert_eq!(assignee.type_, Type::Unit);
-        assert_eq!(value.type_, Type::Unit);
-        assert_eq!(then.type_, Type::Unit);
-        assert_eq!(else_.type_, Type::Unit);
+        assert_eq!(assignee.type_, Type::Error);
+        assert_eq!(value.type_, Type::Error);
+        assert_eq!(then.type_, Type::Error);
+        assert_eq!(else_.type_, Type::Error);
 
         let TermKind::Function { captures, .. } = then.kind else {
             panic!("expected function term");
         };
         assert_eq!(
             captures,
-            [(Path::new("demo", "captured"), Type::Unit)].into()
+            [(Path::new("demo", "captured"), Type::Error)].into()
         );
     }
 

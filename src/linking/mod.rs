@@ -333,7 +333,6 @@ pub fn link_binaries<B: AsRef<[u8]>>(
 
     Ok(Artifact {
         module_name: options.module_name,
-        ir_module: None,
         binary: encoded.binary,
         source_map: encoded.source_map,
     })
